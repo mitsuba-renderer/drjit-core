@@ -222,8 +222,10 @@ struct RecordThreadState : ThreadState {
                 uint32_t slot = this->add_variable(ptr, rv);
 
                 jitc_log(LogLevel::Info,
-                         "  -> recording param %u = variable %u at slot %u",
-                         param_index, kernel_param_ids->at(param_index), slot);
+                         "  -> recording param %u = var(%u, is_pointer=%u) at "
+                         "slot(%u)",
+                         param_index, kernel_param_ids->at(param_index),
+                         pointer_access, slot);
                 this->recording.dependencies.push_back(ParamInfo{
                     /*index=*/slot,
                     /*type=*/param_type,
@@ -242,6 +244,7 @@ struct RecordThreadState : ThreadState {
             // Record max_input_size if we have only pointer inputs.
             // Therefore, if max_input_size > 0 we know this at replay.
             if (n_inputs == n_pointers) {
+                jitc_log(LogLevel::Info, "  -> input_size=%zu", input_size);
                 op.input_size = input_size;
             }
 
