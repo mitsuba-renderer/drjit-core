@@ -349,9 +349,6 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             }
             last_free = i;
         }
-        jitc_log(LogLevel::Info, "sync thread");
-        jitc_sync_thread(ts);
-        jitc_log(LogLevel::Info, "synced thread");
     }
 
     for (uint32_t i = 0; i < replay_variables.size(); ++i) {
