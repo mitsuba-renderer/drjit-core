@@ -353,29 +353,26 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
     for (uint32_t i = 0; i < replay_variables.size(); ++i) {
         ReplayVariable &rv = replay_variables[i];
-        jitc_log(LogLevel::Info, "replay(): rv(%u, rc=%u, is_input=%u)", i,
-                 rv.rc, rv.rv_type == RecordType::Input);
+        jitc_log(LogLevel::Info,
+                 "replay(): rv(%u, rc=%u, is_input=%u, data=%p)", i, rv.rc,
+                 rv.rv_type == RecordType::Input, rv.data);
     }
 
     // Create output variables
     for (uint32_t i = 0; i < this->outputs.size(); ++i) {
         uint32_t index = this->outputs[i];
-        jitc_log(LogLevel::Info, "replay(): output: %u", index);
+        jitc_log(LogLevel::Info, "replay(): output(%u, slot=%u)", i, index);
         ReplayVariable &rv = replay_variables[index];
         if (rv.rv_type == RecordType::Input) {
             // Use input variable
-            jitc_log(LogLevel::Info,
-                     "replay(): output %u at slot %u uses input %u", i, index,
-                     rv.index);
+            jitc_log(LogLevel::Info, "    uses input %u", rv.index);
             jitc_assert(rv.data, "replay(): freed an input variable "
                                  "that is passed through!");
             uint32_t var_index = replay_inputs[rv.index];
             jitc_var_inc_ref(var_index);
             outputs[i] = var_index;
         } else if (rv.rv_type == RecordType::Captured) {
-            jitc_log(LogLevel::Info,
-                     "replay(): output %u at slot %u uses captured variable %u",
-                     i, index, rv.index);
+            jitc_log(LogLevel::Info, "    uses captured variable %u", rv.index);
             jitc_assert(rv.data, "replay(): freed an input variable "
                                  "that is passed through!");
 
@@ -383,10 +380,11 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             outputs[i] = rv.index;
         } else {
+            jitc_log(LogLevel::Info, "    uses internal variable");
             jitc_assert(rv.data && rv.rc > 0,
                         "replay(): freed variable used for output.");
             outputs[i] = jitc_var_mem_map(this->backend, rv.type, rv.data,
-                                          rv.size, false);
+                                          rv.size, true);
         }
     }
 }
