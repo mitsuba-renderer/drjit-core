@@ -37,10 +37,9 @@ struct ReplayVariable {
                     "replay(): Output parameters should not be "
                     "allocate before replaying the kernel!");
 
-        jitc_log(LogLevel::Info,
-                 "replay(): Allocating output variable of size %u.", size);
-
         uint32_t dsize = size * type_size[(int)type];
+
+        jitc_log(LogLevel::Info, "    allocating output of size %u.", dsize);
 
         AllocType alloc_type =
             backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
@@ -69,6 +68,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     }
 
     ThreadState *ts = thread_state(backend);
+    jitc_assert(dynamic_cast<RecordThreadState *>(ts) == nullptr,
+                "replay(): Cannot replay while recording!");
 
     replay_variables.clear();
     scheduled_tasks.clear();
@@ -85,7 +86,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
         ReplayVariable &rv = replay_variables[this->inputs[i]];
         rv.size = input_variable->size;
         rv.data = input_variable->data;
-        jitc_log(LogLevel::Info, "input: %u", this->inputs[i]);
+        jitc_log(LogLevel::Info, "input: var(%u) (input %u) -> slot(%u)",
+                 replay_inputs[i], i, this->inputs[i]);
     }
 
     // Execute kernels and allocate missing output variables
@@ -95,7 +97,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
         switch (op.type) {
         case OpType::KernelLaunch: {
-            jitc_log(LogLevel::Info, "replay(): launching kernel():");
+            jitc_log(LogLevel::Info, "replay(): launching kernel:");
             kernel_params.clear();
 
             if (backend == JitBackend::CUDA) {
@@ -110,7 +112,11 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             }
 
             // Inferr launch size.
+
+            // Size of direct input variables
             uint32_t launch_size = 0;
+            // Size of variables referenced by pointers
+            uint32_t ptr_size = 0;
 
             for (uint32_t j = op.dependency_range.first;
                  j < op.dependency_range.second; ++j) {
@@ -122,7 +128,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                         rv.data != nullptr,
                         "replay(): Kernel input variable not allocated!");
 
-                    launch_size = std::max(launch_size, rv.size);
+                    if (!info.pointer_access)
+                        launch_size = std::max(launch_size, rv.size);
+                    else
+                        ptr_size = std::max(launch_size, rv.size);
                 }
             }
             if (op.input_size > 0) {
@@ -134,9 +143,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     size_t ratio = op.size / op.input_size;
                     jitc_log(LogLevel::Warn,
                              "replay(): Inferring launch size by heuristic, "
-                             "launch_size(%u) *= ratio(%zu)",
-                             launch_size, ratio);
-                    launch_size = launch_size * ratio;
+                             "launch_size(%u) = ptr_size(%u) * ratio(%zu)",
+                             launch_size, ptr_size, ratio);
+                    launch_size = ptr_size * ratio;
                 } else {
                     jitc_assert(op.input_size % op.size == 0,
                                 "replay(): Could not infer launch size, from "
@@ -145,9 +154,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     uint32_t fraction = op.input_size / op.size;
                     jitc_log(LogLevel::Warn,
                              "replay(): Inferring launch size by heuristic, "
-                             "launch_size(%u) /= fraction(%u)",
-                             launch_size, fraction);
-                    launch_size = launch_size / fraction;
+                             "launch_size(%u) = ptr_size(%u) fraction(%u)",
+                             launch_size, ptr_size, fraction);
+                    launch_size = ptr_size / fraction;
                 }
             }
             if (launch_size == 0) {
@@ -165,13 +174,17 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ParamInfo info = this->dependencies[j];
                 ReplayVariable &rv = replay_variables[info.index];
 
-                jitc_log(LogLevel::Info, "  -> has dependency slot(%u, rc=%u)",
-                         info.index, rv.rc);
+                jitc_log(LogLevel::Info,
+                         " -> param slot(%u, rc=%u, is_pointer=%u, "
+                         "is_output=%u)",
+                         info.index, rv.rc, info.pointer_access,
+                         info.type == ParamType::Output);
 
                 if (info.type == ParamType::Output) {
                     rv.size = launch_size;
                     rv.alloc(backend);
                 }
+                jitc_log(LogLevel::Info, "    data=%p", rv.data);
                 jitc_assert(
                     rv.data,
                     "replay(): Encountered nullptr in kernel parameters.");
@@ -186,7 +199,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             }
 
             {
-                jitc_log(LogLevel::Info, "    kernel (n=%u)", launch_size);
+                jitc_log(LogLevel::Info, "    launch_size=%u", launch_size);
                 scoped_set_context_maybe guard2(ts->context);
                 std::vector<uint32_t> tmp;
                 Kernel kernel = op.kernel;
@@ -291,7 +304,15 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ReplayVariable &src_var = replay_variables[src_info.index];
             ReplayVariable &dst_var = replay_variables[dst_info.index];
 
+            jitc_log(LogLevel::Info,
+                     "replay(): MemcpyAsync slot(%u) <- slot(%u)",
+                     dst_info.index, src_info.index);
+
+            dst_var.size = src_var.size;
             dst_var.alloc(backend);
+
+            jitc_log(LogLevel::Info, "    src.data=%p", src_var.data);
+            jitc_log(LogLevel::Info, "    dst.data=%p", dst_var.data);
 
             size_t size = src_var.size * type_size[(uint32_t)src_var.type];
 
@@ -328,6 +349,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             }
             last_free = i;
         }
+        jitc_log(LogLevel::Info, "sync thread");
+        jitc_sync_thread(ts);
+        jitc_log(LogLevel::Info, "synced thread");
     }
 
     for (uint32_t i = 0; i < replay_variables.size(); ++i) {
@@ -362,14 +386,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             outputs[i] = rv.index;
         } else {
-            jitc_assert(rv.data, "replay(): freed variable used for output.");
-            Variable v;
-            v.kind = VarKind::Evaluated;
-            v.type = (uint32_t)rv.type;
-            v.size = rv.size;
-            v.data = rv.data;
-            v.backend = (uint32_t)this->backend;
-            outputs[i] = jitc_var_new(v);
+            jitc_assert(rv.data && rv.rc > 0,
+                        "replay(): freed variable used for output.");
+            outputs[i] = jitc_var_mem_map(this->backend, rv.type, rv.data,
+                                          rv.size, false);
         }
     }
 }
