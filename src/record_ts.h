@@ -142,12 +142,14 @@ struct RecordThreadState : ThreadState {
     };
 
     void barrier() override {
-        uint32_t start = this->recording.dependencies.size();
+        if (!paused) {
+            uint32_t start = this->recording.dependencies.size();
 
-        Operation op;
-        op.type = OpType::Barrier;
-        op.dependency_range = std::pair(start, start);
-        this->recording.operations.push_back(op);
+            Operation op;
+            op.type = OpType::Barrier;
+            op.dependency_range = std::pair(start, start);
+            this->recording.operations.push_back(op);
+        }
 
         scoped_pause();
         return this->internal->barrier();
@@ -378,9 +380,6 @@ struct RecordThreadState : ThreadState {
 
     /// Perform an assynchronous copy operation
     void memcpy_async(void *dst, const void *src, size_t size) override {
-        jitc_log(LogLevel::Warn, "RecordThreadState::memcpy_async(): "
-                                 "unsupported function recording!");
-
         if (!paused) {
             if (has_variable(src)) {
                 jitc_log(LogLevel::Info,
