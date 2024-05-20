@@ -51,9 +51,6 @@ struct ReplayVariable {
 /// Kernel parameter buffer
 static std::vector<void *> kernel_params;
 
-/// Temporary scratch space for scheduled tasks (LLVM only)
-static std::vector<Task *> scheduled_tasks;
-
 /// Temporary variables used for replaying a recording.
 static std::vector<ReplayVariable> replay_variables;
 
@@ -72,7 +69,6 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 "replay(): Cannot replay while recording!");
 
     replay_variables.clear();
-    scheduled_tasks.clear();
     uint32_t last_free = 0;
 
     replay_variables.reserve(this->record_variables.size());
@@ -186,7 +182,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 }
                 jitc_log(LogLevel::Info, "    data=%p", rv.data);
                 jitc_assert(
-                    rv.data,
+                    rv.data != nullptr,
                     "replay(): Encountered nullptr in kernel parameters.");
                 kernel_params.push_back(rv.data);
             }
@@ -203,36 +199,14 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 scoped_set_context_maybe guard2(ts->context);
                 std::vector<uint32_t> tmp;
                 Kernel kernel = op.kernel;
-                scheduled_tasks.push_back(
-                    ts->launch(kernel, launch_size, &kernel_params, &tmp));
+                ts->launch(kernel, launch_size, &kernel_params, &tmp);
             }
 
         }
 
         break;
         case OpType::Barrier:
-
-            // Synchronize tasks
-            if (this->backend == JitBackend::LLVM) {
-                if (scheduled_tasks.size() == 1) {
-                    task_release(jitc_task);
-                    jitc_task = scheduled_tasks[0];
-                } else {
-                    jitc_assert(!scheduled_tasks.empty(),
-                                "jit_eval(): no tasks generated!");
-
-                    // Insert a barrier task
-                    Task *new_task =
-                        task_submit_dep(nullptr, scheduled_tasks.data(),
-                                        (uint32_t)scheduled_tasks.size());
-                    task_release(jitc_task);
-                    for (Task *t : scheduled_tasks)
-                        task_release(t);
-                    jitc_task = new_task;
-                }
-            }
-            scheduled_tasks.clear();
-
+            ts->barrier();
             break;
         case OpType::MemsetAsync: {
             uint32_t dependency_index = op.dependency_range.first;
@@ -386,6 +360,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             outputs[i] = jitc_var_mem_map(this->backend, rv.type, rv.data,
                                           rv.size, true);
         }
+        jitc_log(LogLevel::Info, "    data=%p", rv.data);
     }
 }
 
