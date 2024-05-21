@@ -110,7 +110,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             // Inferr launch size.
 
             // Size of direct input variables
-            uint32_t launch_size = 0;
+            uint32_t input_size = 0;
             // Size of variables referenced by pointers
             uint32_t ptr_size = 0;
 
@@ -125,34 +125,36 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                         "replay(): Kernel input variable not allocated!");
 
                     if (!info.pointer_access)
-                        launch_size = std::max(launch_size, rv.size);
+                        input_size = std::max(input_size, rv.size);
                     else
-                        ptr_size = std::max(launch_size, rv.size);
+                        ptr_size = std::max(ptr_size, rv.size);
                 }
             }
+
+            uint32_t launch_size = input_size != 0 ? input_size : ptr_size;
             if (op.input_size > 0) {
-                // If we only have pointer inputs
+                // Apply the factor
                 if (op.size > op.input_size) {
                     jitc_assert(op.size % op.input_size == 0,
-                                "replay(): Could not infer launch size, from "
-                                "pointer inputs!");
+                                "replay(): Could not infer launch size, using "
+                                "heuristic!");
                     size_t ratio = op.size / op.input_size;
                     jitc_log(LogLevel::Warn,
                              "replay(): Inferring launch size by heuristic, "
-                             "launch_size(%u) = ptr_size(%u) * ratio(%zu)",
-                             launch_size, ptr_size, ratio);
-                    launch_size = ptr_size * ratio;
+                             "launch_size(%u) *= ratio(%zu)",
+                             ptr_size, ratio);
+                    launch_size = launch_size * ratio;
                 } else {
                     jitc_assert(op.input_size % op.size == 0,
-                                "replay(): Could not infer launch size, from "
-                                "pointer inputs!");
+                                "replay(): Could not infer launch size, using "
+                                "heuristic!");
 
                     uint32_t fraction = op.input_size / op.size;
                     jitc_log(LogLevel::Warn,
                              "replay(): Inferring launch size by heuristic, "
-                             "launch_size(%u) = ptr_size(%u) fraction(%u)",
-                             launch_size, ptr_size, fraction);
-                    launch_size = ptr_size / fraction;
+                             "launch_size(%u) /= fraction(%u)",
+                             launch_size, fraction);
+                    launch_size = launch_size / fraction;
                 }
             }
             if (launch_size == 0) {
@@ -172,9 +174,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
                 jitc_log(LogLevel::Info,
                          " -> param slot(%u, rc=%u, is_pointer=%u, "
-                         "is_output=%u)",
+                         "is_output=%u, size=%u)",
                          info.index, rv.rc, info.pointer_access,
-                         info.type == ParamType::Output);
+                         info.type == ParamType::Output, rv.size);
 
                 if (info.type == ParamType::Output) {
                     rv.size = launch_size;
