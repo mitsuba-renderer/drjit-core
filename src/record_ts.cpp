@@ -394,6 +394,9 @@ void Recording::compute_rc() {
 void jitc_record_start(JitBackend backend, const uint32_t *inputs,
                        uint32_t n_inputs) {
 
+    // Increment scope, can be used to track missing inputs
+    jitc_new_scope(backend);
+
     ThreadState *ts = thread_state(backend);
     RecordThreadState *record_ts = new RecordThreadState(ts);
 

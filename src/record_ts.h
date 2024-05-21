@@ -214,12 +214,19 @@ struct RecordThreadState : ThreadState {
                 // `offset` buffer is created.
                 // Those variables are captured here and kept for replay.
                 if (param_type == ParamType::Input && !has_variable(ptr)) {
-                    jitc_log(
-                        LogLevel::Warn,
-                        "record(): Variable %u -> %p was not created in this "
-                        "recording, but is used by a kernel! The variable "
-                        "will be captured by the recording.",
-                        index, ptr);
+                    if (v->scope < this->internal->scope) {
+                        jitc_fail(
+                            "record(): Variable %u -> %p, was created before "
+                            "starting recording, but was not speciefied as "
+                            "input!",
+                            index, ptr);
+                    }
+
+                    jitc_log(LogLevel::Warn,
+                             "record(): Variable r%u(scope=%u >= "
+                             "original_scope=%u) -> %p appeared out of "
+                             "nowhere! It will be captured.",
+                             index, v->scope, this->internal->scope, ptr);
                     rv.rv_type = RecordType::Captured;
                     rv.index = index;
                     jitc_var_inc_ref(index);
