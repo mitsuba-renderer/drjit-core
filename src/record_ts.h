@@ -167,8 +167,7 @@ struct RecordThreadState : ThreadState {
                 this->backend == JitBackend::CUDA ? 1 : 3;
 
             size_t input_size = 0;
-            uint32_t n_pointers = 0;
-            uint32_t n_inputs = 0;
+            size_t ptr_size = 0;
             for (uint32_t param_index = 0;
                  param_index < kernel_param_ids->size(); param_index++) {
 
@@ -181,6 +180,14 @@ struct RecordThreadState : ThreadState {
                     kernel_params->at(kernel_param_offset + param_index);
                 ParamType param_type = (ParamType)v->param_type;
 
+                if (param_type == ParamType::Input &&
+                    (VarType)v->type != VarType::Pointer) {
+                    input_size = std::max(input_size, (size_t)v->size);
+                }
+
+                // In case the variable is a pointer, we follow the pointer to
+                // the source and record the pointer size.
+                // NOTE: this means that `v` is now the source variable
                 if ((VarType)v->type == VarType::Pointer) {
                     jitc_assert(v->is_literal(),
                                 "record(): Recording non-literal pointers are "
@@ -189,15 +196,12 @@ struct RecordThreadState : ThreadState {
                                 "record(): A pointer, pointing to a kernel "
                                 "ouptut is not yet supported!");
 
+                    // Follow pointer
                     index = v->dep[3];
                     v = jitc_var(index);
-                    pointer_access = true;
-                    n_pointers++;
-                }
 
-                if (param_type == ParamType::Input) {
-                    n_inputs++;
-                    input_size = std::max(input_size, (size_t)v->size);
+                    pointer_access = true;
+                    ptr_size = std::max(ptr_size, (size_t)v->size);
                 }
 
                 RecordVariable rv;
@@ -224,10 +228,12 @@ struct RecordThreadState : ThreadState {
                 uint32_t slot = this->add_variable(ptr, rv);
 
                 jitc_log(LogLevel::Info,
-                         "  -> recording param %u = var(%u, is_pointer=%u) at "
+                         " -> recording param %u = var(%u, is_pointer=%u, "
+                         "size=%u, is_input=%u) at "
                          "slot(%u)",
                          param_index, kernel_param_ids->at(param_index),
-                         pointer_access, slot);
+                         pointer_access, v->size,
+                         param_type == ParamType::Input, slot);
                 this->recording.dependencies.push_back(ParamInfo{
                     /*index=*/slot,
                     /*type=*/param_type,
@@ -245,8 +251,13 @@ struct RecordThreadState : ThreadState {
 
             // Record max_input_size if we have only pointer inputs.
             // Therefore, if max_input_size > 0 we know this at replay.
-            if (n_inputs == n_pointers) {
-                jitc_log(LogLevel::Info, "  -> input_size=%zu", input_size);
+            if (input_size == 0) {
+                jitc_log(LogLevel::Info, "    input_size(pointers)=%zu",
+                         input_size);
+                op.input_size = ptr_size;
+            } else if (input_size != size) {
+                jitc_log(LogLevel::Info, "    input_size(direct)=%zu",
+                         input_size);
                 op.input_size = input_size;
             }
 
