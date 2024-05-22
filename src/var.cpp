@@ -1267,7 +1267,8 @@ static void jitc_raise_consumed_error(const char *func, uint32_t index) {
 }
 
 /// Force-evaluate a variable of type 'literal' or 'undefined'
-uint32_t jitc_var_eval_force(uint32_t index, Variable v, void **ptr_out) {
+uint32_t jitc_var_eval_force(uint32_t index, Variable &v_, void **ptr_out) {
+    Variable v = v_;
     uint32_t isize = type_size[v.type];
 
     void *ptr = jitc_malloc((JitBackend) v.backend == JitBackend::CUDA

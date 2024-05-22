@@ -127,7 +127,7 @@ void jitc_llvm_render_gather_packet(const Variable *v, const Variable *ptr,
     size_t offset = buffer.size();
     uint32_t n = (uint32_t) v->literal;
 
-    fmt_intrinsic("@zero_$m_$u = private constant [$u x $m] $z", v, n, n, v);
+    fmt_intrinsic("@zero_$m_$u = private constant [$u x $m] $z, align $A", v, n, n, v, v);
 
     fmt("define internal fastcc [$u x <$w x $m>] @gather_$ux$H(<$w x {$m*}> %p) local_unnamed_addr #0 ${\n",
         n, v, n, v, v);
