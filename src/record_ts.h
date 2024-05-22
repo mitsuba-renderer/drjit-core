@@ -215,7 +215,7 @@ struct RecordThreadState : ThreadState {
                 // Those variables are captured here and kept for replay.
                 if (param_type == ParamType::Input && !has_variable(ptr)) {
                     if (v->scope < this->internal->scope) {
-                        jitc_fail(
+                        jitc_raise(
                             "record(): Variable %u -> %p, was created before "
                             "starting recording, but was not speciefied as "
                             "input!",

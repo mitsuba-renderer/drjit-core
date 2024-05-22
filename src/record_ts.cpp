@@ -135,9 +135,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             if (op.input_size > 0) {
                 // Apply the factor
                 if (op.size > op.input_size) {
-                    jitc_assert(op.size % op.input_size == 0,
-                                "replay(): Could not infer launch size, using "
-                                "heuristic!");
+                    if (op.size % op.input_size != 0)
+                        jitc_raise(
+                            "replay(): Could not infer launch size, using "
+                            "heuristic!");
                     size_t ratio = op.size / op.input_size;
                     jitc_log(LogLevel::Warn,
                              "replay(): Inferring launch size by heuristic, "
@@ -145,9 +146,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                              ptr_size, ratio);
                     launch_size = launch_size * ratio;
                 } else {
-                    jitc_assert(op.input_size % op.size == 0,
-                                "replay(): Could not infer launch size, using "
-                                "heuristic!");
+                    if (op.input_size % op.size != 0)
+                        jitc_raise(
+                            "replay(): Could not infer launch size, using "
+                            "heuristic!");
 
                     uint32_t fraction = op.input_size / op.size;
                     jitc_log(LogLevel::Warn,
