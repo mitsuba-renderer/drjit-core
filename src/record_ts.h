@@ -109,6 +109,8 @@ struct Recording {
     JitBackend backend;
 
     void replay(const uint32_t *replay_input, uint32_t *outputs);
+    
+    /// Computes the initial reference count for replay variables
     void compute_rc();
 };
 
@@ -161,19 +163,20 @@ struct RecordThreadState : ThreadState {
         if (!paused) {
             jitc_log(LogLevel::Info, "record(): recording kernel");
 
-            uint32_t start = this->recording.dependencies.size();
-
             uint32_t kernel_param_offset =
                 this->backend == JitBackend::CUDA ? 1 : 3;
 
             size_t input_size = 0;
             size_t ptr_size = 0;
+            
+            uint32_t start = this->recording.dependencies.size();
             for (uint32_t param_index = 0;
                  param_index < kernel_param_ids->size(); param_index++) {
 
                 bool pointer_access = false;
                 uint32_t index = kernel_param_ids->at(param_index);
                 Variable *v = jitc_var(index);
+                
                 // Note, the ptr might not come from the variable but the
                 // `ScheduledVariable` if it is an output.
                 void *ptr =
@@ -186,7 +189,7 @@ struct RecordThreadState : ThreadState {
                 }
 
                 // In case the variable is a pointer, we follow the pointer to
-                // the source and record the pointer size.
+                // the source and record the source size.
                 // NOTE: this means that `v` is now the source variable
                 if ((VarType)v->type == VarType::Pointer) {
                     jitc_assert(v->is_literal(),
@@ -210,15 +213,15 @@ struct RecordThreadState : ThreadState {
                 rv.is_literal = v->is_literal();
 
                 // It could happen, that a variable is created while recording.
-                // This occurs for example, when recording vcalls, where the
+                // This occurs for example, when recording vcalls, where a
                 // `offset` buffer is created.
                 // Those variables are captured here and kept for replay.
                 if (param_type == ParamType::Input && !has_variable(ptr)) {
                     if (v->scope < this->internal->scope) {
                         jitc_raise(
                             "record(): Variable %u -> %p, was created before "
-                            "starting recording, but was not speciefied as "
-                            "input!",
+                            "recording was started, but it was not speciefied "
+                            "as and input variable!",
                             index, ptr);
                     }
 
@@ -247,7 +250,6 @@ struct RecordThreadState : ThreadState {
                     /*pointer_access=*/pointer_access,
                 });
             }
-
             uint32_t end = this->recording.dependencies.size();
 
             Operation op;
@@ -341,17 +343,15 @@ struct RecordThreadState : ThreadState {
     void prefix_sum(VarType vt, bool exclusive, const void *in, uint32_t size,
                     void *out) override {
         if (!paused) {
-            uint32_t start = this->recording.dependencies.size();
-
             uint32_t in_id = this->get_variable(in);
             uint32_t out_id = this->add_variable(out, RecordVariable{
                                                           /*type=*/vt,
                                                           /*size=*/size,
                                                       });
 
+            uint32_t start = this->recording.dependencies.size();
             this->recording.dependencies.push_back(in_id);
             this->recording.dependencies.push_back(out_id);
-
             uint32_t end = this->recording.dependencies.size();
 
             Operation op;
@@ -400,19 +400,18 @@ struct RecordThreadState : ThreadState {
     void memcpy_async(void *dst, const void *src, size_t size) override {
         if (!paused) {
             if (has_variable(src)) {
-                jitc_log(LogLevel::Info,
+                jitc_log(LogLevel::Debug,
                          "record(): memcpy_async(dst=%p, src=%p, size=%zu)",
                          dst, src, size);
-                uint32_t start = this->recording.dependencies.size();
 
                 uint32_t src_id = this->get_variable(src);
                 // Add an empty RecordVariable and hope that it will get filled
                 // in by a kernel invocation.
                 uint32_t dst_id = this->add_variable(dst, RecordVariable());
 
+                uint32_t start = this->recording.dependencies.size();
                 this->recording.dependencies.push_back(src_id);
                 this->recording.dependencies.push_back(dst_id);
-
                 uint32_t end = this->recording.dependencies.size();
 
                 Operation op;
@@ -509,7 +508,7 @@ struct RecordThreadState : ThreadState {
                                             /*input_index=*/0,
                                         });
 
-        jitc_log(LogLevel::Info,
+        jitc_log(LogLevel::Trace,
                  "record(): Adding variable %u output %u to slot %u", output,
                  output_index, slot);
         this->recording.outputs.push_back(slot);
@@ -541,19 +540,20 @@ struct RecordThreadState : ThreadState {
         return pause_scope(this);
     }
 
+    bool paused = false;
+
     ThreadState *internal;
 
     Recording recording;
-
-    bool paused = false;
 
   private:
     // Mapping from data pointer of a variable to a index into the slot of the
     // recording.
     PtrToSlot ptr_to_slot;
 
-    // Insert the variable by pointer, deduplicating it and returning a index
-    // into the `variables` field of the recording.
+    // Add information about a variable, deduplicating it and returning the slot
+    // in the `variables` field of the recording.
+    // Information is combined when the variable has already been added.
     uint32_t add_variable(void *ptr, RecordVariable rv) {
 
         auto it = this->ptr_to_slot.find(ptr);
@@ -600,6 +600,8 @@ void jitc_record_start(JitBackend backend, const uint32_t *inputs,
 
 Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
                             uint32_t n_outputs);
+
+void jitc_record_abort(JitBackend backend);
 
 void jitc_record_destroy(Recording *recording);
 

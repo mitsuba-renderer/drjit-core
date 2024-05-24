@@ -2507,6 +2507,14 @@ extern JIT_EXPORT bool jit_record_pause(JitBackend backend);
 extern JIT_EXPORT bool jit_record_resume(JitBackend backend);
 
 /**
+ * \brief Abort recording the ThreadState for this backend.
+ *
+ * \param backend
+ *      The backend for which to abort recording the thread state.
+ */
+extern JIT_EXPORT void jit_record_abort(JitBackend backend);
+
+/**
  * \brief Destroys a recording and frees the asociated memory.
  *
  * \param recording
