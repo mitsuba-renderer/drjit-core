@@ -1797,6 +1797,7 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
             out[i] = 0;
         return;
     }
+    Ref scale = steal(jitc_var_u32((JitBackend) jitc_var(src_)->backend, n));
 
     Ref src = borrow(src_);
 
@@ -1815,8 +1816,6 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
 
     // Go to the original if 'src' is wrapped into a loop state variable
     unwrap(src, src_v);
-
-    Ref scale = steal(jitc_var_u32(var_info.backend, n));
 
     uint32_t flags = jitc_flags();
 
