@@ -34,12 +34,13 @@ struct ReplayVariable {
 
     void alloc(JitBackend backend) {
         jitc_assert(data == nullptr,
-                    "replay(): Output parameters should not be "
-                    "allocate before replaying the kernel!");
+                    "replay(): Tried to allocate replay variable twice! "
+                    "Usually, only output variables are allocated. This "
+                    "indicates that something went wrong when recording.");
 
         uint32_t dsize = size * type_size[(int)type];
 
-        jitc_log(LogLevel::Info, "    allocating output of size %u.", dsize);
+        jitc_log(LogLevel::Debug, "    allocating output of size %u.", dsize);
 
         AllocType alloc_type =
             backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
@@ -59,14 +60,16 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     // Perform validation
     for (uint32_t i = 0; i < this->record_variables.size(); ++i) {
         RecordVariable &rv = this->record_variables[i];
-        jitc_assert(
-            rv.type != VarType::Void,
-            "Recorded Variable at slot(%u) was added, but not completed!", i);
+        jitc_assert(rv.type != VarType::Void,
+                    "Recorded Variable at slot(%u) was added, it's type is "
+                    "unknown! This can occur, if a variable is only used by "
+                    "operations, that do not provide a type.",
+                    i);
     }
 
     ThreadState *ts = thread_state(backend);
     jitc_assert(dynamic_cast<RecordThreadState *>(ts) == nullptr,
-                "replay(): Cannot replay while recording!");
+                "replay(): Tried to replay while recording!");
 
     replay_variables.clear();
     uint32_t last_free = 0;
@@ -76,14 +79,15 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
         replay_variables.push_back(ReplayVariable(rv));
     }
 
+    jitc_log(LogLevel::Info, "replay(): inputs");
     // Populate with input variables
     for (uint32_t i = 0; i < this->inputs.size(); ++i) {
         Variable *input_variable = jitc_var(replay_inputs[i]);
         ReplayVariable &rv = replay_variables[this->inputs[i]];
         rv.size = input_variable->size;
         rv.data = input_variable->data;
-        jitc_log(LogLevel::Info, "input: var(%u) (input %u) -> slot(%u)",
-                 replay_inputs[i], i, this->inputs[i]);
+        jitc_log(LogLevel::Debug, "    input %u: r%u mapped to slot(%u)", i,
+                 replay_inputs[i], this->inputs[i]);
     }
 
     // Execute kernels and allocate missing output variables
@@ -235,15 +239,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ReplayVariable &ptr_var = replay_variables[ptr_info.index];
             ReplayVariable &out_var = replay_variables[out_info.index];
 
-            // Allocate output variable if data is missing.
-            if (out_var.data == nullptr) {
-                uint32_t dsize = out_var.size * type_size[(int)out_var.type];
-                AllocType alloc_type = this->backend == JitBackend::CUDA
-                                           ? AllocType::Device
-                                           : AllocType::Host;
-
-                out_var.data = jitc_malloc(alloc_type, dsize);
-            }
+            out_var.alloc(backend);
 
             VarType type = ptr_var.type;
             ReduceOp rtype = op.rtype;
@@ -259,15 +255,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ReplayVariable &in_var = replay_variables[in_info.index];
             ReplayVariable &out_var = replay_variables[out_info.index];
 
-            // Allocate output variable if data is missing.
-            if (out_var.data == nullptr) {
-                uint32_t dsize = out_var.size * type_size[(int)out_var.type];
-                AllocType alloc_type = this->backend == JitBackend::CUDA
-                                           ? AllocType::Device
-                                           : AllocType::Host;
-
-                out_var.data = jitc_malloc(alloc_type, dsize);
-            }
+            out_var.alloc(backend);
 
             VarType type = in_var.type;
 
@@ -282,15 +270,15 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ReplayVariable &src_var = replay_variables[src_info.index];
             ReplayVariable &dst_var = replay_variables[dst_info.index];
 
-            jitc_log(LogLevel::Info,
+            jitc_log(LogLevel::Debug,
                      "replay(): MemcpyAsync slot(%u) <- slot(%u)",
                      dst_info.index, src_info.index);
 
             dst_var.size = src_var.size;
             dst_var.alloc(backend);
 
-            jitc_log(LogLevel::Info, "    src.data=%p", src_var.data);
-            jitc_log(LogLevel::Info, "    dst.data=%p", dst_var.data);
+            jitc_log(LogLevel::Debug, "    src.data=%p", src_var.data);
+            jitc_log(LogLevel::Debug, "    dst.data=%p", dst_var.data);
 
             size_t size = src_var.size * type_size[(uint32_t)src_var.type];
 
@@ -302,22 +290,22 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             break;
         }
 
-        // Only Kernel launches are synchronized
+        // Only kernel launches have to be synchronized
         if (op.type != OpType::KernelLaunch) {
             // Free unused memory, allocated since last barrier
             for (uint32_t j = last_free; j < i; ++j) {
-                jitc_log(LogLevel::Info, "replay(): gc for operation %u", j);
+                jitc_log(LogLevel::Debug, "replay(): gc for operation %u", j);
                 Operation &op = this->operations[j];
                 for (uint32_t p = op.dependency_range.first;
                      p < op.dependency_range.second; ++p) {
                     ParamInfo &info = this->dependencies[p];
                     ReplayVariable &rv = replay_variables[info.index];
                     rv.rc--;
-                    jitc_log(LogLevel::Info,
+                    jitc_log(LogLevel::Debug,
                              "replay(): decrement rc for slot %u new rc=%u",
                              info.index, rv.rc);
                     if (rv.rc == 0) {
-                        jitc_log(LogLevel::Info,
+                        jitc_log(LogLevel::Debug,
                                  "replay(): free memory for slot %u",
                                  info.index);
                         jitc_free(rv.data);
@@ -331,7 +319,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
     for (uint32_t i = 0; i < replay_variables.size(); ++i) {
         ReplayVariable &rv = replay_variables[i];
-        jitc_log(LogLevel::Info,
+        jitc_log(LogLevel::Debug,
                  "replay(): rv(%u, rc=%u, is_input=%u, data=%p)", i, rv.rc,
                  rv.rv_type == RecordType::Input, rv.data);
     }
@@ -339,11 +327,11 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     // Create output variables
     for (uint32_t i = 0; i < this->outputs.size(); ++i) {
         uint32_t index = this->outputs[i];
-        jitc_log(LogLevel::Info, "replay(): output(%u, slot=%u)", i, index);
+        jitc_log(LogLevel::Debug, "replay(): output(%u, slot=%u)", i, index);
         ReplayVariable &rv = replay_variables[index];
         if (rv.rv_type == RecordType::Input) {
             // Use input variable
-            jitc_log(LogLevel::Info, "    uses input %u", rv.index);
+            jitc_log(LogLevel::Debug, "    uses input %u", rv.index);
             jitc_assert(rv.data, "replay(): freed an input variable "
                                  "that is passed through!");
             uint32_t var_index = replay_inputs[rv.index];
@@ -445,6 +433,27 @@ Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
             "for backend %u, while no recording was started for this backend. "
             "Try to start the recording with jit_record_start.",
             (uint32_t)backend);
+    }
+}
+
+void jitc_record_abort(JitBackend backend) {
+    if (RecordThreadState *rts =
+            dynamic_cast<RecordThreadState *>(thread_state(backend));
+        rts != nullptr) {
+        
+        ThreadState *internal = rts->internal;
+        
+        // Perform reasignments to internal thread-state of possibly changed
+        // variables
+        internal->scope = rts->scope;
+        
+        if (backend == JitBackend::CUDA) {
+            thread_state_cuda = internal;
+        } else {
+            thread_state_llvm = internal;
+        }
+
+        delete rts;
     }
 }
 
