@@ -2508,6 +2508,8 @@ extern JIT_EXPORT bool jit_record_resume(JitBackend backend);
 
 /**
  * \brief Abort recording the ThreadState for this backend.
+ *      This will swap out the RecordThreadState for it's 
+ *      internal thread state, without saving the recording.
  *
  * \param backend
  *      The backend for which to abort recording the thread state.
