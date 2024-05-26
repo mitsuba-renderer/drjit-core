@@ -16,6 +16,7 @@ enum class OpType {
     Reduce,
     PrefixSum,
     MemcpyAsync,
+    Mkperm,
 };
 
 struct Operation {
@@ -27,6 +28,7 @@ struct Operation {
         Kernel kernel;
         ReduceOp rtype;
         bool exclusive;
+        uint32_t bucket_count;
     };
     size_t size;
     size_t input_size = 0;
@@ -73,8 +75,19 @@ struct RecordVariable {
     RecordVariable &operator|=(const RecordVariable &rhs) {
         if (this->type == VarType::Void)
             this->type = rhs.type;
+        else
+            jitc_assert(this->type == rhs.type,
+                        "record(): Missmatched types during update of "
+                        "RecordVariable, %s != %s",
+                        type_name[(uint32_t)this->type],
+                        type_name[(uint32_t)rhs.type]);
         if (this->size == 0)
             this->size = rhs.size;
+        else
+            jitc_assert(this->type == rhs.type,
+                        "record(): Missmatched sizes during update of "
+                        "RecordVariable, %u != %u",
+                        this->size, rhs.size);
         if (this->rv_type == RecordType::Other) {
             this->rv_type = rhs.rv_type;
             this->index = rhs.index;
@@ -109,7 +122,7 @@ struct Recording {
     JitBackend backend;
 
     void replay(const uint32_t *replay_input, uint32_t *outputs);
-    
+
     /// Computes the initial reference count for replay variables
     void compute_rc();
 };
@@ -168,7 +181,7 @@ struct RecordThreadState : ThreadState {
 
             size_t input_size = 0;
             size_t ptr_size = 0;
-            
+
             uint32_t start = this->recording.dependencies.size();
             for (uint32_t param_index = 0;
                  param_index < kernel_param_ids->size(); param_index++) {
@@ -176,7 +189,7 @@ struct RecordThreadState : ThreadState {
                 bool pointer_access = false;
                 uint32_t index = kernel_param_ids->at(param_index);
                 Variable *v = jitc_var(index);
-                
+
                 // Note, the ptr might not come from the variable but the
                 // `ScheduledVariable` if it is an output.
                 void *ptr =
@@ -237,13 +250,24 @@ struct RecordThreadState : ThreadState {
 
                 uint32_t slot = this->add_variable(ptr, rv);
 
-                jitc_log(LogLevel::Info,
-                         " -> recording param %u = var(%u, is_pointer=%u, "
-                         "size=%u, is_input=%u) at "
-                         "slot(%u)",
-                         param_index, kernel_param_ids->at(param_index),
-                         pointer_access, v->size,
-                         param_type == ParamType::Input, slot);
+                if (pointer_access) {
+                    jitc_log(LogLevel::Debug,
+                             " -> recording param %u = var(%u, points to r%u, "
+                             "size=%u, is_input=%u) at "
+                             "slot(%u)",
+                             param_index, kernel_param_ids->at(param_index),
+                             index, v->size, param_type == ParamType::Input,
+                             slot);
+                } else {
+
+                    jitc_log(LogLevel::Debug,
+                             " -> recording param %u = var(%u, "
+                             "size=%u, is_input=%u) at "
+                             "slot(%u)",
+                             param_index, kernel_param_ids->at(param_index),
+                             v->size, param_type == ParamType::Input, slot);
+                }
+
                 this->recording.dependencies.push_back(ParamInfo{
                     /*index=*/slot,
                     /*type=*/param_type,
@@ -379,9 +403,42 @@ struct RecordThreadState : ThreadState {
     uint32_t mkperm(const uint32_t *values, uint32_t size,
                     uint32_t bucket_count, uint32_t *perm,
                     uint32_t *offsets) override {
-        jitc_log(
-            LogLevel::Warn,
-            "RecordThreadState::mkperm(): unsupported function recording!");
+        if (!paused) {
+            if (has_variable(values)) {
+                jitc_log(LogLevel::Debug,
+                         "record(): mkperm(values=%p, size=%u, "
+                         "bucket_count=%u, perm=%p, offsets=%p)",
+                         values, size, bucket_count, perm, offsets);
+
+                uint32_t perm_size = size;
+                uint32_t offset_size = size * 4 + 1;
+
+                uint32_t values_id = this->get_variable(values);
+                uint32_t perm_id =
+                    this->add_variable(perm, RecordVariable{
+                                                 /*type=*/VarType::UInt32,
+                                                 /*size=*/perm_size,
+                                             });
+                uint32_t offsets_id =
+                    this->add_variable(offsets, RecordVariable{
+                                                    /*type=*/VarType::UInt32,
+                                                    /*size=*/offset_size,
+                                                });
+
+                uint32_t start = this->recording.dependencies.size();
+                this->recording.dependencies.push_back(values_id);
+                this->recording.dependencies.push_back(perm_id);
+                this->recording.dependencies.push_back(offsets_id);
+                uint32_t end = this->recording.dependencies.size();
+
+                Operation op;
+                op.type = OpType::Mkperm;
+                op.dependency_range = std::pair(start, end);
+                op.size = size;
+                op.bucket_count = bucket_count;
+                this->recording.operations.push_back(op);
+            }
+        }
         scoped_pause();
         return this->internal->mkperm(values, size, bucket_count, perm,
                                       offsets);

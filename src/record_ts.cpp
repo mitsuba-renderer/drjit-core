@@ -38,9 +38,9 @@ struct ReplayVariable {
                     "Usually, only output variables are allocated. This "
                     "indicates that something went wrong when recording.");
 
-        uint32_t dsize = size * type_size[(int)type];
+        size_t dsize = ((size_t)size) * ((size_t)type_size[(int)type]);
 
-        jitc_log(LogLevel::Debug, "    allocating output of size %u.", dsize);
+        jitc_log(LogLevel::Debug, "    allocating output of size %zu.", dsize);
 
         AllocType alloc_type =
             backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
@@ -284,6 +284,42 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             ts->memcpy_async(dst_var.data, src_var.data, size);
         } break;
+        case OpType::Mkperm: {
+            jitc_log(LogLevel::Debug, "Mkperm:");
+            uint32_t dependency_index = op.dependency_range.first;
+            ParamInfo values_info = this->dependencies[dependency_index];
+            ParamInfo perm_info = this->dependencies[dependency_index + 1];
+            ParamInfo offsets_info = this->dependencies[dependency_index + 2];
+
+            ReplayVariable &values_var = replay_variables[values_info.index];
+            ReplayVariable &perm_var = replay_variables[perm_info.index];
+            ReplayVariable &offsets_var = replay_variables[offsets_info.index];
+
+            uint32_t size = values_var.size;
+            uint32_t bucket_count = op.bucket_count;
+
+            jitc_log(LogLevel::Info, " -> values: slot(%u, data=%p, size=%u)",
+                     values_info.index, values_var.data, values_var.size);
+
+            jitc_log(LogLevel::Info, " <- perm: slot(%u)", perm_info.index);
+            perm_var.size = size;
+            perm_var.alloc(backend);
+
+            jitc_log(LogLevel::Info, " <- offsets: slot(%u)",
+                     offsets_info.index);
+            offsets_var.size = bucket_count * 4 + 1;
+            offsets_var.alloc(backend);
+
+            jitc_log(LogLevel::Debug,
+                     "    mkperm(values=%p, size=%u, "
+                     "bucket_count=%u, perm=%p, offsets=%p)",
+                     values_var.data, size, bucket_count, perm_var.data,
+                     offsets_var.data);
+
+            ts->mkperm((uint32_t *)values_var.data, size, bucket_count,
+                       (uint32_t *)perm_var.data, (uint32_t *)offsets_var.data);
+
+        } break;
         default:
             jitc_fail("An operation has been recorded, that is not known to "
                       "the replay functionality!");
@@ -440,13 +476,13 @@ void jitc_record_abort(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
-        
+
         ThreadState *internal = rts->internal;
-        
+
         // Perform reasignments to internal thread-state of possibly changed
         // variables
         internal->scope = rts->scope;
-        
+
         if (backend == JitBackend::CUDA) {
             thread_state_cuda = internal;
         } else {
