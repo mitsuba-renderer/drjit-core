@@ -1210,6 +1210,9 @@ extern JIT_EXPORT int jit_var_is_zero_literal(uint32_t index);
 /// Check if a variable represents a normal (not NaN/infinity) literal
 extern JIT_EXPORT int jit_var_is_finite_literal(uint32_t index);
 
+/// Check if the data field of a variable is unaligned
+extern JIT_EXPORT int jit_var_is_unaligned(uint32_t index);
+
 /**
  * \brief Resize a scalar variable to a new size
  *
