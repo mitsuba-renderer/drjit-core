@@ -34,19 +34,24 @@ struct ReplayVariable {
     }
 
     void alloc(JitBackend backend) {
-        jitc_assert(data == nullptr,
-                    "replay(): Tried to allocate replay variable twice! "
-                    "Usually, only output variables are allocated. This "
-                    "indicates that something went wrong when recording.");
+        if (!data) {
 
-        size_t dsize = ((size_t)size) * ((size_t)type_size[(int)type]);
+            size_t dsize = ((size_t)size) * ((size_t)type_size[(int)type]);
 
-        jitc_log(LogLevel::Debug, "    allocating output of size %zu.", dsize);
+            jitc_log(LogLevel::Debug, "    allocating output of size %zu.",
+                     dsize);
 
-        AllocType alloc_type =
-            backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
+            AllocType alloc_type = backend == JitBackend::CUDA
+                                       ? AllocType::Device
+                                       : AllocType::Host;
 
-        data = jitc_malloc(alloc_type, dsize);
+            data = jitc_malloc(alloc_type, dsize);
+        } else {
+            jitc_log(LogLevel::Warn,
+                     "replay(): Tried to allocate replay variable twice! "
+                     "Usually, only output variables are allocated. This "
+                     "indicates that something went wrong when recording.");
+        }
     }
 };
 
@@ -231,6 +236,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                              src_var.data);
         } break;
         case OpType::Reduce: {
+            jitc_log(LogLevel::Debug, "replay(): Reduce");
             uint32_t dependency_index = op.dependency_range.first;
 
             ParamInfo ptr_info = this->dependencies[dependency_index];
@@ -243,6 +249,11 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             VarType type = ptr_var.type;
             ReduceOp rtype = op.rtype;
+
+            jitc_log(LogLevel::Debug, " -> slot(%u, data=%p)", ptr_info.index,
+                     ptr_var.data);
+            jitc_log(LogLevel::Debug, " <- slot(%u, data=%p)", out_info.index,
+                     out_var.data);
 
             ts->reduce(type, rtype, ptr_var.data, ptr_var.size, out_var.data);
         } break;
@@ -321,7 +332,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
         } break;
         case OpType::Aggregate: {
-            jitc_log(LogLevel::Debug, "Aggregate:");
+            jitc_log(LogLevel::Debug, "replay(): Aggregate");
 
             uint32_t i = op.dependency_range.first;
 
