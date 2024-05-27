@@ -17,6 +17,7 @@ enum class OpType {
     PrefixSum,
     MemcpyAsync,
     Mkperm,
+    Aggregate,
 };
 
 struct Operation {
@@ -101,11 +102,17 @@ struct ParamInfo {
     uint32_t index;
     ParamType type;
     bool pointer_access;
+    uint32_t extra;
 
     ParamInfo(uint32_t index) : index(index) {
     }
     ParamInfo(uint32_t index, ParamType type, bool pointer_access)
         : index(index), type(type), pointer_access(pointer_access) {
+    }
+    ParamInfo(uint32_t index, ParamType type, bool pointer_access,
+              uint32_t extra)
+        : index(index), type(type), pointer_access(pointer_access),
+          extra(extra) {
     }
 };
 
@@ -252,20 +259,18 @@ struct RecordThreadState : ThreadState {
 
                 if (pointer_access) {
                     jitc_log(LogLevel::Debug,
-                             " -> recording param %u = var(%u, points to r%u, "
-                             "size=%u, is_input=%u) at "
-                             "slot(%u)",
+                             " %s recording param %u = var(%u, points to r%u, "
+                             "size=%u, data=%p) at slot(%u)",
+                             param_type == ParamType::Output ? "<-" : "->",
                              param_index, kernel_param_ids->at(param_index),
-                             index, v->size, param_type == ParamType::Input,
-                             slot);
+                             index, v->size, ptr, slot);
                 } else {
-
                     jitc_log(LogLevel::Debug,
-                             " -> recording param %u = var(%u, "
-                             "size=%u, is_input=%u) at "
-                             "slot(%u)",
+                             " %s recording param %u = var(%u, size=%u, "
+                             "data=%p) at slot(%u)",
+                             param_type == ParamType::Output ? "<-" : "->",
                              param_index, kernel_param_ids->at(param_index),
-                             v->size, param_type == ParamType::Input, slot);
+                             v->size, ptr, slot);
                 }
 
                 this->recording.dependencies.push_back(ParamInfo{
@@ -511,11 +516,56 @@ struct RecordThreadState : ThreadState {
     }
 
     void aggregate(void *dst, AggregationEntry *agg, uint32_t size) override {
-        jitc_log(
-            LogLevel::Warn,
-            "RecordThreadState::aggregate(): unsupported function recording!");
+        if (!paused) {
+            jitc_log(LogLevel::Debug, "record(): aggregate(dst=%p, size=%u)",
+                     dst, size);
+
+            uint32_t dst_id =
+                this->add_variable(dst, RecordVariable{
+                                            /*type=*/VarType::UInt8,
+                                            /*size=*/0,
+                                        });
+
+            jitc_log(LogLevel::Debug, " <- slot(%u)", dst_id);
+
+            uint32_t start = this->recording.dependencies.size();
+
+            this->recording.dependencies.push_back(ParamInfo{
+                /*index=*/dst_id,
+                /*type=*/ParamType::Output,
+                /*pointer_access=*/false,
+            });
+
+            for (uint32_t i = 0; i < size; ++i) {
+                AggregationEntry &p = agg[i];
+
+                jitc_log(LogLevel::Debug, " -> entry(src=%p)", p.src);
+
+                // NOTE: for literals, we just fail for now
+                uint32_t index = get_variable(p.src);
+
+                jitc_log(LogLevel::Debug, "    at slot %u", index);
+
+                RecordVariable &rv = this->recording.record_variables[index];
+
+                this->recording.dependencies.push_back(ParamInfo{
+                    /*index=*/index,
+                    /*type=*/ParamType::Input,
+                    /*pointer_access=*/rv.type == VarType::Pointer,
+                    /*extra=*/p.offset,
+                });
+            }
+
+            uint32_t end = this->recording.dependencies.size();
+
+            Operation op;
+            op.type = OpType::Aggregate;
+            op.dependency_range = std::pair(start, end);
+            op.size = size;
+            this->recording.operations.push_back(op);
+        }
         scoped_pause();
-        return this->internal->aggregate(dst, agg, size);
+        this->internal->aggregate(dst, agg, size);
     }
 
     // Enqueue a function to be run on the host once backend computation is done

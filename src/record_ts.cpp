@@ -1,5 +1,6 @@
 #include "record_ts.h"
 #include "common.h"
+#include "drjit-core/jit.h"
 #include "internal.h"
 #include "log.h"
 #include "var.h"
@@ -60,7 +61,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     // Perform validation
     for (uint32_t i = 0; i < this->record_variables.size(); ++i) {
         RecordVariable &rv = this->record_variables[i];
-        jitc_assert(rv.type != VarType::Void,
+        jitc_assert(rv.type != VarType::Void && rv.size > 0,
                     "Recorded Variable at slot(%u) was added, it's type is "
                     "unknown! This can occur, if a variable is only used by "
                     "operations, that do not provide a type.",
@@ -179,10 +180,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ReplayVariable &rv = replay_variables[info.index];
 
                 jitc_log(LogLevel::Info,
-                         " -> param slot(%u, rc=%u, is_pointer=%u, "
-                         "is_output=%u, size=%u)",
-                         info.index, rv.rc, info.pointer_access,
-                         info.type == ParamType::Output, rv.size);
+                         " %s param slot(%u, rc=%u, is_pointer=%u, size=%u)",
+                         info.type == ParamType::Output ? "<-" : "->",
+                         info.index, rv.rc, info.pointer_access, rv.size);
 
                 if (info.type == ParamType::Output) {
                     rv.size = launch_size;
@@ -318,6 +318,57 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             ts->mkperm((uint32_t *)values_var.data, size, bucket_count,
                        (uint32_t *)perm_var.data, (uint32_t *)offsets_var.data);
+
+        } break;
+        case OpType::Aggregate: {
+            jitc_log(LogLevel::Debug, "Aggregate:");
+
+            uint32_t i = op.dependency_range.first;
+
+            ParamInfo dst_info = this->dependencies[i++];
+            ReplayVariable &dst_rv = replay_variables[dst_info.index];
+            // Assume, that size is known
+            dst_rv.alloc(backend);
+
+            jitc_log(LogLevel::Debug, " <- slot(%u, is_pointer=%u, data=%p)",
+                     dst_info.index, dst_info.pointer_access, dst_rv.data);
+
+            AggregationEntry *agg = nullptr;
+
+            size_t agg_size = sizeof(AggregationEntry) * op.size;
+
+            if (backend == JitBackend::CUDA)
+                agg = (AggregationEntry *)jitc_malloc(AllocType::HostPinned,
+                                                      agg_size);
+            else
+                agg = (AggregationEntry *)malloc_check(agg_size);
+
+            AggregationEntry *p = agg;
+
+            for (; i < op.dependency_range.second; ++i) {
+                ParamInfo param = this->dependencies[i];
+                jitc_assert(param.type == ParamType::Input, "");
+
+                ReplayVariable &rv = replay_variables[param.index];
+                jitc_assert(rv.data != nullptr,
+                            "replay(): Encountered nullptr input parameter.");
+
+                jitc_log(LogLevel::Debug,
+                         " -> slot(%u, is_pointer=%u, data=%p)", param.index,
+                         param.pointer_access, rv.data);
+
+                p->size = param.pointer_access
+                              ? 8
+                              : -(int)type_size[(uint32_t)rv.type];
+                p->offset = param.extra;
+                p->src = rv.data;
+                p++;
+            }
+
+            jitc_assert(dst_rv.data != nullptr,
+                        "replay(): Error allocating dst.");
+
+            ts->aggregate(dst_rv.data, agg, (uint32_t)(p - agg));
 
         } break;
         default:
