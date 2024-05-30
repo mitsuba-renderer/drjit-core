@@ -107,8 +107,10 @@ uint32_t jitc_array_read(uint32_t source, uint32_t offset, uint32_t mask_) {
 
     Ref mask = steal(jitc_var_mask_apply(mask_, 1));
     Variable *vo = jitc_var(offset),
+             *vs = jitc_var(source),
              *vm = jitc_var(mask);
     JitBackend backend = (JitBackend) vm->backend;
+    uint32_t array_length = vs->array_length;
 
     if (vm->is_literal() && vm->literal == 0) {
         // Elide the read (it is fully masked)
@@ -123,8 +125,13 @@ uint32_t jitc_array_read(uint32_t source, uint32_t offset, uint32_t mask_) {
         uint64_t one = 1;
         mask = steal(jitc_var_literal(backend, VarType::Bool, &one, 1, 0));
     }
+    uint32_t flags = jit_flags();
 
-    Variable *vs = jitc_var(source);
+    if (flags & (uint32_t) JitFlag::Debug)
+        mask = steal(jitc_var_check_bounds(
+            BoundsCheckType::ArrayRead, offset, mask, array_length));
+
+    vs = jitc_var(source);
     vo = jitc_var(offset);
     vm = jitc_var(mask);
 
@@ -142,18 +149,20 @@ uint32_t jitc_array_read(uint32_t source, uint32_t offset, uint32_t mask_) {
             (vs->size != size && vs->size != 1) ||
             (vm->size != size && vm->size != 1),
             "incompatible sizes (%u, %u, and %u)", vs->size, vo->size, vm->size);
-    fail_if(vo->is_literal() && vo->literal >= vs->array_length,
-            "out of bounds read (source size=%zu, offset=%zu)",
-            vs->literal, vo->literal);
+    fail_if(vo->is_literal() && vo->literal >= (uint64_t) array_length,
+            "out of bounds read (source size=%u, offset=%zu)",
+            array_length, vo->literal);
 
     #undef fail_if
 
-    if (vs->kind == (uint32_t) VarKind::ArrayInit) {
-        jitc_var_inc_ref(vs->dep[1]);
-        return vs->dep[1];
-    } else if (vs->kind == (uint32_t) VarKind::Array) {
-        // uninitialized read
-        return jitc_var_undefined(backend, (VarType) vs->type, size);
+    if ((flags & (uint32_t) JitFlag::SymbolicScope) == 0) {
+        if (vs->kind == (uint32_t) VarKind::ArrayInit) {
+            jitc_var_inc_ref(vs->dep[1]);
+            return vs->dep[1];
+        } else if (vs->kind == (uint32_t) VarKind::Array) {
+            // uninitialized read
+            return jitc_var_undefined(backend, (VarType) vs->type, size);
+        }
     }
 
     if (vo->is_dirty()) {
@@ -259,8 +268,8 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
             "incompatible sizes (%u, %u, %u, and %u)",
             vt->size, vo->size, vv->size, vm->size);
     fail_if(vo->is_literal() && vo->literal >= array_length,
-            "out of bounds write (target size=%zu, offset=%zu)",
-            vt->literal, vo->literal);
+            "out of bounds write (target size=%u, offset=%zu)",
+            (uint32_t) array_length, vo->literal);
 
     #undef fail_if
 
@@ -278,6 +287,15 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
             jitc_raise_dirty_error(value);
         if (vm->is_dirty())
             jitc_raise_dirty_error(mask);
+    }
+
+    if (jit_flag(JitFlag::Debug)) {
+        mask = steal(jitc_var_check_bounds(
+            BoundsCheckType::ArrayWrite, offset, mask, array_length));
+        vt = jitc_var(target);
+        vo = jitc_var(offset);
+        vv = jitc_var(value);
+        vm = jitc_var(mask);
     }
 
     bool literal_offset = vo->is_literal();

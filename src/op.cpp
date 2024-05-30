@@ -1649,6 +1649,14 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
                         msg = "drjit.scatter_add_kahan(): out-of-bounds write to position";
                         break;
 
+                    case BoundsCheckType::ArrayRead:
+                        msg = "drjit.Local.read(): out-of-bounds read from position";
+                        break;
+
+                    case BoundsCheckType::ArrayWrite:
+                        msg = "drjit.Local.write(): out-of-bounds write to position";
+                        break;
+
                     case BoundsCheckType::Call:
                         msg = "Attempted to invoke callable with index";
                         msg2 = ", but this value must be strictly smaller than";

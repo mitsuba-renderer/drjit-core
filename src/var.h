@@ -285,7 +285,9 @@ enum class BoundsCheckType {
     PacketGather,
     PacketScatter,
     PacketScatterReduce,
-    Call
+    Call,
+    ArrayRead,
+    ArrayWrite
 };
 
 /// In debug mode: insert a bounds check, e.g. before gathering/scattering
