@@ -53,9 +53,11 @@ extern void jitc_llvm_render_array_init(Variable *v, Variable *pred, Variable *v
             v->array_length * type_size[v->type] * jitc_llvm_vector_width);
     } else {
         const char *ext = "";
+        const Variable *src = value;
         if (value->type == (uint32_t) VarType::Bool) {
-            fmt("    $v_arr_e = zext $V to $M\n", value, value, value);
-            ext = "_arr_e";
+            fmt("    $v_e = zext $V to $M\n", v, value, value);
+            ext = "_e";
+            src = v;
         }
         fmt("    $v_base = bitcast $m* %arr_$u to {$M*}\n"
             "    br label %l_$u_pre\n\n"
@@ -79,7 +81,7 @@ extern void jitc_llvm_render_array_init(Variable *v, Variable *pred, Variable *v
             // gep
             v, v, v, v, v,
             // store
-            value, value, ext, v, v, v,
+            value, src, ext, v, v, v,
             v, v,
             v, v, v->array_length,
             v, v->reg_index, v->reg_index,
@@ -269,9 +271,9 @@ void jitc_llvm_render_array_write(Variable *v, Variable *target,
             fmt("    store $M $v$s, $M* $v_{4|3}, align $A\n",
                 v, value, ext, v, v, v);
         } else {
-            fmt("    $v_4 = load $M, $M* $v_{4|3}, align $A\n"
-                "    $v_5 = select $V, $M $v$s, $V_4\n"
-                "    store $V_5, $M* $v_{4|3}, align $A\n",
+            fmt("    $v_5 = load $M, $M* $v_{4|3}, align $A\n"
+                "    $v_6 = select $V, $M $v$s, $V_5\n"
+                "    store $V_6, $M* $v_{4|3}, align $A\n",
                 v, v, v, v, v,
                 v, mask, v, value, ext, v,
                 v, v, v, v);
