@@ -59,7 +59,7 @@ enum class VarKind : uint32_t {
     Eq, Neq, Lt, Le, Gt, Ge,
 
     // Ternary operator
-    Select,
+    Select, ArraySelect,
 
     // Bit-level counting operations
     Popc, Clz, Ctz, Brev,

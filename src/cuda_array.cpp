@@ -141,3 +141,30 @@ void jitc_cuda_render_array_memcpy_out(const Variable *v) {
         v->reg_index
     );
 }
+
+void jitc_cuda_render_array_select(Variable *v, Variable *mask, Variable *t, Variable *f) {
+    uint32_t reg_index = jitc_var(jitc_array_buffer(v))->reg_index;
+    fmt("    mov.u32 %r3, 0;\n\n"
+        "l_$u_select:\n"
+        "    {\n"
+        "        .reg.$B %vf, %vt, %vv;\n"
+        "        ld.local.$B %vt, arr_$u[%r3];\n"
+        "        ld.local.$B %vf, arr_$u[%r3];\n"
+        "        selp.$B %vv, %vt, %vf, $v;\n"
+        "        st.local.$B arr_$u[%r3], %vv;\n"
+        "    }\n"
+        "    add.u32 %r3, %r3, 1;\n"
+        "    setp.lt.u32 %p2, %r3, $u;\n"
+        "    @%p2 bra l_$u_select;\n\n",
+        v->reg_index,
+        v,
+        v, t->reg_index,
+        v, f->reg_index,
+        v, mask,
+        v, reg_index,
+        (uint32_t) f->array_length,
+        v->reg_index
+    );
+
+    v->reg_index = reg_index;
+}

@@ -161,7 +161,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "eq", "neq", "lt", "le", "gt", "ge",
 
     // Ternary operator
-    "select",
+    "select", "array_select",
 
     // Bit-level counting operations
     "popc", "clz", "ctz", "brev",

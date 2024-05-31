@@ -1095,6 +1095,10 @@ static void jitc_llvm_render(Variable *v) {
             jitc_llvm_render_array_read(v, a0, a1, a2);
             break;
 
+        case VarKind::ArraySelect:
+            jitc_llvm_render_array_select(v, a0, a1, a2);
+            break;
+
         default:
             jitc_fail("jitc_llvm_render(): unhandled node kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);

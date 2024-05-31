@@ -7,6 +7,7 @@
 #include "eval.h"
 #include "util.h"
 #include "op.h"
+#include "array.h"
 
 #if defined(_MSC_VER)
 #  pragma warning (disable: 4702) // unreachable code
@@ -16,13 +17,14 @@ template <bool Value> using enable_if_t = std::enable_if_t<Value, int>;
 
 /// Various checks that can be requested from jitc_var_check()
 enum CheckFlags {
-    Disabled = 0,
     IsArithmetic = 1,
     IsInt = 2,
     IsIntOrBool = 4,
     IsNotVoid = 8,
     IsFloat = 16,
-    IsCUDA = 32
+    IsCUDA = 32,
+    ArrayAllowed = 64,
+    IgnoreTypes = 128
 };
 
 /// Summary information about a set of variables returned by jitc_var_check()
@@ -133,7 +135,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
             }
         }
 
-        if constexpr (Flags != Disabled) {
+        if constexpr (!bool(Flags & IgnoreTypes)) {
             if (unlikely(type != VarType::Void && (VarType) vi->type != type)) {
                 err = "operands have incompatible types";
                 goto fail;
@@ -182,9 +184,11 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
     }
 
 #if !defined(NDEBUG)
-    if (unlikely(array)) {
-        err = "array operands are not supported";
-        goto fail;
+    if constexpr (!bool(Flags & ArrayAllowed)) {
+        if (unlikely(array)) {
+            err = "array operands are not supported";
+            goto fail;
+        }
     }
 #else
     (void) array;
@@ -213,7 +217,7 @@ fail:
     throw std::runtime_error(buffer.get());
 }
 
-template <int Flags = Disabled, typename... Args>
+template <int Flags = IgnoreTypes, typename... Args>
 JIT_INLINE auto jitc_var_check(const char *name, Args... args) {
     return jitc_var_check_impl<Flags>(
         name, std::make_index_sequence<sizeof...(Args)>(), args...);
@@ -950,9 +954,11 @@ uint32_t jitc_var_ge(uint32_t a0, uint32_t a1) {
 // --------------------------------------------------------------------------
 
 uint32_t jitc_var_select(uint32_t a0, uint32_t a1, uint32_t a2) {
-    auto [info, v0, v1, v2] = jitc_var_check("jit_var_select", a0, a1, a2);
+    auto [info, v0, v1, v2] = jitc_var_check<ArrayAllowed | IgnoreTypes>("jit_var_select", a0, a1, a2);
 
-    if (info.size && (!jitc_is_bool(v0) || v1->type != v2->type))
+    if (info.size &&
+        (!jitc_is_bool(v0) || v1->type != v2->type ||
+         (v1->is_array() != v2->is_array())))
         jitc_raise("jitc_var_select(): invalid operands!");
 
     info.type = (VarType) v1->type;
@@ -965,10 +971,34 @@ uint32_t jitc_var_select(uint32_t a0, uint32_t a1, uint32_t a2) {
             return jitc_var_resize(a2, info.size);
     }
 
-    if (!result && info.size)
-        result = jitc_var_new_node_3(info.backend, VarKind::Select, info.type,
-                                    info.size, info.symbolic,
-                                    a0, v0, a1, v1, a2, v2);
+    if (!result && info.size) {
+        if (!v1->is_array()) {
+            result = jitc_var_new_node_3(info.backend, VarKind::Select,
+                                         info.type, info.size, info.symbolic,
+                                         a0, v0, a1, v1, a2, v2);
+        } else {
+            uint32_t array_length = v1->array_length;
+            if (v2->array_length != array_length || v0->is_array())
+                jitc_raise("jitc_var_select(): invalid operands!");
+
+            Ref a3 = steal(jitc_array_create(info.backend, info.type, info.size, array_length));
+
+            v0 = jitc_var(a0);
+            v1 = jitc_var(a1);
+            v2 = jitc_var(a2);
+            Variable *v3 = jitc_var(a3);
+
+            result = jitc_var_new_node_4(info.backend, VarKind::ArraySelect,
+                                         info.type, info.size, info.symbolic,
+                                         a0, v0, a1, v1, a2, v2, a3, v3);
+
+            Variable *v = jitc_var(result);
+            jitc_lvn_drop(result, v);
+
+            v->array_length = array_length;
+            v->array_state = (uint32_t) ArrayState::Clean;
+        }
+    }
 
     jitc_trace("jit_var_select(r%u <- r%u, r%u, r%u)", result, a0, a1, a2);
     return result;
@@ -1587,7 +1617,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
 uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
                                uint32_t mask, uint32_t array_size) {
     auto [info, v_index, v_mask] =
-        jitc_var_check<Disabled>("jit_var_check_bounds", index, mask);
+        jitc_var_check("jit_var_check_bounds", index, mask);
 
     uint64_t zero;
     Ref buf = steal(jitc_var_literal(info.backend, VarType::UInt32, &zero, 1, 1)),

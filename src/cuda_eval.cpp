@@ -569,6 +569,10 @@ static void jitc_cuda_render(Variable *v) {
             v->reg_index = a0->reg_index;
             break;
 
+        case VarKind::ArraySelect:
+            jitc_cuda_render_array_select(v, a0, a1, a2);
+            break;
+
         case VarKind::Select:
             if (!jitc_is_bool(a1)) {
                 fmt("    selp.$b $v, $v, $v, $v;\n", v, v, a1, a2, a0);

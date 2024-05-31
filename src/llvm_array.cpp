@@ -66,8 +66,8 @@ extern void jitc_llvm_render_array_init(Variable *v, Variable *pred, Variable *v
             "    $v_ptr = getelementptr inbounds $M, {$M*} $v_base, i64 $v_cur\n"
             "    store $M $v$s, {$M*} $v_ptr, align $A\n"
             "    $v_next = add i64 $v_cur, 1\n"
-            "    $v_pred = icmp ult i64 $v_next, $u\n"
-            "    br i1 $v_pred, label %l_$u_loop, label %l_$u_done\n\n"
+            "    $v_cont = icmp ult i64 $v_next, $u\n"
+            "    br i1 $v_cont, label %l_$u_loop, label %l_$u_done\n\n"
             "l_$u_done:\n",
             v, v, v->reg_index, v,
             v->reg_index,
@@ -400,5 +400,50 @@ void jitc_llvm_render_array_memcpy_out(const Variable *v) {
         v, v, v,
         v, v, v->reg_index,
         v, v, v, v, v->array_length * type_size[v->type] * jitc_llvm_vector_width
+    );
+}
+
+void jitc_llvm_render_array_select(Variable *v, Variable *mask, Variable *t, Variable *f) {
+    uint32_t reg_index = jitc_var(jitc_array_buffer(v))->reg_index;
+    v->reg_index = reg_index;
+
+    fmt("    $v_tp = bitcast $m* %arr_$u to {$M*}\n"
+        "    $v_fp = bitcast $m* %arr_$u to {$M*}\n"
+        "    $v_vp = bitcast $m* %arr_$u to {$M*}\n"
+        "    br label %l_$u_pre\n\n"
+        "l_$u_pre:\n"
+        "    br label %l_$u_loop\n\n"
+        "l_$u_loop:\n"
+        "    $v_cur = phi i64 [ 0, %l_$u_pre ], [ $v_next, %l_$u_loop ]\n"
+        "    $v_ti = getelementptr inbounds $M, {$M*} $v_tp, i64 $v_cur\n"
+        "    $v_fi = getelementptr inbounds $M, {$M*} $v_fp, i64 $v_cur\n"
+        "    $v_vi = getelementptr inbounds $M, {$M*} $v_vp, i64 $v_cur\n"
+        "    $v_t = load $M, {$M*} $v_ti, align $A\n"
+        "    $v_f = load $M, {$M*} $v_fi, align $A\n"
+        "    $v_v = select $V, $M $v_t, $M $v_f\n"
+        "    store $M $v_v, {$M*} $v_vi, align $A\n"
+        "    $v_next = add i64 $v_cur, 1\n"
+        "    $v_cont = icmp ult i64 $v_next, $u\n"
+        "    br i1 $v_cont, label %l_$u_loop, label %l_$u_done\n\n"
+        "l_$u_done:\n",
+        v, v, t->reg_index, v,
+        v, v, f->reg_index, v,
+        v, v, v->reg_index, v,
+        reg_index,
+        reg_index,
+        reg_index,
+        reg_index,
+        v, reg_index, v, reg_index,
+        v, v, v, v, v,
+        v, v, v, v, v,
+        v, v, v, v, v,
+        v, v, v, v, v,
+        v, v, v, v, v,
+        v, mask, v, v, v, v,
+        v, v, v, v, v,
+        v, v,
+        v, v, v->array_length,
+        v, reg_index, reg_index,
+        reg_index
     );
 }
