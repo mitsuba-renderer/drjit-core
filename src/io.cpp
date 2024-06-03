@@ -453,14 +453,13 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
             jitc_fail("jit_kernel_free(): VirtualFree() failed!");
 #endif
     } else {
-        const Device &device = state.devices.at(device_id);
         if (kernel.size) {
-            scoped_set_context guard(device.context);
+            scoped_set_context guard(state.devices.at(device_id).context);
             cuda_check(cuModuleUnload(kernel.cuda.mod));
             free(kernel.data);
         } else {
 #if defined(DRJIT_ENABLE_OPTIX)
-            jitc_optix_free(kernel);
+            jitc_optix_free(device_id, kernel);
 #endif
         }
     }
