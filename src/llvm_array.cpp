@@ -376,7 +376,7 @@ void jitc_llvm_render_array_memcpy_in(const Variable *v) {
         v, v,
         v, v,
         v, v, v,
-        v, v->array_length,
+        v, v->size == 1 ? 0 : v->array_length,
         v, v, v, v, v,
         v, v, v,
         v, v, v->reg_index,
