@@ -150,8 +150,8 @@ uint32_t jitc_array_read(uint32_t source, uint32_t offset, uint32_t mask_) {
             (vm->size != size && vm->size != 1),
             "incompatible sizes (%u, %u, and %u)", vs->size, vo->size, vm->size);
     fail_if(vo->is_literal() && vo->literal >= (uint64_t) array_length,
-            "out of bounds read (source size=%u, offset=%zu)",
-            array_length, vo->literal);
+            "out of bounds read (source size=%u, offset=%u)",
+            array_length, (uint32_t) vo->literal);
 
     #undef fail_if
 
@@ -268,8 +268,8 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
             "incompatible sizes (%u, %u, %u, and %u)",
             vt->size, vo->size, vv->size, vm->size);
     fail_if(vo->is_literal() && vo->literal >= array_length,
-            "out of bounds write (target size=%u, offset=%zu)",
-            (uint32_t) array_length, vo->literal);
+            "out of bounds write (target size=%u, offset=%u)",
+            (uint32_t) array_length, (uint32_t) vo->literal);
 
     #undef fail_if
 
@@ -360,10 +360,12 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
 }
 
 uint32_t jitc_array_buffer(const Variable *v) {
-    if (v->extra)
-        return (uint32_t) (uintptr_t) state.extra[v->extra].callback_data;
-    else
-        return v->dep[3];
+    if (v->extra) {
+        uintptr_t data = (uintptr_t) state.extra[v->extra].callback_data;
+        if (data)
+            return (uint32_t) data;
+    }
+    return v->dep[3];
 }
 
 void jitc_process_array_op(VarKind kind, Variable *v) {

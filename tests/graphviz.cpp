@@ -43,7 +43,7 @@ TEST_CUDA_FP32(01_graphviz) {
 
     const char *ref = R"(digraph {
     rankdir=TB;
-    graph [dpi=50 fontname=Consolas];
+    graph [fontname=Consolas];
     node [shape=record fontname=Consolas];
     edge [fontname=Consolas];
     1 [label="{counter|{Type: cuda u32|Size: 11}|{r1|Refs: 1}}}"];
