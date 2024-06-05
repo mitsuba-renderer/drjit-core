@@ -1619,7 +1619,7 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
     auto [info, v_index, v_mask] =
         jitc_var_check("jit_var_check_bounds", index, mask);
 
-    uint64_t zero;
+    uint64_t zero = 0;
     Ref buf = steal(jitc_var_literal(info.backend, VarType::UInt32, &zero, 1, 1)),
         buffer_ptr =
             steal(jitc_var_pointer(info.backend, jitc_var(buf)->data, buf, 1));
