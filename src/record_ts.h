@@ -30,6 +30,7 @@ struct Operation {
         ReduceOp rtype;
         bool exclusive;
         uint32_t bucket_count;
+        uint64_t data;
     };
     size_t size;
     size_t input_size = 0;
@@ -317,8 +318,32 @@ struct RecordThreadState : ThreadState {
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
                       const void *src) override {
 
-        jitc_log(LogLevel::Warn, "RecordThreadState::memset_async(): "
-                                 "unsupported function recording!");
+        if (!paused) {
+            jitc_log(LogLevel::Debug,
+                     "record(): memset_async(ptr=%p, size=%u, "
+                     "isize=%u, src=%p)",
+                     ptr, size, isize, src);
+            jitc_assert(isize <= 8,
+                        "record(): Tried to call memset_async with isize=%u, "
+                        "only isize<=8 is supported!",
+                        isize);
+
+            RecordVariable rv;
+            rv.size = size;
+            uint32_t ptr_id = this->add_variable(ptr, rv);
+
+            uint32_t start = this->recording.dependencies.size();
+            this->recording.dependencies.push_back(ptr_id);
+            uint32_t end = this->recording.dependencies.size();
+
+            Operation op;
+            op.type = OpType::MemsetAsync;
+            op.dependency_range = std::pair(start, end);
+            op.size = size;
+            std::memcpy(&op.data, src, isize);
+
+            this->recording.operations.push_back(op);
+        }
 
         scoped_pause();
         return this->internal->memset_async(ptr, size, isize, src);

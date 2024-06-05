@@ -225,15 +225,16 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             uint32_t dependency_index = op.dependency_range.first;
 
             ParamInfo ptr_info = this->dependencies[dependency_index];
-            ParamInfo src_info = this->dependencies[dependency_index + 1];
 
             ReplayVariable &ptr_var = replay_variables[ptr_info.index];
-            ReplayVariable &src_var = replay_variables[src_info.index];
+            VarType type = replay_variables[ptr_info.index].type;
+            ptr_var.alloc(backend);
 
-            VarType type = replay_variables[src_info.index].type;
+            jitc_log(LogLevel::Debug, "replay(): MemsetAsync -> slot(%u)",
+                     ptr_info.index);
 
-            ts->memset_async(ptr_var.data, op.size, type_size[(uint32_t)type],
-                             src_var.data);
+            ts->memset_async(ptr_var.data, ptr_var.size,
+                             type_size[(uint32_t)type], &op.data);
         } break;
         case OpType::Reduce: {
             jitc_log(LogLevel::Debug, "replay(): Reduce");
