@@ -2377,6 +2377,14 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // stashed via \ref jitc_var_stash_ref() (e.g., prior to a control flow
     // operation like dr.if_stmt()), then use that instead.
     target_v = jitc_var(target);
+
+    if (target_v->is_dirty() && op == ReduceOp::Identity 
+                             && mode != ReduceMode::Permute 
+                             && mode != ReduceMode::NoConflicts) {
+        jitc_var_eval(target);
+        target_v = jitc_var(target);
+    }
+
     if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));
 
@@ -2475,6 +2483,18 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         jitc_var_check("jit_var_scatter", index_, mask);
     const uint32_t target_size = target_v->size;
     const JitBackend backend = var_info.backend;
+
+    if (target_v->is_dirty() && op == ReduceOp::Identity 
+                             && mode != ReduceMode::Permute 
+                             && mode != ReduceMode::NoConflicts) {
+        jitc_var_eval(target);
+        jitc_var_eval(index_);
+        jitc_var_eval(mask);
+
+        target_v = jitc_var(target);
+        index_v = jitc_var(index_);
+        mask_v = jitc_var(mask);
+    }
 
     // Go to the original if 'target' is wrapped into a loop state variable
     unwrap(target, target_v);
