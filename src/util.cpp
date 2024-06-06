@@ -26,7 +26,8 @@ const char *reduction_name[(int) ReduceOp::Count] = { "none", "sum", "mul",
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
 void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
-                     uint32_t size = 1) {
+                     uint32_t size = 1, bool release_prev = true,
+                     bool always_async = false) {
 
     struct Payload { Func f; };
     Payload payload{ std::forward<Func>(func) };
@@ -37,7 +38,7 @@ void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
     Task *new_task = task_submit_dep(
         nullptr, &jitc_task, 1, size,
         [](uint32_t index, void *payload) { ((Payload *) payload)->f(index); },
-        &payload, sizeof(Payload), nullptr, 0);
+        &payload, sizeof(Payload), nullptr, (int) always_async);
 
     if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
         task_wait(new_task);
@@ -54,7 +55,9 @@ void jitc_submit_cpu(KernelType type, Func &&func, uint32_t width,
         state.kernel_history.append(entry);
     }
 
-    task_release(jitc_task);
+    if (release_prev)
+        task_release(jitc_task);
+
     jitc_task = new_task;
 }
 
@@ -194,11 +197,13 @@ void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size) {
     ThreadState *ts = thread_state(backend);
 
     // Temporarily release the lock while copying
-    jitc_sync_thread(ts);
+    unlock_guard guard(state.lock);
     if (backend == JitBackend::CUDA) {
         scoped_set_context guard_2(ts->context);
+        cuda_check(cuStreamSynchronize(ts->stream));
         cuda_check(cuMemcpy((CUdeviceptr) dst, (CUdeviceptr) src, size));
     } else {
+        jitc_sync_thread(ts);
         memcpy(dst, src, size);
     }
 }
@@ -1072,7 +1077,6 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
         );
 
         Task *local_task = jitc_task;
-        task_retain(local_task);
 
         // Phase 2
         jitc_submit_cpu(
@@ -1092,7 +1096,7 @@ uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
                 free(buckets_local);
             },
 
-            size, blocks
+            size, blocks, false
         );
 
         // Free memory (happens asynchronously after the above stmt.)
@@ -1385,6 +1389,7 @@ void jitc_vcall_prepare(JitBackend backend, void *dst_, VCallDataRecord *rec_, u
             size, work_units);
 
         jitc_submit_cpu(
-            KernelType::Other, [rec_](uint32_t) { free(rec_); }, 1, 1);
+            KernelType::Other, [rec_](uint32_t) { jit_free(rec_); }, 1, 1,
+            true, true);
     }
 }

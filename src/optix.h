@@ -52,7 +52,7 @@ extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
                                Kernel &kernel);
 
 /// Free a compiled OptiX kernel
-extern void jitc_optix_free(int device_id, const Kernel &kernel);
+extern void jitc_optix_free(const Kernel &kernel);
 
 /// Perform an OptiX kernel launch
 extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,

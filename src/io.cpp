@@ -143,7 +143,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
     char *compressed = nullptr, *uncompressed = nullptr;
 
     CacheFileHeader header;
-    uint32_t padding_size = 0;
+    uint32_t padding_size;
     bool success = true;
     std::vector<void *> func;
 
@@ -453,13 +453,14 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
             jitc_fail("jit_kernel_free(): VirtualFree() failed!");
 #endif
     } else {
+        const Device &device = state.devices.at(device_id);
         if (kernel.size) {
-            scoped_set_context guard(state.devices.at(device_id).context);
+            scoped_set_context guard(device.context);
             cuda_check(cuModuleUnload(kernel.cuda.mod));
             free(kernel.data);
         } else {
 #if defined(DRJIT_ENABLE_OPTIX)
-            jitc_optix_free(device_id, kernel);
+            jitc_optix_free(kernel);
 #endif
         }
     }

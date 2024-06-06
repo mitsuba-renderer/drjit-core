@@ -450,8 +450,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     return jitc_optix_cache_hit;
 }
 
-void jitc_optix_free(int device_id, const Kernel &kernel) {
-    scoped_set_context guard(state.devices.at(device_id).context);
+void jitc_optix_free(const Kernel &kernel) {
     jitc_optix_check(optixPipelineDestroy(kernel.optix.pipeline));
     for (uint32_t i = 0; i < kernel.optix.pg_count; ++i)
         jitc_optix_check(optixProgramGroupDestroy(kernel.optix.pg[i]));

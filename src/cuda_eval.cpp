@@ -163,7 +163,6 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         const uint32_t vti = v->type,
                        size = v->size;
         const VarType vt = (VarType) vti;
-        ParamType ptype = (ParamType) v->param_type;
         bool assemble = false;
 
         if (unlikely(v->extra)) {
@@ -185,7 +184,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
             }
         }
 
-        if (likely(ptype == ParamType::Input)) {
+        if (likely(v->param_type == ParamType::Input)) {
             if (v->is_literal()) {
                 fmt("    ld.$s.u64 $v, [$s+$o];\n", params_type, v, params_base, v);
                 continue;
@@ -211,13 +210,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
             jitc_cuda_render_stmt(index, v);
         }
 
-        if (ptype == ParamType::Output) {
-            /* Note that certain advanced operations such as virtual function calls (VarType::Dispatch)
-               may allocate or de-allocate variables in `jitc_cuda_render_var`,
-               which can in turn invalidate the pointer `v`.
-               For simple operations producing an output though, `v` should remain valid.
-            */
-            assert(v == jitc_var(index));
+        if (v->param_type == ParamType::Output) {
             fmt("    ld.$s.u64 %rd0, [$s+$o];\n"
                 "    mad.wide.u32 %rd0, %r0, $a, %rd0;\n",
                 params_type, params_base, v, v);
@@ -1445,3 +1438,4 @@ void jitc_var_vcall_assemble_cuda(VCall *vcall, uint32_t vcall_reg,
 
     fmt("\nl_done_$u:\n", vcall_reg);
 }
+
