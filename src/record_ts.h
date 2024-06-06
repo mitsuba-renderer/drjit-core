@@ -242,7 +242,7 @@ struct RecordThreadState : ThreadState {
                         jitc_raise(
                             "record(): Variable %u -> %p, was created before "
                             "recording was started, but it was not speciefied "
-                            "as and input variable!",
+                            "as an input variable!",
                             index, ptr);
                     }
 
