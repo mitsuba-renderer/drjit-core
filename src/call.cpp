@@ -600,6 +600,8 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
         call->use_optix |= call2->use_optix;
         call->use_index |= call2->use_index;
         call->use_thread_id |= call2->use_thread_id;
+        for (uint32_t index_2 : call2->outer_in)
+            jitc_var_call_analyze(call, inst_id, index_2, data_offset);
     } else if (kind == VarKind::LoopCond) {
         LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
         for (uint32_t index_2: loop->inner_out)
