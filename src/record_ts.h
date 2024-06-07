@@ -256,7 +256,13 @@ struct RecordThreadState : ThreadState {
                     jitc_var_inc_ref(index);
                 }
 
-                uint32_t slot = this->add_variable(ptr, rv);
+                uint32_t slot;
+                if (param_type == ParamType::Input)
+                    slot = this->add_variable(ptr, rv);
+                else if (param_type == ParamType::Output)
+                    slot = this->add_new_variable(ptr, rv);
+                else
+                    jitc_fail("Parameter Type not supported!");
 
                 if (pointer_access) {
                     jitc_log(LogLevel::Debug,
@@ -330,7 +336,7 @@ struct RecordThreadState : ThreadState {
 
             RecordVariable rv;
             rv.size = size;
-            uint32_t ptr_id = this->add_variable(ptr, rv);
+            uint32_t ptr_id = this->add_new_variable(ptr, rv);
 
             uint32_t start = this->recording.dependencies.size();
             this->recording.dependencies.push_back(ptr_id);
@@ -355,10 +361,10 @@ struct RecordThreadState : ThreadState {
         if (!paused) {
 
             uint32_t ptr_id = this->get_variable(ptr);
-            uint32_t out_id = this->add_variable(out, RecordVariable{
-                                                          /*type=*/type,
-                                                          /*size=*/1,
-                                                      });
+            uint32_t out_id = this->add_new_variable(out, RecordVariable{
+                                                              /*type=*/type,
+                                                              /*size=*/1,
+                                                          });
 
             uint32_t start = this->recording.dependencies.size();
             this->recording.dependencies.push_back(ptr_id);
@@ -398,10 +404,10 @@ struct RecordThreadState : ThreadState {
                     void *out) override {
         if (!paused) {
             uint32_t in_id = this->get_variable(in);
-            uint32_t out_id = this->add_variable(out, RecordVariable{
-                                                          /*type=*/vt,
-                                                          /*size=*/size,
-                                                      });
+            uint32_t out_id = this->add_new_variable(out, RecordVariable{
+                                                              /*type=*/vt,
+                                                              /*size=*/size,
+                                                          });
 
             uint32_t start = this->recording.dependencies.size();
             this->recording.dependencies.push_back(in_id);
@@ -445,15 +451,15 @@ struct RecordThreadState : ThreadState {
 
                 uint32_t values_id = this->get_variable(values);
                 uint32_t perm_id =
-                    this->add_variable(perm, RecordVariable{
-                                                 /*type=*/VarType::UInt32,
-                                                 /*size=*/perm_size,
-                                             });
-                uint32_t offsets_id =
-                    this->add_variable(offsets, RecordVariable{
-                                                    /*type=*/VarType::UInt32,
-                                                    /*size=*/offset_size,
-                                                });
+                    this->add_new_variable(perm, RecordVariable{
+                                                     /*type=*/VarType::UInt32,
+                                                     /*size=*/perm_size,
+                                                 });
+                uint32_t offsets_id = this->add_new_variable(
+                    offsets, RecordVariable{
+                                 /*type=*/VarType::UInt32,
+                                 /*size=*/offset_size,
+                             });
 
                 uint32_t start = this->recording.dependencies.size();
                 this->recording.dependencies.push_back(values_id);
@@ -494,7 +500,7 @@ struct RecordThreadState : ThreadState {
                 uint32_t src_id = this->get_variable(src);
                 // Add an empty RecordVariable and hope that it will get filled
                 // in by a kernel invocation.
-                uint32_t dst_id = this->add_variable(dst, RecordVariable());
+                uint32_t dst_id = this->add_new_variable(dst, RecordVariable());
 
                 uint32_t start = this->recording.dependencies.size();
                 this->recording.dependencies.push_back(src_id);
@@ -546,10 +552,10 @@ struct RecordThreadState : ThreadState {
                      dst, size);
 
             uint32_t dst_id =
-                this->add_variable(dst, RecordVariable{
-                                            /*type=*/VarType::UInt8,
-                                            /*size=*/0,
-                                        });
+                this->add_new_variable(dst, RecordVariable{
+                                                /*type=*/VarType::UInt8,
+                                                /*size=*/0,
+                                            });
 
             jitc_log(LogLevel::Debug, " <- slot(%u)", dst_id);
 
@@ -616,13 +622,13 @@ struct RecordThreadState : ThreadState {
         uint32_t input_index = this->recording.inputs.size();
         Variable *v = jitc_var(input);
         uint32_t slot =
-            this->add_variable(v->data, RecordVariable{
-                                            /*type=*/(VarType)v->type,
-                                            /*size=*/v->size,
-                                            /*is_literal=*/v->is_literal(),
-                                            /*rv_type=*/RecordType::Input,
-                                            /*input_index=*/input_index,
-                                        });
+            this->add_new_variable(v->data, RecordVariable{
+                                                /*type=*/(VarType)v->type,
+                                                /*size=*/v->size,
+                                                /*is_literal=*/v->is_literal(),
+                                                /*rv_type=*/RecordType::Input,
+                                                /*input_index=*/input_index,
+                                            });
         jitc_log(LogLevel::Info,
                  "record(): Adding variable %u input %u to slot %u", input,
                  input_index, slot);
@@ -683,9 +689,12 @@ struct RecordThreadState : ThreadState {
     // recording.
     PtrToSlot ptr_to_slot;
 
-    // Add information about a variable, deduplicating it and returning the slot
-    // in the `variables` field of the recording.
-    // Information is combined when the variable has already been added.
+    /**
+     * Add information about a variable, deduplicating it and returning the slot
+     * in the `variables` field of the recording.
+     * Information is combined when the variable has already been added.
+     * This is used by the input variables of a kernel.
+     */
     uint32_t add_variable(void *ptr, RecordVariable rv) {
 
         auto it = this->ptr_to_slot.find(ptr);
@@ -705,6 +714,26 @@ struct RecordThreadState : ThreadState {
 
             return slot;
         }
+    }
+
+    /**
+     * Add a new variable to the slots. This will always insert the
+     * RecordVariable to the array, and update the ptr_to_slot map.
+     * This is used by a output variable of a kernel.
+     */
+    uint32_t add_new_variable(void *ptr, RecordVariable rv) {
+        uint32_t slot = this->recording.record_variables.size();
+        this->recording.record_variables.push_back(rv);
+
+        auto it = this->ptr_to_slot.find(ptr);
+
+        if (it == this->ptr_to_slot.end()) {
+            this->ptr_to_slot.insert({ptr, slot});
+        } else {
+            it.value() = slot;
+        }
+
+        return slot;
     }
 
     // Return the slot index given the data pointer of a variable.
