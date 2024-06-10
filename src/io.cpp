@@ -454,8 +454,8 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
 #endif
     } else {
         const Device &device = state.devices.at(device_id);
+        scoped_set_context guard(device.context);
         if (kernel.size) {
-            scoped_set_context guard(device.context);
             cuda_check(cuModuleUnload(kernel.cuda.mod));
             free(kernel.data);
         } else {
