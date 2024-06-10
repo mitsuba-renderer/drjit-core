@@ -240,7 +240,7 @@ TEST_BOTH(16_scatter_inc) {
     UInt32 counter(0);
     UInt32 index = arange<UInt32>(n);
     UInt32 out = zeros<UInt32>(n);
-    UInt32 offset = scatter_inc(counter, UInt32(0), Mask(true));
+    UInt32 offset = scatter_inc(counter, UInt32(0), full<Mask>(true, n));
     scatter(out, index, offset);
     jit_assert(all(eq(counter, n)));
     jit_memcpy(Backend, out_cpu, out.data(), n * sizeof(uint32_t));
