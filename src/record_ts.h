@@ -16,6 +16,7 @@ enum class OpType {
     Reduce,
     ReduceExpanded,
     PrefixSum,
+    Compress,
     MemcpyAsync,
     Mkperm,
     Aggregate,
@@ -430,9 +431,34 @@ struct RecordThreadState : ThreadState {
     /// Mask compression
     uint32_t compress(const uint8_t *in, uint32_t size,
                       uint32_t *out) override {
-        jitc_log(
-            LogLevel::Warn,
-            "RecordThreadState::compress(): unsupported function recording!");
+
+        if (!paused) {
+            jitc_assert(has_variable(in),
+                        "record(): Input variable has not been recorded!");
+            jitc_log(LogLevel::Debug,
+                     "record(): compress(in=%p, size=%u, out=%p)", in, size,
+                     out);
+
+            RecordVariable rv;
+            rv.type = VarType::Bool;
+            rv.size = size;
+            uint32_t in_slot = this->add_variable((void *)in, rv);
+            rv = RecordVariable();
+            rv.type = VarType::UInt32;
+            uint32_t out_slot = this->add_variable((void *)out, rv);
+
+            uint32_t start = this->recording.dependencies.size();
+            this->recording.dependencies.push_back(in_slot);
+            this->recording.dependencies.push_back(out_slot);
+            uint32_t end = this->recording.dependencies.size();
+
+            Operation op;
+            op.type = OpType::Compress;
+            op.dependency_range = std::pair(start, end);
+            op.size = size;
+            this->recording.operations.push_back(op);
+        }
+
         scoped_pause();
         return this->internal->compress(in, size, out);
     }
