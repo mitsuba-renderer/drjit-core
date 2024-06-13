@@ -295,6 +295,24 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ts->prefix_sum(type, op.exclusive, in_var.data, op.size,
                            out_var.data);
         } break;
+        case OpType::Compress: {
+            uint32_t dependency_index = op.dependency_range.first;
+
+            ParamInfo in_info = this->dependencies[dependency_index];
+            ParamInfo out_info = this->dependencies[dependency_index + 1];
+
+            ReplayVariable &in_rv = replay_variables[in_info.index];
+            ReplayVariable &out_rv = replay_variables[out_info.index];
+
+            uint32_t size = in_rv.size;
+            out_rv.size = size;
+            out_rv.alloc(backend);
+
+            uint32_t out_size = ts->compress((uint8_t *)in_rv.data, size,
+                                             (uint32_t *)out_rv.data);
+
+            out_rv.size = out_size;
+        } break;
         case OpType::MemcpyAsync: {
             uint32_t dependency_index = op.dependency_range.first;
             ParamInfo src_info = this->dependencies[dependency_index];
