@@ -15,13 +15,10 @@ struct ReplayVariable {
     uint32_t index;
     bool is_literal;
     RecordType rv_type;
-    // bool is_input;
-    // bool is_captured;
     uint32_t rc;
 
     ReplayVariable(RecordVariable &rv) {
         this->type = rv.type;
-        this->size = rv.size;
         this->index = rv.index;
         this->is_literal = rv.is_literal;
         this->rc = rv.rc;
@@ -131,9 +128,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ReplayVariable &rv = replay_variables[info.index];
 
                 if (info.type == ParamType::Input) {
-                    jitc_assert(
-                        rv.data != nullptr,
-                        "replay(): Kernel input variable not allocated!");
+                    jitc_assert(rv.data != nullptr,
+                                "replay(): Kernel input variable (slot=%u) not "
+                                "allocated!",
+                                info.index);
 
                     if (!info.pointer_access)
                         input_size = std::max(input_size, rv.size);
@@ -229,6 +227,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             ReplayVariable &ptr_var = replay_variables[ptr_info.index];
             VarType type = replay_variables[ptr_info.index].type;
+            ptr_var.size = op.size;
             ptr_var.alloc(backend);
 
             jitc_log(LogLevel::Debug, "replay(): MemsetAsync -> slot(%u)",
@@ -247,6 +246,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ReplayVariable &ptr_var = replay_variables[ptr_info.index];
             ReplayVariable &out_var = replay_variables[out_info.index];
 
+            out_var.size = 1;
             out_var.alloc(backend);
 
             VarType type = ptr_var.type;
@@ -379,6 +379,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ParamInfo dst_info = this->dependencies[i++];
             ReplayVariable &dst_rv = replay_variables[dst_info.index];
             // Assume, that size is known
+            dst_rv.size = op.size * type_size[(uint32_t)dst_rv.type];
             dst_rv.alloc(backend);
 
             jitc_log(LogLevel::Debug, " <- slot(%u, is_pointer=%u, data=%p)",
