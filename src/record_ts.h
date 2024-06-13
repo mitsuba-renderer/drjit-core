@@ -99,6 +99,13 @@ struct RecordVariable {
         this->is_literal |= rhs.is_literal;
         return *this;
     }
+    bool compatible(const RecordVariable &rhs) {
+        bool result = true;
+        result &= this->rv_type == RecordType::Other ||
+                  rhs.rv_type == RecordType::Other ||
+                  this->rv_type == rhs.rv_type;
+        return result;
+    }
 };
 
 struct ParamInfo {
@@ -759,31 +766,23 @@ struct RecordThreadState : ThreadState {
         } else {
             uint32_t slot = it.value();
 
-            this->recording.record_variables[slot] |= rv;
+            RecordVariable &old = this->recording.record_variables[slot];
+            if (!old.compatible(rv)) {
+                // If two record variables are not compatible, we have to create
+                // a new one. Otherwise information about the new/old one might
+                // get lost.
+                slot = this->recording.record_variables.size();
+                jitc_log(LogLevel::Debug,
+                         "record(): adding new variable at slot %u", slot);
+                this->recording.record_variables.push_back(rv);
+                it.value() = slot;
+            } else {
+                this->recording.record_variables[slot] |= rv;
+            }
 
             return slot;
         }
     }
-
-    // /**
-    //  * Add a new variable to the slots. This will always insert the
-    //  * RecordVariable to the array, and update the ptr_to_slot map.
-    //  * This is used by a output variable of a kernel.
-    //  */
-    // uint32_t add_new_variable(void *ptr, RecordVariable rv) {
-    //     uint32_t slot = this->recording.record_variables.size();
-    //     this->recording.record_variables.push_back(rv);
-    //
-    //     auto it = this->ptr_to_slot.find(ptr);
-    //
-    //     if (it == this->ptr_to_slot.end()) {
-    //         this->ptr_to_slot.insert({ptr, slot});
-    //     } else {
-    //         it.value() = slot;
-    //     }
-    //
-    //     return slot;
-    // }
 
     // Return the slot index given the data pointer of a variable.
     // This fails if the variable has not been added.
