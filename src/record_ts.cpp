@@ -522,7 +522,7 @@ void Recording::compute_rc() {
 void Recording::validate() {
     for (uint32_t i = 0; i < this->record_variables.size(); ++i) {
         RecordVariable &rv = this->record_variables[i];
-        jitc_assert((rv.type != VarType::Void && rv.size > 0) || rv.rc == 0,
+        jitc_assert(rv.type != VarType::Void || rv.rc == 0,
                     "Recorded Variable at slot(%u) was added, it's type is "
                     "unknown! This can occur, if a variable is only used by "
                     "operations, that do not provide a type.",
