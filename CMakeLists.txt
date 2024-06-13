@@ -109,6 +109,7 @@ add_library(
   src/malloc.h        src/malloc.cpp
   src/registry.h      src/registry.cpp
   src/util.h          src/util.cpp
+  src/record_ts.h     src/record_ts.cpp
 
   # CUDA backend
   src/cuda_api.h

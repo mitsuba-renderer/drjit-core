@@ -8,6 +8,7 @@
 */
 
 #include "internal.h"
+#include "record_ts.h"
 #include "var.h"
 #include "eval.h"
 #include "log.h"
@@ -675,6 +676,17 @@ int jit_var_is_finite_literal(uint32_t index) {
         default:
             return 1;
     }
+}
+
+int jit_var_is_unaligned(uint32_t index){
+    if (index == 0)
+        return 0;
+    
+    lock_guard guard(state.lock);
+    Variable *var = jitc_var(index);
+
+    return (JitBackend)var->backend == JitBackend::LLVM &&
+           (VarKind)var->kind == VarKind::Evaluated && var->unaligned;
 }
 
 uint32_t jit_var_resize(uint32_t index, size_t size) {
@@ -1460,4 +1472,42 @@ uint32_t jit_array_write(uint32_t target, uint32_t offset, uint32_t value, uint3
 size_t jit_array_length(uint32_t index) {
     lock_guard guard(state.lock);
     return jitc_array_length(index);
+}
+    
+void jit_record_start(JitBackend backend, const uint32_t *inputs,
+                      uint32_t n_inputs) {
+    lock_guard guard(state.lock);
+    return jitc_record_start(backend, inputs, n_inputs);
+}
+
+Recording *jit_record_stop(JitBackend backend, const uint32_t *outputs,
+                                   uint32_t n_outputs) {
+    lock_guard guard(state.lock);
+    return jitc_record_stop(backend, outputs, n_outputs);
+}
+
+bool jit_record_pause(JitBackend backend) {
+    lock_guard guard(state.lock);
+    return jitc_record_pause(backend);
+}
+
+bool jit_record_resume(JitBackend backend) {
+    lock_guard guard(state.lock);
+    return jitc_record_resume(backend);
+}
+
+void jit_record_abort(JitBackend backend) {
+    lock_guard guard(state.lock);
+    return jitc_record_abort(backend);
+}
+
+void jit_record_replay(Recording *ts, const uint32_t *inputs,
+                       uint32_t *outputs) {
+    lock_guard guard(state.lock);
+    return ts->replay(inputs, outputs);
+}
+
+void jit_record_destroy(Recording *recording){
+    lock_guard guard(state.lock);
+    jitc_record_destroy(recording);
 }

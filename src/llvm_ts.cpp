@@ -3,7 +3,6 @@
 #include "var.h"
 #include "common.h"
 #include "profile.h"
-#include "eval.h"
 #include "util.h"
 
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
@@ -287,10 +286,31 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
     jitc_task = new_task;
 }
 
+/// Temporary scratch space for scheduled tasks
+static std::vector<Task *> scheduled_tasks;
+
+void LLVMThreadState::barrier(){
+    if (scheduled_tasks.size() == 1) {
+        task_release(jitc_task);
+        jitc_task = scheduled_tasks[0];
+    } else {
+        jitc_assert(!scheduled_tasks.empty(),
+                    "jit_eval(): no tasks generated!");
+
+        // Insert a barrier task
+        Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
+                                         (uint32_t)scheduled_tasks.size());
+        task_release(jitc_task);
+        for (Task *t : scheduled_tasks)
+            task_release(t);
+        jitc_task = new_task;
+    }
+    scheduled_tasks.clear();
+}
+
 Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
                               std::vector<void *> *kernel_params,
-                              uint32_t /* kernel_param_count */,
-                              const uint8_t* /* kernel_params_global */) {
+                              const std::vector<uint32_t> *) {
     Task *ret_task = nullptr;
 
     uint32_t packet_size = jitc_llvm_vector_width,
@@ -378,6 +398,7 @@ Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
     if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
         task_wait(ret_task);
 
+    scheduled_tasks.push_back(ret_task);
     return ret_task;
 }
 
