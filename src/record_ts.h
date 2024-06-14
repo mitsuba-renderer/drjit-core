@@ -14,6 +14,7 @@ enum class OpType {
     KernelLaunch,
     MemsetAsync,
     Reduce,
+    Expand,
     ReduceExpanded,
     PrefixSum,
     Compress,
@@ -36,6 +37,7 @@ struct Operation {
     };
     size_t size;
     size_t input_size = 0;
+    bool enabled = true;
 };
 
 /// Denotes the type of variable.
@@ -59,6 +61,8 @@ struct RecordVariable {
     // Nubmer of operations that reference this variable
     // used to deallocate unused variables during replay.
     uint32_t rc = 0;
+    uint32_t last_memset = 0;
+    uint32_t last_memcpy = 0;
 
     RecordVariable() {
     }
@@ -89,6 +93,8 @@ struct RecordVariable {
             this->index = rhs.index;
         }
         this->is_literal |= rhs.is_literal;
+        this->last_memcpy = rhs.last_memcpy;
+        this->last_memset = rhs.last_memset;
         return *this;
     }
     bool compatible(const RecordVariable &rhs) {
@@ -103,19 +109,19 @@ struct RecordVariable {
 };
 
 struct ParamInfo {
-    uint32_t index;
+    uint32_t slot;
     ParamType type;
     bool pointer_access;
     uint32_t extra;
 
-    ParamInfo(uint32_t index) : index(index) {
+    ParamInfo(uint32_t index) : slot(index) {
     }
     ParamInfo(uint32_t index, ParamType type, bool pointer_access)
-        : index(index), type(type), pointer_access(pointer_access) {
+        : slot(index), type(type), pointer_access(pointer_access) {
     }
     ParamInfo(uint32_t index, ParamType type, bool pointer_access,
               uint32_t extra)
-        : index(index), type(type), pointer_access(pointer_access),
+        : slot(index), type(type), pointer_access(pointer_access),
           extra(extra) {
     }
 };
@@ -193,6 +199,46 @@ struct RecordThreadState : ThreadState {
 
             size_t input_size = 0;
             size_t ptr_size = 0;
+
+            // Handle reduce_expanded case
+            for (uint32_t param_index = 0;
+                 param_index < kernel_param_ids->size(); param_index++) {
+                uint32_t index = kernel_param_ids->at(param_index);
+                Variable *v = jitc_var(index);
+                ParamType param_type = (ParamType)v->param_type;
+                if ((VarType)v->type == VarType::Pointer) {
+                    // Follow pointer
+                    index = v->dep[3];
+                    v = jitc_var(index);
+                }
+
+                if (param_type == ParamType::Input && v->reduce_op) {
+                    uint32_t dst_slot = get_variable(v->data);
+                    const RecordVariable &rv =
+                        this->recording.record_variables[dst_slot];
+                    Operation &memset =
+                        this->recording.operations[rv.last_memset];
+                    Operation &memcpy =
+                        this->recording.operations[rv.last_memcpy];
+                    memset.enabled = false;
+                    memcpy.enabled = false;
+
+                    uint32_t dependency_index = memcpy.dependency_range.first;
+                    ParamInfo src_info =
+                        this->recording.dependencies[dependency_index];
+
+                    uint32_t start = this->recording.dependencies.size();
+                    this->recording.dependencies.push_back(src_info.slot);
+                    this->recording.dependencies.push_back(dst_slot);
+                    uint32_t end = this->recording.dependencies.size();
+
+                    Operation op;
+                    op.type = OpType::Expand;
+                    op.dependency_range = std::pair(start, end);
+                    op.data = memset.data;
+                    this->recording.operations.push_back(op);
+                }
+            }
 
             uint32_t start = this->recording.dependencies.size();
             for (uint32_t param_index = 0;
@@ -338,6 +384,7 @@ struct RecordThreadState : ThreadState {
                         isize);
 
             RecordVariable rv;
+            rv.last_memset = this->recording.operations.size();
             uint32_t ptr_id = this->add_variable(ptr, rv);
 
             uint32_t start = this->recording.dependencies.size();
@@ -519,7 +566,9 @@ struct RecordThreadState : ThreadState {
                 uint32_t src_id = this->get_variable(src);
                 // Add an empty RecordVariable and hope that it will get filled
                 // in by a kernel invocation.
-                uint32_t dst_id = this->add_variable(dst, RecordVariable());
+                RecordVariable rv;
+                rv.last_memcpy = this->recording.operations.size();
+                uint32_t dst_id = this->add_variable(dst, rv);
 
                 uint32_t start = this->recording.dependencies.size();
                 this->recording.dependencies.push_back(src_id);
