@@ -98,6 +98,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
     for (uint32_t i = 0; i < this->operations.size(); ++i) {
         Operation &op = this->operations[i];
+        if (!op.enabled)
+            continue;
 
         switch (op.type) {
         case OpType::KernelLaunch: {
@@ -125,13 +127,13 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             for (uint32_t j = op.dependency_range.first;
                  j < op.dependency_range.second; ++j) {
                 ParamInfo info = this->dependencies[j];
-                ReplayVariable &rv = replay_variables[info.index];
+                ReplayVariable &rv = replay_variables[info.slot];
 
                 if (info.type == ParamType::Input) {
                     jitc_assert(rv.data != nullptr,
                                 "replay(): Kernel input variable (slot=%u) not "
                                 "allocated!",
-                                info.index);
+                                info.slot);
 
                     if (!info.pointer_access)
                         input_size = std::max(input_size, rv.size);
@@ -181,12 +183,12 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             for (uint32_t j = op.dependency_range.first;
                  j < op.dependency_range.second; ++j) {
                 ParamInfo info = this->dependencies[j];
-                ReplayVariable &rv = replay_variables[info.index];
+                ReplayVariable &rv = replay_variables[info.slot];
 
                 jitc_log(LogLevel::Info,
                          " %s param slot(%u, rc=%u, is_pointer=%u, size=%u)",
                          info.type == ParamType::Output ? "<-" : "->",
-                         info.index, rv.rc, info.pointer_access, rv.size);
+                         info.slot, rv.rc, info.pointer_access, rv.size);
 
                 if (info.type == ParamType::Output) {
                     rv.size = launch_size;
@@ -225,13 +227,13 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             ParamInfo ptr_info = this->dependencies[dependency_index];
 
-            ReplayVariable &ptr_var = replay_variables[ptr_info.index];
-            VarType type = replay_variables[ptr_info.index].type;
+            ReplayVariable &ptr_var = replay_variables[ptr_info.slot];
+            VarType type = replay_variables[ptr_info.slot].type;
             ptr_var.size = op.size;
             ptr_var.alloc(backend);
 
             jitc_log(LogLevel::Debug, "replay(): MemsetAsync -> slot(%u)",
-                     ptr_info.index);
+                     ptr_info.slot);
 
             ts->memset_async(ptr_var.data, ptr_var.size,
                              type_size[(uint32_t)type], &op.data);
@@ -243,8 +245,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ParamInfo ptr_info = this->dependencies[dependency_index];
             ParamInfo out_info = this->dependencies[dependency_index + 1];
 
-            ReplayVariable &ptr_var = replay_variables[ptr_info.index];
-            ReplayVariable &out_var = replay_variables[out_info.index];
+            ReplayVariable &ptr_var = replay_variables[ptr_info.slot];
+            ReplayVariable &out_var = replay_variables[out_info.slot];
 
             out_var.size = 1;
             out_var.alloc(backend);
@@ -252,9 +254,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             VarType type = ptr_var.type;
             ReduceOp rtype = op.rtype;
 
-            jitc_log(LogLevel::Debug, " -> slot(%u, data=%p)", ptr_info.index,
+            jitc_log(LogLevel::Debug, " -> slot(%u, data=%p)", ptr_info.slot,
                      ptr_var.data);
-            jitc_log(LogLevel::Debug, " <- slot(%u, data=%p)", out_info.index,
+            jitc_log(LogLevel::Debug, " <- slot(%u, data=%p)", out_info.slot,
                      out_var.data);
 
             ts->reduce(type, rtype, ptr_var.data, ptr_var.size, out_var.data);
@@ -265,7 +267,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             uint32_t dependency_index = op.dependency_range.first;
             ParamInfo data_info = this->dependencies[dependency_index];
 
-            ReplayVariable &data_var = replay_variables[data_info.index];
+            ReplayVariable &data_var = replay_variables[data_info.slot];
 
             VarType vt = data_var.type;
             ReduceOp rop = op.rtype;
@@ -279,14 +281,41 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                                 replication_per_worker * workers, size);
 
         } break;
+        case OpType::Expand: {
+            jitc_log(LogLevel::Debug, "replay(): expand");
+
+            uint32_t dependency_index = op.dependency_range.first;
+
+            ParamInfo src_info = this->dependencies[dependency_index];
+            ParamInfo dst_info = this->dependencies[dependency_index + 1];
+
+            ReplayVariable &src_rv = replay_variables[src_info.slot];
+            ReplayVariable &dst_rv = replay_variables[dst_info.slot];
+
+            VarType vt = src_rv.type;
+            uint32_t size = src_rv.size;
+            uint32_t tsize = type_size[(uint32_t)vt];
+            uint32_t workers = pool_size() + 1;
+
+            uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u;
+            size_t new_size =
+                size * (size_t)replication_per_worker * (size_t)workers;
+
+            dst_rv.size = new_size;
+            dst_rv.alloc(backend);
+
+            ts->memset_async(dst_rv.data, new_size, tsize, &op.data);
+            ts->memcpy_async(dst_rv.data, src_rv.data, size * tsize);
+            dst_rv.size = size;
+        } break;
         case OpType::PrefixSum: {
             uint32_t dependency_index = op.dependency_range.first;
 
             ParamInfo in_info = this->dependencies[dependency_index];
             ParamInfo out_info = this->dependencies[dependency_index + 1];
 
-            ReplayVariable &in_var = replay_variables[in_info.index];
-            ReplayVariable &out_var = replay_variables[out_info.index];
+            ReplayVariable &in_var = replay_variables[in_info.slot];
+            ReplayVariable &out_var = replay_variables[out_info.slot];
 
             out_var.alloc(backend);
 
@@ -301,8 +330,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ParamInfo in_info = this->dependencies[dependency_index];
             ParamInfo out_info = this->dependencies[dependency_index + 1];
 
-            ReplayVariable &in_rv = replay_variables[in_info.index];
-            ReplayVariable &out_rv = replay_variables[out_info.index];
+            ReplayVariable &in_rv = replay_variables[in_info.slot];
+            ReplayVariable &out_rv = replay_variables[out_info.slot];
 
             uint32_t size = in_rv.size;
             out_rv.size = size;
@@ -318,12 +347,12 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ParamInfo src_info = this->dependencies[dependency_index];
             ParamInfo dst_info = this->dependencies[dependency_index + 1];
 
-            ReplayVariable &src_var = replay_variables[src_info.index];
-            ReplayVariable &dst_var = replay_variables[dst_info.index];
+            ReplayVariable &src_var = replay_variables[src_info.slot];
+            ReplayVariable &dst_var = replay_variables[dst_info.slot];
 
             jitc_log(LogLevel::Debug,
                      "replay(): MemcpyAsync slot(%u) <- slot(%u) [%u]",
-                     dst_info.index, src_info.index, src_var.size);
+                     dst_info.slot, src_info.slot, src_var.size);
 
             dst_var.size = src_var.size;
             dst_var.alloc(backend);
@@ -342,22 +371,22 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ParamInfo perm_info = this->dependencies[dependency_index + 1];
             ParamInfo offsets_info = this->dependencies[dependency_index + 2];
 
-            ReplayVariable &values_var = replay_variables[values_info.index];
-            ReplayVariable &perm_var = replay_variables[perm_info.index];
-            ReplayVariable &offsets_var = replay_variables[offsets_info.index];
+            ReplayVariable &values_var = replay_variables[values_info.slot];
+            ReplayVariable &perm_var = replay_variables[perm_info.slot];
+            ReplayVariable &offsets_var = replay_variables[offsets_info.slot];
 
             uint32_t size = values_var.size;
             uint32_t bucket_count = op.bucket_count;
 
             jitc_log(LogLevel::Info, " -> values: slot(%u, data=%p, size=%u)",
-                     values_info.index, values_var.data, values_var.size);
+                     values_info.slot, values_var.data, values_var.size);
 
-            jitc_log(LogLevel::Info, " <- perm: slot(%u)", perm_info.index);
+            jitc_log(LogLevel::Info, " <- perm: slot(%u)", perm_info.slot);
             perm_var.size = size;
             perm_var.alloc(backend);
 
             jitc_log(LogLevel::Info, " <- offsets: slot(%u)",
-                     offsets_info.index);
+                     offsets_info.slot);
             offsets_var.size = bucket_count * 4 + 1;
             offsets_var.alloc(backend);
 
@@ -377,13 +406,13 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             uint32_t i = op.dependency_range.first;
 
             ParamInfo dst_info = this->dependencies[i++];
-            ReplayVariable &dst_rv = replay_variables[dst_info.index];
+            ReplayVariable &dst_rv = replay_variables[dst_info.slot];
             // Assume, that size is known
             dst_rv.size = op.size * type_size[(uint32_t)dst_rv.type];
             dst_rv.alloc(backend);
 
             jitc_log(LogLevel::Debug, " <- slot(%u, is_pointer=%u, data=%p)",
-                     dst_info.index, dst_info.pointer_access, dst_rv.data);
+                     dst_info.slot, dst_info.pointer_access, dst_rv.data);
 
             AggregationEntry *agg = nullptr;
 
@@ -401,12 +430,12 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ParamInfo param = this->dependencies[i];
                 jitc_assert(param.type == ParamType::Input, "");
 
-                ReplayVariable &rv = replay_variables[param.index];
+                ReplayVariable &rv = replay_variables[param.slot];
                 jitc_assert(rv.data != nullptr,
                             "replay(): Encountered nullptr input parameter.");
 
                 jitc_log(LogLevel::Debug,
-                         " -> slot(%u, is_pointer=%u, data=%p)", param.index,
+                         " -> slot(%u, is_pointer=%u, data=%p)", param.slot,
                          param.pointer_access, rv.data);
 
                 p->size = param.pointer_access
@@ -438,15 +467,15 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 for (uint32_t p = op.dependency_range.first;
                      p < op.dependency_range.second; ++p) {
                     ParamInfo &info = this->dependencies[p];
-                    ReplayVariable &rv = replay_variables[info.index];
+                    ReplayVariable &rv = replay_variables[info.slot];
                     rv.rc--;
                     jitc_log(LogLevel::Debug,
                              "replay(): decrement rc for slot %u new rc=%u",
-                             info.index, rv.rc);
+                             info.slot, rv.rc);
                     if (rv.rc == 0) {
                         jitc_log(LogLevel::Debug,
                                  "replay(): free memory for slot %u",
-                                 info.index);
+                                 info.slot);
                         jitc_free(rv.data);
                         rv.data = nullptr;
                     }
@@ -500,7 +529,7 @@ void Recording::compute_rc() {
         for (uint32_t j = op.dependency_range.first;
              j < op.dependency_range.second; ++j) {
             ParamInfo &info = this->dependencies[j];
-            RecordVariable &rv = this->record_variables[info.index];
+            RecordVariable &rv = this->record_variables[info.slot];
             rv.rc++;
         }
     }
