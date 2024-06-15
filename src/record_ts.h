@@ -192,8 +192,6 @@ struct RecordThreadState : ThreadState {
                  std::vector<void *> *kernel_params,
                  const std::vector<uint32_t> *kernel_param_ids) override {
         if (!paused) {
-            jitc_log(LogLevel::Info, "record(): recording kernel");
-
             uint32_t kernel_param_offset =
                 this->backend == JitBackend::CUDA ? 1 : 3;
 
@@ -232,6 +230,9 @@ struct RecordThreadState : ThreadState {
                     this->recording.dependencies.push_back(dst_slot);
                     uint32_t end = this->recording.dependencies.size();
 
+                    jitc_log(LogLevel::Debug,
+                             "record(): expand(dst=s%u, src=s%u)", dst_slot,
+                             src_info.slot);
                     Operation op;
                     op.type = OpType::Expand;
                     op.dependency_range = std::pair(start, end);
@@ -239,6 +240,8 @@ struct RecordThreadState : ThreadState {
                     this->recording.operations.push_back(op);
                 }
             }
+
+            jitc_log(LogLevel::Info, "record(): recording kernel");
 
             uint32_t start = this->recording.dependencies.size();
             for (uint32_t param_index = 0;
