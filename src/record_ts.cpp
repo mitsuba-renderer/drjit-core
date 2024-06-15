@@ -304,8 +304,12 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             dst_rv.size = new_size;
             dst_rv.alloc(backend);
 
+            jitc_log(LogLevel::Debug, "    data=0x%lx", op.data);
             ts->memset_async(dst_rv.data, new_size, tsize, &op.data);
-            ts->memcpy_async(dst_rv.data, src_rv.data, size * tsize);
+            jitc_log(LogLevel::Debug,
+                     "jitc_memcpy_async(dst=%p, src=%p, size=%zu)", dst_rv.data,
+                     src_rv.data, (size_t)size * tsize);
+            ts->memcpy_async(dst_rv.data, src_rv.data, (size_t)size * tsize);
             dst_rv.size = size;
         } break;
         case OpType::PrefixSum: {
