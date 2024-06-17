@@ -3,6 +3,7 @@
 #include <drjit-core/array.h>
 #include <drjit-core/half.h>
 #include <cstdio>
+#include <stdexcept>
 #include <cstring>
 
 using namespace drjit;
@@ -107,10 +108,22 @@ using HalfL   = LLVMArray<drjit::half>;
 
 #define TEST_BOTH_FLOAT_AGNOSTIC(name, ...) TEST_BOTH_FP32(name, ##__VA_ARGS__)
 
-#define jit_assert(cond)                                                      \
+#define TEST_REDUCE_UNSUPPORTED_SKIP(command)                                  \
+    try {                                                                      \
+        command;                                                               \
+    } catch (std::runtime_error err) {                                         \
+        if (strstr(err.what(),                                                 \
+            "does not support the requested type of atomic reduction") == NULL)\
+            throw err;                                                         \
+                                                                               \
+            jit_log(LogLevel::Warn, "Skipping test! %s", err.what());          \
+            return;                                                            \
+    }                                                                          \
+
+#define jit_assert(cond)                                                       \
     do {                                                                       \
         if (!(cond))                                                           \
-            jit_fail("Assertion failure: %s in line %u.", #cond, __LINE__);   \
+            jit_fail("Assertion failure: %s in line %u.", #cond, __LINE__);    \
     } while (0)
 
 /// RAII helper for temporarily decreasing the log level

@@ -139,7 +139,8 @@ TEST_BOTH(10_scatter_atomic_rmw) {
         Float target = zeros<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
 
-        scatter_reduce(ReduceOp::Add, target, Float(1), index);
+        TEST_REDUCE_UNSUPPORTED_SKIP(\
+            scatter_reduce(ReduceOp::Add, target, Float(1), index))
 
         jit_assert(
             strcmp(target.str(),
@@ -150,7 +151,8 @@ TEST_BOTH(10_scatter_atomic_rmw) {
         Float target = zeros<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
 
-        scatter_reduce(ReduceOp::Add, target, Float(1), index);
+        TEST_REDUCE_UNSUPPORTED_SKIP(\
+            scatter_reduce(ReduceOp::Add, target, Float(1), index))
 
         jit_assert(
             strcmp(target.str(),
@@ -162,7 +164,8 @@ TEST_BOTH(10_scatter_atomic_rmw) {
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 10, 2, 3, 0, 0);
         Mask mask = neq(index, 7);
 
-        scatter_reduce(ReduceOp::Add, target, Float(1), index, mask);
+        TEST_REDUCE_UNSUPPORTED_SKIP(\
+            scatter_reduce(ReduceOp::Add, target, Float(1), index, mask))
 
         jit_assert(
             strcmp(target.str(),
