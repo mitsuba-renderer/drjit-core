@@ -110,19 +110,20 @@ struct RecordVariable {
 
 struct ParamInfo {
     uint32_t slot;
-    ParamType type;
+    ParamType type = ParamType::Input;
     bool pointer_access;
-    uint32_t extra;
+    struct {
+        uint32_t offset;
+        uint64_t data;
+        int32_t type_size;
+    } extra;
 
+    ParamInfo() {
+    }
     ParamInfo(uint32_t index) : slot(index) {
     }
     ParamInfo(uint32_t index, ParamType type, bool pointer_access)
         : slot(index), type(type), pointer_access(pointer_access) {
-    }
-    ParamInfo(uint32_t index, ParamType type, bool pointer_access,
-              uint32_t extra)
-        : slot(index), type(type), pointer_access(pointer_access),
-          extra(extra) {
     }
 };
 
@@ -642,19 +643,30 @@ struct RecordThreadState : ThreadState {
 
                 jitc_log(LogLevel::Debug, " -> entry(src=%p)", p.src);
 
-                // NOTE: for literals, we just fail for now
-                uint32_t index = get_variable(p.src);
+                if (!has_variable(p.src)) {
+                    // Literal
+                    jitc_log(LogLevel::Debug, "    literal");
+                    ParamInfo info;
+                    std::memcpy(&info.extra.data, &p.src, sizeof(uint64_t));
+                    info.extra.offset = p.offset;
+                    info.extra.type_size = p.size;
+                    info.type = ParamType::Register;
+                    info.pointer_access = false;
+                    this->recording.dependencies.push_back(info);
+                } else {
+                    uint32_t index = get_variable(p.src);
+                    jitc_log(LogLevel::Debug, "    ptr at slot %u", index);
 
-                jitc_log(LogLevel::Debug, "    at slot %u", index);
+                    RecordVariable &rv =
+                        this->recording.record_variables[index];
 
-                RecordVariable &rv = this->recording.record_variables[index];
-
-                this->recording.dependencies.push_back(ParamInfo{
-                    /*index=*/index,
-                    /*type=*/ParamType::Input,
-                    /*pointer_access=*/rv.type == VarType::Pointer,
-                    /*extra=*/p.offset,
-                });
+                    ParamInfo info;
+                    info.slot = index;
+                    info.type = ParamType::Input;
+                    info.pointer_access = rv.type == VarType::Pointer;
+                    info.extra.offset = p.offset;
+                    this->recording.dependencies.push_back(info);
+                }
             }
 
             uint32_t end = this->recording.dependencies.size();
