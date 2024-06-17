@@ -2256,6 +2256,11 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             reduce_expanded =
                 jitc_var(target)->reduce_op == (uint32_t) ReduceOp::Identity;
 
+            // When capturing symbolic loops, side effects might be deleted
+            // and re-recorded. The callbacks attached to the side-effect would
+            // therefore also be deleted. 
+            reduce_expanded |= jit_flag(JitFlag::SymbolicScope);
+
             auto [target_i, expand_i] = jitc_var_expand(target, op);
             target = steal(target_i);
 
