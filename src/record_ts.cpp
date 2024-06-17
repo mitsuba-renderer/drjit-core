@@ -432,21 +432,29 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             for (; i < op.dependency_range.second; ++i) {
                 ParamInfo param = this->dependencies[i];
-                jitc_assert(param.type == ParamType::Input, "");
 
-                ReplayVariable &rv = replay_variables[param.slot];
-                jitc_assert(rv.data != nullptr,
-                            "replay(): Encountered nullptr input parameter.");
+                if (param.type == ParamType::Input) {
+                    ReplayVariable &rv = replay_variables[param.slot];
+                    jitc_assert(
+                        rv.data != nullptr,
+                        "replay(): Encountered nullptr input parameter.");
 
-                jitc_log(LogLevel::Debug,
-                         " -> slot(%u, is_pointer=%u, data=%p)", param.slot,
-                         param.pointer_access, rv.data);
+                    jitc_log(LogLevel::Debug,
+                             " -> slot(%u, is_pointer=%u, data=%p)", param.slot,
+                             param.pointer_access, rv.data);
 
-                p->size = param.pointer_access
-                              ? 8
-                              : -(int)type_size[(uint32_t)rv.type];
-                p->offset = param.extra;
-                p->src = rv.data;
+                    p->size = param.pointer_access
+                                  ? 8
+                                  : -(int)type_size[(uint32_t)rv.type];
+                    p->offset = param.extra.offset;
+                    p->src = rv.data;
+                } else {
+                    jitc_log(LogLevel::Debug, " -> literal");
+                    p->size = param.extra.type_size;
+                    p->offset = param.extra.offset;
+                    p->src = (void *)param.extra.data;
+                }
+
                 p++;
             }
 
@@ -471,6 +479,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 for (uint32_t p = op.dependency_range.first;
                      p < op.dependency_range.second; ++p) {
                     ParamInfo &info = this->dependencies[p];
+                    if (info.type != ParamType::Input &&
+                        info.type != ParamType::Output)
+                        continue;
+
                     ReplayVariable &rv = replay_variables[info.slot];
                     rv.rc--;
                     jitc_log(LogLevel::Debug,
@@ -533,6 +545,9 @@ void Recording::compute_rc() {
         for (uint32_t j = op.dependency_range.first;
              j < op.dependency_range.second; ++j) {
             ParamInfo &info = this->dependencies[j];
+            if (info.type != ParamType::Input && info.type != ParamType::Output)
+                continue;
+
             RecordVariable &rv = this->record_variables[info.slot];
             rv.rc++;
         }
