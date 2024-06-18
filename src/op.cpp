@@ -1874,7 +1874,9 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
         (mask_v->is_literal() && mask_v->literal == 0) ||   // Masked load
         src_v->size == 1 ||                                 // Scalar load
         (var_info.size == 1 && var_info.literal) ||         // Memcpy
-        src_v->unaligned) {                                 // Source must be aligned
+        src_v->unaligned ||                                 // Source must be aligned
+        src_v->is_literal() ||                              // Literal values
+        src_v->is_undefined()) {                            // Uninitialized memory
         for (size_t i = 0; i < n; ++i) {
             Ref index2 = steal(jitc_var_u32(var_info.backend, (uint32_t) i));
             Ref index3 = steal(jitc_var_fma(index, scale, index2));
