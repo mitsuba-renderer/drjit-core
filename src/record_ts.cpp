@@ -11,14 +11,13 @@ struct ReplayVariable {
     void *data = 0;
     size_t alloc_size;
     uint32_t size = 0;
-    VarType type;
+    VarType type = VarType::Void;
     uint32_t index;
     bool is_literal;
     RecordType rv_type;
     uint32_t rc;
 
     ReplayVariable(RecordVariable &rv) {
-        this->type = rv.type;
         this->index = rv.index;
         this->is_literal = rv.is_literal;
         this->rc = rv.rc;
@@ -31,13 +30,32 @@ struct ReplayVariable {
         }
     }
 
+    // void set_type(VarType type) {
+    //     if (type != VarType::Void)
+    //         this->type = type;
+    // }
+
+    void alloc(JitBackend backend, uint32_t size, VarType type) {
+        if (type != VarType::Void)
+            this->type = type;
+        alloc(backend, size);
+    }
+    void alloc(JitBackend backend, uint32_t size) {
+        this->size = size;
+        alloc(backend);
+    }
+    void alloc(JitBackend backend) {
+        alloc(backend, this->size, type_size[(uint32_t)this->type]);
+    }
     /**
      * Allocates the data for this replay variable.
      * If this is atempted twice, we test weather the allocated size is
      * sufficient and re-allocate the memory if necesarry.
      */
-    void alloc(JitBackend backend) {
-        size_t dsize = ((size_t)size) * ((size_t)type_size[(int)type]);
+    void alloc(JitBackend backend, uint32_t size, uint32_t isize) {
+        // size_t dsize = ((size_t)size) * ((size_t)type_size[(int)type]);
+        this->size = size;
+        size_t dsize = ((size_t)size) * ((size_t)isize);
         AllocType alloc_type =
             backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
 
@@ -90,6 +108,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
         ReplayVariable &rv = replay_variables[this->inputs[i]];
         rv.size = input_variable->size;
         rv.data = input_variable->data;
+        rv.type = (VarType)input_variable->type;
         jitc_log(LogLevel::Debug, "    input %u: r%u mapped to slot(%u)", i,
                  replay_inputs[i], this->inputs[i]);
     }
@@ -191,8 +210,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                          info.slot, rv.rc, info.pointer_access, rv.size);
 
                 if (info.type == ParamType::Output) {
-                    rv.size = launch_size;
-                    rv.alloc(backend);
+                    rv.alloc(backend, launch_size, info.vtype);
                 }
                 jitc_log(LogLevel::Info, "    data=%p", rv.data);
                 jitc_assert(
@@ -228,15 +246,13 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ParamInfo ptr_info = this->dependencies[dependency_index];
 
             ReplayVariable &ptr_var = replay_variables[ptr_info.slot];
-            VarType type = replay_variables[ptr_info.slot].type;
-            ptr_var.size = op.size;
-            ptr_var.alloc(backend);
+            ptr_var.alloc(backend, op.size, op.input_size);
 
-            jitc_log(LogLevel::Debug, "replay(): MemsetAsync -> slot(%u)",
-                     ptr_info.slot);
+            jitc_log(LogLevel::Debug, "replay(): MemsetAsync -> slot(%u) [%zu]",
+                     ptr_info.slot, op.size);
 
-            ts->memset_async(ptr_var.data, ptr_var.size,
-                             type_size[(uint32_t)type], &op.data);
+            ts->memset_async(ptr_var.data, ptr_var.size, op.input_size,
+                             &op.data);
         } break;
         case OpType::Reduce: {
             jitc_log(LogLevel::Debug, "replay(): Reduce");
@@ -248,8 +264,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ReplayVariable &ptr_var = replay_variables[ptr_info.slot];
             ReplayVariable &out_var = replay_variables[out_info.slot];
 
-            out_var.size = 1;
-            out_var.alloc(backend);
+            out_var.alloc(backend, 1, out_info.vtype);
 
             VarType type = ptr_var.type;
             ReduceOp rtype = op.rtype;
@@ -301,8 +316,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             size_t new_size =
                 size * (size_t)replication_per_worker * (size_t)workers;
 
-            dst_rv.size = new_size;
-            dst_rv.alloc(backend);
+            dst_rv.alloc(backend, new_size, dst_info.vtype);
 
             jitc_log(LogLevel::Debug, "    data=0x%lx", op.data);
             ts->memset_async(dst_rv.data, new_size, tsize, &op.data);
@@ -321,7 +335,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ReplayVariable &in_var = replay_variables[in_info.slot];
             ReplayVariable &out_var = replay_variables[out_info.slot];
 
-            out_var.alloc(backend);
+            out_var.alloc(backend, in_var.size, out_info.vtype);
 
             VarType type = in_var.type;
 
@@ -338,8 +352,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ReplayVariable &out_rv = replay_variables[out_info.slot];
 
             uint32_t size = in_rv.size;
-            out_rv.size = size;
-            out_rv.alloc(backend);
+            out_rv.alloc(backend, size, out_info.vtype);
 
             uint32_t out_size = ts->compress((uint8_t *)in_rv.data, size,
                                              (uint32_t *)out_rv.data);
@@ -358,8 +371,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                      "replay(): MemcpyAsync slot(%u) <- slot(%u) [%u]",
                      dst_info.slot, src_info.slot, src_var.size);
 
-            dst_var.size = src_var.size;
-            dst_var.alloc(backend);
+            dst_var.alloc(backend, src_var.size, dst_info.vtype);
 
             jitc_log(LogLevel::Debug, "    src.data=%p", src_var.data);
             jitc_log(LogLevel::Debug, "    dst.data=%p", dst_var.data);
@@ -386,13 +398,12 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                      values_info.slot, values_var.data, values_var.size);
 
             jitc_log(LogLevel::Info, " <- perm: slot(%u)", perm_info.slot);
-            perm_var.size = size;
-            perm_var.alloc(backend);
+            perm_var.alloc(backend, size, perm_info.vtype);
 
             jitc_log(LogLevel::Info, " <- offsets: slot(%u)",
                      offsets_info.slot);
-            offsets_var.size = bucket_count * 4 + 1;
-            offsets_var.alloc(backend);
+            offsets_var.alloc(backend, bucket_count * 4 + 1,
+                              offsets_info.vtype);
 
             jitc_log(LogLevel::Debug,
                      "    mkperm(values=%p, size=%u, "
@@ -412,8 +423,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ParamInfo dst_info = this->dependencies[i++];
             ReplayVariable &dst_rv = replay_variables[dst_info.slot];
             // Assume, that size is known
-            dst_rv.size = op.size * type_size[(uint32_t)dst_rv.type];
-            dst_rv.alloc(backend);
+            dst_rv.alloc(backend, op.size, dst_info.vtype);
 
             jitc_log(LogLevel::Debug, " <- slot(%u, is_pointer=%u, data=%p)",
                      dst_info.slot, dst_info.pointer_access, dst_rv.data);
@@ -570,11 +580,11 @@ void Recording::compute_rc() {
 void Recording::validate() {
     for (uint32_t i = 0; i < this->record_variables.size(); ++i) {
         RecordVariable &rv = this->record_variables[i];
-        jitc_assert(rv.type != VarType::Void || rv.rc == 0,
-                    "Recorded Variable at slot(%u) was added, it's type is "
-                    "unknown! This can occur, if a variable is only used by "
-                    "operations, that do not provide a type.",
-                    i);
+        // jitc_assert(rv.type != VarType::Void || rv.rc == 0,
+        //             "Recorded Variable at slot(%u) was added, it's type is "
+        //             "unknown! This can occur, if a variable is only used by "
+        //             "operations, that do not provide a type.",
+        //             i);
     }
 }
 
