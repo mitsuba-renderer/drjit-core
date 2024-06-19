@@ -71,10 +71,7 @@ struct ReplayVariable {
             jitc_free(this->data);
             data = jitc_malloc(alloc_type, dsize);
         } else {
-            jitc_log(LogLevel::Warn,
-                     "replay(): Tried to allocate replay variable twice! "
-                     "Usually, only output variables are allocated. This "
-                     "indicates that something went wrong when recording.");
+            // Do not reallocate if the size is enough
         }
     }
 };
