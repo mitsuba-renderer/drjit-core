@@ -66,12 +66,10 @@ struct RecordVariable {
 
     RecordVariable() {
     }
-    RecordVariable(VarType type) : type(type) {
-    }
-    RecordVariable(VarType type, bool is_literal, RecordType rv_type,
-                   uint32_t input_index)
-        : type(type), index(input_index), is_literal(is_literal),
-          rv_type(rv_type) {
+    // RecordVariable(VarType type) : type(type) {
+    // }
+    RecordVariable(bool is_literal, RecordType rv_type, uint32_t input_index)
+        : index(input_index), is_literal(is_literal), rv_type(rv_type) {
     }
 
     /**
@@ -80,14 +78,6 @@ struct RecordVariable {
      * it to the already saved RecordVariable.
      */
     RecordVariable &operator|=(const RecordVariable &rhs) {
-        if (this->type == VarType::Void)
-            this->type = rhs.type;
-        else
-            jitc_assert(this->type == rhs.type,
-                        "record(): Missmatched types during update of "
-                        "RecordVariable, %s != %s",
-                        type_name[(uint32_t)this->type],
-                        type_name[(uint32_t)rhs.type]);
         if (this->rv_type == RecordType::Other) {
             this->rv_type = rhs.rv_type;
             this->index = rhs.index;
@@ -102,8 +92,6 @@ struct RecordVariable {
         result &= this->rv_type == RecordType::Other ||
                   rhs.rv_type == RecordType::Other ||
                   this->rv_type == rhs.rv_type;
-        result &= this->type == VarType::Void || rhs.type == VarType::Void ||
-                  this->type == rhs.type;
         return result;
     }
 };
@@ -111,6 +99,7 @@ struct RecordVariable {
 struct ParamInfo {
     uint32_t slot;
     ParamType type = ParamType::Input;
+    VarType vtype = VarType::Void;
     bool pointer_access;
     struct {
         uint32_t offset;
@@ -120,11 +109,16 @@ struct ParamInfo {
 
     ParamInfo() {
     }
-    ParamInfo(uint32_t index) : slot(index) {
+    // ParamInfo(uint32_t index) : slot(index) {
+    // }
+    ParamInfo(uint32_t index, VarType vtype) : slot(index), vtype(vtype) {
     }
-    ParamInfo(uint32_t index, ParamType type, bool pointer_access)
-        : slot(index), type(type), pointer_access(pointer_access) {
+    ParamInfo(uint32_t index, uint32_t vtype)
+        : slot(index), vtype((VarType)vtype) {
     }
+    // ParamInfo(uint32_t index, ParamType type, bool pointer_access)
+    //     : slot(index), type(type), pointer_access(pointer_access) {
+    // }
 };
 
 struct Recording {
@@ -227,8 +221,8 @@ struct RecordThreadState : ThreadState {
                         this->recording.dependencies[dependency_index];
 
                     uint32_t start = this->recording.dependencies.size();
-                    this->recording.dependencies.push_back(src_info.slot);
-                    this->recording.dependencies.push_back(dst_slot);
+                    add_in_param(src_info.slot);
+                    add_out_param(dst_slot, v->type);
                     uint32_t end = this->recording.dependencies.size();
 
                     jitc_log(LogLevel::Debug,
@@ -283,7 +277,6 @@ struct RecordThreadState : ThreadState {
                 }
 
                 RecordVariable rv;
-                rv.type = (VarType)v->type;
                 rv.is_literal = v->is_literal();
 
                 // It could happen, that a variable is created while recording.
@@ -333,11 +326,12 @@ struct RecordThreadState : ThreadState {
                              v->size, ptr, slot);
                 }
 
-                this->recording.dependencies.push_back(ParamInfo{
-                    /*index=*/slot,
-                    /*type=*/param_type,
-                    /*pointer_access=*/pointer_access,
-                });
+                ParamInfo info;
+                info.slot = slot;
+                info.type = param_type;
+                info.pointer_access = pointer_access;
+                info.vtype = (VarType)v->type;
+                add_param(info);
             }
             uint32_t end = this->recording.dependencies.size();
 
@@ -392,13 +386,14 @@ struct RecordThreadState : ThreadState {
             uint32_t ptr_id = this->add_variable(ptr, rv);
 
             uint32_t start = this->recording.dependencies.size();
-            this->recording.dependencies.push_back(ptr_id);
+            add_out_param(ptr_id, VarType::Void);
             uint32_t end = this->recording.dependencies.size();
 
             Operation op;
             op.type = OpType::MemsetAsync;
             op.dependency_range = std::pair(start, end);
             op.size = size;
+            op.input_size = isize;
             std::memcpy(&op.data, src, isize);
 
             this->recording.operations.push_back(op);
@@ -414,13 +409,11 @@ struct RecordThreadState : ThreadState {
         if (!paused) {
 
             uint32_t ptr_id = this->get_variable(ptr);
-            uint32_t out_id = this->add_variable(out, RecordVariable{
-                                                          /*type=*/type,
-                                                      });
+            uint32_t out_id = this->add_variable(out, RecordVariable{});
 
             uint32_t start = this->recording.dependencies.size();
-            this->recording.dependencies.push_back(ptr_id);
-            this->recording.dependencies.push_back(out_id);
+            add_in_param(ptr_id);
+            add_out_param(out_id, type);
             uint32_t end = this->recording.dependencies.size();
 
             Operation op;
@@ -456,13 +449,11 @@ struct RecordThreadState : ThreadState {
                     void *out) override {
         if (!paused) {
             uint32_t in_id = this->get_variable(in);
-            uint32_t out_id = this->add_variable(out, RecordVariable{
-                                                          /*type=*/vt,
-                                                      });
+            uint32_t out_id = this->add_variable(out, RecordVariable{});
 
             uint32_t start = this->recording.dependencies.size();
-            this->recording.dependencies.push_back(in_id);
-            this->recording.dependencies.push_back(out_id);
+            add_in_param(in_id);
+            add_out_param(out_id, vt);
             uint32_t end = this->recording.dependencies.size();
 
             Operation op;
@@ -487,16 +478,13 @@ struct RecordThreadState : ThreadState {
                      "record(): compress(in=%p, size=%u, out=%p)", in, size,
                      out);
 
-            RecordVariable rv;
-            rv.type = VarType::Bool;
-            uint32_t in_slot = this->add_variable((void *)in, rv);
-            rv = RecordVariable();
-            rv.type = VarType::UInt32;
-            uint32_t out_slot = this->add_variable((void *)out, rv);
+            uint32_t in_slot = this->add_variable((void *)in, RecordVariable{});
+            uint32_t out_slot =
+                this->add_variable((void *)out, RecordVariable{});
 
             uint32_t start = this->recording.dependencies.size();
-            this->recording.dependencies.push_back(in_slot);
-            this->recording.dependencies.push_back(out_slot);
+            add_in_param(in_slot);
+            add_out_param(out_slot, VarType::UInt32);
             uint32_t end = this->recording.dependencies.size();
 
             Operation op;
@@ -522,19 +510,14 @@ struct RecordThreadState : ThreadState {
                          values, size, bucket_count, perm, offsets);
 
                 uint32_t values_id = this->get_variable(values);
-                uint32_t perm_id =
-                    this->add_variable(perm, RecordVariable{
-                                                 /*type=*/VarType::UInt32,
-                                             });
+                uint32_t perm_id = this->add_variable(perm, RecordVariable{});
                 uint32_t offsets_id =
-                    this->add_variable(offsets, RecordVariable{
-                                                    /*type=*/VarType::UInt32,
-                                                });
+                    this->add_variable(offsets, RecordVariable{});
 
                 uint32_t start = this->recording.dependencies.size();
-                this->recording.dependencies.push_back(values_id);
-                this->recording.dependencies.push_back(perm_id);
-                this->recording.dependencies.push_back(offsets_id);
+                add_in_param(values_id);
+                add_out_param(perm_id, VarType::UInt32);
+                add_out_param(offsets_id, VarType::UInt32);
                 uint32_t end = this->recording.dependencies.size();
 
                 Operation op;
@@ -575,8 +558,9 @@ struct RecordThreadState : ThreadState {
                 uint32_t dst_id = this->add_variable(dst, rv);
 
                 uint32_t start = this->recording.dependencies.size();
-                this->recording.dependencies.push_back(src_id);
-                this->recording.dependencies.push_back(dst_id);
+                add_in_param(src_id);
+                add_out_param(dst_id,
+                              this->recording.record_variables[src_id].type);
                 uint32_t end = this->recording.dependencies.size();
 
                 Operation op;
@@ -623,20 +607,18 @@ struct RecordThreadState : ThreadState {
             jitc_log(LogLevel::Debug, "record(): aggregate(dst=%p, size=%u)",
                      dst, size);
 
-            uint32_t dst_id =
-                this->add_variable(dst, RecordVariable{
-                                            /*type=*/VarType::UInt8,
-                                        });
+            uint32_t dst_id = this->add_variable(dst, RecordVariable{});
 
             jitc_log(LogLevel::Debug, " <- slot(%u)", dst_id);
 
             uint32_t start = this->recording.dependencies.size();
 
-            this->recording.dependencies.push_back(ParamInfo{
-                /*index=*/dst_id,
-                /*type=*/ParamType::Output,
-                /*pointer_access=*/false,
-            });
+            ParamInfo info;
+            info.type = ParamType::Output;
+            info.slot = dst_id;
+            info.pointer_access = false;
+            info.vtype = VarType::UInt8;
+            add_param(info);
 
             for (uint32_t i = 0; i < size; ++i) {
                 AggregationEntry &p = agg[i];
@@ -652,7 +634,7 @@ struct RecordThreadState : ThreadState {
                     info.extra.type_size = p.size;
                     info.type = ParamType::Register;
                     info.pointer_access = false;
-                    this->recording.dependencies.push_back(info);
+                    add_param(info);
                 } else {
                     uint32_t index = get_variable(p.src);
                     jitc_log(LogLevel::Debug, "    ptr at slot %u", index);
@@ -665,7 +647,7 @@ struct RecordThreadState : ThreadState {
                     info.type = ParamType::Input;
                     info.pointer_access = rv.type == VarType::Pointer;
                     info.extra.offset = p.offset;
-                    this->recording.dependencies.push_back(info);
+                    add_param(info);
                 }
             }
 
@@ -698,11 +680,10 @@ struct RecordThreadState : ThreadState {
                      "size=%u)",
                      (uint32_t)vt, (uint32_t)reduce_op, data, exp, size);
 
-            uint32_t data_id =
-                this->add_variable(data, RecordVariable{/*type=*/vt});
+            uint32_t data_id = this->add_variable(data, RecordVariable{});
 
             uint32_t start = this->recording.dependencies.size();
-            this->recording.dependencies.push_back(data_id);
+            add_out_param(data_id, vt);
             uint32_t end = this->recording.dependencies.size();
 
             jitc_log(LogLevel::Debug, "<-> data: slot(%u)", data_id);
@@ -724,13 +705,12 @@ struct RecordThreadState : ThreadState {
     void add_input(uint32_t input) {
         uint32_t input_index = this->recording.inputs.size();
         Variable *v = jitc_var(input);
-        uint32_t slot =
-            this->add_variable(v->data, RecordVariable{
-                                            /*type=*/(VarType)v->type,
-                                            /*is_literal=*/v->is_literal(),
-                                            /*rv_type=*/RecordType::Input,
-                                            /*input_index=*/input_index,
-                                        });
+        RecordVariable rv;
+        rv.is_literal = v->is_literal();
+        rv.rv_type = RecordType::Input;
+        rv.index = input_index;
+        rv.type = (VarType)v->type;
+        uint32_t slot = this->add_variable(v->data, rv);
         jitc_log(LogLevel::Info,
                  "record(): Adding variable %u input %u to slot %u", input,
                  input_index, slot);
@@ -741,7 +721,6 @@ struct RecordThreadState : ThreadState {
         Variable *v = jitc_var(output);
         uint32_t slot =
             this->add_variable(v->data, RecordVariable{
-                                            /*type=*/(VarType)v->type,
                                             /*is_literal=*/v->is_literal(),
                                             /*rv_type=*/RecordType::Other,
                                             /*input_index=*/0,
@@ -846,6 +825,28 @@ struct RecordThreadState : ThreadState {
         auto it = this->ptr_to_slot.find(ptr);
 
         return it != this->ptr_to_slot.end();
+    }
+
+    void add_param(ParamInfo info) {
+        if (info.vtype != VarType::Void)
+            this->recording.record_variables[info.slot].type = info.vtype;
+        this->recording.dependencies.push_back(info);
+    }
+    void add_in_param(uint32_t slot) {
+        ParamInfo info;
+        info.type = ParamType::Input;
+        info.slot = slot;
+        add_param(info);
+    }
+    void add_out_param(uint32_t slot, VarType vtype) {
+        ParamInfo info;
+        info.type = ParamType::Output;
+        info.slot = slot;
+        info.vtype = vtype;
+        add_param(info);
+    }
+    void add_out_param(uint32_t slot, uint32_t vtype) {
+        add_out_param(slot, (VarType)vtype);
     }
 };
 
