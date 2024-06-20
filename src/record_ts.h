@@ -200,7 +200,9 @@ struct RecordThreadState : ThreadState {
                 Variable *v = jitc_var(index);
                 ParamType param_type = (ParamType)v->param_type;
                 if ((VarType)v->type == VarType::Pointer) {
-                    jitc_log(LogLevel::Debug, "pointer walking r%u points to r%u", index, v->dep[3]);
+                    jitc_log(LogLevel::Debug,
+                             "pointer walking r%u points to r%u", index,
+                             v->dep[3]);
                     // Follow pointer
                     index = v->dep[3];
                     v = jitc_var(index);
@@ -317,7 +319,8 @@ struct RecordThreadState : ThreadState {
                              "size=%u, data=%p, type=%s) at slot(%u)",
                              param_type == ParamType::Output ? "<-" : "->",
                              param_index, kernel_param_ids->at(param_index),
-                             index, v->size, ptr, type_name[(uint32_t)v->type], slot);
+                             index, v->size, ptr, type_name[(uint32_t)v->type],
+                             slot);
                 } else {
                     jitc_log(LogLevel::Debug,
                              " %s recording param %u = var(%u, size=%u, "
