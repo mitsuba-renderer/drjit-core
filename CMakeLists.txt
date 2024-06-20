@@ -177,8 +177,10 @@ target_include_directories(drjit-core PRIVATE
 )
 
 if (MSVC)
-  # Conditional expression is constant (a few in robin_hash.h)
-  target_compile_options(drjit-core PRIVATE /wd4127)
+  # C24127 conditional expression is constant (a few in robin_hash.h)
+  # C24324 structure was padded due to alignment specifier
+  # C26800 use of a moved from object: 'object'. (false-positive when using structured bindings)
+  target_compile_options(drjit-core PRIVATE /wd4127 /wd4324 /wd6800)
 
   # Allow throwing exceptions even from "extern C" code
   target_compile_options(drjit-core PUBLIC /EHs)

@@ -325,7 +325,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             v3.symbolic = ld->symbolic;
             v3.size = std::max(v2->size, size);
             v3.array_state = (uint32_t) ArrayState::Clean;
-            v3.array_length = array_length;
+            v3.array_length = (uint16_t) array_length;
             v3.dep[0] = index;
             v3.dep[1] = loop_end;
             jitc_var_inc_ref(loop_end);

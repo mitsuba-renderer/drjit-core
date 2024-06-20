@@ -259,7 +259,6 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
     jitc_cuda_prepare_index(ptr, index, value);
 
     ReduceOp op = (ReduceOp) (uint32_t) v->literal;
-    ReduceMode mode = (ReduceMode) (uint32_t) (v->literal >> 32);
     VarType vt = (VarType) value->type;
 
     if (op == ReduceOp::Add) {
@@ -281,6 +280,7 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
     if (op == ReduceOp::Add && (vt == VarType::Float32 || vt == VarType::Float16))
         op_name_ftz = "add.ftz";
 
+    ReduceMode mode = (ReduceMode) (uint32_t) (v->literal >> 32);
     const ThreadState *ts = thread_state_cuda;
     bool reduce_bfly_32 = ts->ptx_version >= 63 && ts->compute_capability >= 70 &&
                           (vt == VarType::UInt32 || vt == VarType::Int32 || vt == VarType::Float32),

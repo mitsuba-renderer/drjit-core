@@ -183,7 +183,7 @@ template <typename Ts> static BlockReduction block_reduce_create(ReduceOp op) {
                 UInt *out = (UInt *) out_ + start;
 
                 for (uint32_t i = start; i != end; ++i) {
-                    UInt result(-1);
+                    UInt result(std::numeric_limits<UInt>::max());
 
                     for (uint32_t j = 0; j != block_size; ++j)
                         result &= *in++;
