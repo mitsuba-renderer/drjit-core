@@ -276,7 +276,7 @@ static std::vector<uint32_t> free_todo;
 
 /// Cleanup handler, called when the internal/external reference count reaches zero
 JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
-    State &state = ::state;
+    State &state_ = ::state;
 
     // Deallocate using a list to avoid overflowing the stack in long dependent calculations
     do {
@@ -298,7 +298,7 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
 
         if (unlikely(v->extra)) {
             uint32_t index2 = v->extra;
-            VariableExtra &extra = state.extra[index2];
+            VariableExtra &extra = state_.extra[index2];
             char *label = extra.label;
 
             /* Notify callback that the variable was freed.
@@ -307,17 +307,17 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
                 if (extra.callback_internal) {
                     extra.callback(index, 1, extra.callback_data);
                 } else {
-                    unlock_guard guard(state.lock);
+                    unlock_guard guard(state_.lock);
                     extra.callback(index, 1, extra.callback_data);
                 }
             }
 
             free(label);
-            state.unused_extra.push(index2);
+            state_.unused_extra.push(index2);
         }
 
         // Remove from unused variable list
-        state.unused_variables.push(index);
+        state_.unused_variables.push(index);
 
         index = 0;
 
@@ -328,7 +328,7 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
                 if (!index2)
                     continue;
 
-                Variable *v2 = &state.variables[index2];
+                Variable *v2 = &state_.variables[index2];
 
                 if (unlikely(v2->ref_count == 0))
                     jitc_fail("jit_var_dec_ref(): variable r%u has no references!", index2);
@@ -346,7 +346,7 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
         } else if (dep[3]) {
             // Manually inlined version of jitc_var_dec_ref_se
             uint32_t index2 = dep[3];
-            Variable *v2 = &state.variables[index2];
+            Variable *v2    = &state_.variables[index2];
 
             if (unlikely(v2->ref_count_se == 0))
                 jitc_fail("jit_var_dec_ref_se(): variable r%u has no side effect references!", index2);
@@ -367,7 +367,7 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
             free_todo.pop_back();
         }
 
-        v = &state.variables[index];
+        v = &state_.variables[index];
     } while (true);
 
     // Optional: intense internal sanitation instrumentation
@@ -419,7 +419,7 @@ uint64_t jitc_var_stash_ref(uint32_t index) {
     if (v->ref_count_stashed || v->is_array())
         return 0;
 
-    v->ref_count_stashed = v->ref_count;
+    v->ref_count_stashed = (uint16_t) v->ref_count;
     jitc_trace("jit_var_stash_ref(r%u): %u", index, v->ref_count);
     return (((uint64_t) v->counter) << 32) | index;
 }
@@ -2180,7 +2180,6 @@ uint64_t jitc_reduce_identity(VarType vt, ReduceOp op) {
         case ReduceOp::Min: return type_max[(int) vt]; break;
         case ReduceOp::Max: return type_min[(int) vt]; break;
         default: jitc_fail("jitc_reduce_identity(): unsupported reduction type!");
-                 return 0;
     }
 }
 
@@ -2264,7 +2263,7 @@ uint32_t jitc_var_reduce_dot(uint32_t index_1, uint32_t index_2) {
 
         // Fast path
         bool eval = jitc_var_eval(index_1);
-        eval |= jitc_var_eval(index_2);
+        eval |= (bool)jitc_var_eval(index_2);
         if (eval) {
             v1 = jitc_var(index_1);
             v2 = jitc_var(index_2);

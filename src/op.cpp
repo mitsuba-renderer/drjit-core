@@ -995,7 +995,7 @@ uint32_t jitc_var_select(uint32_t a0, uint32_t a1, uint32_t a2) {
             Variable *v = jitc_var(result);
             jitc_lvn_drop(result, v);
 
-            v->array_length = array_length;
+            v->array_length = (uint16_t) array_length;
             v->array_state = (uint32_t) ArrayState::Clean;
         }
     }
@@ -1846,7 +1846,7 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
             out[i] = 0;
         return;
     }
-    Ref scale = steal(jitc_var_u32((JitBackend) jitc_var(src_)->backend, n));
+    Ref scale = steal(jitc_var_u32((JitBackend) jitc_var(src_)->backend, (uint32_t) n));
 
     Ref src = borrow(src_);
 
@@ -1889,8 +1889,8 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
     uint32_t max_width = std::min(8u, jitc_llvm_vector_width);
     if (n > max_width && var_info.backend == JitBackend::LLVM) {
         Ref step = steal(jitc_var_u32(var_info.backend, 1)),
-            scale = steal(jitc_var_u32(var_info.backend, n/max_width)),
-            index2 = steal(jitc_var_mul(index, scale));
+            scale_ = steal(jitc_var_u32(var_info.backend, (uint32_t) n/max_width)),
+            index2 = steal(jitc_var_mul(index, scale_));
 
         for (size_t i = 0; i < n; i += max_width) {
             jitc_var_gather_packet(max_width, src_, index2, mask, out+i);
@@ -1929,7 +1929,7 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
 
     Ref gather_op = steal(jitc_var_new_node_3(
         src_info.backend, VarKind::PacketGather, src_info.type,
-        op_size, var_info.symbolic, ptr_2,
+        (uint32_t) op_size, var_info.symbolic, ptr_2,
         jitc_var(ptr_2), index_2, jitc_var(index_2), mask_2,
         jitc_var(mask_2), n));
 
@@ -2263,7 +2263,7 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             // once, its corresponding side effect might have been deleted. We
             // therefore always mark this as the first time it's being called
             // when inside a symbolic scope.
-            reduce_expanded |= jit_flag(JitFlag::SymbolicScope);
+            reduce_expanded |= (bool) jit_flag(JitFlag::SymbolicScope);
 
             auto [target_i, expand_i] = jitc_var_expand(target, op);
             target = steal(target_i);
@@ -2469,9 +2469,9 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
 
     bool some_empty = false, all_empty = true;
     for (size_t i = 0; i < n; ++i) {
-        uint32_t index = values[i];
-        some_empty |= index == 0;
-        all_empty &= index == 0;
+        uint32_t idx = values[i];
+        some_empty |= idx == 0;
+        all_empty &= idx == 0;
     }
 
     if (index_ == 0 && all_empty) {
@@ -2583,7 +2583,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         }
     }
 
-    Ref scale = steal(jitc_var_u32(backend, n));
+    Ref scale = steal(jitc_var_u32(backend, (uint32_t) n));
 
     // Potentially reduce to a sequence of scatters
     if (!use_packet_op) {
@@ -2604,8 +2604,8 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     uint32_t max_width = std::min(8u, jitc_llvm_vector_width);
     if (n > max_width && var_info.backend == JitBackend::LLVM) {
         Ref step = steal(jitc_var_u32(var_info.backend, 1)),
-            scale = steal(jitc_var_u32(var_info.backend, n/max_width)),
-            index2 = steal(jitc_var_mul(index, scale));
+            scale_ = steal(jitc_var_u32(var_info.backend, (uint32_t) n/max_width)),
+            index2 = steal(jitc_var_mul(index, scale_));
 
         for (size_t i = 0; i < n; i += max_width) {
 

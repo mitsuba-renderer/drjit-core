@@ -63,8 +63,8 @@ Task *CUDAThreadState::launch(Kernel kernel, uint32_t size,
         };
 
         uint32_t block_count, thread_count;
-        const Device &device = state.devices[this->device];
-        device.get_launch_config(&block_count, &thread_count, size,
+        const Device &device_ = state.devices[this->device];
+        device_.get_launch_config(&block_count, &thread_count, size,
                                  (uint32_t) kernel.cuda.block_size);
 
         cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,

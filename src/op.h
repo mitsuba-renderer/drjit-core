@@ -115,8 +115,9 @@ extern uint32_t jitc_var_log2_intrinsic(uint32_t a0);
 
 /// Extra data describing a packet scatter operatoin
 struct PacketScatterData {
-    ReduceOp op;
-    ReduceMode mode;
+    ReduceOp op     = ReduceOp::Identity;
+    ReduceMode mode = ReduceMode::Auto;
+
     std::vector<uint32_t> values;
     WeakRef to_reduce;
 

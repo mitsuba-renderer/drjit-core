@@ -152,10 +152,10 @@ public:
         bits = bitcast<uint32_t>(norm);
         bits += (bits >> sig_diff) & 1;              // add tie breaking bias
         bits += (uint32_t(1) << (sig_diff - 1)) - 1; // round up to half
-        bits ^= -is_sub & (bitcast<uint32_t>(subn) ^ bits);
+        bits ^= -(int32_t)is_sub & (bitcast<uint32_t>(subn) ^ bits);
         bits >>= sig_diff; // truncate
         bits ^= -(inf_h < bits) & (inf_h ^ bits); // fix overflow
-        bits ^= -is_nan & (qnan_h ^ bits);
+        bits ^= -(int32_t)is_nan & (qnan_h ^ bits);
         bits |= sign >> bit_diff; // restore sign
 
         return (uint16_t) bits;

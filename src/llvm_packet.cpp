@@ -195,8 +195,8 @@ void scatter_packet_recursive(ReduceOp op, uint32_t l, uint32_t i, uint32_t n, c
             if (false) {
                 /* Compile via Masked loads/store */
                 fmt("    %m$u = shufflevector <$w x i1> %m, <$w x i1> undef, <$u x i32> <", k, n);
-                for (uint32_t i = 0; i < n; ++i)
-                    fmt("i32 $u$s", k, i + 1 < n ? ", " : ">\n");
+                for (uint32_t m = 0; m < n; ++m)
+                    fmt("i32 $u$s", k, m + 1 < n ? ", " : ">\n");
                 if (op == ReduceOp::Identity) {
                     fmt("    call void @llvm.masked.store.v$u$H.p0{v$u$H|}(<$u x $m> %v$u_$u_$u, {<$u x $m> *} %p$u{_0|}, i32 $u, <$u x i1> %m$u)\n",
                         n, v, n, v, n, v, l, i, j, n, v, k, align, n, k);
