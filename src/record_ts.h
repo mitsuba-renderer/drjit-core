@@ -109,19 +109,16 @@ struct ParamInfo {
 
     ParamInfo() {
     }
-    // ParamInfo(uint32_t index) : slot(index) {
-    // }
     ParamInfo(uint32_t index, VarType vtype) : slot(index), vtype(vtype) {
     }
     ParamInfo(uint32_t index, uint32_t vtype)
         : slot(index), vtype((VarType)vtype) {
     }
-    // ParamInfo(uint32_t index, ParamType type, bool pointer_access)
-    //     : slot(index), type(type), pointer_access(pointer_access) {
-    // }
 };
 
 struct Recording {
+
+    bool requires_dry_run = false;
 
     std::vector<RecordVariable> record_variables;
 
@@ -235,7 +232,10 @@ struct RecordThreadState : ThreadState {
                     op.type = OpType::Expand;
                     op.dependency_range = std::pair(start, end);
                     op.data = memset.data;
+                    op.size = memcpy.size / type_size[(uint32_t)src_info.type];
                     this->recording.operations.push_back(op);
+
+                    this->recording.requires_dry_run = true;
                 }
             }
 
@@ -867,3 +867,13 @@ void jitc_record_destroy(Recording *recording);
 bool jitc_record_pause(JitBackend backend);
 
 bool jitc_record_resume(JitBackend backend);
+
+struct RequiresRetraceException: public std::exception{
+    RequiresRetraceException() {}
+    const char *what() const throw() override{
+        return "";
+    }
+};
+
+void jitc_record_replay(Recording *recording, const uint32_t *inputs,
+                        uint32_t *outputs);

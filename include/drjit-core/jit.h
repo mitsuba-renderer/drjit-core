@@ -2425,6 +2425,10 @@ extern JIT_EXPORT uint32_t jit_array_read(uint32_t source, uint32_t offset,
 /// Opaque data structure, storing the recodring of a thread state
 struct Recording;
 
+/// Opaque exception class, thrown when a recording could not be replayed and
+/// requires re-tracing
+struct RequiresRetraceException;
+
 /**
  * \brief Start recording operations which can be replayed later without tracing
  * operations.
