@@ -5,6 +5,8 @@
 #include "log.h"
 #include "var.h"
 
+static bool dry_run = false;
+
 // This struct holds the data and tracks the size of varaibles,
 // used during replay.
 struct ReplayVariable {
@@ -63,13 +65,16 @@ struct ReplayVariable {
             this->alloc_size = dsize;
             jitc_log(LogLevel::Debug, "    allocating output of size %zu.",
                      dsize);
-            data = jitc_malloc(alloc_type, dsize);
+            if (!dry_run)
+                data = jitc_malloc(alloc_type, dsize);
         } else if (this->alloc_size < dsize) {
             this->alloc_size = dsize;
             jitc_log(LogLevel::Debug, "    re-allocating output of size %zu.",
                      dsize);
-            jitc_free(this->data);
-            data = jitc_malloc(alloc_type, dsize);
+            if (!dry_run) {
+                jitc_free(this->data);
+                data = jitc_malloc(alloc_type, dsize);
+            }
         } else {
             // Do not reallocate if the size is enough
         }
@@ -146,7 +151,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ReplayVariable &rv = replay_variables[info.slot];
 
                 if (info.type == ParamType::Input) {
-                    jitc_assert(rv.data != nullptr,
+                    jitc_assert(rv.data != nullptr || dry_run,
                                 "replay(): Kernel input variable (slot=%u) not "
                                 "allocated!",
                                 info.slot);
@@ -211,7 +216,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 }
                 jitc_log(LogLevel::Info, "    data=%p", rv.data);
                 jitc_assert(
-                    rv.data != nullptr,
+                    rv.data != nullptr || dry_run,
                     "replay(): Encountered nullptr in kernel parameters.");
                 kernel_params.push_back(rv.data);
             }
@@ -223,7 +228,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 kernel_params[0] = (void *)size;
             }
 
-            {
+            if (!dry_run) {
                 jitc_log(LogLevel::Info, "    launch_size=%u", launch_size);
                 scoped_set_context_maybe guard2(ts->context);
                 std::vector<uint32_t> tmp;
@@ -235,7 +240,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
         break;
         case OpType::Barrier:
-            ts->barrier();
+            if (!dry_run)
+                ts->barrier();
             break;
         case OpType::MemsetAsync: {
             uint32_t dependency_index = op.dependency_range.first;
@@ -248,8 +254,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             jitc_log(LogLevel::Debug, "replay(): MemsetAsync -> slot(%u) [%zu]",
                      ptr_info.slot, op.size);
 
-            ts->memset_async(ptr_var.data, ptr_var.size, op.input_size,
-                             &op.data);
+            if (!dry_run)
+                ts->memset_async(ptr_var.data, ptr_var.size, op.input_size,
+                                 &op.data);
         } break;
         case OpType::Reduce: {
             jitc_log(LogLevel::Debug, "replay(): Reduce");
@@ -271,7 +278,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             jitc_log(LogLevel::Debug, " <- slot(%u, data=%p)", out_info.slot,
                      out_var.data);
 
-            ts->reduce(type, rtype, ptr_var.data, ptr_var.size, out_var.data);
+            if (!dry_run)
+                ts->reduce(type, rtype, ptr_var.data, ptr_var.size,
+                           out_var.data);
         } break;
         case OpType::ReduceExpanded: {
             jitc_log(LogLevel::Debug, "replay(): ReduceExpand");
@@ -289,8 +298,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u;
 
-            ts->reduce_expanded(vt, rop, data_var.data,
-                                replication_per_worker * workers, size);
+            if (!dry_run)
+                ts->reduce_expanded(vt, rop, data_var.data,
+                                    replication_per_worker * workers, size);
 
         } break;
         case OpType::Expand: {
@@ -309,6 +319,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             uint32_t tsize = type_size[(uint32_t)vt];
             uint32_t workers = pool_size() + 1;
 
+            if (size != op.size)
+                throw RequiresRetraceException();
+
             uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u;
             size_t new_size =
                 size * (size_t)replication_per_worker * (size_t)workers;
@@ -316,11 +329,14 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             dst_rv.alloc(backend, new_size, dst_info.vtype);
 
             jitc_log(LogLevel::Debug, "    data=0x%lx", op.data);
-            ts->memset_async(dst_rv.data, new_size, tsize, &op.data);
+            if (!dry_run)
+                ts->memset_async(dst_rv.data, new_size, tsize, &op.data);
             jitc_log(LogLevel::Debug,
                      "jitc_memcpy_async(dst=%p, src=%p, size=%zu)", dst_rv.data,
                      src_rv.data, (size_t)size * tsize);
-            ts->memcpy_async(dst_rv.data, src_rv.data, (size_t)size * tsize);
+            if (!dry_run)
+                ts->memcpy_async(dst_rv.data, src_rv.data,
+                                 (size_t)size * tsize);
             dst_rv.size = size;
         } break;
         case OpType::PrefixSum: {
@@ -336,8 +352,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             VarType type = in_var.type;
 
-            ts->prefix_sum(type, op.exclusive, in_var.data, op.size,
-                           out_var.data);
+            if (!dry_run)
+                ts->prefix_sum(type, op.exclusive, in_var.data, op.size,
+                               out_var.data);
         } break;
         case OpType::Compress: {
             uint32_t dependency_index = op.dependency_range.first;
@@ -350,6 +367,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             uint32_t size = in_rv.size;
             out_rv.alloc(backend, size, out_info.vtype);
+
+            if (dry_run)
+                jitc_fail(
+                    "replay(): dry_run compress operation not supported!");
 
             uint32_t out_size = ts->compress((uint8_t *)in_rv.data, size,
                                              (uint32_t *)out_rv.data);
@@ -375,7 +396,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             size_t size = src_var.size * type_size[(uint32_t)src_var.type];
 
-            ts->memcpy_async(dst_var.data, src_var.data, size);
+            if (!dry_run)
+                ts->memcpy_async(dst_var.data, src_var.data, size);
         } break;
         case OpType::Mkperm: {
             jitc_log(LogLevel::Debug, "Mkperm:");
@@ -408,8 +430,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                      values_var.data, size, bucket_count, perm_var.data,
                      offsets_var.data);
 
-            ts->mkperm((uint32_t *)values_var.data, size, bucket_count,
-                       (uint32_t *)perm_var.data, (uint32_t *)offsets_var.data);
+            if (!dry_run)
+                ts->mkperm((uint32_t *)values_var.data, size, bucket_count,
+                           (uint32_t *)perm_var.data,
+                           (uint32_t *)offsets_var.data);
 
         } break;
         case OpType::Aggregate: {
@@ -443,7 +467,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 if (param.type == ParamType::Input) {
                     ReplayVariable &rv = replay_variables[param.slot];
                     jitc_assert(
-                        rv.data != nullptr,
+                        rv.data != nullptr || dry_run,
                         "replay(): Encountered nullptr input parameter.");
 
                     jitc_log(LogLevel::Debug,
@@ -465,10 +489,11 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 p++;
             }
 
-            jitc_assert(dst_rv.data != nullptr,
+            jitc_assert(dst_rv.data != nullptr || dry_run,
                         "replay(): Error allocating dst.");
 
-            ts->aggregate(dst_rv.data, agg, (uint32_t)(p - agg));
+            if (!dry_run)
+                ts->aggregate(dst_rv.data, agg, (uint32_t)(p - agg));
 
         } break;
         default:
@@ -514,6 +539,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                  "replay(): rv(%u, rc=%u, is_input=%u, data=%p)", i, rv.rc,
                  rv.rv_type == RecordType::Input, rv.data);
     }
+
+    if (dry_run)
+        return;
 
     // Create output variables
     for (uint32_t i = 0; i < this->outputs.size(); ++i) {
@@ -697,4 +725,16 @@ bool jitc_record_resume(JitBackend backend) {
             "Try to start the recording with jit_record_start.",
             (uint32_t)backend);
     }
+}
+
+void jitc_record_replay(Recording *recording, const uint32_t *inputs,
+                        uint32_t *outputs) {
+    dry_run = false;
+    if (recording->requires_dry_run) {
+        jitc_log(LogLevel::Debug, "Replaying in dry-run mode");
+        dry_run = true;
+        recording->replay(inputs, outputs);
+        dry_run = false;
+    }
+    recording->replay(inputs, outputs);
 }

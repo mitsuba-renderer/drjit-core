@@ -1501,10 +1501,10 @@ void jit_record_abort(JitBackend backend) {
     return jitc_record_abort(backend);
 }
 
-void jit_record_replay(Recording *ts, const uint32_t *inputs,
+void jit_record_replay(Recording *recording, const uint32_t *inputs,
                        uint32_t *outputs) {
     lock_guard guard(state.lock);
-    return ts->replay(inputs, outputs);
+    jitc_record_replay(recording, inputs, outputs);
 }
 
 void jit_record_destroy(Recording *recording){
