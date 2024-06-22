@@ -1,6 +1,7 @@
 #include "record_ts.h"
 #include "common.h"
 #include "drjit-core/jit.h"
+#include "eval.h"
 #include "internal.h"
 #include "log.h"
 #include "var.h"
@@ -233,7 +234,11 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 scoped_set_context_maybe guard2(ts->context);
                 std::vector<uint32_t> tmp;
                 Kernel kernel = op.kernel;
+                if (op.uses_optix)
+                    uses_optix = true;
                 ts->launch(kernel, launch_size, &kernel_params, &tmp);
+                if (op.uses_optix)
+                    uses_optix = false;
             }
 
         }
@@ -443,11 +448,6 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             ParamInfo dst_info = this->dependencies[i++];
             ReplayVariable &dst_rv = replay_variables[dst_info.slot];
-            // Assume, that size is known
-            dst_rv.alloc(backend, op.size, dst_info.vtype);
-
-            jitc_log(LogLevel::Debug, " <- slot(%u, is_pointer=%u, data=%p)",
-                     dst_info.slot, dst_info.pointer_access, dst_rv.data);
 
             AggregationEntry *agg = nullptr;
 
@@ -471,8 +471,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                         "replay(): Encountered nullptr input parameter.");
 
                     jitc_log(LogLevel::Debug,
-                             " -> slot(%u, is_pointer=%u, data=%p)", param.slot,
-                             param.pointer_access, rv.data);
+                             " -> slot(%u, is_pointer=%u, data=%p, offset=%u)",
+                             param.slot, param.pointer_access, rv.data,
+                             param.extra.offset);
 
                     p->size = param.pointer_access
                                   ? 8
@@ -480,7 +481,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     p->offset = param.extra.offset;
                     p->src = rv.data;
                 } else {
-                    jitc_log(LogLevel::Debug, " -> literal");
+                    jitc_log(LogLevel::Debug, " -> literal: offset=%u",
+                             param.extra.offset);
                     p->size = param.extra.type_size;
                     p->offset = param.extra.offset;
                     p->src = (void *)param.extra.data;
@@ -488,6 +490,19 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
                 p++;
             }
+
+            AggregationEntry *last = p - 1;
+            uint32_t data_size =
+                last->offset + (last->size > 0 ? last->size : -last->size);
+            // Restore to full alignment
+            data_size = (data_size + 7) / 8 * 8;
+
+            dst_rv.alloc(backend, data_size, VarType::UInt8);
+
+            jitc_log(LogLevel::Debug,
+                     " <- slot(%u, is_pointer=%u, data=%p, size=%u)",
+                     dst_info.slot, dst_info.pointer_access, dst_rv.data,
+                     data_size);
 
             jitc_assert(dst_rv.data != nullptr || dry_run,
                         "replay(): Error allocating dst.");
