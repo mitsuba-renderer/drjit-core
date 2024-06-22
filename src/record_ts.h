@@ -1,5 +1,6 @@
 #include "drjit-core/hash.h"
 #include "drjit-core/jit.h"
+#include "eval.h"
 #include "internal.h"
 #include "log.h"
 #include "var.h"
@@ -38,6 +39,7 @@ struct Operation {
     size_t size;
     size_t input_size = 0;
     bool enabled = true;
+    bool uses_optix = false;
 };
 
 /// Denotes the type of variable.
@@ -344,6 +346,7 @@ struct RecordThreadState : ThreadState {
             op.dependency_range = std::pair(start, end);
             op.kernel = kernel;
             op.size = size;
+            op.uses_optix = uses_optix;
 
             // Record max_input_size if we have only pointer inputs.
             // Therefore, if max_input_size > 0 we know this at replay.
