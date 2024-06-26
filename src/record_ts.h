@@ -57,7 +57,7 @@ struct RecordVariable {
     VarType type = VarType::Void;
     /// Stores index into input array if variable is input or index of captured
     /// variable
-    uint32_t index;
+    uint32_t index = 0;
     bool is_literal = false;
     RecordType rv_type = RecordType::Other;
     // Nubmer of operations that reference this variable
@@ -712,12 +712,22 @@ struct RecordThreadState : ThreadState {
     void add_output(uint32_t output) {
         uint32_t output_index = this->recording.outputs.size();
         Variable *v = jitc_var(output);
-        uint32_t slot =
-            this->add_variable(v->data, RecordVariable{
-                                            /*is_literal=*/v->is_literal(),
-                                            /*rv_type=*/RecordType::Other,
-                                            /*input_index=*/0,
-                                        });
+        uint32_t slot;
+        if (!has_variable(v->data)) {
+            if (v->scope < this->internal->scope) {
+                jitc_raise("record(): Variable %u -> %p, was created "
+                           "before recording was started, but it was "
+                           "not speciefied as an input variable!",
+                           output_index, v->data);
+            }
+            slot = capture_variable(output);
+        } else {
+            RecordVariable rv;
+            rv.is_literal = v->is_literal();
+            rv.rv_type = RecordType::Other;
+
+            slot = this->add_variable(v->data, rv);
+        }
 
         jitc_log(LogLevel::Trace,
                  "record(): Adding variable %u output %u to slot %u", output,
