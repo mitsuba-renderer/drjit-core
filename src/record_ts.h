@@ -281,39 +281,25 @@ struct RecordThreadState : ThreadState {
                     ptr_size = std::max(ptr_size, (size_t)v->size);
                 }
 
-                RecordVariable rv;
-                rv.is_literal = v->is_literal();
-
-                // It could happen, that a variable is created while recording.
-                // This occurs for example, when recording vcalls, where a
-                // `offset` buffer is created.
-                // Those variables are captured here and kept for replay.
+                uint32_t slot;
                 if (param_type == ParamType::Input && !has_variable(ptr)) {
                     if (v->scope < this->internal->scope) {
-                        jitc_raise(
-                            "record(): Variable %u -> %p, was created before "
-                            "recording was started, but it was not speciefied "
-                            "as an input variable!",
-                            index, ptr);
+                        jitc_raise("record(): Variable %u -> %p, was created "
+                                   "before recording was started, but it was "
+                                   "not speciefied as an input variable!",
+                                   index, ptr);
                     }
-
-                    jitc_log(LogLevel::Warn,
-                             "record(): Variable r%u(scope=%u >= "
-                             "original_scope=%u) -> %p appeared out of "
-                             "nowhere! It will be captured.",
-                             index, v->scope, this->internal->scope, ptr);
-                    rv.rv_type = RecordType::Captured;
-                    rv.index = index;
-                    jitc_var_inc_ref(index);
+                    slot = capture_variable(index);
+                } else {
+                    RecordVariable rv;
+                    rv.is_literal = v->is_literal();
+                    if (param_type == ParamType::Input)
+                        slot = this->add_variable(ptr, rv);
+                    else if (param_type == ParamType::Output)
+                        slot = this->add_variable(ptr, rv);
+                    else
+                        jitc_fail("Parameter Type not supported!");
                 }
-
-                uint32_t slot;
-                if (param_type == ParamType::Input)
-                    slot = this->add_variable(ptr, rv);
-                else if (param_type == ParamType::Output)
-                    slot = this->add_variable(ptr, rv);
-                else
-                    jitc_fail("Parameter Type not supported!");
 
                 if (pointer_access) {
                     jitc_log(LogLevel::Debug,
@@ -776,6 +762,26 @@ struct RecordThreadState : ThreadState {
     // recording.
     PtrToSlot ptr_to_slot;
 
+    uint32_t capture_variable(uint32_t index) {
+        Variable *v = jitc_var(index);
+        RecordVariable rv;
+        rv.is_literal = v->is_literal();
+        rv.rv_type = RecordType::Captured;
+        rv.index = index;
+        jitc_var_inc_ref(index);
+
+        void *ptr = v->data;
+        uint32_t slot = this->recording.record_variables.size();
+        this->recording.record_variables.push_back(rv);
+
+        auto it = this->ptr_to_slot.find(ptr);
+        if (it == this->ptr_to_slot.end())
+            this->ptr_to_slot.insert({ptr, slot});
+        else
+            it.value() = slot;
+        return slot;
+    }
+
     /**
      * Add information about a variable, deduplicating it and returning the slot
      * in the `variables` field of the recording.
@@ -871,9 +877,10 @@ bool jitc_record_pause(JitBackend backend);
 
 bool jitc_record_resume(JitBackend backend);
 
-struct RequiresRetraceException: public std::exception{
-    RequiresRetraceException() {}
-    const char *what() const throw() override{
+struct RequiresRetraceException : public std::exception {
+    RequiresRetraceException() {
+    }
+    const char *what() const throw() override {
         return "";
     }
 };
