@@ -12,7 +12,7 @@ static bool dry_run = false;
 // used during replay.
 struct ReplayVariable {
     void *data = 0;
-    size_t alloc_size;
+    size_t alloc_size = 0;
     uint32_t size = 0;
     VarType type = VarType::Void;
     uint32_t index;
@@ -37,6 +37,18 @@ struct ReplayVariable {
     //     if (type != VarType::Void)
     //         this->type = type;
     // }
+    void prepare_input(VarType type) {
+        if (type != VarType::Void) {
+            uint32_t tsize = type_size[(uint32_t)type];
+            this->size = (uint32_t)(this->alloc_size / (size_t)tsize);
+            jitc_log(LogLevel::Debug,
+                     "replay(): reinterpreted as %u with size [%u]",
+                     (uint32_t)type, this->size);
+            if (this->size == 0)
+                jitc_fail("replay(): Error, chaning type of replay variable!");
+            this->type = type;
+        }
+    }
 
     void alloc(JitBackend backend, uint32_t size, VarType type) {
         if (type != VarType::Void)
@@ -96,6 +108,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     jitc_assert(dynamic_cast<RecordThreadState *>(ts) == nullptr,
                 "replay(): Tried to replay while recording!");
 
+    scoped_set_context_maybe guard2(ts->context);
+
     replay_variables.clear();
     uint32_t last_free = 0;
 
@@ -112,6 +126,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
         rv.size = input_variable->size;
         rv.data = input_variable->data;
         rv.type = (VarType)input_variable->type;
+        rv.alloc_size = type_size[input_variable->type] * rv.size;
         jitc_log(LogLevel::Debug, "    input %u: r%u mapped to slot(%u)", i,
                  replay_inputs[i], this->inputs[i]);
     }
@@ -137,6 +152,21 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 // identifier
                 for (int i = 0; i < 3; ++i)
                     kernel_params.push_back(nullptr);
+            }
+
+            // Determine type of input variables
+            for (uint32_t j = op.dependency_range.first;
+                 j < op.dependency_range.second; ++j) {
+                ParamInfo info = this->dependencies[j];
+                ReplayVariable &rv = replay_variables[info.slot];
+                if (info.type == ParamType::Input &&
+                    rv.rv_type != RecordType::Captured) {
+                    jitc_log(
+                        LogLevel::Debug,
+                        "preparing input variable s%u type=%u, alloc_size=%zu",
+                        info.slot, (uint32_t)info.vtype, rv.alloc_size);
+                    rv.prepare_input(info.vtype);
+                }
             }
 
             // Inferr launch size.
@@ -230,8 +260,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             }
 
             if (!dry_run) {
-                jitc_log(LogLevel::Info, "    launch_size=%u", launch_size);
-                scoped_set_context_maybe guard2(ts->context);
+                jitc_log(LogLevel::Info, "    launch_size=%u, uses_optix=%u",
+                         launch_size, op.uses_optix);
                 std::vector<uint32_t> tmp;
                 Kernel kernel = op.kernel;
                 if (op.uses_optix)
