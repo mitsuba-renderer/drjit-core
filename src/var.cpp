@@ -2451,7 +2451,7 @@ const char *jitc_var_whos() {
         const char *label = jitc_var_label((uint32_t) index);
 
         var_buffer.fmt(" %3u %10u %12s   %s\n", (uint32_t) v.ref_count,
-                       v.size, jitc_mem_string(mem_size), label ? label : "");
+                       v.size, v.is_evaluated() ? jitc_mem_string(mem_size) : "", label ? label : "");
 
         if (v.is_evaluated())
             mem_size_evaluated += mem_size;
