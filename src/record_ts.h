@@ -40,6 +40,7 @@ struct Operation {
     size_t input_size = 0;
     bool enabled = true;
     bool uses_optix = false;
+    OptixShaderBindingTable *sbt;
 };
 
 /// Denotes the type of variable.
@@ -332,7 +333,10 @@ struct RecordThreadState : ThreadState {
             op.dependency_range = std::pair(start, end);
             op.kernel = kernel;
             op.size = size;
-            op.uses_optix = uses_optix;
+            if (uses_optix) {
+                op.uses_optix = true;
+                op.sbt = this->optix_sbt;
+            }
 
             // Record max_input_size if we have only pointer inputs.
             // Therefore, if max_input_size > 0 we know this at replay.

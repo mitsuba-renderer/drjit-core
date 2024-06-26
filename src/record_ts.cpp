@@ -108,6 +108,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     jitc_assert(dynamic_cast<RecordThreadState *>(ts) == nullptr,
                 "replay(): Tried to replay while recording!");
 
+    OptixShaderBindingTable *tmp_sbt = ts->optix_sbt;
     scoped_set_context_maybe guard2(ts->context);
 
     replay_variables.clear();
@@ -205,8 +206,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     size_t ratio = op.size / op.input_size;
                     jitc_log(LogLevel::Warn,
                              "replay(): Inferring launch size by heuristic, "
-                             "launch_size(%u) *= ratio(%zu)",
-                             ptr_size, ratio);
+                             "launch_size=%u, ratio=%zu",
+                             launch_size, ratio);
                     launch_size = launch_size * ratio;
                 } else {
                     if (op.input_size % op.size != 0)
@@ -217,7 +218,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     uint32_t fraction = op.input_size / op.size;
                     jitc_log(LogLevel::Warn,
                              "replay(): Inferring launch size by heuristic, "
-                             "launch_size(%u) /= fraction(%u)",
+                             "launch_size(%u), fraction=%u",
                              launch_size, fraction);
                     launch_size = launch_size / fraction;
                 }
@@ -264,8 +265,10 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                          launch_size, op.uses_optix);
                 std::vector<uint32_t> tmp;
                 Kernel kernel = op.kernel;
-                if (op.uses_optix)
+                if (op.uses_optix) {
                     uses_optix = true;
+                    ts->optix_sbt = op.sbt;
+                }
                 ts->launch(kernel, launch_size, &kernel_params, &tmp);
                 if (op.uses_optix)
                     uses_optix = false;
@@ -584,6 +587,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                  "replay(): rv(%u, rc=%u, is_input=%u, data=%p)", i, rv.rc,
                  rv.rv_type == RecordType::Input, rv.data);
     }
+
+    ts->optix_sbt = tmp_sbt;
 
     if (dry_run)
         return;
