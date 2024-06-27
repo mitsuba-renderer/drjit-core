@@ -712,12 +712,6 @@ struct RecordThreadState : ThreadState {
         Variable *v = jitc_var(output);
         uint32_t slot;
         if (!has_variable(v->data)) {
-            if (v->scope < this->internal->scope) {
-                jitc_raise("record(): Variable %u -> %p, was created "
-                           "before recording was started, but it was "
-                           "not speciefied as an input variable!",
-                           output_index, v->data);
-            }
             slot = capture_variable(output);
         } else {
             RecordVariable rv;
