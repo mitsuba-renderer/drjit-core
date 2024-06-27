@@ -1874,7 +1874,9 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
         (mask_v->is_literal() && mask_v->literal == 0) ||   // Masked load
         src_v->size == 1 ||                                 // Scalar load
         (var_info.size == 1 && var_info.literal) ||         // Memcpy
-        src_v->unaligned) {                                 // Source must be aligned
+        src_v->unaligned ||                                 // Source must be aligned
+        src_v->is_literal() ||                              // Literal values
+        src_v->is_undefined()) {                            // Uninitialized memory
         for (size_t i = 0; i < n; ++i) {
             Ref index2 = steal(jitc_var_u32(var_info.backend, (uint32_t) i));
             Ref index3 = steal(jitc_var_fma(index, scale, index2));
@@ -2255,6 +2257,13 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             // Track if this is the first time that 'jit_var_expand' is called
             reduce_expanded =
                 jitc_var(target)->reduce_op == (uint32_t) ReduceOp::Identity;
+
+            // When capturing symbolic loops, side effects might be deleted
+            // and re-recorded. So, even if `jit_var_expand` was already called
+            // once, its corresponding side effect might have been deleted. We
+            // therefore always mark this as the first time it's being called
+            // when inside a symbolic scope.
+            reduce_expanded |= jit_flag(JitFlag::SymbolicScope);
 
             auto [target_i, expand_i] = jitc_var_expand(target, op);
             target = steal(target_i);

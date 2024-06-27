@@ -1179,7 +1179,7 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
 
     for (uint32_t i = 0; i < call->n_out; ++i) {
         const Variable *v = jitc_var(call->outer_out[i]);
-        if (!v || !v->reg_index)
+        if (!v || !v->reg_index || v->param_type == ParamType::Input)
             continue;
 
         const char *tname = type_name_ptx_bin[v->type],
