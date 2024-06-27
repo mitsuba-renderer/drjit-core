@@ -284,12 +284,6 @@ struct RecordThreadState : ThreadState {
 
                 uint32_t slot;
                 if (param_type == ParamType::Input && !has_variable(ptr)) {
-                    if (v->scope < this->internal->scope) {
-                        jitc_raise("record(): Variable %u -> %p, was created "
-                                   "before recording was started, but it was "
-                                   "not speciefied as an input variable!",
-                                   index, ptr);
-                    }
                     slot = capture_variable(index);
                 } else {
                     RecordVariable rv;
@@ -778,6 +772,18 @@ struct RecordThreadState : ThreadState {
 
     uint32_t capture_variable(uint32_t index) {
         Variable *v = jitc_var(index);
+        if (v->scope < this->internal->scope) {
+            jitc_raise("record(): Variable %u -> %p, was created "
+                       "before recording was started, but it was "
+                       "not speciefied as an input variable!",
+                       index, v->data);
+        }
+
+        // Have to copy the variable, so that it cannot be modified by other
+        // calls later.
+        index = jitc_var_copy(index);
+        v = jitc_var(index);
+        
         RecordVariable rv;
         rv.is_literal = v->is_literal();
         rv.rv_type = RecordType::Captured;
