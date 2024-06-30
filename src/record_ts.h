@@ -1,8 +1,10 @@
+#include "call.h"
 #include "drjit-core/hash.h"
 #include "drjit-core/jit.h"
 #include "eval.h"
 #include "internal.h"
 #include "log.h"
+#include "util.h"
 #include "var.h"
 #include <algorithm>
 #include <cstdint>
@@ -185,13 +187,40 @@ struct RecordThreadState : ThreadState {
 
     Task *launch(Kernel kernel, uint32_t size,
                  std::vector<void *> *kernel_params,
-                 const std::vector<uint32_t> *kernel_param_ids) override {
+                 const std::vector<uint32_t> *kernel_param_ids,
+                 const std::vector<uint32_t> *kernel_calls) override {
         if (!paused) {
             uint32_t kernel_param_offset =
                 this->backend == JitBackend::CUDA ? 1 : 3;
 
             size_t input_size = 0;
             size_t ptr_size = 0;
+
+            // Handle calls by copying the offset buffer
+            for (const uint32_t &index : *kernel_calls) {
+                Variable *v = jitc_var(index);
+                const CallData *call = (CallData *)v->data;
+
+                uint32_t size = call->n_inst + 1;
+                size_t dsize = size * type_size[(uint32_t)VarType::UInt64];
+                uint64_t *offset;
+                {
+                    scoped_pause();
+                    AllocType atype = backend == JitBackend::CUDA
+                                          ? AllocType::Device
+                                          : AllocType::HostAsync;
+                    offset = (uint64_t *)jitc_malloc(atype, dsize);
+                    jitc_memcpy(backend, offset, call->offset, dsize);
+                }
+
+                uint32_t offset_buf = jitc_var_mem_map(backend, VarType::UInt64,
+                                                       offset, size, 1);
+                uint32_t slot =
+                    capture_variable(offset_buf, call->offset, false);
+                jitc_log(LogLevel::Debug,
+                         "record(): captured call->offset_buf to slot s%u [%u]",
+                         slot, size);
+            }
 
             // Handle reduce_expanded case
             for (uint32_t param_index = 0;
@@ -313,6 +342,9 @@ struct RecordThreadState : ThreadState {
                              v->size, ptr, type_name[(uint32_t)v->type], slot);
                 }
 
+                jitc_log(LogLevel::Debug, "    lable=%s",
+                         jitc_var_label(index));
+
                 ParamInfo info;
                 info.slot = slot;
                 info.type = param_type;
@@ -355,7 +387,7 @@ struct RecordThreadState : ThreadState {
         }
         scoped_pause();
         return this->internal->launch(kernel, size, kernel_params,
-                                      kernel_param_ids);
+                                      kernel_param_ids, kernel_calls);
     }
 
     /// Fill a device memory region with constants of a given type
@@ -764,7 +796,9 @@ struct RecordThreadState : ThreadState {
     // recording.
     PtrToSlot ptr_to_slot;
 
-    uint32_t capture_variable(uint32_t index) {
+    uint32_t capture_variable(uint32_t index, void *ptr = nullptr,
+                              bool copy = true) {
+        scoped_pause();
         Variable *v = jitc_var(index);
         if (v->scope < this->internal->scope) {
             jitc_raise("record(): Variable %u -> %p, was created "
@@ -775,17 +809,24 @@ struct RecordThreadState : ThreadState {
 
         // Have to copy the variable, so that it cannot be modified by other
         // calls later.
-        index = jitc_var_copy(index);
-        v = jitc_var(index);
-        
+        uint32_t slot = this->recording.record_variables.size();
+        jitc_log(LogLevel::Debug,
+                 "record(): capturing variable r%u at slot s%u", index, slot);
+
+        if (!ptr)
+            ptr = v->data;
+
+        if (copy) {
+            index = jitc_var_copy(index);
+            v = jitc_var(index);
+        }
+
         RecordVariable rv;
         rv.is_literal = v->is_literal();
         rv.rv_type = RecordType::Captured;
         rv.index = index;
         jitc_var_inc_ref(index);
 
-        void *ptr = v->data;
-        uint32_t slot = this->recording.record_variables.size();
         this->recording.record_variables.push_back(rv);
 
         auto it = this->ptr_to_slot.find(ptr);
@@ -793,6 +834,7 @@ struct RecordThreadState : ThreadState {
             this->ptr_to_slot.insert({ptr, slot});
         else
             it.value() = slot;
+
         return slot;
     }
 
