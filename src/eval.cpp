@@ -59,6 +59,7 @@ static tsl::robin_set<VisitedKey, VisitedKeyHash> visited;
 /// Kernel parameter buffer and variable ids
 static std::vector<void *> kernel_params;
 static std::vector<uint32_t> kernel_param_ids;
+static std::vector<uint32_t> kernel_calls;
 
 /// Ensure uniqueness of globals/callables arrays
 GlobalsMap globals_map;
@@ -228,6 +229,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     kernel_params.clear();
     kernel_param_ids.clear();
+    kernel_calls.clear();
     globals.clear();
     globals_map.clear();
     alloca_size = alloca_align = -1;
@@ -334,6 +336,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             #if defined(DRJIT_ENABLE_OPTIX)
                 uses_optix |= v->optix;
             #endif
+        }
+        if((VarKind)v->kind == VarKind::Call){
+            kernel_calls.push_back(index);
         }
     }
 
@@ -560,7 +565,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 
     Task* ret_task = nullptr;
-    ret_task = ts->launch(kernel, group.size, &kernel_params, &kernel_param_ids);
+    ret_task = ts->launch(kernel, group.size, &kernel_params, &kernel_param_ids,
+                          &kernel_calls);
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         if (ts->backend == JitBackend::CUDA) {

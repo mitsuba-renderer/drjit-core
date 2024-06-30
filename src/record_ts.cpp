@@ -30,6 +30,8 @@ struct ReplayVariable {
         if (rv_type == RecordType::Captured) {
             Variable *v = jitc_var(this->index);
             this->data = v->data;
+            this->size = v->size;
+            this->alloc_size = v->size * type_size[v->type];
         }
     }
 
@@ -263,13 +265,15 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             if (!dry_run) {
                 jitc_log(LogLevel::Info, "    launch_size=%u, uses_optix=%u",
                          launch_size, op.uses_optix);
-                std::vector<uint32_t> tmp;
+                std::vector<uint32_t> kernel_param_ids;
+                std::vector<uint32_t> kernel_calls;
                 Kernel kernel = op.kernel;
                 if (op.uses_optix) {
                     uses_optix = true;
                     ts->optix_sbt = op.sbt;
                 }
-                ts->launch(kernel, launch_size, &kernel_params, &tmp);
+                ts->launch(kernel, launch_size, &kernel_params,
+                           &kernel_param_ids, &kernel_calls);
                 if (op.uses_optix)
                     uses_optix = false;
             }

@@ -1,3 +1,6 @@
+
+#pragma once
+
 #include "internal.h"
 
 /// Encodes information about a virtual function call
