@@ -599,9 +599,13 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
     // Create output variables
     for (uint32_t i = 0; i < this->outputs.size(); ++i) {
-        uint32_t index = this->outputs[i];
-        jitc_log(LogLevel::Debug, "replay(): output(%u, slot=%u)", i, index);
-        ReplayVariable &rv = replay_variables[index];
+        ParamInfo info = this->outputs[i];
+        uint32_t slot = info.slot;
+        // uint32_t index = this->outputs[i];
+        jitc_log(LogLevel::Debug, "replay(): output(%u, slot=%u)", i, slot);
+        ReplayVariable &rv = replay_variables[slot];
+        if(rv.type != info.vtype)
+            rv.prepare_input(info.vtype);
         if (rv.rv_type == RecordType::Input) {
             // Use input variable
             jitc_log(LogLevel::Debug, "    uses input %u", rv.index);
@@ -651,8 +655,8 @@ void Recording::compute_rc() {
         }
     }
     // Do not touch inputs/outputs therefore increment their refcount
-    for (uint32_t slot : this->outputs) {
-        RecordVariable &rv = this->record_variables[slot];
+    for (ParamInfo info : this->outputs) {
+        RecordVariable &rv = this->record_variables[info.slot];
         rv.rc++;
     }
 }

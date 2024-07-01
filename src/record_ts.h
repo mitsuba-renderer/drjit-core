@@ -131,7 +131,7 @@ struct Recording {
     std::vector<RecordVariable> record_variables;
 
     std::vector<uint32_t> inputs;
-    std::vector<uint32_t> outputs;
+    std::vector<ParamInfo> outputs;
 
     std::vector<Operation> operations;
     std::vector<ParamInfo> dependencies;
@@ -345,7 +345,7 @@ struct RecordThreadState : ThreadState {
                              v->size, ptr, type_name[(uint32_t)v->type], slot);
                 }
 
-                jitc_log(LogLevel::Debug, "    lable=%s",
+                jitc_log(LogLevel::Debug, "    label=%s",
                          jitc_var_label(index));
 
                 ParamInfo info;
@@ -380,10 +380,12 @@ struct RecordThreadState : ThreadState {
             }
             
             // Reset input size if ratio/fraction is not valid
-            if(op.size > op.input_size && op.size % op.input_size != 0)
-                op.input_size = 0;
-            if(op.size < op.input_size && op.input_size % op.size != 0)
-                op.input_size = 0;
+            if(op.input_size > 0){
+                if(op.size > op.input_size && op.size % op.input_size != 0)
+                    op.input_size = 0;
+                if(op.size < op.input_size && op.input_size % op.size != 0)
+                    op.input_size = 0;
+            }
 
             this->recording.operations.push_back(op);
 
@@ -765,7 +767,10 @@ struct RecordThreadState : ThreadState {
         jitc_log(LogLevel::Trace,
                  "record(): Adding variable %u output %u to slot %u", output,
                  output_index, slot);
-        this->recording.outputs.push_back(slot);
+        ParamInfo info;
+        info.slot = slot;
+        info.vtype = (VarType)v->type;
+        this->recording.outputs.push_back(info);
     }
 
     bool pause() {
