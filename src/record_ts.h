@@ -92,11 +92,14 @@ struct RecordVariable {
         this->last_memset = rhs.last_memset;
         return *this;
     }
+    /**
+     */
     bool compatible(const RecordVariable &rhs) {
         bool result = true;
+        // We never want to overwrite the recording of captured or input
+        // variable.
         result &= this->rv_type == RecordType::Other ||
-                  rhs.rv_type == RecordType::Other ||
-                  this->rv_type == rhs.rv_type;
+                  rhs.rv_type == RecordType::Other;
         return result;
     }
 };
@@ -213,8 +216,8 @@ struct RecordThreadState : ThreadState {
                     jitc_memcpy(backend, offset, call->offset, dsize);
                 }
 
-                uint32_t offset_buf = jitc_var_mem_map(backend, VarType::UInt64,
-                                                       offset, size, 1);
+                uint32_t offset_buf =
+                    jitc_var_mem_map(backend, VarType::UInt64, offset, size, 1);
                 uint32_t slot =
                     capture_variable(offset_buf, call->offset, false);
                 jitc_log(LogLevel::Debug,
@@ -375,6 +378,12 @@ struct RecordThreadState : ThreadState {
                          input_size);
                 op.input_size = input_size;
             }
+            
+            // Reset input size if ratio/fraction is not valid
+            if(op.size > op.input_size && op.size % op.input_size != 0)
+                op.input_size = 0;
+            if(op.size < op.input_size && op.input_size % op.size != 0)
+                op.input_size = 0;
 
             this->recording.operations.push_back(op);
 
@@ -796,8 +805,10 @@ struct RecordThreadState : ThreadState {
     // recording.
     PtrToSlot ptr_to_slot;
 
+    /**
+     */
     uint32_t capture_variable(uint32_t index, void *ptr = nullptr,
-                              bool copy = true) {
+                              bool copy = true, bool clear = false) {
         scoped_pause();
         Variable *v = jitc_var(index);
         if (v->scope < this->internal->scope) {
@@ -829,11 +840,15 @@ struct RecordThreadState : ThreadState {
 
         this->recording.record_variables.push_back(rv);
 
-        auto it = this->ptr_to_slot.find(ptr);
-        if (it == this->ptr_to_slot.end())
-            this->ptr_to_slot.insert({ptr, slot});
-        else
-            it.value() = slot;
+        if (clear) {
+            this->ptr_to_slot.erase(ptr);
+        } else {
+            auto it = this->ptr_to_slot.find(ptr);
+            if (it == this->ptr_to_slot.end())
+                this->ptr_to_slot.insert({ptr, slot});
+            else
+                it.value() = slot;
+        }
 
         return slot;
     }
