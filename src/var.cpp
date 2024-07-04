@@ -1787,6 +1787,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     v = jitc_var(src_index);
     if (src_ptr != dst_ptr) {
         Variable v2 = *v;
+        memset(v2.dep, 0, sizeof(v2.dep));
         v2.kind = (uint32_t) VarKind::Evaluated;
         v2.data = dst_ptr;
         v2.retain_data = false;
