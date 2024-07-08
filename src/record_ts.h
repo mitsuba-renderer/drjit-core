@@ -651,6 +651,13 @@ struct RecordThreadState : ThreadState {
 
                 jitc_log(LogLevel::Debug, " -> entry(src=%p)", p.src);
 
+                // There are three cases, we might have to handle.
+                // 1. The input is a literal => we save the literal value
+                // 2. it is a pointer to a variable => we add it's slot to the
+                // params list
+                // 3. it is an evaluated variable => same as for pointer, but
+                // type size is submitted when replaying
+
                 if (!has_variable(p.src)) {
                     // Literal
                     jitc_log(LogLevel::Debug, "    literal");
@@ -671,7 +678,7 @@ struct RecordThreadState : ThreadState {
                     ParamInfo info;
                     info.slot = index;
                     info.type = ParamType::Input;
-                    info.pointer_access = rv.type == VarType::Pointer;
+                    info.pointer_access = p.size == 8;
                     info.extra.offset = p.offset;
                     add_param(info);
                 }
