@@ -674,6 +674,10 @@ void Recording::validate() {
 void jitc_record_start(JitBackend backend, const uint32_t *inputs,
                        uint32_t n_inputs) {
 
+    if(jitc_flags() & (uint32_t)JitFlag::FreezingScope)
+        jitc_fail("Tried to record a thread_state while inside another FreezingScope!");
+        
+
     // Increment scope, can be used to track missing inputs
     jitc_new_scope(backend);
 
@@ -689,6 +693,10 @@ void jitc_record_start(JitBackend backend, const uint32_t *inputs,
     for (uint32_t i = 0; i < n_inputs; ++i) {
         record_ts->add_input(inputs[i]);
     }
+
+    uint32_t flags = jitc_flags();
+    flags |= (uint32_t)JitFlag::FreezingScope;
+    jitc_set_flags(flags);
 }
 Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
                             uint32_t n_outputs) {
@@ -717,6 +725,11 @@ Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
         recording->compute_rc();
         recording->validate();
         delete rts;
+
+        uint32_t flags = jitc_flags();
+        flags &= ~(uint32_t)JitFlag::FreezingScope;
+        jitc_set_flags(flags);
+        
         return recording;
     } else {
         jitc_fail(
@@ -745,6 +758,10 @@ void jitc_record_abort(JitBackend backend) {
         }
 
         delete rts;
+        
+        uint32_t flags = jitc_flags();
+        flags &= ~(uint32_t)JitFlag::FreezingScope;
+        jitc_set_flags(flags);
     }
 }
 
