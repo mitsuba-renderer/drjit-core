@@ -16,13 +16,11 @@ struct ReplayVariable {
     uint32_t size = 0;
     VarType type = VarType::Void;
     uint32_t index;
-    bool is_literal;
     RecordType rv_type;
     uint32_t rc;
 
     ReplayVariable(RecordVariable &rv) {
         this->index = rv.index;
-        this->is_literal = rv.is_literal;
         this->rc = rv.rc;
 
         this->rv_type = rv.rv_type;

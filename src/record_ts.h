@@ -61,7 +61,6 @@ struct RecordVariable {
     /// Stores index into input array if variable is input or index of captured
     /// variable
     uint32_t index = 0;
-    bool is_literal = false;
     RecordType rv_type = RecordType::Other;
     // Nubmer of operations that reference this variable
     // used to deallocate unused variables during replay.
@@ -70,11 +69,6 @@ struct RecordVariable {
     uint32_t last_memcpy = 0;
 
     RecordVariable() {
-    }
-    // RecordVariable(VarType type) : type(type) {
-    // }
-    RecordVariable(bool is_literal, RecordType rv_type, uint32_t input_index)
-        : index(input_index), is_literal(is_literal), rv_type(rv_type) {
     }
 
     /**
@@ -87,7 +81,6 @@ struct RecordVariable {
             this->rv_type = rhs.rv_type;
             this->index = rhs.index;
         }
-        this->is_literal |= rhs.is_literal;
         this->last_memcpy = rhs.last_memcpy;
         this->last_memset = rhs.last_memset;
         return *this;
@@ -319,7 +312,6 @@ struct RecordThreadState : ThreadState {
                     slot = capture_variable(index);
                 } else {
                     RecordVariable rv;
-                    rv.is_literal = v->is_literal();
                     if (param_type == ParamType::Input)
                         slot = this->add_variable(ptr, rv);
                     else if (param_type == ParamType::Output)
@@ -740,7 +732,6 @@ struct RecordThreadState : ThreadState {
         uint32_t input_index = this->recording.inputs.size();
         Variable *v = jitc_var(input);
         RecordVariable rv;
-        rv.is_literal = v->is_literal();
         rv.rv_type = RecordType::Input;
         rv.index = input_index;
         rv.type = (VarType)v->type;
@@ -758,7 +749,6 @@ struct RecordThreadState : ThreadState {
             slot = capture_variable(output);
         } else {
             RecordVariable rv;
-            rv.is_literal = v->is_literal();
             rv.rv_type = RecordType::Other;
 
             slot = this->add_variable(v->data, rv);
@@ -838,7 +828,6 @@ struct RecordThreadState : ThreadState {
         }
 
         RecordVariable rv;
-        rv.is_literal = v->is_literal();
         rv.rv_type = RecordType::Captured;
         rv.index = index;
         jitc_var_inc_ref(index);
