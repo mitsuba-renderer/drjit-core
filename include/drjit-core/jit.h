@@ -1539,6 +1539,9 @@ enum class JitFlag : uint32_t {
     /// Freeze functions annotated with dr.freeze
     KernelFreezing = 1 << 19,
 
+    /// Set to \c true when Dr.Jit is recording a frozen function
+    FreezingScope = 1 << 20,
+
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
