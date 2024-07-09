@@ -370,12 +370,12 @@ struct RecordThreadState : ThreadState {
                          input_size);
                 op.input_size = input_size;
             }
-            
+
             // Reset input size if ratio/fraction is not valid
-            if(op.input_size > 0){
-                if(op.size > op.input_size && op.size % op.input_size != 0)
+            if (op.input_size > 0) {
+                if (op.size > op.input_size && op.size % op.input_size != 0)
                     op.input_size = 0;
-                if(op.size < op.input_size && op.input_size % op.size != 0)
+                if (op.size < op.input_size && op.input_size % op.size != 0)
                     op.input_size = 0;
             }
 
@@ -649,16 +649,35 @@ struct RecordThreadState : ThreadState {
             for (uint32_t i = 0; i < size; ++i) {
                 AggregationEntry &p = agg[i];
 
-                jitc_log(LogLevel::Debug, " -> entry(src=%p)", p.src);
+                jitc_log(LogLevel::Debug, " -> entry(src=%p, size=%i)", p.src,
+                         p.size);
 
                 // There are three cases, we might have to handle.
-                // 1. The input is a literal => we save the literal value
-                // 2. it is a pointer to a variable => we add it's slot to the
-                // params list
-                // 3. it is an evaluated variable => same as for pointer, but
-                // type size is submitted when replaying
+                // 1. The input is a pointer (size = 8 and we know the pointer)
+                // 2. The input is an evaluated variable (size < 0)
+                // 3. The variabel is a literal (size > 0 and it is not a
+                // pointer to a known allocation).
 
-                if (!has_variable(p.src)) {
+                bool has_var = has_variable(p.src);
+
+                if ((p.size == 8 && has_var) || p.size < 0) {
+                    // Pointer or evaluated
+
+                    if (!has_var)
+                        jitc_fail("record(): Tried to aggregate variable, that "
+                                  "is not known to the recording!");
+
+                    RecordVariable rv;
+                    uint32_t slot = add_variable(p.src, rv);
+                    jitc_log(LogLevel::Debug, "    var at slot %u", slot);
+
+                    ParamInfo info;
+                    info.slot = slot;
+                    info.type = ParamType::Input;
+                    info.pointer_access = p.size == 8;
+                    info.extra.offset = p.offset;
+                    add_param(info);
+                } else {
                     // Literal
                     jitc_log(LogLevel::Debug, "    literal");
                     ParamInfo info;
@@ -667,19 +686,6 @@ struct RecordThreadState : ThreadState {
                     info.extra.type_size = p.size;
                     info.type = ParamType::Register;
                     info.pointer_access = false;
-                    add_param(info);
-                } else {
-                    uint32_t index = get_variable(p.src);
-                    jitc_log(LogLevel::Debug, "    ptr at slot %u", index);
-
-                    RecordVariable &rv =
-                        this->recording.record_variables[index];
-
-                    ParamInfo info;
-                    info.slot = index;
-                    info.type = ParamType::Input;
-                    info.pointer_access = p.size == 8;
-                    info.extra.offset = p.offset;
                     add_param(info);
                 }
             }
@@ -860,7 +866,7 @@ struct RecordThreadState : ThreadState {
      * Information is combined when the variable has already been added.
      * This is used by the input variables of a kernel.
      */
-    uint32_t add_variable(void *ptr, RecordVariable rv) {
+    uint32_t add_variable(const void *ptr, RecordVariable rv) {
 
         auto it = this->ptr_to_slot.find(ptr);
 
