@@ -1989,9 +1989,15 @@ void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
     uint32_t flags = jitc_flags();
     var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
 
+    // In some cases, we create a new target variable. The new variable must
+    // have the same block scope as the original variable.
+    uint32_t target_1_scope = target_1_v->scope;
+    uint32_t target_2_scope = target_2_v->scope;
+
     // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
     if (target_1_v->ref_count != 2 && target_1_v->ref_count_stashed != 1) {
         target_1 = steal(jitc_var_copy(target_1));
+        jitc_var(target_1)->scope = target_1_scope;
 
         // The above operation may have invalidated 'target_2_v' which is accessed below
         target_2_v = jitc_var(target_2);
@@ -1999,12 +2005,16 @@ void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
 
     // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
     if ((target_2_v->ref_count != 2 && target_2_v->ref_count_stashed != 1) ||
-        target_1 == target_2)
+        target_1 == target_2) {
         target_2 = steal(jitc_var_copy(target_2));
+        jitc_var(target_2)->scope = target_2_scope;
+    }
 
     void *target_1_addr = nullptr, *target_2_addr = nullptr;
     target_1 = steal(jitc_var_data(target_1, false, &target_1_addr));
     target_2 = steal(jitc_var_data(target_2, false, &target_2_addr));
+    jitc_var(target_1)->scope = target_1_scope;
+    jitc_var(target_2)->scope = target_2_scope;
 
     if (target_1 != *target_1_p) {
         jitc_var_inc_ref(target_1);
@@ -2081,12 +2091,19 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     uint32_t flags = jitc_flags();
     var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
 
+    // In some cases, we create a new target variable. The new variable must
+    // have the same block scope as the original variable.
+    uint32_t target_scope = jitc_var(target)->scope;
+
     // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
-    if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
+    if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1) {
         target = steal(jitc_var_copy(target));
+        jitc_var(target)->scope = target_scope;
+    }
 
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
+    jitc_var(target)->scope = target_scope;
 
     if (target != *target_p) {
         jitc_var_inc_ref(target);
@@ -2371,6 +2388,10 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         return target.release();
     }
 
+    // In some cases, we create a new target variable. The new variable must
+    // have the same block scope as the original variable.
+    uint32_t target_scope = jitc_var(target_)->scope;
+
     // The backends may employ various strategies to reduce the number of
     // atomic memory operations, or to avoid them altogether. Check if the user
     // requested this.
@@ -2386,6 +2407,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // stashed via \ref jitc_var_stash_ref() (e.g., prior to a control flow
     // operation like dr.if_stmt()), then use that instead.
     target_v = jitc_var(target);
+    target_v->scope = target_scope;
 
     if (target_v->is_dirty() && op == ReduceOp::Identity 
                              && mode != ReduceMode::Permute 
@@ -2394,12 +2416,15 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         target_v = jitc_var(target);
     }
 
-    if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
+    if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1) {
         target = steal(jitc_var_copy(target));
+        jitc_var(target)->scope = target_scope;
+    }
 
     // Get a pointer to the array data. This evaluates the array if needed
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
+    jitc_var(target)->scope = target_scope;
     ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 1));
 
     // Apply default masks
@@ -2621,6 +2646,10 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         return target.release();
     }
 
+    // In some cases, we create a new target variable. The new variable must
+    // have the same block scope as the original variable.
+    uint32_t target_scope = jitc_var(target)->scope;
+
     // Must compute final index before potentially expanding below
     index = steal(jitc_var_mul(index, scale));
 
@@ -2633,12 +2662,15 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     // Check if it is safe to directly write to ``target``.
     // See the original scatter operation for details.
     target_v = jitc_var(target);
-    if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
+    if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1) {
         target = steal(jitc_var_copy(target));
+        jitc_var(target)->scope = target_scope;
+    }
 
     // Get a pointer to the array data. This evaluates the array if needed
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
+    jitc_var(target)->scope = target_scope;
     ptr = steal(jitc_var_pointer(backend, target_addr, target, 1));
 
     // Apply default masks
