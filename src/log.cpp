@@ -27,7 +27,7 @@ static const char *fatal_error_msg =
     "out-of-bounds reads, writes, and other sources of undefined\n"
     "behavior. You can do so by calling\n"
     "\n"
-    "   dr.set_flag(drjit.JitFlag.Debug, True)\n"
+    "   dr.set_flag(dr.JitFlag.Debug, True)\n"
     "\n"
     "at the beginning of the program. If these additional checks\n"
     "fail to pinpoint the problem, then you have likely found a\n"
