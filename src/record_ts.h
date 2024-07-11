@@ -300,8 +300,14 @@ struct RecordThreadState : ThreadState {
                                 "ouptut is not yet supported!");
 
                     // Follow pointer
+                    uint32_t ptr_index = index;
                     index = v->dep[3];
                     v = jitc_var(index);
+                    if (v->data != ptr)
+                        jitc_fail("record(): Tried to record variable r%u, "
+                                  "pointing to r%u, but their memory address "
+                                  "did not match! (%p != %p)",
+                                  ptr_index, index, ptr, v->data);
 
                     pointer_access = true;
                     ptr_size = std::max(ptr_size, (size_t)v->size);
