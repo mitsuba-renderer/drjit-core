@@ -201,6 +201,8 @@ void jitc_registry_clear() {
             p.active = false;
         d.id_bound = 0;
     }
+
+    r.rev_map.clear();
 }
 
 void jitc_registry_shutdown() {
