@@ -1580,6 +1580,8 @@ enum JitFlag {
     JitFlagLaunchBlocking = 1 << 16,
     JitFlagScatterReduceLocal = 1 << 17,
     JitFlagSymbolic = 1 << 18
+    KernelFreezing = 1 << 19,
+    FreezingScope = 1 << 20,
 };
 #endif
 
