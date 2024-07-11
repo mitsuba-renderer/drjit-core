@@ -356,7 +356,28 @@ struct RecordThreadState : ThreadState {
             op.size = size;
             if (uses_optix) {
                 op.uses_optix = true;
-                op.sbt = this->optix_sbt;
+
+                scoped_pause();
+                // Copy SBT
+                op.sbt = new OptixShaderBindingTable();
+                std::memcpy(op.sbt, this->optix_sbt,
+                            sizeof(OptixShaderBindingTable));
+
+                // Copy hit groups
+                size_t hit_group_size = optix_sbt->hitgroupRecordStrideInBytes *
+                                        optix_sbt->hitgroupRecordCount;
+                op.sbt->hitgroupRecordBase =
+                    jitc_malloc(AllocType::Device, hit_group_size);
+                jitc_memcpy(backend, op.sbt->hitgroupRecordBase,
+                            optix_sbt->hitgroupRecordBase, hit_group_size);
+
+                // Copy miss groups
+                size_t miss_group_size = optix_sbt->missRecordStrideInBytes *
+                                         optix_sbt->missRecordCount;
+                op.sbt->missRecordBase =
+                    jitc_malloc(AllocType::Device, miss_group_size);
+                jitc_memcpy(backend, op.sbt->missRecordBase,
+                            optix_sbt->missRecordBase, miss_group_size);
             }
 
             // Record max_input_size if we have only pointer inputs.
@@ -664,8 +685,10 @@ struct RecordThreadState : ThreadState {
                     // Pointer or evaluated
 
                     if (!has_var)
-                        jitc_fail("record(): Tried to aggregate variable, that "
-                                  "is not known to the recording!");
+                        jitc_fail(
+                            "record(): Tried to aggregate variable %p, that "
+                            "is not known to the recording!",
+                            p.src);
 
                     RecordVariable rv;
                     uint32_t slot = add_variable(p.src, rv);
