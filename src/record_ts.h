@@ -62,9 +62,7 @@ struct RecordVariable {
     /// variable
     uint32_t index = 0;
     RecordType rv_type = RecordType::Other;
-    // Nubmer of operations that reference this variable
     // used to deallocate unused variables during replay.
-    uint32_t rc = 0;
     uint32_t last_memset = 0;
     uint32_t last_memcpy = 0;
 
@@ -133,8 +131,6 @@ struct Recording {
 
     void replay(const uint32_t *replay_input, uint32_t *outputs);
 
-    /// Computes the initial reference count for replay variables
-    void compute_rc();
     void validate();
 };
 

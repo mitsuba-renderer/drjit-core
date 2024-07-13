@@ -11,17 +11,15 @@ static bool dry_run = false;
 // This struct holds the data and tracks the size of varaibles,
 // used during replay.
 struct ReplayVariable {
-    void *data = 0;
+    void *data = nullptr;
     size_t alloc_size = 0;
     uint32_t size = 0;
     VarType type = VarType::Void;
     uint32_t index;
     RecordType rv_type;
-    uint32_t rc;
 
     ReplayVariable(RecordVariable &rv) {
         this->index = rv.index;
-        this->rc = rv.rc;
 
         this->rv_type = rv.rv_type;
 
@@ -239,9 +237,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ReplayVariable &rv = replay_variables[info.slot];
 
                 jitc_log(LogLevel::Info,
-                         " %s param slot(%u, rc=%u, is_pointer=%u, size=%u)",
+                         " %s param slot(%u, is_pointer=%u, size=%u)",
                          info.type == ParamType::Output ? "<-" : "->",
-                         info.slot, rv.rc, info.pointer_access, rv.size);
+                         info.slot, info.pointer_access, rv.size);
 
                 if (info.type == ParamType::Output) {
                     rv.alloc(backend, launch_size, info.vtype);
@@ -551,43 +549,6 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                       "the replay functionality!");
             break;
         }
-
-        // Only kernel launches have to be synchronized
-        if (op.type != OpType::KernelLaunch) {
-            // Free unused memory, allocated since last barrier
-            for (uint32_t j = last_free; j < i; ++j) {
-                jitc_log(LogLevel::Debug, "replay(): gc for operation %u", j);
-                Operation &op = this->operations[j];
-                for (uint32_t p = op.dependency_range.first;
-                     p < op.dependency_range.second; ++p) {
-                    ParamInfo &info = this->dependencies[p];
-                    if (info.type != ParamType::Input &&
-                        info.type != ParamType::Output)
-                        continue;
-
-                    ReplayVariable &rv = replay_variables[info.slot];
-                    rv.rc--;
-                    jitc_log(LogLevel::Debug,
-                             "replay(): decrement rc for slot %u new rc=%u",
-                             info.slot, rv.rc);
-                    if (rv.rc == 0) {
-                        jitc_log(LogLevel::Debug,
-                                 "replay(): free memory for slot %u",
-                                 info.slot);
-                        jitc_free(rv.data);
-                        rv.data = nullptr;
-                    }
-                }
-            }
-            last_free = i;
-        }
-    }
-
-    for (uint32_t i = 0; i < replay_variables.size(); ++i) {
-        ReplayVariable &rv = replay_variables[i];
-        jitc_log(LogLevel::Debug,
-                 "replay(): rv(%u, rc=%u, is_input=%u, data=%p)", i, rv.rc,
-                 rv.rv_type == RecordType::Input, rv.data);
     }
 
     ts->optix_sbt = tmp_sbt;
@@ -602,8 +563,9 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
         // uint32_t index = this->outputs[i];
         jitc_log(LogLevel::Debug, "replay(): output(%u, slot=%u)", i, slot);
         ReplayVariable &rv = replay_variables[slot];
-        if(rv.type != info.vtype)
+        if (rv.type != info.vtype)
             rv.prepare_input(info.vtype);
+
         if (rv.rv_type == RecordType::Input) {
             // Use input variable
             jitc_log(LogLevel::Debug, "    uses input %u", rv.index);
@@ -622,59 +584,39 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             outputs[i] = rv.index;
         } else {
             jitc_log(LogLevel::Info, "    uses internal variable");
-            jitc_assert(rv.data && rv.rc > 0,
-                        "replay(): freed variable used for output.");
+            if(!rv.data)
+                jitc_fail("replay(): freed slot %u used for output.", slot);
             outputs[i] = jitc_var_mem_map(this->backend, rv.type, rv.data,
                                           rv.size, true);
         }
+        // Set data to nullptr for next step, where we free all remaining
+        // temporary variables
         jitc_log(LogLevel::Info, "    data=%p", rv.data);
+        rv.data = nullptr;
+    }
+
+    for (uint32_t slot = 0; slot < replay_variables.size(); ++slot) {
+        ReplayVariable &rv = replay_variables[slot];
+        if (rv.data && rv.rv_type == RecordType::Other) {
+            jitc_log(LogLevel::Debug,
+                     "replay(): Freeing temporary data %p at slot %u", rv.data,
+                     slot);
+
+            jitc_free(rv.data);
+            rv.data = nullptr;
+        }
     }
 }
 
-void Recording::compute_rc() {
-    for (auto &op : this->operations) {
-        for (uint32_t j = op.dependency_range.first;
-             j < op.dependency_range.second; ++j) {
-            ParamInfo &info = this->dependencies[j];
-            if (info.type != ParamType::Input && info.type != ParamType::Output)
-                continue;
-
-            RecordVariable &rv = this->record_variables[info.slot];
-            rv.rc++;
-        }
-    }
-    // Captured and Input variables should not be garbage collected.
-    // TODO: inputs should be fine, but have to be freed by decrementing
-    // variable refcount.
-    for (RecordVariable &rv : this->record_variables) {
-        if (rv.rv_type == RecordType::Input ||
-            rv.rv_type == RecordType::Captured) {
-            rv.rc++;
-        }
-    }
-    // Do not touch inputs/outputs therefore increment their refcount
-    for (ParamInfo info : this->outputs) {
-        RecordVariable &rv = this->record_variables[info.slot];
-        rv.rc++;
-    }
-}
 void Recording::validate() {
-    for (uint32_t i = 0; i < this->record_variables.size(); ++i) {
-        RecordVariable &rv = this->record_variables[i];
-        // jitc_assert(rv.type != VarType::Void || rv.rc == 0,
-        //             "Recorded Variable at slot(%u) was added, it's type is "
-        //             "unknown! This can occur, if a variable is only used by "
-        //             "operations, that do not provide a type.",
-        //             i);
-    }
 }
 
 void jitc_record_start(JitBackend backend, const uint32_t *inputs,
                        uint32_t n_inputs) {
 
-    if(jitc_flags() & (uint32_t)JitFlag::FreezingScope)
-        jitc_fail("Tried to record a thread_state while inside another FreezingScope!");
-        
+    if (jitc_flags() & (uint32_t)JitFlag::FreezingScope)
+        jitc_fail("Tried to record a thread_state while inside another "
+                  "FreezingScope!");
 
     // Increment scope, can be used to track missing inputs
     jitc_new_scope(backend);
@@ -720,14 +662,13 @@ Recording *jitc_record_stop(JitBackend backend, const uint32_t *outputs,
             thread_state_llvm = internal;
         }
         Recording *recording = new Recording(rts->recording);
-        recording->compute_rc();
         recording->validate();
         delete rts;
 
         uint32_t flags = jitc_flags();
         flags &= ~(uint32_t)JitFlag::FreezingScope;
         jitc_set_flags(flags);
-        
+
         return recording;
     } else {
         jitc_fail(
@@ -756,7 +697,7 @@ void jitc_record_abort(JitBackend backend) {
         }
 
         delete rts;
-        
+
         uint32_t flags = jitc_flags();
         flags &= ~(uint32_t)JitFlag::FreezingScope;
         jitc_set_flags(flags);
