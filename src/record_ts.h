@@ -198,24 +198,7 @@ struct RecordThreadState : ThreadState {
                 const CallData *call = (CallData *)v->data;
 
                 uint32_t size = call->n_inst + 1;
-                size_t dsize = size * type_size[(uint32_t)VarType::UInt64];
-                uint64_t *offset;
-                {
-                    scoped_pause();
-                    AllocType atype = backend == JitBackend::CUDA
-                                          ? AllocType::Device
-                                          : AllocType::HostAsync;
-                    offset = (uint64_t *)jitc_malloc(atype, dsize);
-                    jitc_memcpy(backend, offset, call->offset, dsize);
-                }
-
-                uint32_t offset_buf =
-                    jitc_var_mem_map(backend, VarType::UInt64, offset, size, 1);
-                uint32_t slot =
-                    capture_variable(offset_buf, call->offset, false);
-                jitc_log(LogLevel::Debug,
-                         "record(): captured call->offset_buf to slot s%u [%u]",
-                         slot, size);
+                capture_call_offsets(call->offset, size);
             }
 
             // Handle reduce_expanded case
@@ -842,10 +825,40 @@ struct RecordThreadState : ThreadState {
     // recording.
     PtrToSlot ptr_to_slot;
 
+    uint32_t capture_call_offsets(void *ptr, size_t size) {
+        size_t dsize = size * type_size[(uint32_t)VarType::UInt64];
+        scoped_pause();
+        AllocType atype = backend == JitBackend::CUDA ? AllocType::Device
+                                                      : AllocType::HostAsync;
+        uint64_t *offset = (uint64_t *)jitc_malloc(atype, dsize);
+        jitc_memcpy(backend, offset, ptr, dsize);
+
+        uint32_t offset_buf =
+            jitc_var_mem_map(backend, VarType::UInt64, offset, size, 1);
+
+        uint32_t slot = this->recording.record_variables.size();
+        jitc_log(LogLevel::Debug,
+                 "record(): capturing offset buffer at slot s%u", slot);
+
+        RecordVariable rv;
+        rv.rv_type = RecordType::Captured;
+        rv.index = offset_buf;
+        this->recording.record_variables.push_back(rv);
+
+        auto it = this->ptr_to_slot.find(ptr);
+        if (it == this->ptr_to_slot.end())
+            this->ptr_to_slot.insert({ptr, slot});
+        else
+            it.value() = slot;
+
+        return slot;
+    }
+
     /**
      */
     uint32_t capture_variable(uint32_t index, void *ptr = nullptr,
                               bool copy = true, bool clear = false) {
+
         scoped_pause();
         Variable *v = jitc_var(index);
         if (v->scope < this->internal->scope) {
@@ -855,6 +868,14 @@ struct RecordThreadState : ThreadState {
                        index, v->data);
         }
 
+        // NOTE: for now we don't support capturing variables at all.
+        // Therefore we raise an exception
+        jitc_raise(
+            "record(): Variable r%u[%u] was created while recording a kernel. "
+            "Only literal variables can be uploaded by the kernel.",
+            index, v->size);
+
+        /*
         // Have to copy the variable, so that it cannot be modified by other
         // calls later.
         uint32_t slot = this->recording.record_variables.size();
@@ -887,6 +908,7 @@ struct RecordThreadState : ThreadState {
         }
 
         return slot;
+        */
     }
 
     /**
