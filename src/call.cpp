@@ -451,7 +451,7 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
     //    opportunity for dead code elimination.
     // =========================================================
 
-    bool optimize = jitc_flags() & (uint32_t) JitFlag::OptimizeCalls;
+    bool optimize = call->optimize;
 
     uint32_t n_inst = call->n_inst,
              n_in = call->n_in,
@@ -469,11 +469,17 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
 
     for (auto [size, i] : call_perm) {
         Variable *v = jitc_var(call->outer_in[i]);
-        in_size_all += size;
-
-        if (optimize && !v->reg_index)
+        Variable *v_in = jitc_var(call->inner_in[i]);
+        bool unused =
+            !v->reg_index ||
+            (optimize && // Optimizations are on
+                (v->is_literal() || // Literals are propagated
+                 v_in->ref_count == 1)); // CallInput is never used
+        if (unused) {
             continue;
+        }
 
+        in_size_all += size;
         v->param_offset = in_size;
         in_size += size;
         in_align = std::max(size, in_align);

@@ -1135,23 +1135,29 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     // 5.1. Pass the input arguments
     // =====================================================
 
-    for (uint32_t in : call->outer_in) {
-        const Variable *v = jitc_var(in);
-        if (!v->reg_index)
+    for (uint32_t i = 0; i < call->n_in; ++i) {
+        const Variable *v = jitc_var(call->outer_in[i]);
+        const Variable *v_in = jitc_var(call->inner_in[i]);
+        bool unused =
+            !v->reg_index ||
+            (call->optimize && // Optimizations are on
+                (v->is_literal() || // Literals are propagated
+                 v_in->ref_count == 1)); // CallInput is never used
+        if (unused)
             continue;
-        const Variable *v2 = jitc_var(in);
 
-        const char *tname  = type_name_ptx_bin[v2->type],
-                   *prefix = type_prefix[v2->type];
+        v = jitc_var(call->outer_in[i]);
+        const char *tname  = type_name_ptx_bin[v->type],
+                   *prefix = type_prefix[v->type];
 
         // Special handling for predicates (pass via u8)
-        if ((VarType) v2->type == VarType::Bool) {
+        if ((VarType) v->type == VarType::Bool) {
             tname = "u8";
             prefix = "%w";
         }
 
         fmt("            st.param.$s [in+$u], $s$u;\n",
-            tname, v->param_offset, prefix, v2->reg_index);
+            tname, v->param_offset, prefix, v->reg_index);
     }
 
     put("            call ");
