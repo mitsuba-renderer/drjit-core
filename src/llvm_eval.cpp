@@ -1490,8 +1490,16 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
 
     for (uint32_t i = 0; i < call->n_in; ++i) {
         const Variable *v = jitc_var(call->outer_in[i]);
-        if (!v->reg_index)
+        const Variable *v_in = jitc_var(call->inner_in[i]);
+        bool unused =
+            !v->reg_index ||
+            (call->optimize && // Optimizations are on
+                (v->is_literal() || // Literals are propagated
+                 v_in->ref_count == 1)); // CallInput is never used
+
+        if (unused)
             continue;
+
         fmt( "    %u$u_in_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
             "{    %u$u_in_$u_1 = bitcast i8* %u$u_in_$u_0 to $M*\n|}",
             call_reg, i, v->param_offset * width,
