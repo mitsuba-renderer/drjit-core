@@ -858,7 +858,7 @@ struct RecordThreadState : ThreadState {
         scoped_pause();
         Variable *v = jitc_var(index);
         if (v->scope < this->internal->scope) {
-            jitc_fail("record(): Variable %u[%u] -> %p, label=%s, was created "
+            jitc_raise("record(): Variable %u[%u] -> %p, label=%s, was created "
                        "before recording was started, but it was "
                        "not speciefied as an input variable!",
                        index, v->size, v->data, jitc_var_label(index));
@@ -866,7 +866,7 @@ struct RecordThreadState : ThreadState {
 
         // NOTE: for now we don't support capturing variables at all.
         // Therefore we raise an exception
-        jitc_fail(
+        jitc_raise(
             "record(): Variable r%u[%u], label = %s was created while recording a kernel. "
             "Only literal variables can be uploaded by the kernel.",
             index, v->size, jitc_var_label(index));

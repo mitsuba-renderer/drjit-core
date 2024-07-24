@@ -1437,7 +1437,7 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
         memcpy(dst, &v->literal, isize);
     } else if (v->is_evaluated()) {
         if(jitc_flags() & (uint32_t)JitFlag::FreezingScope)
-            jitc_fail("jit_var_read(): reading from evaluated variables while "
+            jitc_raise("jit_var_read(): reading from evaluated variable while "
                       "recording a frozen function is not supported!");
 
         jitc_memcpy((JitBackend) v->backend, dst,
