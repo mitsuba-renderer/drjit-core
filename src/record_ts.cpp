@@ -12,7 +12,11 @@ static bool dry_run = false;
 // used during replay.
 struct ReplayVariable {
     void *data = nullptr;
+    // Tracks the capacity, this allocation has been allocated for
     size_t alloc_size = 0;
+    // Tracks the size in bites, of this allocation
+    size_t data_size = 0;
+    // Tracks the size in elements of this allocation, given some type
     uint32_t size = 0;
     VarType type = VarType::Void;
     uint32_t index;
@@ -28,17 +32,22 @@ struct ReplayVariable {
             this->data = v->data;
             this->size = v->size;
             this->alloc_size = v->size * type_size[v->type];
+            this->data_size = this->alloc_size;
         }
     }
 
-    // void set_type(VarType type) {
-    //     if (type != VarType::Void)
-    //         this->type = type;
-    // }
+    void init_from_input(Variable *input_variable){
+        this->size = input_variable->size;
+        this->data = input_variable->data;
+        this->type = (VarType)input_variable->type;
+        this->alloc_size = type_size[input_variable->type] * this->size;
+        this->data_size = this->alloc_size;
+    }
+
     void prepare_input(VarType type) {
         if (type != VarType::Void) {
             uint32_t tsize = type_size[(uint32_t)type];
-            this->size = (uint32_t)(this->alloc_size / (size_t)tsize);
+            this->size = (uint32_t)(this->data_size / (size_t)tsize);
             jitc_log(LogLevel::Debug,
                      "replay(): reinterpreted as %u with size [%u]",
                      (uint32_t)type, this->size);
@@ -89,6 +98,8 @@ struct ReplayVariable {
         } else {
             // Do not reallocate if the size is enough
         }
+
+        this->data_size = dsize;
     }
 };
 
@@ -121,11 +132,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     // Populate with input variables
     for (uint32_t i = 0; i < this->inputs.size(); ++i) {
         Variable *input_variable = jitc_var(replay_inputs[i]);
-        ReplayVariable &rv = replay_variables[this->inputs[i]];
-        rv.size = input_variable->size;
-        rv.data = input_variable->data;
-        rv.type = (VarType)input_variable->type;
-        rv.alloc_size = type_size[input_variable->type] * rv.size;
+        replay_variables[this->inputs[i]].init_from_input(input_variable);
         jitc_log(LogLevel::Debug, "    input %u: r%u mapped to slot(%u)", i,
                  replay_inputs[i], this->inputs[i]);
     }
