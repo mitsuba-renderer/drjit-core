@@ -14,11 +14,8 @@ struct ReplayVariable {
     void *data = nullptr;
     // Tracks the capacity, this allocation has been allocated for
     size_t alloc_size = 0;
-    // Tracks the size in bites, of this allocation
+    // Tracks the size in bytes, of this allocation
     size_t data_size = 0;
-    // Tracks the size in elements of this allocation, given some type
-    // uint32_t size = 0;
-    // VarType type = VarType::Void;
     uint32_t index;
     RecordType rv_type;
 
@@ -57,7 +54,7 @@ struct ReplayVariable {
         size_t size = (this->data_size / (size_t)tsize);
 
         if (size == 0)
-            jitc_fail("replay(): Error, changing type of replay variable!");
+            jitc_fail("replay(): Error, determining size of variable!");
 
         if(size * (size_t)tsize != this->data_size)
             jitc_fail("replay(): Error, determining size of variable!");
