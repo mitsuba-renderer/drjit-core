@@ -985,7 +985,7 @@ static void jitc_llvm_render(Variable *v) {
                          *outer_out = jitc_var(ld->outer_out[l]);
                 fmt("    $v = phi $T [ $v, %l_$u_before ], [ $v, %l_$u_end ]\n",
                     v, v, outer_in, a0->reg_index, inner_out, a0->reg_index);
-                if (outer_out)
+                if (outer_out && (VarKind) outer_out->kind == VarKind::LoopOutput)
                     outer_out->reg_index = inner_in->reg_index;
             }
             break;
