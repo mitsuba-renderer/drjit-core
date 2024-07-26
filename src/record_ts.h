@@ -966,8 +966,10 @@ struct RecordThreadState : ThreadState {
     }
 
     void add_param(ParamInfo info) {
-        if (info.vtype != VarType::Void)
+        if(info.type == ParamType::Output && info.vtype != VarType::Void)
             this->recording.record_variables[info.slot].type = info.vtype;
+        if(info.type == ParamType::Input && info.vtype == VarType::Void)
+            info.vtype = this->recording.record_variables[info.slot].type;
         this->recording.dependencies.push_back(info);
     }
     void add_in_param(uint32_t slot) {
