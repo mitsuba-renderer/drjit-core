@@ -659,16 +659,22 @@ struct RecordThreadState : ThreadState {
                          p.size);
 
                 // There are three cases, we might have to handle.
-                // 1. The input is a pointer (size = 8 and we know the pointer)
+                // 1. The input is a pointer (size = 8 and it is known to the malloc cache)
                 // 2. The input is an evaluated variable (size < 0)
                 // 3. The variabel is a literal (size > 0 and it is not a
                 // pointer to a known allocation).
 
-                bool has_var = has_variable(p.src);
+                bool is_ptr;
+                auto it = state.alloc_used.find((uintptr_t)p.src);
+                if(it == state.alloc_used.end())
+                    is_ptr = false;
+                else
+                    is_ptr = true;
 
-                if ((p.size == 8 && has_var) || p.size < 0) {
+                if ((p.size == 8 && is_ptr) || p.size < 0) {
                     // Pointer or evaluated
 
+                    bool has_var = has_variable(p.src);
                     if (!has_var)
                         jitc_fail(
                             "record(): Tried to aggregate variable %p, that "

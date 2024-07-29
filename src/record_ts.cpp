@@ -517,8 +517,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     p->offset = param.extra.offset;
                     p->src = rv.data;
                 } else {
-                    jitc_log(LogLevel::Debug, " -> literal: offset=%u",
-                             param.extra.offset);
+                    jitc_log(LogLevel::Debug, " -> literal: offset=%u, size=%u",
+                             param.extra.offset, param.extra.type_size);
                     p->size = param.extra.type_size;
                     p->offset = param.extra.offset;
                     p->src = (void *)param.extra.data;
