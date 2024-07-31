@@ -754,7 +754,7 @@ void jitc_record_replay(Recording *recording, const uint32_t *inputs,
 
 int jitc_record_dry_run(Recording *recording, const uint32_t *inputs,
                         uint32_t *outputs) {
-    int result = 0;
+    int result = true;
     if(recording->requires_dry_run){
         jitc_log(LogLevel::Debug, "Replaying in dry-run mode");
         dry_run = true;
