@@ -129,7 +129,7 @@ struct Recording {
 
     JitBackend backend;
 
-    void replay(const uint32_t *replay_input, uint32_t *outputs);
+    int replay(const uint32_t *replay_input, uint32_t *outputs);
 
     void validate();
 };
@@ -1010,13 +1010,8 @@ bool jitc_record_pause(JitBackend backend);
 
 bool jitc_record_resume(JitBackend backend);
 
-struct RequiresRetraceException : public std::exception {
-    RequiresRetraceException() {
-    }
-    const char *what() const throw() override {
-        return "";
-    }
-};
-
 void jitc_record_replay(Recording *recording, const uint32_t *inputs,
+                        uint32_t *outputs);
+
+int jitc_record_dry_run(Recording *recording, const uint32_t *inputs,
                         uint32_t *outputs);

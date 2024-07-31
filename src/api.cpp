@@ -1507,6 +1507,12 @@ void jit_record_replay(Recording *recording, const uint32_t *inputs,
     jitc_record_replay(recording, inputs, outputs);
 }
 
+int jit_record_dry_run(Recording *recording, const uint32_t *inputs,
+                       uint32_t *outputs){
+    lock_guard guard(state.lock);
+    return jitc_record_dry_run(recording, inputs, outputs);
+}
+
 void jit_record_destroy(Recording *recording){
     lock_guard guard(state.lock);
     jitc_record_destroy(recording);

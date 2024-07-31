@@ -2500,6 +2500,36 @@ extern JIT_EXPORT void jit_record_replay(Recording *recording,
                                          uint32_t *outputs);
 
 /**
+ * \brief Perform a dry run of a recording (if required), which does not perform any actual
+ * work.
+ *
+ * Dry running the recording, calculates the widths of all kernels, and might
+ * return 0 if the function has to be re-recorded.
+ *
+ * \param recording
+ *      The recording to replay given different inputs.
+ *
+ * \param inputs
+ *      An array of input variable indices for replaying the recording.
+ *      The number of inputs taken from the array is equal to the number of
+ *      inputs supplied to the jit_start_record function.
+ *      No actual changes are done to the variables in dry-run mode.
+ *
+ * \param outpus
+ *      This array is filled with the output variable indices, created when
+ *      replaying the recording.
+ *      The size of the array has to be equal to the number of output variables
+ *      supplied to the jit_record_stop function.
+ *      No actual changes are done to the variables in dry-run mode.
+ *
+ *      
+ * \return false if retracing the function is required, true otherwise
+ */
+extern JIT_EXPORT int jit_record_dry_run(Recording *recording,
+                                          const uint32_t *inputs,
+                                          uint32_t *outputs);
+
+/**
  * \brief Pause recording the ThreadState for this backend.
  *      Returns true if recording has already been paused.
  *

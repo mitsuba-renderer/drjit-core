@@ -106,7 +106,7 @@ static std::vector<void *> kernel_params;
 /// Temporary variables used for replaying a recording.
 static std::vector<ReplayVariable> replay_variables;
 
-void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
+int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
     this->validate();
 
@@ -359,7 +359,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             uint32_t workers = pool_size() + 1;
 
             if (size != op.size)
-                throw RequiresRetraceException();
+                return false;
 
             uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u;
             size_t new_size =
@@ -557,7 +557,7 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     ts->optix_sbt = tmp_sbt;
 
     if (dry_run)
-        return;
+        return true;
 
     // Create output variables
     for (uint32_t i = 0; i < this->outputs.size(); ++i) {
@@ -609,6 +609,8 @@ void Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             rv.data = nullptr;
         }
     }
+
+    return true;
 }
 
 void Recording::validate() {
@@ -747,11 +749,18 @@ bool jitc_record_resume(JitBackend backend) {
 void jitc_record_replay(Recording *recording, const uint32_t *inputs,
                         uint32_t *outputs) {
     dry_run = false;
-    if (recording->requires_dry_run) {
+    recording->replay(inputs, outputs);
+}
+
+int jitc_record_dry_run(Recording *recording, const uint32_t *inputs,
+                        uint32_t *outputs) {
+    int result = 0;
+    if(recording->requires_dry_run){
         jitc_log(LogLevel::Debug, "Replaying in dry-run mode");
         dry_run = true;
-        recording->replay(inputs, outputs);
+        result = recording->replay(inputs, outputs);
         dry_run = false;
     }
-    recording->replay(inputs, outputs);
+    
+    return result;
 }
