@@ -83,16 +83,6 @@ struct RecordVariable {
         this->last_memset = rhs.last_memset;
         return *this;
     }
-    /**
-     */
-    bool compatible(const RecordVariable &rhs) {
-        bool result = true;
-        // We never want to overwrite the recording of captured or input
-        // variable.
-        result &= this->rv_type == RecordType::Other ||
-                  rhs.rv_type == RecordType::Other;
-        return result;
-    }
 };
 
 struct ParamInfo {
@@ -130,6 +120,8 @@ struct Recording {
     JitBackend backend;
 
     int replay(const uint32_t *replay_input, uint32_t *outputs);
+    uint32_t n_kernels = 0;
+
 
     void validate();
 };
@@ -188,13 +180,17 @@ struct RecordThreadState : ThreadState {
             size_t input_size = 0;
             size_t ptr_size = 0;
 
-            // Handle calls by copying the offset buffer
+            PtrToSlot call_offsets;
+
+            // Iterate over calls and capture offset buffers, putting them into
+            // the call_offsets map
             for (const uint32_t &index : *kernel_calls) {
                 Variable *v = jitc_var(index);
                 const CallData *call = (CallData *)v->data;
 
                 uint32_t size = call->n_inst + 1;
-                capture_call_offsets(call->offset, size);
+                uint32_t call_offset = capture_call_offsets(call->offset, size);
+                call_offsets.insert({call->offset, call_offset});
             }
 
             // Handle reduce_expanded case
@@ -246,7 +242,7 @@ struct RecordThreadState : ThreadState {
                 }
             }
 
-            jitc_log(LogLevel::Info, "record(): recording kernel");
+            jitc_log(LogLevel::Info, "record(): recording kernel %u", this->recording.n_kernels++);
 
             uint32_t start = this->recording.dependencies.size();
             for (uint32_t param_index = 0;
@@ -293,17 +289,24 @@ struct RecordThreadState : ThreadState {
                 }
 
                 uint32_t slot;
-                if (param_type == ParamType::Input && !has_variable(ptr)) {
-                    slot = capture_variable(index);
-                } else {
-                    RecordVariable rv;
-                    if (param_type == ParamType::Input)
+                RecordVariable rv;
+                if (param_type == ParamType::Input){
+                    // Determine if this variable is a call offset buffer
+                    // then use the captured variable.
+                    auto it = call_offsets.find(ptr);
+                    if(it != call_offsets.end()){
+                        slot = it.value();
+                    }else if(has_variable(ptr)) {
                         slot = this->add_variable(ptr, rv);
-                    else if (param_type == ParamType::Output)
-                        slot = this->add_variable(ptr, rv);
-                    else
-                        jitc_fail("Parameter Type not supported!");
+                    }else{
+                        slot = capture_variable(index);
+                    }
+
                 }
+                else if (param_type == ParamType::Output)
+                    slot = this->add_variable(ptr, rv);
+                else
+                    jitc_fail("Parameter Type not supported!");
 
                 if (pointer_access) {
                     jitc_log(LogLevel::Debug,
@@ -841,26 +844,33 @@ struct RecordThreadState : ThreadState {
         uint32_t slot = this->recording.record_variables.size();
         jitc_log(LogLevel::Debug,
                  "record(): capturing offset buffer at slot s%u", slot);
+        jitc_log(LogLevel::Debug, "    data=%s", jitc_var_str(offset_buf));
 
         RecordVariable rv;
         rv.rv_type = RecordType::Captured;
         rv.index = offset_buf;
         this->recording.record_variables.push_back(rv);
 
-        auto it = this->ptr_to_slot.find(ptr);
-        if (it == this->ptr_to_slot.end())
-            this->ptr_to_slot.insert({ptr, slot});
-        else
-            it.value() = slot;
+        // auto it = this->ptr_to_slot.find(ptr);
+        // if (it == this->ptr_to_slot.end())
+        //     this->ptr_to_slot.insert({ptr, slot});
+        // else
+        //     it.value() = slot;
 
         return slot;
     }
 
     /**
+     * This function tries to capture a variable that is not known to the
+     * recording threadstate.
+     * Currently capturing variables is unsupported and this function will just fail.
      */
     uint32_t capture_variable(uint32_t index, void *ptr = nullptr,
                               bool copy = true, bool clear = false) {
 
+        (void) ptr;
+        (void) copy;
+        (void) clear;
         scoped_pause();
         Variable *v = jitc_var(index);
         if (v->scope < this->internal->scope) {
@@ -877,40 +887,6 @@ struct RecordThreadState : ThreadState {
             "Only literal variables can be uploaded by the kernel.",
             index, v->size, jitc_var_label(index));
 
-        /*
-        // Have to copy the variable, so that it cannot be modified by other
-        // calls later.
-        uint32_t slot = this->recording.record_variables.size();
-        jitc_log(LogLevel::Debug,
-                 "record(): capturing variable r%u at slot s%u", index, slot);
-
-        if (!ptr)
-            ptr = v->data;
-
-        if (copy) {
-            index = jitc_var_copy(index);
-            v = jitc_var(index);
-        }
-
-        RecordVariable rv;
-        rv.rv_type = RecordType::Captured;
-        rv.index = index;
-        jitc_var_inc_ref(index);
-
-        this->recording.record_variables.push_back(rv);
-
-        if (clear) {
-            this->ptr_to_slot.erase(ptr);
-        } else {
-            auto it = this->ptr_to_slot.find(ptr);
-            if (it == this->ptr_to_slot.end())
-                this->ptr_to_slot.insert({ptr, slot});
-            else
-                it.value() = slot;
-        }
-
-        return slot;
-        */
     }
 
     /**
@@ -934,19 +910,7 @@ struct RecordThreadState : ThreadState {
         } else {
             uint32_t slot = it.value();
 
-            RecordVariable &old = this->recording.record_variables[slot];
-            if (!old.compatible(rv)) {
-                // If two record variables are not compatible, we have to create
-                // a new one. Otherwise information about the new/old one might
-                // get lost.
-                slot = this->recording.record_variables.size();
-                jitc_log(LogLevel::Debug,
-                         "record(): adding new variable at slot %u", slot);
-                this->recording.record_variables.push_back(rv);
-                it.value() = slot;
-            } else {
-                this->recording.record_variables[slot] |= rv;
-            }
+            this->recording.record_variables[slot] |= rv;
 
             return slot;
         }

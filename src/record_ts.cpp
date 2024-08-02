@@ -54,7 +54,9 @@ struct ReplayVariable {
         size_t size = (this->data_size / (size_t)tsize);
 
         if (size == 0)
-            jitc_fail("replay(): Error, determining size of variable!");
+            jitc_fail("replay(): Error, determining size of variable! rv_type "
+                      "%u, dsize=%zu",
+                      (uint32_t) this->rv_type, this->data_size);
 
         if(size * (size_t)tsize != this->data_size)
             jitc_fail("replay(): Error, determining size of variable!");
@@ -108,6 +110,8 @@ static std::vector<ReplayVariable> replay_variables;
 
 int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
+    uint32_t n_kernels = 0;
+
     this->validate();
 
     ThreadState *ts = thread_state(backend);
@@ -118,7 +122,6 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
     scoped_set_context_maybe guard2(ts->context);
 
     replay_variables.clear();
-    uint32_t last_free = 0;
 
     replay_variables.reserve(this->record_variables.size());
     for (RecordVariable &rv : this->record_variables) {
@@ -143,7 +146,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
         switch (op.type) {
         case OpType::KernelLaunch: {
-            jitc_log(LogLevel::Info, "replay(): launching kernel:");
+            jitc_log(LogLevel::Info, "replay(): launching kernel %u:", n_kernels++);
             kernel_params.clear();
 
             if (backend == JitBackend::CUDA) {
@@ -170,6 +173,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 ReplayVariable &rv = replay_variables[info.slot];
 
                 if (info.type == ParamType::Input) {
+                    jitc_log(LogLevel::Debug, "infering size of s%u", info.slot);
                     uint32_t size = rv.size(info.vtype);
 
                     if(rv.data == nullptr && !dry_run)
@@ -187,22 +191,22 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             uint32_t launch_size = input_size != 0 ? input_size : ptr_size;
             if (op.input_size > 0) {
                 // Apply the factor
-                if (op.size > op.input_size) {
-                    if (op.size % op.input_size != 0)
-                        jitc_raise(
-                            "replay(): Could not infer launch size, using "
-                            "heuristic!");
+                if (op.size > op.input_size && (op.size % op.input_size == 0)) {
+                    // if (op.size % op.input_size != 0)
+                    //     jitc_raise(
+                    //         "replay(): Could not infer launch size, using "
+                    //         "heuristic!");
                     size_t ratio = op.size / op.input_size;
                     jitc_log(LogLevel::Warn,
                              "replay(): Inferring launch size by heuristic, "
                              "launch_size=%u, ratio=%zu",
                              launch_size, ratio);
                     launch_size = launch_size * ratio;
-                } else {
-                    if (op.input_size % op.size != 0)
-                        jitc_raise(
-                            "replay(): Could not infer launch size, using "
-                            "heuristic!");
+                } else if (op.input_size % op.size == 0) {
+                    // if (op.input_size % op.size != 0)
+                    //     jitc_raise(
+                    //         "replay(): Could not infer launch size, using "
+                    //         "heuristic!");
 
                     uint32_t fraction = op.input_size / op.size;
                     jitc_log(LogLevel::Warn,
@@ -232,6 +236,12 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     jitc_log(LogLevel::Info,
                              " -> param slot(%u, is_pointer=%u, size=%u)",
                              info.slot, info.pointer_access, size);
+                    if(rv.rv_type == RecordType::Captured){
+                        jitc_log(LogLevel::Debug, "    label=%s",
+                                 jitc_var_label(rv.index));
+                        jitc_log(LogLevel::Debug, "   data=%s",
+                                 jitc_var_str(rv.index));
+                    }
                 } else {
                     jitc_log(LogLevel::Info,
                              " <- param slot(%u, is_pointer=%u)", info.slot,
@@ -286,8 +296,8 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
             ReplayVariable &ptr_var = replay_variables[ptr_info.slot];
             ptr_var.alloc(backend, op.size, op.input_size);
 
-            jitc_log(LogLevel::Debug, "replay(): MemsetAsync -> slot(%u) [%zu]",
-                     ptr_info.slot, op.size);
+            jitc_log(LogLevel::Debug, "replay(): MemsetAsync -> slot(%u) [%zu], op.input_size=%zu",
+                     ptr_info.slot, op.size, op.input_size);
 
             uint32_t size = ptr_var.size(op.input_size);
 
@@ -552,6 +562,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                       "the replay functionality!");
             break;
         }
+        jitc_sync_thread(ts);
     }
 
     ts->optix_sbt = tmp_sbt;
