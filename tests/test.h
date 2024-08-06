@@ -111,13 +111,13 @@ using HalfL   = LLVMArray<drjit::half>;
 #define TEST_REDUCE_UNSUPPORTED_SKIP(command)                                  \
     try {                                                                      \
         command;                                                               \
-    } catch (std::runtime_error err) {                                         \
+    } catch (const std::runtime_error &err) {                                  \
         if (strstr(err.what(),                                                 \
             "does not support the requested type of atomic reduction") == NULL)\
             throw err;                                                         \
                                                                                \
-            jit_log(LogLevel::Warn, "Skipping test! %s", err.what());          \
-            return;                                                            \
+        jit_log(LogLevel::Warn, "Skipping test! %s", err.what());              \
+        return;                                                                \
     }                                                                          \
 
 #define jit_assert(cond)                                                       \
