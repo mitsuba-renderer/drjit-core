@@ -289,7 +289,6 @@ struct RecordThreadState : ThreadState {
                 }
 
                 uint32_t slot;
-                RecordVariable rv;
                 if (param_type == ParamType::Input){
                     // Determine if this variable is a call offset buffer
                     // then use the captured variable.
@@ -297,14 +296,16 @@ struct RecordThreadState : ThreadState {
                     if(it != call_offsets.end()){
                         slot = it.value();
                     }else if(has_variable(ptr)) {
-                        slot = this->add_variable(ptr, rv);
+                        slot = this->get_variable(ptr);
                     }else{
                         slot = capture_variable(index);
                     }
 
                 }
-                else if (param_type == ParamType::Output)
+                else if (param_type == ParamType::Output){
+                    RecordVariable rv;
                     slot = this->add_variable(ptr, rv);
+                }
                 else
                     jitc_fail("Parameter Type not supported!");
 
@@ -430,6 +431,8 @@ struct RecordThreadState : ThreadState {
             op.size = size;
             op.input_size = isize;
             std::memcpy(&op.data, src, isize);
+
+            jitc_log(LogLevel::Debug, "record(): memset_async(ptr=s%u)", ptr_id);
 
             this->recording.operations.push_back(op);
         }
@@ -948,12 +951,21 @@ struct RecordThreadState : ThreadState {
         info.slot = slot;
         add_param(info);
     }
+    void add_in_param(const void *ptr){
+        uint32_t slot = this->get_variable(ptr);
+        add_in_param(slot);
+    }
     void add_out_param(uint32_t slot, VarType vtype) {
         ParamInfo info;
         info.type = ParamType::Output;
         info.slot = slot;
         info.vtype = vtype;
         add_param(info);
+    }
+    void add_out_param(const void *ptr, VarType vtype){
+        RecordVariable rv;
+        uint32_t slot = this->add_variable(ptr, rv);
+        add_out_param(slot, vtype);
     }
     void add_out_param(uint32_t slot, uint32_t vtype) {
         add_out_param(slot, (VarType)vtype);

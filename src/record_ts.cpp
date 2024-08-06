@@ -146,7 +146,8 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
         switch (op.type) {
         case OpType::KernelLaunch: {
-            jitc_log(LogLevel::Info, "replay(): launching kernel %u:", n_kernels++);
+            jitc_log(LogLevel::Info, "replay(): launching kernel %u ",
+                     n_kernels++);
             kernel_params.clear();
 
             if (backend == JitBackend::CUDA) {
@@ -239,7 +240,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                     if(rv.rv_type == RecordType::Captured){
                         jitc_log(LogLevel::Debug, "    label=%s",
                                  jitc_var_label(rv.index));
-                        jitc_log(LogLevel::Debug, "   data=%s",
+                        jitc_log(LogLevel::Debug, "    data=%s",
                                  jitc_var_str(rv.index));
                     }
                 } else {
