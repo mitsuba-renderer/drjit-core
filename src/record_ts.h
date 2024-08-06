@@ -373,9 +373,9 @@ struct RecordThreadState : ThreadState {
             // Therefore, if max_input_size > 0 we know this at replay.
             if (input_size == 0) {
                 jitc_log(LogLevel::Info, "    input_size(pointers)=%zu",
-                         input_size);
+                         ptr_size);
                 op.input_size = ptr_size;
-            } else if (input_size != size) {
+            } else {
                 jitc_log(LogLevel::Info, "    input_size(direct)=%zu",
                          input_size);
                 op.input_size = input_size;
@@ -387,6 +387,19 @@ struct RecordThreadState : ThreadState {
                     op.input_size = 0;
                 if (op.size < op.input_size && op.input_size % op.size != 0)
                     op.input_size = 0;
+            }
+
+            if(op.input_size){
+                if(op.size > op.input_size)
+                    jitc_log(LogLevel::Debug, "    size=input_size*%zu",
+                             op.size / op.input_size);
+                else if(op.size < op.input_size)
+                    jitc_log(LogLevel::Debug, "    size=input_size/%zu",
+                             op.input_size / op.size);
+            }else{
+                jitc_log(LogLevel::Debug,
+                         "    input size could not be determined "
+                         "by input and is recorded as is.");
             }
 
             this->recording.operations.push_back(op);

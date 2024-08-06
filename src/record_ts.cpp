@@ -163,6 +163,8 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             // Inferr launch size.
 
+            jitc_log(LogLevel::Debug, "replay(): inferring kernel launch size");
+
             // Size of direct input variables
             uint32_t input_size = 0;
             // Size of variables referenced by pointers
@@ -176,6 +178,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 if (info.type == ParamType::Input) {
                     jitc_log(LogLevel::Debug, "infering size of s%u", info.slot);
                     uint32_t size = rv.size(info.vtype);
+                    jitc_log(LogLevel::Debug, "    size=%u", size);
 
                     if(rv.data == nullptr && !dry_run)
                         jitc_fail("replay(): Kernel input variable (slot=%u) "
@@ -189,14 +192,15 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 }
             }
 
-            uint32_t launch_size = input_size != 0 ? input_size : ptr_size;
+            uint32_t launch_size = 0;
             if (op.input_size > 0) {
+                launch_size = input_size != 0 ? input_size : ptr_size;
                 // Apply the factor
                 if (op.size > op.input_size && (op.size % op.input_size == 0)) {
-                    // if (op.size % op.input_size != 0)
-                    //     jitc_raise(
-                    //         "replay(): Could not infer launch size, using "
-                    //         "heuristic!");
+                    if (op.size % op.input_size != 0)
+                        jitc_raise(
+                            "replay(): Could not infer launch size, using "
+                            "heuristic!");
                     size_t ratio = op.size / op.input_size;
                     jitc_log(LogLevel::Warn,
                              "replay(): Inferring launch size by heuristic, "
@@ -204,10 +208,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                              launch_size, ratio);
                     launch_size = launch_size * ratio;
                 } else if (op.input_size % op.size == 0) {
-                    // if (op.input_size % op.size != 0)
-                    //     jitc_raise(
-                    //         "replay(): Could not infer launch size, using "
-                    //         "heuristic!");
+                    if (op.input_size % op.size != 0)
+                        jitc_raise(
+                            "replay(): Could not infer launch size, using "
+                            "heuristic!");
 
                     uint32_t fraction = op.input_size / op.size;
                     jitc_log(LogLevel::Warn,
