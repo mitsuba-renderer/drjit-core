@@ -459,12 +459,9 @@ struct RecordThreadState : ThreadState {
                 void *out) override {
         if (!paused) {
 
-            uint32_t ptr_id = this->get_variable(ptr);
-            uint32_t out_id = this->add_variable(out, RecordVariable{});
-
             uint32_t start = this->recording.dependencies.size();
-            add_in_param(ptr_id);
-            add_out_param(out_id, type);
+            add_in_param(ptr);
+            add_out_param(out, type);
             uint32_t end = this->recording.dependencies.size();
 
             Operation op;
@@ -499,12 +496,9 @@ struct RecordThreadState : ThreadState {
     void prefix_sum(VarType vt, bool exclusive, const void *in, uint32_t size,
                     void *out) override {
         if (!paused) {
-            uint32_t in_id = this->get_variable(in);
-            uint32_t out_id = this->add_variable(out, RecordVariable{});
-
             uint32_t start = this->recording.dependencies.size();
-            add_in_param(in_id);
-            add_out_param(out_id, vt);
+            add_in_param(in);
+            add_out_param(out, vt);
             uint32_t end = this->recording.dependencies.size();
 
             Operation op;
@@ -529,13 +523,9 @@ struct RecordThreadState : ThreadState {
                      "record(): compress(in=%p, size=%u, out=%p)", in, size,
                      out);
 
-            uint32_t in_slot = this->add_variable((void *)in, RecordVariable{});
-            uint32_t out_slot =
-                this->add_variable((void *)out, RecordVariable{});
-
             uint32_t start = this->recording.dependencies.size();
-            add_in_param(in_slot);
-            add_out_param(out_slot, VarType::UInt32);
+            add_in_param(in);
+            add_out_param(out, VarType::UInt32);
             uint32_t end = this->recording.dependencies.size();
 
             Operation op;
@@ -560,15 +550,10 @@ struct RecordThreadState : ThreadState {
                          "bucket_count=%u, perm=%p, offsets=%p)",
                          values, size, bucket_count, perm, offsets);
 
-                uint32_t values_id = this->get_variable(values);
-                uint32_t perm_id = this->add_variable(perm, RecordVariable{});
-                uint32_t offsets_id =
-                    this->add_variable(offsets, RecordVariable{});
-
                 uint32_t start = this->recording.dependencies.size();
-                add_in_param(values_id);
-                add_out_param(perm_id, VarType::UInt32);
-                add_out_param(offsets_id, VarType::UInt32);
+                add_in_param(values);
+                add_out_param(perm, VarType::UInt32);
+                add_out_param(offsets, VarType::UInt32);
                 uint32_t end = this->recording.dependencies.size();
 
                 Operation op;
