@@ -146,7 +146,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
         switch (op.type) {
         case OpType::KernelLaunch: {
-            jitc_log(LogLevel::Info, "replay(): launching kernel %u ",
+            jitc_log(LogLevel::Debug, "replay(): launching kernel %u ",
                      n_kernels++);
             kernel_params.clear();
 
@@ -202,7 +202,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                             "replay(): Could not infer launch size, using "
                             "heuristic!");
                     size_t ratio = op.size / op.input_size;
-                    jitc_log(LogLevel::Warn,
+                    jitc_log(LogLevel::Debug,
                              "replay(): Inferring launch size by heuristic, "
                              "launch_size=%u, ratio=%zu",
                              launch_size, ratio);
@@ -214,7 +214,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                             "heuristic!");
 
                     uint32_t fraction = op.input_size / op.size;
-                    jitc_log(LogLevel::Warn,
+                    jitc_log(LogLevel::Debug,
                              "replay(): Inferring launch size by heuristic, "
                              "launch_size(%u), fraction=%u",
                              launch_size, fraction);
@@ -222,7 +222,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
                 }
             }
             if (launch_size == 0) {
-                jitc_log(LogLevel::Warn, "replay(): Could not infer launch "
+                jitc_log(LogLevel::Debug, "replay(): Could not infer launch "
                                          "size, using recorded size");
                 launch_size = op.size;
             }

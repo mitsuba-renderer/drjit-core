@@ -571,40 +571,41 @@ struct RecordThreadState : ThreadState {
 
     /// Perform a synchronous copy operation
     void memcpy(void *dst, const void *src, size_t size) override {
-        jitc_log(
-            LogLevel::Warn,
-            "RecordThreadState::memcpy(): unsupported function recording!");
+        jitc_log(LogLevel::Debug,
+                 "record(): memcpy(dst=%p, src=%p, size=%zu)", dst,
+                 src, size);
         scoped_pause();
         return this->internal->memcpy(dst, src, size);
     }
 
     /// Perform an assynchronous copy operation
     void memcpy_async(void *dst, const void *src, size_t size) override {
-        if (!paused) {
-            if (has_variable(src)) {
-                jitc_log(LogLevel::Debug,
-                         "record(): memcpy_async(dst=%p, src=%p, size=%zu)",
-                         dst, src, size);
+        if (!paused ) {
+            jitc_log(LogLevel::Debug,
+                     "record(): memcpy_async(dst=%p, src=%p, size=%zu)", dst,
+                     src, size);
 
-                uint32_t src_id = this->get_variable(src);
-                // Add an empty RecordVariable and hope that it will get filled
-                // in by a kernel invocation.
-                RecordVariable rv;
-                rv.last_memcpy = this->recording.operations.size();
-                uint32_t dst_id = this->add_variable(dst, rv);
+            uint32_t src_id;
+            if (!has_variable(src))
+                src_id = this->capture_data(src, size);
+            else
+                src_id = this->get_variable(src);
 
-                uint32_t start = this->recording.dependencies.size();
-                add_in_param(src_id);
-                add_out_param(dst_id,
-                              this->recording.record_variables[src_id].type);
-                uint32_t end = this->recording.dependencies.size();
+            RecordVariable rv;
+            rv.last_memcpy  = this->recording.operations.size();
+            uint32_t dst_id = this->add_variable(dst, rv);
 
-                Operation op;
-                op.type = OpType::MemcpyAsync;
-                op.dependency_range = std::pair(start, end);
-                op.size = size;
-                this->recording.operations.push_back(op);
-            }
+            uint32_t start = this->recording.dependencies.size();
+            add_in_param(src_id);
+            add_out_param(dst_id,
+                          this->recording.record_variables[src_id].type);
+            uint32_t end = this->recording.dependencies.size();
+
+            Operation op;
+            op.type             = OpType::MemcpyAsync;
+            op.dependency_range = std::pair(start, end);
+            op.size             = size;
+            this->recording.operations.push_back(op);
         }
         scoped_pause();
         return this->internal->memcpy_async(dst, src, size);
@@ -659,8 +660,8 @@ struct RecordThreadState : ThreadState {
             for (uint32_t i = 0; i < size; ++i) {
                 AggregationEntry &p = agg[i];
 
-                jitc_log(LogLevel::Debug, " -> entry(src=%p, size=%i)", p.src,
-                         p.size);
+                jitc_log(LogLevel::Debug, " -> entry(src=%p, size=%i, offset=%u)", p.src,
+                         p.size, p.offset);
 
                 // There are three cases, we might have to handle.
                 // 1. The input is a pointer (size = 8 and it is known to the malloc cache)
@@ -830,6 +831,33 @@ struct RecordThreadState : ThreadState {
     // Mapping from data pointer of a variable to a index into the slot of the
     // recording.
     PtrToSlot ptr_to_slot;
+
+    uint32_t capture_data(const void *ptr, size_t size){
+        size_t dsize = size * type_size[(uint32_t)VarType::UInt8];
+        scoped_pause();
+        AllocType atype = backend == JitBackend::CUDA ? AllocType::Device
+                                                      : AllocType::HostAsync;
+        jitc_log(LogLevel::Debug,
+                 "record(): allocating array of size %zu. To capture data.",
+                 dsize);
+        uint8_t *data = (uint8_t *) jitc_malloc(atype, dsize);
+        jitc_memcpy(backend, data, ptr, dsize);
+
+        uint32_t data_buf =
+            jitc_var_mem_map(backend, VarType::UInt8, data, size, 1);
+
+        uint32_t slot = this->recording.record_variables.size();
+        jitc_log(LogLevel::Debug,
+                 "record(): capturing offset buffer at slot s%u", slot);
+        jitc_log(LogLevel::Debug, "    data=%s", jitc_var_str(data_buf));
+
+        RecordVariable rv;
+        rv.rv_type = RecordType::Captured;
+        rv.index = data_buf;
+        this->recording.record_variables.push_back(rv);
+
+        return slot;
+    }
 
     uint32_t capture_call_offsets(void *ptr, size_t size) {
         size_t dsize = size * type_size[(uint32_t)VarType::UInt64];
