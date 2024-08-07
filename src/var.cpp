@@ -1433,7 +1433,7 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
                    "size %u!", offset, v->size);
 
     uint32_t isize = type_size[v->type];
-    if (v->is_literal() || v->is_undefined() || (v->is_evaluated() && v->size <= 1)) {
+    if (v->is_literal() || v->is_undefined()) {
         memcpy(dst, &v->literal, isize);
     } else if (v->is_evaluated()) {
         if(jitc_flags() & (uint32_t)JitFlag::FreezingScope)
