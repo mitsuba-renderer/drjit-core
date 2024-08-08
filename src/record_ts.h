@@ -580,12 +580,15 @@ struct RecordThreadState : ThreadState {
 
     /// Perform an assynchronous copy operation
     void memcpy_async(void *dst, const void *src, size_t size) override {
-        if (!paused ) {
+        if (!paused) {
             jitc_log(LogLevel::Debug,
                      "record(): memcpy_async(dst=%p, src=%p, size=%zu)", dst,
                      src, size);
 
             uint32_t src_id;
+            // NOTE: We allow capturing of source variables for memeset_async.
+            // The reason is that they might be coming from the host
+            // (differentiable rendering).
             if (!has_variable(src))
                 src_id = this->capture_data(src, size);
             else
@@ -950,10 +953,10 @@ struct RecordThreadState : ThreadState {
     uint32_t get_variable(const void *ptr) {
         auto it = this->ptr_to_slot.find(ptr);
 
-        jitc_assert(it != this->ptr_to_slot.end(),
-                    "Failed to find the slot corresponding to the variable "
-                    "with data at %p",
-                    ptr);
+        if(it == this->ptr_to_slot.end())
+            jitc_fail("Failed to find the slot corresponding to the variable "
+                      "with data at %p",
+                      ptr);
 
         return it.value();
     }
