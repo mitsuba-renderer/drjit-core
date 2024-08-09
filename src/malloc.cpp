@@ -218,6 +218,11 @@ void jitc_free(void *ptr) {
     if (!ptr)
         return;
 
+    if(thread_state_cuda)
+        thread_state_cuda->notify_free(ptr);
+    if(thread_state_llvm)
+        thread_state_llvm->notify_free(ptr);
+
     uintptr_t key = (uintptr_t) ptr;
     size_t hash = UInt64Hasher()(key);
 

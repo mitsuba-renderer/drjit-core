@@ -714,6 +714,8 @@ struct ThreadState {
     /// dr.ReduceOp.Expand
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
                                  uint32_t exp, uint32_t size) = 0;
+
+    virtual void notify_free(const void *ptr) = 0;
 };
 
 /// Key data structure for kernel source code & device ID

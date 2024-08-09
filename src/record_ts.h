@@ -760,6 +760,10 @@ struct RecordThreadState : ThreadState {
         return this->internal->reduce_expanded(vt, reduce_op, data, exp, size);
     }
 
+    void notify_free(const void *ptr) override{
+        (void) ptr;
+    }
+
     ~RecordThreadState() {
     }
 

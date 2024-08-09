@@ -65,5 +65,7 @@ struct CUDAThreadState: ThreadState{
       jitc_raise("jitc_reduce_expanded(): unsupported by CUDAThreadState!");
     }
 
+    void notify_free(const void *) override {};
+
     ~CUDAThreadState(){}
 };
