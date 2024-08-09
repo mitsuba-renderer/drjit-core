@@ -24,6 +24,7 @@ enum class OpType {
     MemcpyAsync,
     Mkperm,
     Aggregate,
+    Free,
 };
 
 struct Operation {
@@ -761,7 +762,18 @@ struct RecordThreadState : ThreadState {
     }
 
     void notify_free(const void *ptr) override{
-        (void) ptr;
+        if(has_variable(ptr)){
+            uint32_t start = this->recording.dependencies.size();
+            add_in_param(ptr);
+            uint32_t end = this->recording.dependencies.size();
+
+            Operation op;
+            op.type = OpType::Free;
+            op.dependency_range = std::pair(start, end);
+
+            jitc_log(LogLevel::Debug, "record(): jitc_free(ptr=%p)", ptr);
+            this->ptr_to_slot.erase(ptr);
+        }
     }
 
     ~RecordThreadState() {

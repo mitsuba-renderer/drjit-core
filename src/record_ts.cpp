@@ -100,6 +100,13 @@ struct ReplayVariable {
 
         this->data_size = dsize;
     }
+
+    void free(){
+        jitc_free(this->data);
+        this->data = nullptr;
+        this->data_size = 0;
+        this->alloc_size = 0;
+    }
 };
 
 /// Kernel parameter buffer
@@ -560,6 +567,14 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *outputs) {
 
             if (!dry_run)
                 ts->aggregate(dst_rv.data, agg, (uint32_t)(p - agg));
+
+        } break;
+        case OpType::Free: {
+            uint32_t i         = op.dependency_range.first;
+            ParamInfo info     = dependencies[i];
+            ReplayVariable &rv = replay_variables[info.slot];
+
+            rv.free();
 
         } break;
         default:
