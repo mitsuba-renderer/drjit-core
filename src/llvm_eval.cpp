@@ -143,8 +143,13 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
 
             if (size != 1) {
                 // Load a packet of values
-                fmt("    $v$s = load $M, {$M*} $v_p5, align $A, !alias.scope !2, !nontemporal !3\n",
-                    v, vt == VarType::Bool ? "_0" : "", v, v, v, v);
+
+                // See  https://github.com/llvm/llvm-project/issues/102611
+                const char *nontemporal =
+                    vt == VarType::Float16 ? "" : ", !nontemporal !3";
+
+                fmt("    $v$s = load $M, {$M*} $v_p5, align $A, !alias.scope !2$s\n",
+                    v, vt == VarType::Bool ? "_0" : "", v, v, v, v, nontemporal);
                 if (vt == VarType::Bool)
                     fmt("    $v = trunc $M $v_0 to $T\n", v, v, v, v);
             } else {
