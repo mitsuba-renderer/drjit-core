@@ -376,6 +376,10 @@ static ProfilerRegion profiler_region_flush_malloc_cache("jit_flush_malloc_cache
 
 /// Release all unused memory to the GPU / OS
 void jitc_flush_malloc_cache(bool warn) {
+    if(jitc_flags() & (uint32_t)JitFlag::FreezingScope)
+        jitc_fail(
+            "jit_flush_malloc_cache(): Tried to free the allocation cache "
+            "while recording a frozen function. This is not supported.");
     if (warn && !jitc_flush_malloc_cache_warned) {
         jitc_log(
             Warn,
