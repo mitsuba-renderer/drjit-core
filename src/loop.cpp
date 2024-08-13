@@ -75,24 +75,19 @@ uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, 
         Variable *v2 = jitc_var(index);
         jitc_var_inc_ref(index, v2);
         jitc_var_inc_ref(index, v2);
+        ld->outer_in.push_back(index);
 
-        if (v2->is_array()) {
-            ld->outer_in.push_back(index);
-            ld->inner_in.push_back(index);
-            jitc_var_inc_ref(index, v2);
-        } else {
-            ld->outer_in.push_back(index);
-
-            v_phi.type = v2->type;
-            v_phi.literal = (uint64_t) i;
-            v_phi.size = v2->size;
-            v_phi.dep[3] = index;
-            jitc_var_inc_ref(ld->loop_start);
-            uint32_t index_new = jitc_var_new(v_phi, true);
-            ld->inner_in.push_back(index_new);
-            jitc_var_inc_ref(index_new);
-            indices[i] = index_new;
-        }
+        v_phi.type = v2->type;
+        v_phi.literal = (uint64_t) i;
+        v_phi.array_state = v2->array_state;
+        v_phi.array_length = v2->array_length;
+        v_phi.size = v2->size;
+        v_phi.dep[3] = index;
+        jitc_var_inc_ref(ld->loop_start);
+        uint32_t index_new = jitc_var_new(v_phi, true);
+        ld->inner_in.push_back(index_new);
+        jitc_var_inc_ref(index_new);
+        indices[i] = index_new;
     }
 
     jitc_new_scope(backend);

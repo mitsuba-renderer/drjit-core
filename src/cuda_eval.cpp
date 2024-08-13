@@ -891,6 +891,10 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::LoopPhi:
+            if (v->is_array())
+                v->reg_index = a3->reg_index;
+            break;
+
         case VarKind::LoopOutput:
             // No code generated for this node
             break;
