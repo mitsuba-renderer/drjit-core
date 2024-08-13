@@ -982,16 +982,20 @@ static void jitc_llvm_render(Variable *v) {
             break;
 
         case VarKind::LoopPhi: {
-                const LoopData *ld = (LoopData *) a0->data;
-                size_t l = (size_t) v->literal;
-                Variable *inner_in  = jitc_var(ld->inner_in[l]),
-                         *outer_in  = jitc_var(ld->outer_in[l]),
-                         *inner_out = jitc_var(ld->inner_out[l]),
-                         *outer_out = jitc_var(ld->outer_out[l]);
-                fmt("    $v = phi $T [ $v, %l_$u_before ], [ $v, %l_$u_end ]\n",
-                    v, v, outer_in, a0->reg_index, inner_out, a0->reg_index);
-                if (outer_out && (VarKind) outer_out->kind == VarKind::LoopOutput)
-                    outer_out->reg_index = inner_in->reg_index;
+                if (v->is_array()) {
+                    v->reg_index = a3->reg_index;
+                } else {
+                    const LoopData *ld = (LoopData *) a0->data;
+                    size_t l = (size_t) v->literal;
+                    Variable *inner_in  = jitc_var(ld->inner_in[l]),
+                             *outer_in  = jitc_var(ld->outer_in[l]),
+                             *inner_out = jitc_var(ld->inner_out[l]),
+                             *outer_out = jitc_var(ld->outer_out[l]);
+                    fmt("    $v = phi $T [ $v, %l_$u_before ], [ $v, %l_$u_end ]\n",
+                        v, v, outer_in, a0->reg_index, inner_out, a0->reg_index);
+                    if (outer_out && (VarKind) outer_out->kind == VarKind::LoopOutput)
+                        outer_out->reg_index = inner_in->reg_index;
+                }
             }
             break;
 
