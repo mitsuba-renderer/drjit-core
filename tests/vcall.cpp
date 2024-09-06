@@ -119,6 +119,7 @@ void symbolic_call(
             domain, symbolic,
             self, mask,
             (uint32_t) n_callables,
+            (uint32_t) n_callables,
             inst_id,
             (uint32_t) n_inputs,
             call_inputs,

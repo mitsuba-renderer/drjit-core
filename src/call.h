@@ -79,7 +79,7 @@ struct CallData {
 extern uint32_t jitc_var_loop_init(uint32_t *indices, uint32_t n_indices);
 
 extern void jitc_var_call(const char *domain, bool symbolic, uint32_t self,
-                          uint32_t mask, uint32_t n_inst,
+                          uint32_t mask, uint32_t n_inst, uint32_t max_inst_id,
                           const uint32_t *inst_id, uint32_t n_in,
                           const uint32_t *in, uint32_t n_inner_out,
                           const uint32_t *inner_out,

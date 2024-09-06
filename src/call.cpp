@@ -27,10 +27,10 @@ extern void jitc_var_call_analyze(CallData *call, uint32_t inst_id,
 
 /// Weave a virtual function call into the computation graph
 void jitc_var_call(const char *name, bool symbolic, uint32_t self,
-                   uint32_t mask_, uint32_t n_inst, const uint32_t *inst_id,
-                   uint32_t n_in, const uint32_t *in, uint32_t n_inner_out,
-                   const uint32_t *inner_out, const uint32_t *checkpoints,
-                   uint32_t *out) {
+                   uint32_t mask_, uint32_t n_inst, uint32_t max_inst_id,
+                   const uint32_t *inst_id, uint32_t n_in, const uint32_t *in,
+                   uint32_t n_inner_out, const uint32_t *inner_out,
+                   const uint32_t *checkpoints, uint32_t *out) {
 
     const uint32_t checkpoint_mask = 0x7fffffff;
 
@@ -154,7 +154,7 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
 
         if (debug)
             mask = steal(jitc_var_check_bounds(BoundsCheckType::Call, self,
-                                               mask, n_inst + 1));
+                                               mask, max_inst_id + 1));
     }
 
     // =====================================================

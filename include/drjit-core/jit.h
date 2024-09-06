@@ -1809,6 +1809,13 @@ extern JIT_EXPORT void jit_var_self(JIT_ENUM JitBackend backend,
  * \param n_inst
  *     The number of instances (must be >= 1)
  *
+ * \param max_inst_id
+ *     Maximum instance index that might be referenced
+ *
+ * \param inst_id
+ *     Pointer to an array of all possible instance indices that might be
+ *     referenced
+ *
  * \param n_in
  *     The number of input variables
  *
@@ -1832,7 +1839,8 @@ extern JIT_EXPORT void jit_var_self(JIT_ENUM JitBackend backend,
  *     are written into this argument (size <tt>n_out_nested / n_inst</tt>)
  */
 extern JIT_EXPORT void jit_var_call(const char *name, int symbolic,
-                                    uint32_t self, uint32_t mask, uint32_t n_inst,
+                                    uint32_t self, uint32_t mask,
+                                    uint32_t n_inst, uint32_t max_inst_id,
                                     const uint32_t *inst_id, uint32_t n_in,
                                     const uint32_t *in, uint32_t n_out_nested,
                                     const uint32_t *out_nested,
