@@ -34,6 +34,7 @@ using Mask = dr::CUDAArray<bool>;
 
 void demo() {
     OptixDeviceContext context = jit_optix_context();
+    jit_cuda_push_context(jit_cuda_context());
 
     // =====================================================
     // Copy vertex data to device
@@ -267,6 +268,7 @@ void demo() {
     // Cleanup
     // =====================================================
 
+    jit_cuda_pop_context();
     jit_free(d_gas);
 }
 
