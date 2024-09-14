@@ -363,8 +363,7 @@ void jitc_llvm_render_array_write(Variable *v, Variable *target,
 
 void jitc_llvm_render_array_memcpy_in(const Variable *v) {
     fmt_intrinsic("declare void @llvm.memcpy.inline.p0{i8}.p0{i8}.i32({i8*}, {i8*}, i32, i1)");
-    fmt( "    %arr_$u = alloca $m, i32 $u, align $A\n"
-         "    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
+    fmt( "    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
          "    $v_p2 = load {i8*}, {i8**} $v_p1, align 8, !alias.scope !2\n"
          "    $v_p3 = bitcast i8* $v_p2 to $m*\n"
          "    $v_p4 = mul i64 %index, $u\n"
@@ -372,7 +371,6 @@ void jitc_llvm_render_array_memcpy_in(const Variable *v) {
          "    $v_p6 = bitcast $m* $v_p5 to i8*\n"
          "    $v_p7 = bitcast $m* %arr_$u to i8*\n"
          "    call void @llvm.memcpy.inline.p0{i8}.p0{i8}.i32({i8*} align($A) $v_p7, {i8*} align($A) $v_p6, i32 $u, i1 0)\n",
-        v->reg_index, v, v->array_length * jitc_llvm_vector_width, v,
         v, v,
         v, v,
         v, v, v,

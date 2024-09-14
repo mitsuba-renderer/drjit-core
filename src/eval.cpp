@@ -776,6 +776,9 @@ void jitc_eval_impl(ThreadState *ts) {
             v->data = sv.data;
             v->output_flag = false;
             v->consumed = false;
+
+            if (v->is_array())
+                v->scope = 0;
         }
 
         uint32_t dep[4], side_effect = v->side_effect;

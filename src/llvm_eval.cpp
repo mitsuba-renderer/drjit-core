@@ -92,8 +92,20 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
 
     fmt("define void @drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 "
         "%end, i32 %thread_id, {i8**} noalias %params) #0 ${\n"
-        "entry:\n"
-        "    br label %body\n"
+        "entry:\n");
+
+    for (uint32_t gi = group.start; gi != group.end; ++gi) {
+        uint32_t index = schedule[gi].index;
+        Variable *v = jitc_var(index);
+        VarKind kind = (VarKind) v->kind;
+
+        if (!(kind == VarKind::Array || (kind == VarKind::Evaluated && v->is_array())))
+            break;
+
+        jitc_llvm_render_array(v, v->dep[0] ? jitc_var(v->dep[0]) : nullptr);
+    }
+
+    put("    br label %body\n"
         "\n"
         "body:\n"
         "    %index = phi i64 [ %index_next, %suffix ], [ %start, %entry ]\n");
@@ -1089,7 +1101,6 @@ static void jitc_llvm_render(Variable *v) {
             break;
 
         case VarKind::Array:
-            jitc_llvm_render_array(v, a0);
             break;
 
         case VarKind::ArrayInit:
