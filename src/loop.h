@@ -33,6 +33,7 @@ struct LoopData {
 
 extern uint32_t jitc_var_loop_start(const char *name, bool symbolic,
                                     size_t n_indices, uint32_t *indices);
+extern void jitc_var_loop_update_inner_in(uint32_t loop, uint32_t *indices);
 extern uint32_t jitc_var_loop_cond(uint32_t loop, uint32_t active);
 extern bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices,
                               uint32_t checkpoint);
