@@ -110,8 +110,10 @@ void jitc_registry_remove(const void *ptr) {
     size_t ptr_hash = PointerHasher()(ptr);
 
     auto it = r.rev_map.find((void *) ptr, ptr_hash);
-    if (it == r.rev_map.end())
-        jitc_raise("jit_registry_remove(ptr=%p): pointer is not registered!", ptr);
+    if (it == r.rev_map.end()) {
+        jitc_log(Warn, "jit_registry_remove(ptr=%p): pointer is not registered!", ptr);
+        return;
+    }
 
     ReverseKey rk = it->second;
     r.rev_map.erase_fast(it);
