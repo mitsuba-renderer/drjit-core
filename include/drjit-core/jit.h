@@ -1649,6 +1649,25 @@ extern JIT_EXPORT uint32_t jit_var_loop_start(const char *name,
                                               uint32_t *indices);
 
 /**
+ * \brief Update the inner_in field of the symbolic loop
+ *
+ * \param loop
+ *    A symbolic loop handle produced by ``jit_var_loop_start()``.
+ *
+ * \param indices
+ *    The indices to update the field with
+ *
+ * \remark
+ *    Once the jit_var_loop_start is called and the phi variables are written
+ *    to their fields, this can be used to update the inner_in field of the loop
+ *    by reading back the loop state variables.
+ *    This is necessary, to catch cases where a variable is added to the
+ * loop-state twice.
+ */
+extern JIT_EXPORT void jit_var_loop_update_inner_in(uint32_t loop,
+                                                    uint32_t *indices);
+
+/**
  * \brief Create a node representing the loop condition of a symbolic loop.
  *
  * \param loop

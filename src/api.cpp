@@ -1338,6 +1338,11 @@ uint32_t jit_var_loop_start(const char *name, bool symbolic, size_t n_indices, u
     return jitc_var_loop_start(name, symbolic, n_indices, indices);
 }
 
+void jit_var_loop_update_inner_in(uint32_t loop, uint32_t *indices) {
+    lock_guard guard(state.lock);
+    return jitc_var_loop_update_inner_in(loop, indices);
+}
+
 uint32_t jit_var_loop_cond(uint32_t loop, uint32_t active) {
     lock_guard guard(state.lock);
     return jitc_var_loop_cond(loop, active);
