@@ -116,13 +116,12 @@ bool jitc_optix_api_init() {
         if (!jitc_optix_handle) {
             jitc_log(Error, "jit_optix_api_init(): %s could not be loaded -- "
                             "disabling OptiX backend! Set the DRJIT_LIBOPTIX_PATH "
-                            "environment variable to specify its path. One "
-                            "common explanation of this error message could be "
-                            "that you are using the Windows Subsystem for "
-                            "Linux (\"WSL\"). Note that rendering via the "
-                            "OptiX/CUDA backend is not currently supported on "
-                            "this platform, which is a limitation of OptiX "
-                            "itself. ", optix_fname);
+                            "environment variable to specify its path. If you "
+                            "are using the Windows Subsystem for Linux 2 (\"WSL 2\"), "
+                            "please follow the setup instructions at "
+                            "https://github.com/mitsuba-renderer/mitsuba3/blob/master/docs/src/optix_setup.rst "
+                            "to make OptiX availablet to WSL.",
+                            optix_fname);
             return false;
         }
     }
