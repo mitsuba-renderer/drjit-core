@@ -32,7 +32,7 @@
 
 #if !defined(DRJIT_DYNAMIC_LLVM)
 /// If we link against a specific LLVM version, there is nothing to do
-bool jitc_llvm_api_init() { return LLVM_VERSION_MAJOR >= 8; }
+bool jitc_llvm_api_init() { return LLVM_VERSION_MAJOR >= 11; }
 void jitc_llvm_api_shutdown() {}
 bool jitc_llvm_api_has_core() { return true; }
 bool jitc_llvm_api_has_mcjit() { return true; }
@@ -225,12 +225,12 @@ bool jitc_llvm_api_init() {
             if (dlsym(handle, s.name))
                 jitc_llvm_version_major = s.major;
         }
+    }
 
-        if (jitc_llvm_version_major < 8) {
-            jitc_log(Warn, "jit_llvm_init(): the detected LLVM version was too "
-                           "old, at least 8.0.0 is needed.");
-            return false;
-        }
+    if (jitc_llvm_version_major < 11) {
+        jitc_log(Warn, "jit_llvm_init(): the detected LLVM version was too "
+                       "old, at least 11.0.0 is needed.");
+        return false;
     }
 
     return true;
