@@ -119,8 +119,9 @@ uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, 
 void jitc_var_loop_update_inner_in(uint32_t loop, uint32_t *indices) {
     LoopData *ld = (LoopData *) jitc_var(loop)->data;
     for (size_t i = 0; i < ld->inner_in.size(); i++) {
-        uint32_t index = indices[i];
+        uint32_t index = indices[i], old = ld->inner_in[i];
         jitc_var_inc_ref(index);
+        jitc_var_dec_ref(old);
         ld->inner_in[i] = index;
     }
 }
