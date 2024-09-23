@@ -282,6 +282,27 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         if (unlikely(v->is_dirty()))
             jitc_fail("jit_assemble(): dirty variable r%u encountered!", index);
 
+        uint32_t scope = v->scope;
+        for (int i = 0; i < 4; ++i) {
+            uint32_t index2 = v->dep[i];
+            if (!index2)
+                break;
+            Variable *v2 = jitc_var(index2);
+            uint32_t scope2 = v2->scope
+            if (unlikely(scope2 > scope)) {
+                jitc_raise(
+                    "jitc_assemble(): variable r%u (scope %u) depends on r%u "
+                    "(scope %u). However, the scope ID of predecessors must be "
+                    "lower! Very likely, a computation is split across a "
+                    "parent/child thread, which requires incrementing the "
+                    "scope ID at relevant handoff points (via "
+                    "dr.detail.new_scope()). You must do so before the child "
+                    "thread accesses a variable from a parent, and before the "
+                    "parent accesses a variable from the child.\n",
+                    index, scope, index2, scope2);
+            }
+        }
+
         v->param_offset = (uint32_t) kernel_params.size() * sizeof(void *);
         v->reg_index = n_regs++;
 
