@@ -288,7 +288,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             if (!index2)
                 break;
             Variable *v2 = jitc_var(index2);
-            uint32_t scope2 = v2->scope
+            uint32_t scope2 = v2->scope;
             if (unlikely(scope2 > scope)) {
                 jitc_raise(
                     "jitc_assemble(): variable r%u (scope %u) depends on r%u "
