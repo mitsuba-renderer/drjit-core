@@ -32,7 +32,7 @@ extern uint32_t jitc_array_write(uint32_t target, uint32_t offset,
 
 /// Return a variable representing the storage region underlying an Array or ArrayWrite variable
 extern uint32_t jitc_array_buffer(uint32_t index);
-extern uint32_t jitc_array_buffer(const Variable *v);
+extern const Variable *jitc_array_buffer(const Variable *v);
 
 /// Evolve array state machine during jitc_assemble()
 extern void jitc_process_array_op(VarKind kind, Variable *v);

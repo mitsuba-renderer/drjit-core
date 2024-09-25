@@ -197,12 +197,34 @@ uint32_t jitc_array_read(uint32_t source, uint32_t offset, uint32_t mask_) {
     return jitc_var_new(v);
 }
 
+uint32_t jitc_array_buffer(const Variable *v, uint32_t index) {
+    while (true) {
+        if (v->kind == (uint32_t) VarKind::Array ||
+            v->kind == (uint32_t) VarKind::Evaluated)
+            return index;
+        else if (v->kind == (uint32_t) VarKind::ArrayInit)
+            index = v->dep[0];
+        else if (v->kind == (uint32_t) VarKind::ArrayPhi)
+            index = v->dep[0];
+        else if (v->extra) {
+            index = (uint32_t) (uintptr_t) state.extra[v->extra].callback_data;
+            if (!index)
+                index = v->dep[3];
+        } else {
+            index = v->dep[3];
+        }
+        v = jitc_var(index);
+    }
+}
+
 uint32_t jitc_array_buffer(uint32_t index) {
-    const Variable *v = jitc_var(index);
-    if (v->kind == (uint32_t) VarKind::Array ||
-        v->kind == (uint32_t) VarKind::ArrayInit)
-        return index;
-    return jitc_array_buffer(v);
+    return jitc_array_buffer(jitc_var(index), index);
+}
+
+const Variable *jitc_array_buffer(const Variable *v) {
+    if (v->kind == (uint32_t) VarKind::Array)
+        return v;
+    return jitc_var(jitc_array_buffer(v, 0));
 }
 
 uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
@@ -357,15 +379,6 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
     }
 
     return op;
-}
-
-uint32_t jitc_array_buffer(const Variable *v) {
-    if (v->extra) {
-        uintptr_t data = (uintptr_t) state.extra[v->extra].callback_data;
-        if (data)
-            return (uint32_t) data;
-    }
-    return v->dep[3];
 }
 
 void jitc_process_array_op(VarKind kind, Variable *v) {

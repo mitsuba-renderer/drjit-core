@@ -72,7 +72,7 @@ void jitc_cuda_render_array_write(Variable *v, Variable *target,
     uint32_t target_buffer = target->reg_index;
 
     if (copy) {
-        target_buffer = jitc_var(jitc_array_buffer(v))->reg_index;
+        target_buffer = jitc_array_buffer(v)->reg_index;
 
         fmt("    mov.u32 %r3, 0;\n\n"
             "l_$u_copy:\n"
@@ -143,7 +143,7 @@ void jitc_cuda_render_array_memcpy_out(const Variable *v) {
 }
 
 void jitc_cuda_render_array_select(Variable *v, Variable *mask, Variable *t, Variable *f) {
-    uint32_t reg_index = jitc_var(jitc_array_buffer(v))->reg_index;
+    uint32_t reg_index = jitc_array_buffer(v)->reg_index;
     fmt("    mov.u32 %r3, 0;\n\n"
         "l_$u_select:\n"
         "    {\n"
