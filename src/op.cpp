@@ -2371,14 +2371,6 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         return target.release();
     }
 
-    // The backends may employ various strategies to reduce the number of
-    // atomic memory operations, or to avoid them altogether. Check if the user
-    // requested this.
-    // Warning: this operation might invalidate variable pointers
-    bool reduce_expanded = false;
-    std::tie(mode, reduce_expanded) = jitc_var_infer_reduce_mode(
-        "jit_var_scatter", var_info.backend, target, index, op, mode);
-
     // Check if it is safe to directly write to ``target``. We borrowed
     // ``target`` above, and the caller also owns one reference. Therefore, the
     // target array can be directly modified when the reference count exactly
@@ -2387,8 +2379,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // operation like dr.if_stmt()), then use that instead.
     target_v = jitc_var(target);
 
-    if (target_v->is_dirty() && op == ReduceOp::Identity 
-                             && mode != ReduceMode::Permute 
+    if (target_v->is_dirty() && op == ReduceOp::Identity
+                             && mode != ReduceMode::Permute
                              && mode != ReduceMode::NoConflicts) {
         jitc_var_eval(target);
         target_v = jitc_var(target);
@@ -2396,6 +2388,15 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
 
     if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));
+
+    // The backends may employ various strategies to reduce the number of
+    // atomic memory operations, or to avoid them altogether. Check if the user
+    // requested this.
+    // Warning: this operation might invalidate variable pointers
+    bool reduce_expanded = false;
+    auto mode_prev = mode;
+    std::tie(mode, reduce_expanded) = jitc_var_infer_reduce_mode(
+        "jit_var_scatter", var_info.backend, target, index, op, mode);
 
     // Get a pointer to the array data. This evaluates the array if needed
     void *target_addr = nullptr;
@@ -2493,8 +2494,8 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     const uint32_t target_size = target_v->size;
     const JitBackend backend = var_info.backend;
 
-    if (target_v->is_dirty() && op == ReduceOp::Identity 
-                             && mode != ReduceMode::Permute 
+    if (target_v->is_dirty() && op == ReduceOp::Identity
+                             && mode != ReduceMode::Permute
                              && mode != ReduceMode::NoConflicts) {
         jitc_var_eval(target);
         jitc_var_eval(index_);
@@ -2624,17 +2625,17 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     // Must compute final index before potentially expanding below
     index = steal(jitc_var_mul(index, scale));
 
-    // Infer the ReduceOp parameter (if it is set to ReduceOp::Auto)
-    // This operation may invalidate variable pointers.
-    bool reduce_expanded = false;
-    std::tie(mode, reduce_expanded) = jitc_var_infer_reduce_mode(
-        "jit_var_scatter_packet()", backend, target, index, op, mode);
-
     // Check if it is safe to directly write to ``target``.
     // See the original scatter operation for details.
     target_v = jitc_var(target);
     if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));
+
+    // Infer the ReduceOp parameter (if it is set to ReduceOp::Auto)
+    // This operation may invalidate variable pointers.
+    bool reduce_expanded = false;
+    std::tie(mode, reduce_expanded) = jitc_var_infer_reduce_mode(
+        "jit_var_scatter_packet()", backend, target, index, op, mode);
 
     // Get a pointer to the array data. This evaluates the array if needed
     void *target_addr = nullptr;

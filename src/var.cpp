@@ -2399,7 +2399,7 @@ void jitc_var_reduce_expanded(uint32_t index) {
         size
     );
 
-    v->reduce_op = (uint32_t) ReduceOp::Identity;
+    jitc_var(index)->reduce_op = (uint32_t) ReduceOp::Identity;
 }
 
 /// Return a human-readable summary of registered variables
