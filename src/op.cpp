@@ -2394,7 +2394,6 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // requested this.
     // Warning: this operation might invalidate variable pointers
     bool reduce_expanded = false;
-    auto mode_prev = mode;
     std::tie(mode, reduce_expanded) = jitc_var_infer_reduce_mode(
         "jit_var_scatter", var_info.backend, target, index, op, mode);
 
