@@ -653,6 +653,15 @@ struct ThreadState {
     ThreadState() = default;
     ThreadState(const ThreadState &other) = default;
 
+    /**
+     * Schedules a barrier taks.
+     *
+     * \brief The barrier ensures that subsequently launched kernels can't start
+     * to run until all kernels in the current launch have finished. This should
+     * be called after a set of concurrent kernels have been launched.
+     */
+    virtual void barrier() = 0;
+
     virtual Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
                          uint32_t size, std::vector<void *> *kernel_params,
                          const std::vector<uint32_t> *kernel_param_ids) = 0;

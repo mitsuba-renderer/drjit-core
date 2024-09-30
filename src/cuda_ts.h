@@ -3,6 +3,8 @@
 
 struct CUDAThreadState: ThreadState{
 
+    void barrier() override{}
+
     Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
                  uint32_t size, std::vector<void *> *kernel_params,
                  const std::vector<uint32_t> *) override;
