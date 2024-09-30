@@ -286,6 +286,28 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
     jitc_task = new_task;
 }
 
+/// Temporary scratch space for scheduled tasks
+static std::vector<Task *> scheduled_tasks;
+
+void LLVMThreadState::barrier() {
+    if (scheduled_tasks.size() == 1) {
+        task_release(jitc_task);
+        jitc_task = scheduled_tasks[0];
+    } else {
+        jitc_assert(!scheduled_tasks.empty(),
+                    "jit_eval(): no tasks generated!");
+
+        // Insert a barrier task
+        Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
+                                         (uint32_t) scheduled_tasks.size());
+        task_release(jitc_task);
+        for (Task *t : scheduled_tasks)
+            task_release(t);
+        jitc_task = new_task;
+    }
+    scheduled_tasks.clear();
+}
+
 Task *LLVMThreadState::launch(Kernel kernel, KernelKey *, XXH128_hash_t,
                               uint32_t size, std::vector<void *> *kernel_params,
                               const std::vector<uint32_t> *) {
@@ -376,6 +398,7 @@ Task *LLVMThreadState::launch(Kernel kernel, KernelKey *, XXH128_hash_t,
     if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
         task_wait(ret_task);
 
+    scheduled_tasks.push_back(ret_task);
     return ret_task;
 }
 

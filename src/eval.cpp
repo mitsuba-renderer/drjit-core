@@ -66,9 +66,6 @@ GlobalsMap globals_map;
 /// StringBuffer for global definitions (intrinsics, callables, etc.)
 StringBuffer globals { 1000 };
 
-/// Temporary scratch space for scheduled tasks (LLVM only)
-static std::vector<Task *> scheduled_tasks;
-
 /// Hash code of the last generated kernel
 XXH128_hash_t kernel_hash { 0, 0 };
 
@@ -721,31 +718,14 @@ void jitc_eval_impl(ThreadState *ts) {
             schedule_groups.size() == 1 ? "" : "s");
 
     scoped_set_context_maybe guard2(ts->context);
-    scheduled_tasks.clear();
 
     for (ScheduledGroup &group : schedule_groups) {
         jitc_assemble(ts, group);
 
-        scheduled_tasks.push_back(jitc_run(ts, group));
+        jitc_run(ts, group);
     }
 
-    if (ts->backend == JitBackend::LLVM) {
-        if (scheduled_tasks.size() == 1) {
-            task_release(jitc_task);
-            jitc_task = scheduled_tasks[0];
-        } else {
-            jitc_assert(!scheduled_tasks.empty(),
-                        "jit_eval(): no tasks generated!");
-
-            // Insert a barrier task
-            Task *new_task = task_submit_dep(nullptr, scheduled_tasks.data(),
-                                             (uint32_t) scheduled_tasks.size());
-            task_release(jitc_task);
-            for (Task *t : scheduled_tasks)
-                task_release(t);
-            jitc_task = new_task;
-        }
-    }
+    ts->barrier();
 
     /* Variables and their dependencies are now computed, hence internal edges
        between them can be removed. This will cause many variables to expire. */
