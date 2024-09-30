@@ -3,7 +3,6 @@
 #include "var.h"
 #include "common.h"
 #include "profile.h"
-#include "eval.h"
 #include "util.h"
 
 using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
@@ -287,10 +286,9 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
     jitc_task = new_task;
 }
 
-Task *LLVMThreadState::launch(Kernel kernel, uint32_t size,
-                              std::vector<void *> *kernel_params,
-                              uint32_t /* kernel_param_count */,
-                              const uint8_t* /* kernel_params_global */) {
+Task *LLVMThreadState::launch(Kernel kernel, KernelKey *, XXH128_hash_t,
+                              uint32_t size, std::vector<void *> *kernel_params,
+                              const std::vector<uint32_t> *) {
     Task *ret_task = nullptr;
 
     uint32_t packet_size = jitc_llvm_vector_width,
