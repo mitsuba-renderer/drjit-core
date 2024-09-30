@@ -720,6 +720,10 @@ struct ThreadState {
     /// dr.ReduceOp.Expand
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
                                  uint32_t exp, uint32_t size) = 0;
+
+    /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
+    /// This is required for kernel freezing.
+    virtual void notify_free(const void *ptr) = 0;
 };
 
 /// Key data structure for kernel source code & device ID

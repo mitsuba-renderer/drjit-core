@@ -62,5 +62,7 @@ struct LLVMThreadState: ThreadState{
     void reduce_expanded(VarType vt, ReduceOp op, void *data, uint32_t exp,
                          uint32_t size) override;
 
+    void notify_free(const void *) override {};
+
     ~LLVMThreadState(){}
 };
