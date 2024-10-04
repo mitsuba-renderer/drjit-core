@@ -1788,8 +1788,14 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
     if (!result)
         jitc_var_eval(src);
 
-    /// Perform a memcpy when this is a size-1 literal load
-    if (!result && var_info.size == 1 && var_info.literal) {
+    // Perform a memcpy when this is a size-1 literal load
+    // (if not in a function freezing scope)
+    // This optimization cannot be used when kernel freezing, since we are
+    // copying from an offset within the evaluated variable. Operations in
+    // \c RecordThreadState can only record if pointers are allocated with
+    // \c jitc_malloc.
+    if (!result && var_info.size == 1 && var_info.literal &&
+        !(jitc_flags() & (uint32_t) JitFlag::FreezingScope)) {
         size_t size = type_size[(int) src_info.type];
         size_t pos = (size_t) jitc_var(index)->literal;
 
