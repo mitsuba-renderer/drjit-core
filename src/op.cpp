@@ -1789,7 +1789,9 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
         jitc_var_eval(src);
 
     /// Perform a memcpy when this is a size-1 literal load
-    if (!result && var_info.size == 1 && var_info.literal) {
+    /// (if not freezing a function)
+    if (!result && var_info.size == 1 && var_info.literal &&
+        !(jitc_flags() & (uint32_t) JitFlag::FreezingScope)) {
         size_t size = type_size[(int) src_info.type];
         size_t pos = (size_t) jitc_var(index)->literal;
 
