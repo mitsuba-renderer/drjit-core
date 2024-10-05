@@ -49,8 +49,9 @@ namespace drjit {
     struct scoped_set_self {
         scoped_set_self(JitBackend backend, uint32_t value, uint32_t self_index = 0)
             : m_backend(backend) {
-            jit_var_self(backend, &m_self_value, &m_self_index);
-            jit_var_inc_ref(m_self_index);
+            uint32_t tmp;
+            jit_var_self(backend, &m_self_value, &tmp);
+            m_self_index = jit_var_inc_ref(tmp);
             jit_var_set_self(m_backend, value, self_index);
         }
 
@@ -179,9 +180,7 @@ TEST_BOTH(01_recorded_vcall) {
         Base* base = (Base*)self2;
         Float x2 = Float::borrow(inputs[0]);
         Float rv = base->f(x2);
-        jit_var_inc_ref(rv.index());
-
-        outputs[0] = rv.index();
+        outputs[0] = rv.release();
     };
 
     for (size_t i = 0; i < 2; ++i) {
@@ -266,15 +265,11 @@ TEST_BOTH(02_calling_conventions) {
 
         auto [rv0, rv1, rv2, rv3, rv4] = base->f(p0, p1, p2, p3, p4);
 
-        outputs[0] = rv0.index();
-        outputs[1] = rv1.index();
-        outputs[2] = rv2.index();
-        outputs[3] = rv3.index();
-        outputs[4] = rv4.index();
-
-        for (size_t i = 0; i < 5; ++i) {
-            jit_var_inc_ref(outputs[i]);
-        }
+        outputs[0] = rv0.release();
+        outputs[1] = rv1.release();
+        outputs[2] = rv2.release();
+        outputs[3] = rv3.release();
+        outputs[4] = rv4.release();
     };
 
     for (uint32_t i = 0; i < 2; ++i) {
@@ -367,13 +362,9 @@ TEST_BOTH(03_devirtualize) {
 
         auto [rv0, rv1, rv2] = base->f(p1, p2);
 
-        outputs[0] = rv0.index();
-        outputs[1] = rv1.index();
-        outputs[2] = rv2.index();
-
-        for (size_t i = 0; i < 3; ++i) {
-            jit_var_inc_ref(outputs[i]);
-        }
+        outputs[0] = rv0.release();
+        outputs[1] = rv1.release();
+        outputs[2] = rv2.release();
     };
 
     for (uint32_t k = 0; k < 2; ++k) {
@@ -485,9 +476,7 @@ TEST_BOTH(04_extra_data) {
         Float x    = Float::borrow(inputs[0]);
 
         auto rv0 = base->f(x);
-
-        outputs[0] = rv0.index();
-        jit_var_inc_ref(outputs[0]);
+        outputs[0] = rv0.release();
     };
 
     using BasePtr = Array<Base *>;
@@ -630,11 +619,8 @@ TEST_BOTH_FP32(06_side_effects_only_once) {
 
         auto [rv0, rv1] = base->f();
 
-        outputs[0] = rv0.index();
-        outputs[1] = rv1.index();
-        for (size_t i = 0; i < 2; ++i) {
-            jit_var_inc_ref(outputs[i]);
-        }
+        outputs[0] = rv0.release();
+        outputs[1] = rv1.release();
     };
 
     for (uint32_t i = 0; i < 2; ++i) {
@@ -716,8 +702,7 @@ TEST_BOTH(07_multiple_calls) {
 
         Float rv0 = base->f(x);
 
-        outputs[0] = rv0.index();
-        jit_var_inc_ref(outputs[0]);
+        outputs[0] = rv0.release();
     };
 
     for (uint32_t i = 0; i < 2; ++i) {
@@ -812,8 +797,7 @@ TEST_BOTH(08_big) {
 
         Float rv0 = base->f();
 
-        outputs[0] = rv0.index();
-        jit_var_inc_ref(outputs[0]);
+        outputs[0] = rv0.release();
     };
 
     auto f_call2 = [](void *self2, uint32_t* /*inputs*/, uint32_t* outputs) {
@@ -821,8 +805,7 @@ TEST_BOTH(08_big) {
 
         Float rv0 = base->f();
 
-        outputs[0] = rv0.index();
-        jit_var_inc_ref(outputs[0]);
+        outputs[0] = rv0.release();
     };
 
     for (uint32_t i = 0; i < 2; ++i) {
@@ -902,8 +885,7 @@ TEST_BOTH(09_self) {
         Base* base  = (Base*)self2;
 
         UInt32 rv0 = base->f();
-        outputs[0] = rv0.index();
-        jit_var_inc_ref(outputs[0]);
+        outputs[0] = rv0.release();
     };
 
     uint32_t outputs[n_outputs] = { 0 };
@@ -952,8 +934,7 @@ TEST_BOTH(10_recursion) {
                 Float x     = Float::borrow(inputs[0]);
 
                 Float rv0 = base->f(x);
-                outputs[0] = rv0.index();
-                jit_var_inc_ref(outputs[0]);
+                outputs[0] = rv0.release();
             };
 
             uint32_t inputs[n_inputs] = { x.index() };
@@ -992,8 +973,7 @@ TEST_BOTH(10_recursion) {
         Float x         = Float::borrow(inputs[1]);
 
         Float rv0 = base->g(self1, x);
-        outputs[0] = rv0.index();
-        jit_var_inc_ref(outputs[0]);
+        outputs[0] = rv0.release();
     };
 
     UInt32 self1(i11_id, i12_id);
@@ -1048,8 +1028,7 @@ TEST_BOTH(11_recursion_with_local) {
                 Float x     = Float::borrow(inputs[0]);
 
                 Float rv0 = base->f(x);
-                outputs[0] = rv0.index();
-                jit_var_inc_ref(outputs[0]);
+                outputs[0] = rv0.release();
             };
 
             uint32_t inputs[n_inputs] = { x.index() };
@@ -1088,8 +1067,7 @@ TEST_BOTH(11_recursion_with_local) {
         Float x         = Float::borrow(inputs[1]);
 
         Float rv0 = base->g(self1, x);
-        outputs[0] = rv0.index();
-        jit_var_inc_ref(outputs[0]);
+        outputs[0] = rv0.release();
     };
 
     UInt32 self1(i11_id, i12_id);
@@ -1236,8 +1214,7 @@ TEST_BOTH(13_load_bool_data) {
         Base* base  = (Base*)self2;
 
         Float rv0 = base->f();
-        outputs[0] = rv0.index();
-        jit_var_inc_ref(outputs[0]);
+        outputs[0] = rv0.release();
     };
 
     const size_t n_callables    = 2;

@@ -75,8 +75,7 @@ inline Ref steal(uint32_t index) {
 
 inline Ref borrow(uint32_t index) {
     Ref r;
-    r.index = index;
-    jit_var_inc_ref(index);
+    r.index = jit_var_inc_ref(index);
     return r;
 }
 
