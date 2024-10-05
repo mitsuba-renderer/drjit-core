@@ -7,7 +7,7 @@ template <typename Value> struct Arr {
 
     Arr() { m_index = 0; }
     Arr(Arr &&a) : m_index(a.m_index) { a.m_index = 0; }
-    Arr(const Arr &a) : m_index(a.m_index) { jit_var_inc_ref(m_index); }
+    Arr(const Arr &a) { m_index = jit_var_inc_ref(a.m_index); }
 
     Arr &operator=(const Arr &) = delete;
     Arr &operator=(Arr &&) = delete;

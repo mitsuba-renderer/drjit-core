@@ -216,8 +216,7 @@ template <typename T> bool test_const_prop() {
         for (uint32_t i = 0; i < Size2; ++i) {
             uint32_t index = 0;
             if ((op == JitOp::Rcp) && values[i] == 0) {
-                index = in[i];
-                jit_var_inc_ref(index);
+                index = jit_var_inc_ref(in[i]);
             } else {
                 index = jit_var_op(op, in + i);
             }
@@ -308,8 +307,7 @@ template <typename T> bool test_const_prop() {
 
                 if (((op == JitOp::Div || op == JitOp::Mod) && values[k] == 0) ||
                     ((op == JitOp::Shr || op == JitOp::Shl) && values[k] < Value(0))) {
-                    index = in[k];
-                    jit_var_inc_ref(index);
+                    index = jit_var_inc_ref(in[k]);
                 } else {
                     index = jit_var_op(op, deps);
                 }

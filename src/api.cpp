@@ -578,12 +578,13 @@ uint32_t jit_var_call_input(uint32_t index) {
     return jitc_var_call_input(index);
 }
 
-void jit_var_inc_ref_impl(uint32_t index) noexcept {
+uint32_t jit_var_inc_ref_impl(uint32_t index) noexcept {
     if (index == 0)
-        return;
+        return 0;
 
     lock_guard guard(state.lock);
     jitc_var_inc_ref(index);
+    return index;
 }
 
 void jit_var_dec_ref_impl(uint32_t index) noexcept {

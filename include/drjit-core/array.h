@@ -33,8 +33,8 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     ~JitArray() { jit_var_dec_ref(m_index); }
 
-    JitArray(const JitArray &a) : m_index(a.m_index) {
-        jit_var_inc_ref(m_index);
+    JitArray(const JitArray &a) {
+        m_index = jit_var_inc_ref(a.m_index);
     }
 
     template <typename T> JitArray(const JitArray<Backend_, T> &v) {
@@ -84,9 +84,9 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     JitArray(T val) : JitArray((Value)val) {}
 
     JitArray &operator=(const JitArray &a) {
-        jit_var_inc_ref(a.m_index);
+        uint32_t index = jit_var_inc_ref(a.m_index);
         jit_var_dec_ref(m_index);
-        m_index = a.m_index;
+        m_index = index;
         return *this;
     }
 
@@ -298,6 +298,12 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
             jit_var_mem_copy(Backend, AllocType::Host, Type, ptr, size));
     }
 
+    uint32_t release() {
+        uint32_t result = m_index;
+        m_index = 0;
+        return result;
+    }
+
     static JitArray steal(uint32_t index) {
         JitArray result;
         result.m_index = index;
@@ -306,8 +312,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     static JitArray borrow(uint32_t index) {
         JitArray result;
-        result.m_index = index;
-        jit_var_inc_ref(index);
+        result.m_index = jit_var_inc_ref(index);
         return result;
     }
 

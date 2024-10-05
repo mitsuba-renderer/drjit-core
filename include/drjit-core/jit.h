@@ -1072,18 +1072,21 @@ extern JIT_EXPORT uint32_t jit_var_mem_copy(JIT_ENUM JitBackend backend,
                                             size_t size);
 
 /// Increase the reference count of a given variable
-extern JIT_EXPORT void jit_var_inc_ref_impl(uint32_t index) JIT_NOEXCEPT;
+extern JIT_EXPORT uint32_t jit_var_inc_ref_impl(uint32_t index) JIT_NOEXCEPT;
 
 /// Decrease the reference count of a given variable
 extern JIT_EXPORT void jit_var_dec_ref_impl(uint32_t index) JIT_NOEXCEPT;
 
 #if defined(__GNUC__)
-JIT_INLINE void jit_var_inc_ref(uint32_t index) JIT_NOEXCEPT {
+JIT_INLINE uint32_t jit_var_inc_ref(uint32_t index) JIT_NOEXCEPT {
     /* If 'index' is known at compile time, it can only be zero, in
        which case we can skip the redundant call to jit_var_dec_ref */
-    if (!__builtin_constant_p(index))
-        jit_var_inc_ref_impl(index);
+    if (__builtin_constant_p(index))
+        return 0;
+    else
+        return jit_var_inc_ref_impl(index);
 }
+
 JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
     if (!__builtin_constant_p(index))
         jit_var_dec_ref_impl(index);
