@@ -677,6 +677,17 @@ int jit_var_is_finite_literal(uint32_t index) {
     }
 }
 
+int jit_var_is_unaligned(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    lock_guard guard(state.lock);
+    Variable *var = jitc_var(index);
+
+    return (JitBackend) var->backend == JitBackend::LLVM &&
+           (VarKind) var->kind == VarKind::Evaluated && var->unaligned;
+}
+
 uint32_t jit_var_resize(uint32_t index, size_t size) {
     lock_guard guard(state.lock);
     return jitc_var_resize(index, size);

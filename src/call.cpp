@@ -20,7 +20,7 @@
 #include "call.h"
 #include <set>
 
-static std::vector<CallData *> calls_assembled;
+std::vector<CallData *> calls_assembled;
 
 extern void jitc_var_call_analyze(CallData *call, uint32_t inst_id,
                                   uint32_t index, uint32_t &data_offset);

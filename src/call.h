@@ -1,3 +1,5 @@
+#pragma once
+
 #include "internal.h"
 
 /// Encodes information about a virtual function call
@@ -75,6 +77,8 @@ struct CallData {
         checkpoints.clear();
     }
 };
+
+extern std::vector<CallData *> calls_assembled;
 
 extern uint32_t jitc_var_loop_init(uint32_t *indices, uint32_t n_indices);
 

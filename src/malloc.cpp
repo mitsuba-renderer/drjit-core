@@ -218,6 +218,11 @@ void jitc_free(void *ptr) {
     if (!ptr)
         return;
 
+    if (thread_state_cuda)
+        thread_state_cuda->notify_free(ptr);
+    if (thread_state_llvm)
+        thread_state_llvm->notify_free(ptr);
+
     uintptr_t key = (uintptr_t) ptr;
     size_t hash = UInt64Hasher()(key);
 
@@ -371,6 +376,10 @@ static ProfilerRegion profiler_region_flush_malloc_cache("jit_flush_malloc_cache
 
 /// Release all unused memory to the GPU / OS
 void jitc_flush_malloc_cache(bool warn) {
+    if (jitc_flags() & (uint32_t) JitFlag::FreezingScope)
+        jitc_raise(
+            "jit_flush_malloc_cache(): Tried to free the allocation cache "
+            "while recording a frozen function. This is not supported.");
     if (warn && !jitc_flush_malloc_cache_warned) {
         jitc_log(
             Warn,

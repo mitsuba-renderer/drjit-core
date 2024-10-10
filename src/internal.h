@@ -562,6 +562,7 @@ struct WeakRef {
         : index(index), counter(counter) { }
 };
 
+struct KernelKey;
 
 /// Represents a single stream of a parallel communication
 struct ThreadState {
@@ -652,10 +653,12 @@ struct ThreadState {
     ThreadState() = default;
     ThreadState(const ThreadState &other) = default;
 
-    virtual Task *launch(Kernel kernel, uint32_t size,
-                         std::vector<void *> *kernel_params,
-                         uint32_t kernel_param_count,
-                         const uint8_t *kernel_params_global) = 0;
+    /// Inserts a barrier task
+    virtual void barrier() = 0;
+
+    virtual Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
+                         uint32_t size, std::vector<void *> *kernel_params,
+                         const std::vector<uint32_t> *kernel_param_ids) = 0;
 
     /// Fill a device memory region with constants of a given type
     virtual void memset_async(void *ptr, uint32_t size, uint32_t isize,
@@ -711,6 +714,8 @@ struct ThreadState {
     /// dr.ReduceOp.Expand
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
                                  uint32_t exp, uint32_t size) = 0;
+
+    virtual void notify_free(const void *ptr) = 0;
 };
 
 /// Key data structure for kernel source code & device ID
