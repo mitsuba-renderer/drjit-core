@@ -1517,20 +1517,14 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
             jitc_fail("jit_var_mem_copy(): copy from HostAsync to GPU memory not supported!");
         } else if (atype == AllocType::Host) {
             void *host_ptr = jitc_malloc(AllocType::HostPinned, total_size);
-            CUresult rv;
             {
                 unlock_guard guard2(state.lock);
                 memcpy(host_ptr, ptr, total_size);
-                rv = cuMemcpyAsync((CUdeviceptr) target_ptr,
-                                   (CUdeviceptr) host_ptr, total_size,
-                                   ts->stream);
+                jitc_memcpy_async(backend, target_ptr, host_ptr, total_size);
             }
-            cuda_check(rv);
             jitc_free(host_ptr);
         } else {
-            cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
-                                     (CUdeviceptr) ptr, total_size,
-                                     ts->stream));
+            jitc_memcpy_async(backend, target_ptr, ptr, total_size);
         }
     } else {
         if (atype == AllocType::HostAsync) {
@@ -1545,9 +1539,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
             target_ptr = jitc_malloc_migrate(target_ptr, AllocType::HostAsync, 1);
         } else {
             target_ptr = jitc_malloc(AllocType::HostPinned, total_size);
-            cuda_check(cuMemcpyAsync((CUdeviceptr) target_ptr,
-                                     (CUdeviceptr) ptr, total_size,
-                                     ts->stream));
+            jitc_memcpy_async(backend, target_ptr, ptr, total_size);
         }
     }
 
