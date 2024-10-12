@@ -23,6 +23,12 @@ if (NOT APPLE)
   option(DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION "Enable debug and validation flags for OptiX" OFF)
 endif()
 
+if (NOT MSVC)
+  option(DRJIT_SANITIZE_UBSAN   "Enable the address sanitizer (GCC, Clang)" OFF)
+  option(DRJIT_SANITIZE_ASAN    "Enable the undefined behavior sanitizer (GCC, Clang)" OFF)
+  option(DRJIT_SANITIZE_INTENSE "Add costly internal instrumentation to catch undefined behavior." OFF)
+endif()
+
 # ----------------------------------------------------------
 #  Check if submodules have been checked out, or fail early
 # ----------------------------------------------------------
@@ -74,7 +80,9 @@ endif()
 # ----------------------------------------------------------
 
 add_subdirectory(ext/nanothread)
+add_subdirectory(resources)
 mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
+
 
 # ----------------------------------------------------------
 #  Build Dr.Jit-Core
@@ -87,6 +95,7 @@ if (DRJIT_ENABLE_OPTIX)
     src/optix_api.cpp
     src/optix_core.cpp)
 endif()
+
 
 add_library(
   drjit-core SHARED
@@ -139,6 +148,7 @@ add_library(
   src/llvm_orcv2.cpp
   src/llvm_eval.h
   src/llvm_eval.cpp
+  src/llvm_red.h
   src/llvm_ts.h
   src/llvm_ts.cpp
   src/llvm_scatter.h
@@ -165,8 +175,12 @@ add_library(
   ext/lz4/xxhash.h ext/lz4/xxh3.h ext/lz4/xxhash.c
 
   # Precompiled kernels in compressed PTX format
-  resources/kernels.h resources/kernels.c
+  resources/kernels.h
+  ${CMAKE_CURRENT_BINARY_DIR}/resources/kernels.c
 )
+
+target_include_directories(drjit-core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+target_include_directories(drjit-core PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
 target_compile_features(drjit-core PUBLIC cxx_std_17)
 
@@ -238,9 +252,26 @@ if (UNIX)
   target_link_libraries(drjit-core PRIVATE dl pthread)
 endif()
 
-
 if (DRJIT_USE_STD_MUTEX)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_USE_STD_MUTEX)
+endif()
+
+if (DRJIT_SANITIZE_UBSAN)
+  list(APPEND DRJIT_SANITIZE "undefined")
+endif()
+
+if (DRJIT_SANITIZE_ASAN)
+  list(APPEND DRJIT_SANITIZE "address")
+endif()
+
+if (DRJIT_SANITIZE_INTENSE)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_SANITIZE_INTENSE)
+endif()
+
+if (DRJIT_SANITIZE)
+  string (REPLACE ";" "," DRJIT_SANITIZE "${DRJIT_SANITIZE}")
+  target_compile_options(drjit-core PUBLIC -fsanitize=${DRJIT_SANITIZE})
+  target_link_options (drjit-core PUBLIC -fsanitize=${DRJIT_SANITIZE})
 endif()
 
 set_target_properties(drjit-core PROPERTIES INTERPROCEDURAL_OPTIMIZATION_RELEASE        TRUE)

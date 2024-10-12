@@ -1,253 +1,11 @@
 #include "llvm_ts.h"
+#include "llvm.h"
 #include "log.h"
 #include "var.h"
 #include "common.h"
 #include "profile.h"
 #include "util.h"
-
-using Reduction = void (*) (const void *ptr, uint32_t start, uint32_t end, void *out);
-using BlockReduction = void (*) (const void *ptr, uint32_t start, uint32_t end, uint32_t block_size, void *out);
-
-using Reduction2 = void (*) (const void *ptr_1, const void *ptr_2, uint32_t start, uint32_t end, void *out);
-
-template <typename Ts>
-static Reduction reduce_create(ReduceOp op) {
-    using UInt = uint_with_size_t<Ts>;
-    using Tv = std::conditional_t<
-        std::is_same_v<Ts, drjit::half>,
-        float,
-        Ts
-    >;
-
-    switch (op) {
-        case ReduceOp::Add:
-            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) JIT_NO_UBSAN {
-                const Ts *ptr = (const Ts *) ptr_;
-                Tv result = Tv(0);
-                for (uint32_t i = start; i != end; ++i)
-                    result += (Tv) ptr[i];
-                *((Ts *) out) = Ts(result);
-            };
-
-        case ReduceOp::Mul:
-            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) JIT_NO_UBSAN {
-                const Ts *ptr = (const Ts *) ptr_;
-                Tv result = Tv(1);
-                for (uint32_t i = start; i != end; ++i)
-                    result *= Tv(ptr[i]);
-                *((Ts *) out) = Ts(result);
-            };
-
-        case ReduceOp::Max:
-            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
-                const Ts *ptr = (const Ts *) ptr_;
-                Ts result;
-
-                if constexpr (std::is_integral<Ts>::value)
-                    result = std::numeric_limits<Ts>::min();
-                else // the next line generates a warning if not performed in an 'if constexpr' block
-                    result = -std::numeric_limits<Ts>::infinity();
-
-                for (uint32_t i = start; i != end; ++i)
-                    result = std::max(result, ptr[i]);
-
-                *((Ts *) out) = result;
-            };
-
-        case ReduceOp::Min:
-            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
-                const Ts *ptr = (const Ts *) ptr_;
-                Ts result = std::is_integral<Ts>::value
-                                   ?  std::numeric_limits<Ts>::max()
-                                   :  std::numeric_limits<Ts>::infinity();
-
-                for (uint32_t i = start; i != end; ++i)
-                    result = std::min(result, ptr[i]);
-
-                *((Ts *) out) = result;
-            };
-
-        case ReduceOp::Or:
-            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
-                const UInt *ptr = (const UInt *) ptr_;
-                UInt result = 0;
-
-                for (uint32_t i = start; i != end; ++i)
-                    result |= ptr[i];
-
-                *((UInt *) out) = result;
-            };
-
-        case ReduceOp::And:
-            return [](const void *ptr_, uint32_t start, uint32_t end, void *out) {
-                const UInt *ptr = (const UInt *) ptr_;
-                UInt result = (UInt) -1;
-
-                for (uint32_t i = start; i != end; ++i)
-                    result &= ptr[i];
-
-                *((UInt *) out) = result;
-            };
-
-        default: jitc_raise("jit_reduce_create(): unsupported reduction type!");
-    }
-}
-
-template <typename Ts> static BlockReduction block_reduce_create(ReduceOp op) {
-    using UInt = uint_with_size_t<Ts>;
-    using Tv = std::conditional_t<
-        std::is_same_v<Ts, drjit::half>,
-        float,
-        Ts
-    >;
-
-    switch (op) {
-        case ReduceOp::Add:
-            return [](const void *in_, uint32_t start, uint32_t end, uint32_t block_size, void *out_) {
-                const Ts *in = (const Ts *) in_ + start * block_size;
-                Ts *out = (Ts *) out_ + start;
-                for (uint32_t i = start; i != end; ++i) {
-                    Tv result = Tv(0);
-                    for (uint32_t j = 0; j != block_size; ++j)
-                        result += Tv(*in++);
-                    *out++ = Ts(result);
-                }
-            };
-
-        case ReduceOp::Mul:
-            return [](const void *in_, uint32_t start, uint32_t end, uint32_t block_size, void *out_) {
-                const Ts *in = (const Ts *) in_ + start * block_size;
-                Ts *out = (Ts *) out_ + start;
-                for (uint32_t i = start; i != end; ++i) {
-                    Tv result = Tv(1);
-                    for (uint32_t j = 0; j != block_size; ++j)
-                        result *= Tv(*in++);
-                    *out++ = Ts(result);
-                }
-            };
-
-        case ReduceOp::Max:
-            return [](const void *in_, uint32_t start, uint32_t end, uint32_t block_size, void *out_) {
-                const Ts *in = (const Ts *) in_ + start * block_size;
-                Ts *out = (Ts *) out_ + start;
-                for (uint32_t i = start; i != end; ++i) {
-                    Ts result;
-
-                    if constexpr (std::is_integral<Ts>::value)
-                        result = std::numeric_limits<Ts>::min();
-                    else // the next line generates a warning if not performed in an 'if constexpr' block
-                        result = -std::numeric_limits<Ts>::infinity();
-
-                    for (uint32_t j = 0; j != block_size; ++j)
-                        result = std::max(result, *in++);
-
-                    *out++ = result;
-                }
-            };
-
-        case ReduceOp::Min:
-            return [](const void *in_, uint32_t start, uint32_t end, uint32_t block_size, void *out_) {
-                const Ts *in = (const Ts *) in_ + start * block_size;
-                Ts *out = (Ts *) out_ + start;
-                for (uint32_t i = start; i != end; ++i) {
-                    Ts result = std::is_integral<Ts>::value
-                                       ?  std::numeric_limits<Ts>::max()
-                                       :  std::numeric_limits<Ts>::infinity();
-
-                    for (uint32_t j = 0; j != block_size; ++j)
-                        result = std::min(result, *in++);
-
-                    *out++ = result;
-                }
-            };
-
-        case ReduceOp::Or:
-            return [](const void *in_, uint32_t start, uint32_t end, uint32_t block_size, void *out_) {
-                const UInt *in = (const UInt *) in_ + start * block_size;
-                UInt *out = (UInt *) out_ + start;
-
-                for (uint32_t i = start; i != end; ++i) {
-                    UInt result(0);
-
-                    for (uint32_t j = 0; j != block_size; ++j)
-                        result |= *in++;
-
-                    *out++ = result;
-                }
-            };
-
-        case ReduceOp::And:
-            return [](const void *in_, uint32_t start, uint32_t end, uint32_t block_size, void *out_) {
-                const UInt *in = (const UInt *) in_ + start * block_size;
-                UInt *out = (UInt *) out_ + start;
-
-                for (uint32_t i = start; i != end; ++i) {
-                    UInt result(std::numeric_limits<UInt>::max());
-
-                    for (uint32_t j = 0; j != block_size; ++j)
-                        result &= *in++;
-
-                    *out++ = result;
-                }
-            };
-
-        default: jitc_raise("jit_block_reduce_create(): unsupported reduction type!");
-    }
-}
-
-static Reduction jitc_reduce_create(VarType type, ReduceOp op) {
-    using half = drjit::half;
-    switch (type) {
-        case VarType::Int32:   return reduce_create<int32_t >(op);
-        case VarType::UInt32:  return reduce_create<uint32_t>(op);
-        case VarType::Int64:   return reduce_create<int64_t >(op);
-        case VarType::UInt64:  return reduce_create<uint64_t>(op);
-        case VarType::Float16: return reduce_create<half    >(op);
-        case VarType::Float32: return reduce_create<float   >(op);
-        case VarType::Float64: return reduce_create<double  >(op);
-        default: jitc_raise("jit_reduce_create(): unsupported data type!");
-    }
-}
-
-static BlockReduction jitc_block_reduce_create(VarType type, ReduceOp op) {
-    using half = drjit::half;
-    switch (type) {
-        case VarType::Int32:   return block_reduce_create<int32_t >(op);
-        case VarType::UInt32:  return block_reduce_create<uint32_t>(op);
-        case VarType::Int64:   return block_reduce_create<int64_t >(op);
-        case VarType::UInt64:  return block_reduce_create<uint64_t>(op);
-        case VarType::Float16: return block_reduce_create<half    >(op);
-        case VarType::Float32: return block_reduce_create<float   >(op);
-        case VarType::Float64: return block_reduce_create<double  >(op);
-        default: jitc_raise("jit_reduce_create(): unsupported data type!");
-    }
-}
-
-template <typename Value>
-static Reduction2 reduce_dot_create() {
-    return [](const void *ptr_1_, const void *ptr_2_,
-              uint32_t start, uint32_t end, void *out) JIT_NO_UBSAN {
-        const Value *ptr_1 = (const Value *) ptr_1_;
-        const Value *ptr_2 = (const Value *) ptr_2_;
-        Value result = 0;
-        for (uint32_t i = start; i != end; ++i) {
-            result = std::fma(ptr_1[i], ptr_2[i], result);
-        }
-        *((Value *) out) = result;
-    };
-}
-
-
-static Reduction2 jitc_reduce_dot_create(VarType type) {
-    using half = drjit::half;
-    switch (type) {
-        case VarType::Float16: return reduce_dot_create<half  >();
-        case VarType::Float32: return reduce_dot_create<float >();
-        case VarType::Float64: return reduce_dot_create<double>();
-        default: jitc_raise("jit_reduce_dot_create(): unsupported data type!");
-    }
-}
-
+#include "llvm_red.h"
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
@@ -340,8 +98,8 @@ LLVMThreadState::launch(Kernel kernel, KernelKey * /*key*/,
     // 2. As the amount of work further increases, do more work within each
     //    block until a maximum is reached (16K elements per block by default)
     //
-    // 3. Now, keep the block size fixed and instead more blocks. This permits
-    //    better load balancing in case some of the blocks terminate early.
+    // 3. Now, keep the block size fixed and instead add more blocks. This
+    //    improves load balancing if some of the blocks terminate early.
 
     uint32_t blocks, block_size;
     if (cores <= 1) {
@@ -472,88 +230,202 @@ void LLVMThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
     );
 }
 
-void LLVMThreadState::reduce(VarType type, ReduceOp op, const void *ptr,
-                             uint32_t size, void *out) {
-
-    uint32_t tsize = type_size[(int) type];
-
-    // LLVM specific
-    uint32_t block_size = size, blocks = 1;
-    if (pool_size() > 1) {
-        block_size = jitc_llvm_block_size;
-        blocks     = (size + block_size - 1) / block_size;
-    }
-
-    jitc_log(Debug, "jit_reduce(" DRJIT_PTR ", type=%s, op=%s, size=%u, block_size=%u, blocks=%u)",
-             (uintptr_t) ptr, type_name[(int) type], red_name[(int) op], size, block_size, blocks);
-
-    void *target = out;
-    if (blocks > 1)
-        target = jitc_malloc(AllocType::HostAsync, blocks * tsize);
-
-    Reduction reduction = jitc_reduce_create(type, op);
-    submit_cpu(
-        KernelType::Reduce,
-        [block_size, size, tsize, ptr, reduction, target](uint32_t index) {
-            reduction(ptr, index * block_size,
-                      std::min((index + 1) * block_size, size),
-                      (uint8_t *) target + index * tsize);
-        },
-
-        size,
-        std::max(1u, blocks));
-
-    if (blocks > 1) {
-        reduce(type, op, target, blocks, out);
-        jitc_free(target);
-    }
-}
-
-void LLVMThreadState::block_reduce(VarType type, ReduceOp op, const void *in,
-                                   uint32_t size, uint32_t block_size, void *out) {
-    if (block_size == 0)
-        jitc_raise("jit_block_sum(): block_size cannot be zero!");
-
-    uint32_t tsize = type_size[(int) type];
-
-    if (block_size == 1) {
-        memcpy_async(out, in, size * tsize);
+void LLVMThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
+                                   uint32_t block_size, const void *in,
+                                   void *out) {
+    uint32_t tsize = type_size[(int) vt];
+    if (size == 0) {
+        return;
+    } else if (block_size == 0 || block_size > size) {
+        jitc_raise(
+            "jit_block_reduce(): invalid block size (size=%u, block_size=%u)!",
+            size, block_size);
+    } else if (block_size == 1) {
+        memcpy_async(out, in, size * (size_t) tsize);
         return;
     }
 
-    uint32_t reduced = size / block_size,
-             work_unit_size = reduced,
-             work_units = 1;
+    // Get the size of the thread pool to inform the decisions below
+    uint32_t workers = pool_size();
 
-    if (pool_size() > 1) {
-        work_unit_size = (jitc_llvm_block_size + block_size - 1) / block_size;
-        work_units     = (reduced + work_unit_size - 1) / work_unit_size;
+    // How many blocks are there to reduce?
+    // Note: 'size' is not necessary divisible by 'block_size'.
+    uint32_t block_count = ceil_div(size, block_size);
+
+    // Ideally, parallelize over 'ideal_size'-length regions
+    uint32_t ideal_size = jitc_llvm_block_size;
+
+    // The kernel can split each block into smaller chunks to help with this
+    uint32_t chunk_size = block_size;
+    if (chunk_size > 2 * ideal_size && block_count < 2 * workers)
+        chunk_size = ideal_size;
+
+    // How many chunks in total need to be processed?
+    uint32_t chunks_per_block = ceil_div(block_size, chunk_size),
+             chunk_count = block_count * chunks_per_block;
+
+    // Split chunks into work units for the parallelization layer
+    uint32_t work_units, work_unit_size;
+    if (workers > 1) {
+        // Do multiple chunks per work unit if they are smaller than 'ideal_size'
+        work_unit_size = std::min(ceil_div(ideal_size, chunk_size), chunk_count);
+        work_units     = ceil_div(chunk_count, work_unit_size);
+    } else {
+        work_unit_size = chunk_count;
+        work_units = 1;
+    }
+
+    BlockReduction red = create_block_reduction(vt, op);
+
+    void *buf = out;
+    if (chunks_per_block > 1) {
+        buf = jitc_malloc(AllocType::HostAsync, tsize * chunk_count);
+
+        jitc_log(Debug,
+                 "jit_block_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+                 ", type=%s, op=%s, size=%u, block_size=%u, block_count=%u): "
+                 "launching %u work unit%s, each processing %u chunk%s (%u "
+                 "chunks/block). ",
+                 (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
+                 red_name[(int) op], size, block_size, block_count, work_units,
+                 work_units > 1 ? "s" : "", work_unit_size,
+                 work_unit_size > 1 ? "" : "", chunks_per_block);
+    } else {
+        jitc_log(Debug,
+                 "jit_block_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+                 ", type=%s, op=%s, size=%u, block_size=%u, block_count=%u): "
+                 "launching %u work unit%s, each processing %u block%s.",
+                 (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
+                 red_name[(int) op], size, block_size, block_count, work_units,
+                 work_units > 1 ? "s" : "", work_unit_size,
+                 work_unit_size > 1 ? "s" : "");
+    }
+
+    submit_cpu(
+        KernelType::Reduce,
+        [red, work_unit_size, size, block_size, chunk_size, chunk_count, chunks_per_block, in, buf](uint32_t index) {
+            red(index, work_unit_size, size, block_size, chunk_size, chunk_count, chunks_per_block, in, buf);
+        },
+        size, work_units
+    );
+
+    if (chunks_per_block > 1) {
+        // Multiple chunks per block, we require an additional reduction
+        block_reduce(vt, op, chunk_count, chunks_per_block, buf, out);
+        jitc_free(buf);
+    }
+}
+
+void LLVMThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
+                                          uint32_t size, uint32_t block_size,
+                                          bool exclusive, bool reverse,
+                                          const void *in, void *out) {
+    uint32_t tsize = type_size[(int) vt];
+    if (size == 0) {
+        return;
+    } else if (block_size == 0 || block_size > size) {
+        jitc_raise(
+            "jit_block_prefix_reduce(): invalid block size (size=%u, block_size=%u)!",
+            size, block_size);
+    } else if (block_size == 1) {
+        uint64_t z = 0;
+        if (exclusive)
+            memset_async(out, size, tsize, &z);
+        else if (in != out)
+            memcpy_async(out, in, size * tsize);
+        return;
+    }
+
+    // Get the size of the thread pool to inform the decisions below
+    uint32_t workers = pool_size();
+
+    // How many blocks are there to reduce?
+    // Note: 'size' is not necessary divisible by 'block_size'.
+    uint32_t block_count = ceil_div(size, block_size);
+
+    // Ideally, parallelize over 'ideal_size'-length regions
+    uint32_t ideal_size = jitc_llvm_block_size;
+
+    // The kernel can split each block into smaller chunks to help with this
+    uint32_t chunk_size = block_size;
+    if (chunk_size > 2 * ideal_size && block_count < 2 * workers)
+        chunk_size = ideal_size;
+
+    // How many chunks in total need to be processed?
+    uint32_t chunks_per_block = ceil_div(block_size, chunk_size),
+             chunk_count = block_count * chunks_per_block;
+
+    // Split chunks into work units for the parallelization layer
+    uint32_t work_units, work_unit_size;
+    if (workers > 1) {
+        // Do multiple chunks per work unit if they are smaller than 'ideal_size'
+        work_unit_size = std::min(ceil_div(ideal_size, chunk_size), chunk_count);
+        work_units     = ceil_div(chunk_count, work_unit_size);
+    } else {
+        work_unit_size = chunk_count;
+        work_units = 1;
+    }
+
+    BlockReduction red_1 = create_block_reduction(vt, op);
+    BlockPrefixReduction red_2 = create_block_prefix_reduction(vt, op);
+
+    void *scratch = nullptr;
+    if (chunks_per_block > 1) {
+        scratch = jitc_malloc(AllocType::HostAsync, tsize * chunk_count);
+
+        // Launch a block_reduce within block_prefix_reduce. We need to access to its
+        // intermediate state, which is why the kernel is called directly here
+        jitc_log(Debug,
+                 "jit_block_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+                 ", type=%s, op=%s, size=%u, block_size=%u, block_count=%u): "
+                 "launching %u work unit%s, each processing %u chunk%s (%u "
+                 "chunks/block). ",
+                 (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
+                 red_name[(int) op], size, block_size, block_count, work_units,
+                 work_units > 1 ? "s" : "", work_unit_size,
+                 work_unit_size > 1 ? "" : "", chunks_per_block);
+
+        submit_cpu(
+            KernelType::Reduce,
+            [red_1, work_unit_size, size, block_size, chunk_size, chunk_count,
+             chunks_per_block, in, scratch](uint32_t index) {
+                red_1(index, work_unit_size, size, block_size, chunk_size,
+                      chunk_count, chunks_per_block, in, scratch);
+            },
+            size, work_units);
+
+        block_prefix_reduce(vt, op, chunk_count, chunks_per_block, true,
+                            reverse, scratch, scratch);
     }
 
     jitc_log(Debug,
-            "jit_block_sum(" DRJIT_PTR " -> " DRJIT_PTR
-            ", type=%s, op=%s, size=%u, block_size=%u, work_units=%u, work_unit_size=%u)",
-            (uintptr_t) in, (uintptr_t) out, type_name[(int) type], red_name[(int) op],
-            size, block_size, work_units, work_unit_size);
-
-    BlockReduction red = jitc_block_reduce_create(type, op);
+             "jit_block_prefix_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+             ", type=%s, op=%s, size=%u, block_size=%u, block_count=%u, "
+             "exclusive=%i, reverse=%i): launching %u work unit%s, each "
+             "processing %u block%s.",
+             (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
+             red_name[(int) op], size, block_size, block_count, exclusive,
+             reverse, work_units, work_units > 1 ? "s" : "", work_unit_size,
+             work_unit_size > 1 ? "s" : "");
 
     submit_cpu(
-        KernelType::Other,
-        [in, out, red, work_unit_size, reduced, block_size](uint32_t index) {
-            uint32_t start = index * work_unit_size,
-                     end = std::min(start + work_unit_size, reduced);
-            red(in, start, end, block_size, out);
+        KernelType::Reduce,
+        [red_2, work_unit_size, size, block_size, chunk_size, chunk_count,
+         chunks_per_block, exclusive, reverse, in, scratch,
+         out](uint32_t index) {
+            red_2(index, work_unit_size, size, block_size, chunk_size,
+                  chunk_count, chunks_per_block, exclusive, reverse, in,
+                  scratch, out);
         },
+        size, work_units);
 
-        reduced, work_units
-    );
+    if (chunks_per_block > 1)
+        jitc_free(scratch);
 }
 
 void LLVMThreadState::poke(void *dst, const void *src, uint32_t size) {
     jitc_log(Debug, "jit_poke(" DRJIT_PTR ", size=%u)", (uintptr_t) dst, size);
 
-    // LLVM specific
     uint8_t src8[8] { };
     std::memcpy(&src8, src, size);
 
@@ -567,7 +439,6 @@ void LLVMThreadState::poke(void *dst, const void *src, uint32_t size) {
     );
 }
 
-
 void LLVMThreadState::reduce_dot(VarType type, const void *ptr_1,
                                  const void *ptr_2,
                                  uint32_t size, void *out) {
@@ -578,7 +449,6 @@ void LLVMThreadState::reduce_dot(VarType type, const void *ptr_1,
 
     uint32_t tsize = type_size[(int) type];
 
-    // LLVM specific
     uint32_t block_size = size, blocks = 1;
     if (pool_size() > 1) {
         block_size = jitc_llvm_block_size;
@@ -602,179 +472,9 @@ void LLVMThreadState::reduce_dot(VarType type, const void *ptr_1,
         std::max(1u, blocks));
 
     if (blocks > 1) {
-        reduce(type, ReduceOp::Add, target, blocks, out);
+        block_reduce(type, ReduceOp::Add, blocks, blocks, target, out);
         jitc_free(target);
     }
-}
-
-bool LLVMThreadState::all(uint8_t *values, uint32_t size) {
-    /* When \c size is not a multiple of 4, the implementation will initialize up
-       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
-       reduction algorithm can be used. This is fine for allocations made using
-       \ref jit_malloc(), which allow for this. */
-
-    uint32_t reduced_size = (size + 3) / 4,
-             trailing     = reduced_size * 4 - size;
-
-    jitc_log(Debug, "jit_all(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
-
-    if (trailing) {
-        bool filler = true;
-        this->memset_async(values + size, trailing, sizeof(bool), &filler);
-    }
-
-    // LLVM specific
-    bool result;
-
-    uint8_t out[4];
-    reduce(VarType::UInt32, ReduceOp::And, values, reduced_size, out);
-    jitc_sync_thread();
-    result = (out[0] & out[1] & out[2] & out[3]) != 0;
-
-    return result;
-}
-
-bool LLVMThreadState::any(uint8_t *values, uint32_t size) {
-    /* When \c size is not a multiple of 4, the implementation will initialize up
-       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
-       reduction algorithm can be used. This is fine for allocations made using
-       \ref jit_malloc(), which allow for this. */
-
-    uint32_t reduced_size = (size + 3) / 4,
-             trailing     = reduced_size * 4 - size;
-
-    jitc_log(Debug, "jit_any(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
-
-    if (trailing) {
-        bool filler = false;
-        this->memset_async(values + size, trailing, sizeof(bool), &filler);
-    }
-
-    // LLVM specific
-    bool result;
-
-    uint8_t out[4];
-    reduce(VarType::UInt32, ReduceOp::Or, values, reduced_size, out);
-    jitc_sync_thread();
-    result = (out[0] | out[1] | out[2] | out[3]) != 0;
-
-    return result;
-}
-
-template <typename T>
-static void sum_reduce_1(uint32_t start, uint32_t end, const void *in_,
-                         uint32_t index, void *scratch) {
-    const T *in = (const T *) in_;
-    T accum = T(0);
-    for (uint32_t i = start; i != end; ++i)
-        accum += in[i];
-    ((T*) scratch)[index] = accum;
-}
-
-template <typename T>
-static void sum_reduce_2(uint32_t start, uint32_t end, const void *in_,
-                         void *out_, uint32_t index, const void *scratch,
-                         bool exclusive) {
-    const T *in = (const T *) in_;
-    T *out = (T *) out_;
-
-    T accum;
-    if (scratch)
-        accum = ((const T *) scratch)[index];
-    else
-        accum = T(0);
-
-    if (exclusive) {
-        for (uint32_t i = start; i != end; ++i) {
-            T value = in[i];
-            out[i] = accum;
-            accum += value;
-        }
-    } else {
-        for (uint32_t i = start; i != end; ++i) {
-            T value = in[i];
-            accum += value;
-            out[i] = accum;
-        }
-    }
-}
-
-static void sum_reduce_1(VarType vt, uint32_t start, uint32_t end,
-                         const void *in, uint32_t index, void *scratch) {
-    switch (vt) {
-        case VarType::UInt32:  sum_reduce_1<uint32_t>(start, end, in, index, scratch); break;
-        case VarType::UInt64:  sum_reduce_1<uint64_t>(start, end, in, index, scratch); break;
-        case VarType::Float32: sum_reduce_1<float>   (start, end, in, index, scratch); break;
-        case VarType::Float64: sum_reduce_1<double>  (start, end, in, index, scratch); break;
-        default:
-            jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
-    }
-}
-
-static void sum_reduce_2(VarType vt, uint32_t start, uint32_t end,
-                         const void *in, void *out, uint32_t index,
-                         const void *scratch, bool exclusive) {
-    switch (vt) {
-        case VarType::UInt32:  sum_reduce_2<uint32_t>(start, end, in, out, index, scratch, exclusive); break;
-        case VarType::UInt64:  sum_reduce_2<uint64_t>(start, end, in, out, index, scratch, exclusive); break;
-        case VarType::Float32: sum_reduce_2<float>   (start, end, in, out, index, scratch, exclusive); break;
-        case VarType::Float64: sum_reduce_2<double>  (start, end, in, out, index, scratch, exclusive); break;
-        default:
-            jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
-    }
-}
-
-void LLVMThreadState::prefix_sum(VarType vt, bool exclusive, const void *in,
-                                 uint32_t size, void *out) {
-    if (size == 0)
-        return;
-    if (vt == VarType::Int32)
-        vt = VarType::UInt32;
-
-    const uint32_t isize = type_size[(int) vt];
-
-    // LLVM specific
-    uint32_t block_size = size, blocks = 1;
-    if (pool_size() > 1) {
-        block_size = jitc_llvm_block_size;
-        blocks     = (size + block_size - 1) / block_size;
-    }
-
-    jitc_log(Debug,
-            "jit_prefix_sum(" DRJIT_PTR " -> " DRJIT_PTR
-            ", size=%u, block_size=%u, blocks=%u)",
-            (uintptr_t) in, (uintptr_t) out, size, block_size, blocks);
-
-    void *scratch = nullptr;
-
-    if (blocks > 1) {
-        scratch = (void *) jitc_malloc(AllocType::HostAsync, blocks * isize);
-
-        submit_cpu(
-            KernelType::Other,
-            [block_size, size, in, vt, scratch](uint32_t index) {
-                uint32_t start = index * block_size,
-                         end = std::min(start + block_size, size);
-
-                sum_reduce_1(vt, start, end, in, index, scratch);
-            },
-            size, blocks);
-
-        this->prefix_sum(vt, true, scratch, blocks, scratch);
-    }
-
-    submit_cpu(
-        KernelType::Other,
-        [block_size, size, in, out, vt, scratch, exclusive](uint32_t index) {
-            uint32_t start = index * block_size,
-                     end = std::min(start + block_size, size);
-
-            sum_reduce_2(vt, start, end, in, out, index, scratch, exclusive);
-        },
-        size, blocks
-    );
-
-    jitc_free(scratch);
 }
 
 uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
@@ -782,7 +482,6 @@ uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
     if (size == 0)
         return 0;
 
-    // LLVM specific
     uint32_t block_size = size, blocks = 1;
     if (pool_size() > 1) {
         block_size = jitc_llvm_block_size;
@@ -818,7 +517,8 @@ uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
             size, blocks
         );
 
-        this->prefix_sum(VarType::UInt32, true, scratch, blocks, scratch);
+        block_prefix_reduce(VarType::UInt32, ReduceOp::Add, blocks,
+                            blocks, true, false, scratch, scratch);
     }
 
     submit_cpu(
@@ -862,7 +562,6 @@ uint32_t LLVMThreadState::mkperm(const uint32_t *ptr, uint32_t size,
     else if (unlikely(bucket_count == 0))
         jitc_fail("jit_mkperm(): bucket_count cannot be zero!");
 
-    // LLVM specific
     uint32_t blocks = 1, block_size = size, pool_size = ::pool_size();
 
     if (pool_size > 1) {

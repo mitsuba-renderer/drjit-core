@@ -222,13 +222,15 @@ extern uint32_t jitc_var_reduce_dot(uint32_t index_1,
                                     uint32_t index_2);
 
 /// Reduce a variable over blocks
-uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, int symbolic);
+extern uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, int symbolic);
+
+/// Compute an inclusive or exclusive prefix sum of a given variable
+extern uint32_t jitc_var_block_prefix_reduce(ReduceOp op, uint32_t index,
+                                             uint32_t block_size,
+                                             bool exclusive, bool reverse);
 
 /// Replicate entries of a a variable into blocks
 uint32_t jitc_var_tile(uint32_t index, uint32_t count);
-
-/// Compute an inclusive or exclusive prefix sum of a given variable
-extern uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive);
 
 /// Create a variable containing the buffer storing a specific attribute
 extern uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,
@@ -274,6 +276,9 @@ extern void jitc_var_reduce_expanded(uint32_t index);
 
 /// Generate an informative error message about variables that remain dirty following evaluation
 extern void jitc_raise_dirty_error(uint32_t index);
+
+/// Reverse the order of a JIT variable
+extern uint32_t jitc_var_reverse(uint32_t index);
 
 /// Identify different types of bounds checks (used to choose a suitable error message)
 enum class BoundsCheckType {

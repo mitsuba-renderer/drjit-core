@@ -842,9 +842,12 @@ uint32_t jit_var_reduce_dot(uint32_t index_1,
     return jitc_var_reduce_dot(index_1, index_2);
 }
 
-uint32_t jit_var_prefix_sum(uint32_t index, int exclusive) {
+uint32_t jit_var_block_prefix_reduce(ReduceOp op, uint32_t index,
+                                     uint32_t block_size, int exclusive,
+                                     int reverse) {
     lock_guard guard(state.lock);
-    return jitc_var_prefix_sum(index, exclusive != 0);
+    return jitc_var_block_prefix_reduce(op, index, block_size, exclusive != 0,
+                                        reverse != 0);
 }
 
 const char *jit_var_whos() {
@@ -927,22 +930,25 @@ void jit_memcpy_async(JitBackend backend, void *dst, const void *src, size_t siz
     jitc_memcpy_async(backend, dst, src, size);
 }
 
-void jit_reduce(JitBackend backend, VarType type, ReduceOp op, const void *ptr,
-                uint32_t size, void *out) {
+void jit_reduce(JitBackend backend, VarType type, ReduceOp op,
+                uint32_t size, const void *in, void *out) {
     lock_guard guard(state.lock);
-    jitc_reduce(backend, type, op, ptr, size, out);
+    jitc_reduce(backend, type, op, size, in, out);
 }
 
-void jit_block_reduce(JitBackend backend, VarType type, ReduceOp op, const void *in,
-                      uint32_t size, uint32_t block_size, void *out) {
+void jit_block_reduce(JitBackend backend, VarType type, ReduceOp op,
+                      uint32_t size, uint32_t block_size, const void *in,
+                      void *out) {
     lock_guard guard(state.lock);
-    jitc_block_reduce(backend, type, op, in, size, block_size, out);
+    jitc_block_reduce(backend, type, op, size, block_size, in, out);
 }
 
-void jit_prefix_sum(JitBackend backend, VarType type, int exclusive, const void *in,
-              uint32_t size, void *out) {
+void jit_block_prefix_reduce(JitBackend backend, VarType type, ReduceOp op,
+                             uint32_t block_size, uint32_t size, int exclusive,
+                             int reverse, const void *in, void *out) {
     lock_guard guard(state.lock);
-    jitc_prefix_sum(backend, type, exclusive != 0, in, size, out);
+    jitc_block_prefix_reduce(backend, type, op, block_size, size,
+                             exclusive != 0, reverse != 0, in, out);
 }
 
 uint32_t jit_compress(JitBackend backend, const uint8_t *in, uint32_t size, uint32_t *out) {
@@ -1476,4 +1482,9 @@ uint32_t jit_array_write(uint32_t target, uint32_t offset, uint32_t value, uint3
 size_t jit_array_length(uint32_t index) {
     lock_guard guard(state.lock);
     return jitc_array_length(index);
+}
+
+uint32_t jit_var_reverse(uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_var_reverse(index);
 }

@@ -30,11 +30,6 @@ struct Test {
 static std::vector<Test> *tests = nullptr;
 std::string log_value;
 
-extern "C" void log_level_callback(LogLevel, const char *msg) {
-    log_value += msg;
-    log_value += '\n';
-}
-
 /**
  * Strip away information (pointers, etc.) to that it becomes possible to
  * compare the debug output of a test to a reference file
@@ -330,8 +325,6 @@ int main(int argc, char **argv) {
         jit_set_log_level_stderr((LogLevel) log_level_stderr);
         jit_init((test_llvm ? (uint32_t) JitBackend::LLVM : 0) |
                  ((test_cuda || test_optix) ? (uint32_t) JitBackend::CUDA : 0));
-        if (check_test_files)
-            jit_set_log_level_callback(LogLevel::Trace, log_level_callback);
         fprintf(stdout, "\n");
 
         test_cuda &= (bool) jit_has_backend(JitBackend::CUDA);

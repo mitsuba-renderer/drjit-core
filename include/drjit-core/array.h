@@ -233,6 +233,15 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return *this;
     }
 
+    JitArray& make_opaque() {
+        int unused;
+        uint32_t rv = jit_var_schedule_force(m_index, &unused);
+        jit_eval();
+        jit_var_dec_ref(m_index);
+        ((JitArray *) this)->m_index = rv;
+        return *this;
+    }
+
     const JitArray& eval() const {
         jit_var_eval(m_index);
         return *this;
@@ -374,6 +383,18 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     friend JitArray hmax(const JitArray &v) {
         return steal(jit_var_reduce(Backend, Type, ReduceOp::Max, v.m_index));
+    }
+
+    friend JitArray block_sum(const JitArray &v, uint32_t block_size) {
+        return steal(jit_var_block_reduce(ReduceOp::Add, v.m_index, block_size, false));
+    }
+
+    friend JitArray block_prefix_sum(const JitArray &v, uint32_t block_size, bool exclusive = true, bool reverse = false) {
+        return steal(jit_var_block_prefix_reduce(ReduceOp::Add, v.m_index, block_size, exclusive, reverse));
+    }
+
+    friend JitArray reverse(const JitArray &v) {
+        return steal(jit_var_reverse(v.m_index));
     }
 
     friend bool all(const JitArray &a) { return jit_var_all(a.m_index); }

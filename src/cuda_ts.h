@@ -2,9 +2,6 @@
 #include "log.h"
 
 struct CUDAThreadState : ThreadState {
-
-    void barrier() override {}
-
     Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
                  uint32_t size, std::vector<void *> *kernel_params,
                  const std::vector<uint32_t> *kernel_param_ids) override;
@@ -13,27 +10,18 @@ struct CUDAThreadState : ThreadState {
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
                       const void *src) override;
 
-    /// Reduce the given array to a single value
-    void reduce(VarType type, ReduceOp rtype, const void *ptr, uint32_t size,
-                void *out) override;
-
     /// Reduce elements within blocks
-    void block_reduce(VarType type, ReduceOp op, const void *in, uint32_t size,
-                      uint32_t block_size, void *out) override;
+    void block_reduce(VarType vt, ReduceOp op, uint32_t size,
+                      uint32_t block_size, const void *in, void *out) override;
+
+    /// Implements various kinds of prefix reductions
+    void block_prefix_reduce(VarType vt, ReduceOp op, uint32_t size,
+                             uint32_t block_size, bool exclusive, bool reverse,
+                             const void *in, void *out) override;
 
     /// Compute a dot product of two equal-sized arrays
     void reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
                     uint32_t size, void *out) override;
-
-    /// 'All' reduction for boolean arrays
-    bool all(uint8_t *values, uint32_t size) override;
-
-    /// 'Any' reduction for boolean arrays
-    bool any(uint8_t *values, uint32_t size) override;
-
-    /// Exclusive prefix sum
-    void prefix_sum(VarType vt, bool exclusive, const void *in, uint32_t size,
-                    void *out) override;
 
     /// Mask compression
     uint32_t compress(const uint8_t *in, uint32_t size, uint32_t *out) override;
@@ -63,8 +51,4 @@ struct CUDAThreadState : ThreadState {
                          uint32_t) override {
         jitc_raise("jitc_reduce_expanded(): unsupported by CUDAThreadState!");
     }
-
-    void notify_free(const void *) override {};
-
-    ~CUDAThreadState() {}
 };

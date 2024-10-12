@@ -13,7 +13,7 @@
 #include "profile.h"
 #include "cuda.h"
 #include "optix.h"
-#include "../resources/kernels.h"
+#include "resources/kernels.h"
 #include <stdexcept>
 #include <stdio.h>
 #include <fcntl.h>

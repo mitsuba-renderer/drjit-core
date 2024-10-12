@@ -1,5 +1,5 @@
 /*
-    kernels/reduce.cuh -- CUDA parallel reduction kernels
+    kernels/reduce_2.cuh -- CUDA parallel reduction kernels
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -58,7 +58,7 @@ __device__ void reduce_2(const Value *in_1, const Value *in_2, uint32_t size,
 
         // Block-level reduction from nb*32 -> nb values
         for (uint32_t i = 1; i < 32; i *= 2)
-            value = red(value, __shfl_xor_sync(FULL_MASK, value, i));
+            value = red(value, __shfl_xor_sync(WarpMask, value, i));
 
         if (tid == 0)
             out[bid] = value;

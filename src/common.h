@@ -153,6 +153,10 @@ private:
     uint32_t index = 0;
 };
 
+inline uint32_t ceil_div(uint32_t a, uint32_t b) {
+    return (a + b - 1) / b;
+}
+
 inline Ref steal(uint32_t index) {
     Ref r;
     r.index = index;
@@ -178,3 +182,51 @@ inline uint32_t log2i_ceil(uint32_t x) {
     return 32u - __builtin_clz(x);
 #endif
 }
+
+// Precomputed integer division helper
+// Based on libidivide (https://github.com/ridiculousfish/libdivide)
+struct divisor {
+    uint32_t magic;
+    uint32_t shift;
+    uint32_t value;
+
+    divisor() = default;
+
+    divisor(uint32_t value) : magic(0), shift(0), value(value) {
+        for (uint32_t tmp = value; tmp > 1; tmp >>= 1)
+            shift++;
+
+        if (value & (value - 1)) {
+            uint64_t w = 1ull << (shift + 32);
+
+            uint32_t w_div = (uint32_t) (w / (uint64_t) value),
+                     w_rem = (uint32_t) (w % (uint64_t) value);
+
+            // Overflows in the following code are expected
+            magic = w_div * 2 + 1;
+            uint32_t w_rem_2 = w_rem * 2;
+            if (w_rem_2 >= value || w_rem_2 < w_rem)
+                ++magic;
+        }
+    }
+
+    uint32_t mulhi(uint32_t a, uint32_t b) const {
+        return (uint32_t) (((uint64_t) a * (uint64_t) b) >> 32);
+    }
+
+    void div_rem(uint32_t input, uint32_t *out_div, uint32_t *out_rem) const {
+        uint32_t div = 0, rem = 0;
+
+        if (!magic) {
+            div = input >> shift;
+            rem = input - (div << shift);
+        } else {
+            uint32_t hi = mulhi(input, magic);
+            div = (((input - hi) >> 1) + hi) >> shift;
+            rem = input - div * value;
+        }
+
+        *out_div = div;
+        *out_rem = rem;
+    }
+};

@@ -8,10 +8,10 @@
 
 static uint8_t *kernel_params_global = nullptr;
 
-static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
+static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count_x,
                        uint32_t thread_count, uint32_t shared_mem_bytes,
                        CUstream stream, void **args, void **extra,
-                       uint32_t width) {
+                       uint32_t width, uint32_t block_count_y = 1) {
 
     KernelHistoryEntry entry = {};
 
@@ -23,8 +23,9 @@ static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
         cuda_check(cuEventRecord((CUevent) entry.event_start, stream));
     }
 
-    cuda_check(cuLaunchKernel(kernel, block_count, 1, 1, thread_count, 1, 1,
-                              shared_mem_bytes, stream, args, extra));
+    cuda_check(cuLaunchKernel(kernel, block_count_x, block_count_y, 1,
+                              thread_count, 1, 1, shared_mem_bytes,
+                              stream, args, extra));
 
     if (unlikely(flags & (uint32_t) JitFlag::LaunchBlocking))
         cuda_check(cuStreamSynchronize(stream));
@@ -109,7 +110,7 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
 
 /// Fill a device memory region with constants of a given type
 void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
-                                   const void *src){
+                                   const void *src) {
 
     if (isize != 1 && isize != 2 && isize != 4 && isize != 8)
         jitc_raise("jit_memset_async(): invalid element size (must be 1, 2, 4, or 8)!");
@@ -174,135 +175,173 @@ static VarType make_int_type_unsigned(VarType type) {
     }
 }
 
-void CUDAThreadState::reduce(VarType vt, ReduceOp op, const void *ptr,
-                             uint32_t size, void *out) {
-    const Device &dev = state.devices[device];
+void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
+                                   uint32_t block_size, const void *in,
+                                   void *out) {
+    // To understand the logic below, refer to the documentation of the
+    // associated kernel in 'resources/block_reduce.cuh'
 
-    // Signed integer sum reductions are handled using the unsigned implementation
-    VarType vtu = (op == ReduceOp::Add) ? make_int_type_unsigned(vt) : vt;
-
-    // Half precision reductions internally accumulate into single precision buffers
-    VarType vts = vt == VarType::Float16 ? VarType::Float32 : vt;
-
-    CUfunction func = jitc_cuda_reduce[(int) op][(int) vtu][dev.id];
-
-    if (!func)
-        jitc_raise("jit_reduce(): no existing kernel for type=%s, op=%s!",
-                  type_name[(int) vt], red_name[(int) op]);
-
-    uint32_t thread_count = 1024,
-             tsize = type_size[(int) vts],
-             shared_size = thread_count * tsize,
-             block_count = (size + thread_count * 2 - 1) / (thread_count * 2);
-
-    block_count = std::min(dev.sm_count * 4, block_count);
-
-    jitc_log(Debug, "jit_reduce(" DRJIT_PTR " -> " DRJIT_PTR
-             ", type=%s, op=%s, size=%u, smem=%u, blocks=%u)",
-             (uintptr_t) ptr, (uintptr_t) out, type_name[(int) vt],
-             red_name[(int) op], size, shared_size, block_count);
-
-    scoped_set_context guard(context);
-    if (block_count == 1) {
-        void *args[] = { &ptr, &size, &out };
-
-        submit_gpu(KernelType::Reduce, func, 1, thread_count,
-                   shared_size, stream, args, nullptr, size);
-    } else {
-        // Reduce using multiple blocks
-        void *temp = jitc_malloc(AllocType::Device,
-                                 block_count * (size_t) tsize);
-
-        // First reduction
-        void *args_1[] = { &ptr, &size, &temp };
-
-        submit_gpu(KernelType::Reduce, func, block_count, thread_count,
-                   shared_size, stream, args_1, nullptr, size);
-
-        // Second reduction
-        void *args_2[] = { &temp, &block_count, &out };
-        submit_gpu(KernelType::Reduce, func, 1, thread_count,
-                   shared_size, stream, args_2, nullptr, block_count);
-
-        jitc_free(temp);
+    if (size == 0) {
+        return;
+    } else if (block_size == 0 || block_size > size) {
+        jitc_raise(
+            "jit_block_prefix_reduce(): invalid block size (size=%u, block_size=%u)!",
+            size, block_size);
     }
-}
-
-void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, const void *in,
-                                   uint32_t size, uint32_t block_size, void *out) {
-    if (block_size == 0)
-        jitc_raise("jit_block_reduce(): 'block_size' cannot be zero!");
 
     uint32_t tsize = type_size[(int) vt];
-
     if (block_size == 1) {
         memcpy_async(out, in, size * tsize);
         return;
     }
 
-    if (block_size & (block_size - 1))
-        jitc_raise(
-            "jit_block_reduce(): 'block_size' must be a power of two! (got %u)",
-            block_size);
+    VarType vts = vt;
+    // Signed sum/product/and/or reductions can use the unsigned kernel.
+    if (op == ReduceOp::Add || op == ReduceOp::Mul ||
+        op == ReduceOp::Or || op == ReduceOp::And) {
+        vt = make_int_type_unsigned(vt);
 
-    if (block_size > 1024) {
-        // Our largest kernel can reduce 1K elements. Split into several steps.
-        uint32_t tmp_size = size / 1024;
-        void *tmp = jitc_malloc(AllocType::Device, tmp_size * tsize);
-        block_reduce(vt, op, in, size, 1024, tmp);
-        block_reduce(vt, op, tmp, tmp_size, block_size / 1024, out);
-        jitc_free(tmp);
-        return;
+        // Float16 add/mul reductions use higher-precision intermediate Float32
+        // calculation steps, which requires extra shared memory.
+        if (vt == VarType::Float16)
+            vts = VarType::Float32;
     }
 
-    // Signed integer sum reductions are handled using the unsigned implementation
-    VarType vtu = (op == ReduceOp::Add) ? make_int_type_unsigned(vt) : vt;
+    // How many blocks are there to reduce?
+    // Note: 'size' is not necessary divisible by 'block_size'.
+    uint32_t block_count = ceil_div(size, block_size);
 
-    // Half precision reductions internally accumulate into single precision buffers
-    VarType vts = vt == VarType::Float16 ? VarType::Float32 : vt;
+    // We have precompiled kernels for reductions from 2..1024 values.
+    // Round up to the next power of two and select one of them.
+    uint32_t chunk_size = round_pow2(block_size);
 
-    // Do a few reductions within each CUDA block if block_size < 128
-    uint32_t thread_count = std::max(128u, block_size);
+    // Launch configuration
+    uint32_t thread_count, grid_dim_x, grid_dim_y, chunk_count;
+    uint32_t chunks_per_block, chunks_per_thread_block;
+    bool x_is_block_id = true;
 
-    // Don't bother if the actual work size is tiny. Though we need at least 1 warp.
-    thread_count = std::max(std::min(thread_count, size), 32u);
+    // Potentially load multiple values at once
+    uint32_t vector_width = 1;
 
-    uint32_t kernel_id = log2i_ceil(block_size) - 1,
-             block_count = (size + thread_count - 1) / thread_count;
+    if (chunk_size < 1024) {
+        // Small reduction with 1 chunk/output block and a 1D launch grid. A
+        // single thread block potentially processes multiple chunks. Be careful
+        // changing the numbers below, the kernel expects this configuration.
 
-    // The block reduction kernel only needs shared memory when the size
-    // of the blocks to be reduced exceeds the warp size
-    uint32_t smem_bytes = 0;
-    if (block_size > 32)
-        smem_bytes = thread_count * type_size[(int) vts];
+        // Minimum number of threads needed to finish the work
+        uint32_t min_threads = ceil_div(block_count * chunk_size, 32) * 32;
 
-    jitc_log(Debug, "jit_block_reduce(" DRJIT_PTR " -> " DRJIT_PTR
-             ", type=%s, op=%s, smem=%u, thread_count=%u, blocks=%u)",
-            (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
-            red_name[(int) op], smem_bytes, thread_count, block_count);
+        // In general, schedule >= 4 warps/block to improve occupancy. It's
+        // okay to use fewer warps if the input data size is tiny.
+        thread_count = std::min(std::max(chunk_size, 128u), min_threads);
 
-    scoped_set_context guard(context);
+        chunk_count = block_count;
+        chunks_per_block = 1;
+        chunks_per_thread_block = thread_count / chunk_size;
+
+        grid_dim_x = ceil_div(block_count, chunks_per_thread_block);
+        grid_dim_y = 1;
+    } else  {
+        // Big reduction with 1 chunk == 1 CUDA thread block == 1024 threads.
+        // There are potentially multiple chunks per output block.
+
+        // Can we use the vectorized reduction?
+        if ((block_size * tsize) % 16 == 0 && (size * tsize) % 16 == 0 &&
+            ((uintptr_t) in) % 16 == 0)
+            vector_width = 16 / tsize;
+
+        chunk_size = 1024;
+        thread_count = chunk_size / vector_width;
+
+        chunks_per_block = ceil_div(block_size, chunk_size);
+        chunks_per_thread_block = 1;
+
+        grid_dim_x = block_count;
+        grid_dim_y = chunks_per_block;
+        chunk_count = block_count * chunks_per_block;
+
+        // CUDA cannot launch grids with a Y block count > 65K..
+        if (grid_dim_y > grid_dim_x) {
+            std::swap(grid_dim_x, grid_dim_y);
+            x_is_block_id = false;
+        }
+    }
+
+    // The first warp reduction reduces data per chunk to this many entries
+    uint32_t after_stage_1 = chunk_size / (std::min(chunk_size, 32u) * vector_width);
+
+    // Compute shared memory requirement
+    uint32_t smem_per_chunk = (after_stage_1 == 1 ? 0 : after_stage_1) * type_size[(int) vts],
+             smem_bytes = smem_per_chunk * chunks_per_thread_block;
+
+    jitc_log(Debug,
+             "jit_block_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+             ", type=%s, op=%s, size=%u, block_size=%u, block_count=%u, "
+             "chunk_size=%u, chunks_per_block=%u, vector_width=%u): launching "
+             "a %u x %u grid with %u threads and %u bytes of shared memory per "
+             "thread block.",
+             (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
+             red_name[(int) op], size, block_size, block_count, chunk_size,
+             chunks_per_block, vector_width, grid_dim_x, grid_dim_y,
+             thread_count, smem_bytes);
+
     const Device &dev = state.devices[device];
 
-    CUfunction func = jitc_cuda_block_reduce[(int) op][(int) vtu][kernel_id][dev.id];
+    CUfunction func = nullptr;
+    if (vector_width != 1) {
+        func = jitc_cuda_block_reduce_vec[(int) op][(int) vt][dev.id];
+    } else {
+        int kernel_id = log2i_ceil(chunk_size) - 1;
+        func = jitc_cuda_block_reduce[(int) op][(int) vt][kernel_id][dev.id];
+    }
+
     if (!func)
-        jitc_raise("jit_block_reduce(): no existing kernel for type=%s, op=%s, id=%u!",
-                  type_name[(int) vt], red_name[(int) op], kernel_id);
+        jitc_raise("jit_block_reduce(): no existing kernel for type=%s, op=%s, vector_width=%u!",
+                  type_name[(int) vt], red_name[(int) op], vector_width);
 
-    void *args[] = { &in, &out, &size };
-    submit_gpu(KernelType::Other, func, block_count, thread_count,
-               smem_bytes, stream, args, nullptr, size);
+    struct {
+        const void *in;
+        void *out;
+        uint32_t size;
+        uint32_t block_size;
+        uint32_t chunks_per_block;
+        uint32_t chunk_count;
+        uint8_t x_is_block_id;
+    } params;
+
+    params.in = in;
+    params.size = size / vector_width;
+    params.block_size = block_size / vector_width;
+    params.chunks_per_block = chunks_per_block;
+    params.chunk_count = chunk_count;
+    params.x_is_block_id = x_is_block_id;
+
+    if (chunks_per_block == 1)
+        params.out = out;
+    else
+        params.out = jitc_malloc(AllocType::Device, chunk_count * tsize);
+
+    {
+        scoped_set_context guard(context);
+        void *args[] = { &params };
+        submit_gpu(KernelType::Reduce, func, grid_dim_x, thread_count,
+                   smem_bytes, stream, args, nullptr, size, grid_dim_y);
+    }
+
+    if (chunks_per_block > 1) {
+        // Recurse
+        block_reduce(vt, op, chunk_count, chunks_per_block, params.out, out);
+        jitc_free(params.out);
+    }
 }
-
 
 void CUDAThreadState::reduce_dot(VarType vt, const void *ptr_1,
                                  const void *ptr_2, uint32_t size, void *out) {
     const Device &dev = state.devices[device];
 
-    CUfunction red_dot = jitc_cuda_reduce_dot[(int) vt][dev.id],
-               red_sum = jitc_cuda_reduce[(int) ReduceOp::Add][(int) vt][dev.id];
+    CUfunction red_dot = jitc_cuda_reduce_dot[(int) vt][dev.id];
 
-    if (!red_dot || !red_sum)
+    if (!red_dot)
         jitc_raise("jit_reduce_dot(): no existing kernel for type=%s!",
                    type_name[(int) vt]);
 
@@ -335,157 +374,163 @@ void CUDAThreadState::reduce_dot(VarType vt, const void *ptr_1,
         submit_gpu(KernelType::Reduce, red_dot, block_count, thread_count,
                    shared_size, stream, args_1, nullptr, size);
 
-        // Second reduction
-        void *args_2[] = { &temp, &block_count, &out };
-        submit_gpu(KernelType::Reduce, red_sum, 1, thread_count,
-                   shared_size, stream, args_2, nullptr, block_count);
+        block_reduce(vt, ReduceOp::Add, block_count, block_count, temp, out);
 
         jitc_free(temp);
     }
 }
 
-bool CUDAThreadState::all(uint8_t *values, uint32_t size) {
-    /* When \c size is not a multiple of 4, the implementation will initialize up
-       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
-       reduction algorithm can be used. This is fine for allocations made using
-       \ref jit_malloc(), which allow for this. */
+void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
+                                          uint32_t size, uint32_t block_size,
+                                          bool exclusive, bool reverse,
+                                          const void *in, void *out) {
+    // To understand the logic below, refer to the documentation of two
+    // related kernels in the files 'resources/block_reduce.cuh'
+    // and 'resources/block_prefix_reduce.cuh'
 
-    uint32_t reduced_size = (size + 3) / 4,
-             trailing     = reduced_size * 4 - size;
-
-    jitc_log(Debug, "jit_all(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
-
-    if (trailing) {
-        bool filler = true;
-        this->memset_async(values + size, trailing, sizeof(bool), &filler);
-    }
-
-    uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
-    reduce(VarType::UInt32, ReduceOp::And, values, reduced_size, out);
-    jitc_sync_thread();
-    bool result = (out[0] & out[1] & out[2] & out[3]) != 0;
-    jitc_free(out);
-
-    return result;
-}
-
-bool CUDAThreadState::any(uint8_t *values, uint32_t size) {
-    /* When \c size is not a multiple of 4, the implementation will initialize up
-       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
-       reduction algorithm can be used. This is fine for allocations made using
-       \ref jit_malloc(), which allow for this. */
-
-    uint32_t reduced_size = (size + 3) / 4,
-             trailing     = reduced_size * 4 - size;
-
-    jitc_log(Debug, "jit_any(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
-
-    if (trailing) {
-        bool filler = false;
-        this->memset_async(values + size, trailing, sizeof(bool), &filler);
-    }
-
-    uint8_t *out = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
-    reduce(VarType::UInt32, ReduceOp::Or, values, reduced_size, out);
-    jitc_sync_thread();
-    bool result = (out[0] | out[1] | out[2] | out[3]) != 0;
-    jitc_free(out);
-
-    return result;
-
-}
-
-void CUDAThreadState::prefix_sum(VarType vt, bool exclusive, const void *in, uint32_t size,
-                                 void *out) {
-    if (size == 0)
+    uint32_t tsize = type_size[(int) vt];
+    if (size == 0) {
         return;
-    if (vt == VarType::Int32)
-        vt = VarType::UInt32;
-
-    const uint32_t isize = type_size[(int) vt];
-
-    const Device &dev = state.devices[this->device];
-    scoped_set_context guard(context);
-
-    if (size == 1) {
-        if (exclusive) {
-            cuda_check(cuMemsetD8Async((CUdeviceptr) out, 0, isize, stream));
-        } else {
-            if (in != out)
-                cuda_check(cuMemcpyAsync((CUdeviceptr) out,
-                                         (CUdeviceptr) in, isize,
-                                         stream));
-        }
-    } else if ((isize == 4 && size <= 4096) || (isize == 8 && size < 2048)) {
-        // Kernel for small arrays
-        uint32_t items_per_thread = isize == 8 ? 2 : 4,
-                 thread_count     = round_pow2((size + items_per_thread - 1)
-                                                / items_per_thread),
-                 shared_size      = thread_count * 2 * isize;
-
-        jitc_log(Debug,
-                 "jit_prefix_sum(" DRJIT_PTR " -> " DRJIT_PTR
-                 ", type=%s, exclusive=%i, size=%u, type=small, threads=%u, shared=%u)",
-                 (uintptr_t) in, (uintptr_t) out, type_name[(int) vt], exclusive, size,
-                 thread_count, shared_size);
-
-        CUfunction kernel =
-            (exclusive ? jitc_cuda_prefix_sum_exc_small
-                       : jitc_cuda_prefix_sum_inc_small)[(int) vt][dev.id];
-
-        if (!kernel)
-            jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
-
-        void *args[] = { &in, &out, &size };
-        submit_gpu(
-            KernelType::Other, kernel, 1,
-            thread_count, shared_size, stream, args, nullptr, size);
-    } else {
-        // Kernel for large arrays
-        uint32_t items_per_thread = isize == 8 ? 8 : 16,
-                 thread_count     = 128,
-                 items_per_block  = items_per_thread * thread_count,
-                 block_count      = (size + items_per_block - 1) / items_per_block,
-                 shared_size      = items_per_block * isize,
-                 scratch_items    = block_count + 32;
-
-        jitc_log(Debug,
-                 "jit_prefix_sum(" DRJIT_PTR " -> " DRJIT_PTR
-                 ", type=%s, exclusive=%i, size=%u, type=large, blocks=%u, threads=%u, "
-                 "shared=%u, scratch=%zu)",
-                 (uintptr_t) in, (uintptr_t) out, type_name[(int) vt], exclusive, size,
-                 block_count, thread_count, shared_size, scratch_items * sizeof(uint64_t));
-
-        CUfunction kernel =
-            (exclusive ? jitc_cuda_prefix_sum_exc_large
-                       : jitc_cuda_prefix_sum_inc_large)[(int) vt][dev.id];
-
-        if (!kernel)
-            jitc_raise("jit_prefix_sum(): type %s is not supported!", type_name[(int) vt]);
-
-        uint64_t *scratch = (uint64_t *) jitc_malloc(
-            AllocType::Device, scratch_items * sizeof(uint64_t));
-
-        /// Initialize scratch space and padding
-        uint32_t block_count_init, thread_count_init;
-        dev.get_launch_config(&block_count_init, &thread_count_init,
-                                 scratch_items);
-
-        void *args[] = { &scratch, &scratch_items };
-        submit_gpu(KernelType::Other,
-                        jitc_cuda_prefix_sum_large_init[dev.id],
-                        block_count_init, thread_count_init, 0, stream,
-                        args, nullptr, scratch_items);
-
-        scratch += 32; // move beyond padding area
-        void *args_2[] = { &in, &out, &size, &scratch };
-        submit_gpu(KernelType::Other, kernel, block_count,
-                        thread_count, shared_size, stream, args_2,
-                        nullptr, scratch_items);
-        scratch -= 32;
-
-        jitc_free(scratch);
+    } else if (block_size == 0 || block_size > size) {
+        jitc_raise(
+            "jit_block_prefix_reduce(): invalid block size (size=%u, block_size=%u)!",
+            size, block_size);
+    } else if (block_size == 1) {
+        uint64_t z = 0;
+        if (exclusive)
+            memset_async(out, size, tsize, &z);
+        else if (in != out)
+            memcpy_async(out, in, size * tsize);
+        return;
     }
+
+    VarType vts = vt;
+    // Signed sum/product/and/or reductions can use the unsigned kernel.
+    if (op == ReduceOp::Add || op == ReduceOp::Mul ||
+        op == ReduceOp::Or || op == ReduceOp::And) {
+        vt = make_int_type_unsigned(vt);
+
+        // Float16 add/mul reductions use higher-precision intermediate Float32
+        // calculation steps, which requires extra shared memory.
+        if (vt == VarType::Float16)
+            vts = VarType::Float32;
+    }
+
+    // How many blocks are there to reduce?
+    // Note: 'size' is not necessary divisible by 'block_size'.
+    uint32_t block_count = ceil_div(size, block_size);
+
+    // We have precompiled kernels for reductions from 2..1024 values.
+    // Round up to the next power of two and select one of them.
+    uint32_t chunk_size = round_pow2(block_size);
+
+    // Launch configuration
+    uint32_t thread_count, grid_dim_x, grid_dim_y, chunk_count;
+    uint32_t chunks_per_block, chunks_per_thread_block;
+    bool x_is_block_id = true;
+
+    if (chunk_size < 1024) {
+        // Small reduction with 1 chunk/output block and a 1D launch grid. A
+        // single thread block potentially processes multiple chunks. Be careful
+        // changing the numbers below, the kernel expects this configuration.
+
+        // Minimum number of threads needed to finish the work
+        uint32_t min_threads = ceil_div(block_count * chunk_size, 32) * 32;
+
+        // In general, schedule >= 4 warps/block to improve occupancy. It's
+        // okay to use fewer warps if the input data size is tiny.
+        thread_count = std::min(std::max(chunk_size, 128u), min_threads);
+
+        chunk_count = block_count;
+        chunks_per_block = 1;
+        chunks_per_thread_block = thread_count / chunk_size;
+
+        grid_dim_x = ceil_div(block_count, chunks_per_thread_block);
+        grid_dim_y = 1;
+    } else  {
+        // Big reduction with 1 chunk == 1 CUDA thread block == 1024 threads.
+        // There are potentially multiple chunks per output block.
+
+        chunk_size = thread_count = 1024;
+
+        chunks_per_block = ceil_div(block_size, chunk_size);
+        chunks_per_thread_block = 1;
+
+        grid_dim_x = block_count;
+        grid_dim_y = chunks_per_block;
+        chunk_count = block_count * chunks_per_block;
+
+        // CUDA cannot launch grids with a Y block count > 65K..
+        if (grid_dim_y > grid_dim_x) {
+            std::swap(grid_dim_x, grid_dim_y);
+            x_is_block_id = false;
+        }
+    }
+
+    // Shared memory requirement of this kernel
+    uint32_t smem_bytes = thread_count * type_size[(int) vts];
+
+    jitc_log(Debug,
+             "jit_block_prefix_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+             ", type=%s, op=%s, size=%u, block_size=%u, exclusive=%i, "
+             "reverse=%i, block_count=%u, chunk_size=%u, chunks_per_block=%u): "
+             "launching a %u x %u grid with %u threads and %u bytes of shared "
+             "memory per thread block.",
+             (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
+             red_name[(int) op], size, block_size, exclusive, reverse,
+             block_count, chunk_size, chunks_per_block, grid_dim_x, grid_dim_y,
+             thread_count, smem_bytes);
+
+    const Device &dev = state.devices[device];
+
+    CUfunction func = nullptr;
+    int kernel_id = log2i_ceil(chunk_size) - 1;
+    func = jitc_cuda_block_prefix_reduce[(int) op][(int) vt][kernel_id][dev.id];
+
+    if (!func)
+        jitc_raise("jit_block_prefix_reduce(): no existing kernel for type=%s, op=%s!",
+                  type_name[(int) vt], red_name[(int) op]);
+
+    struct {
+        const void *in;
+        void *scratch;
+        void *out;
+        uint32_t size;
+        uint32_t block_size;
+        uint32_t chunks_per_block;
+        bool x_is_block_id;
+        bool exclusive;
+        bool reverse;
+    } params;
+
+    params.in = in;
+    params.out = out;
+    params.size = size;
+    params.block_size = block_size;
+    params.chunks_per_block = chunks_per_block;
+    params.x_is_block_id = x_is_block_id;
+    params.exclusive = exclusive;
+    params.reverse = reverse;
+
+    if (chunks_per_block > 1) {
+        uint32_t scratch_size = chunk_count * 2,
+                 vsize = type_size[(int) vts];
+        params.scratch = jitc_malloc(AllocType::Device, scratch_size * vsize);
+        uint64_t z = 0;
+        memset_async(params.scratch, scratch_size, vsize, &z);
+    } else {
+        params.scratch = nullptr;
+    }
+
+    {
+        scoped_set_context guard(context);
+        void *args[] = { &params };
+        submit_gpu(KernelType::Reduce, func, grid_dim_x, thread_count,
+                   smem_bytes, stream, args, nullptr, size, grid_dim_y);
+    }
+
+    if (chunks_per_block > 1)
+        jitc_free(params.scratch);
 }
 
 uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
@@ -548,7 +593,7 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
 
         void *args[] = { &scratch, &scratch_items };
         submit_gpu(KernelType::Other,
-                   jitc_cuda_prefix_sum_large_init[dev.id],
+                   jitc_cuda_compress_large_init[dev.id],
                    block_count_init, thread_count_init, 0, stream,
                    args, nullptr, scratch_items);
 
@@ -558,10 +603,9 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
 
         scratch += 32; // move beyond padding area
         void *args_2[] = { &in, &out, &scratch, &count_out };
-        submit_gpu(KernelType::Other,
-                        jitc_cuda_compress_large[dev.id], block_count,
-                        thread_count, shared_size, stream, args_2,
-                        nullptr, scratch_items);
+        submit_gpu(KernelType::Other, jitc_cuda_compress_large[dev.id],
+                   block_count, thread_count, shared_size, stream, args_2,
+                   nullptr, scratch_items);
         scratch -= 32;
 
         jitc_free(scratch);
@@ -701,8 +745,9 @@ uint32_t CUDAThreadState::mkperm(const uint32_t *ptr, uint32_t size,
         cuda_transpose(this, buckets_1, buckets_2,
                        bucket_size_all / bucket_size_1, bucket_count);
 
-    this->prefix_sum(VarType::UInt32, true, buckets_2,
-              bucket_size_all / sizeof(uint32_t), buckets_2);
+    uint32_t psum_count = bucket_size_all / sizeof(uint32_t);
+    block_prefix_reduce(VarType::UInt32, ReduceOp::Add, psum_count, psum_count,
+                        true, false, buckets_2, buckets_2);
 
     if (needs_transpose)
         cuda_transpose(this, buckets_2, buckets_1, bucket_count,

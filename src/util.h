@@ -20,13 +20,20 @@ extern void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size,
                               uint32_t isize, const void *src);
 
 /// Reduce the given array to a single value
-extern void jitc_reduce(JitBackend backend, VarType type, ReduceOp rtype,
-                        const void *ptr, uint32_t size, void *out);
+extern void jitc_reduce(JitBackend backend, VarType type, ReduceOp op,
+                        uint32_t size, const void *in, void *out);
 
 /// Reduce elements within blocks
 extern void jitc_block_reduce(JitBackend backend, VarType type, ReduceOp op,
-                              const void *in, uint32_t size, uint32_t block_size,
+                              uint32_t size, uint32_t block_size, const void *in,
                               void *out);
+
+/// Implements various kinds of blocked prefix reductions
+extern void jitc_block_prefix_reduce(JitBackend backend, VarType type,
+                                     ReduceOp op, uint32_t block_size,
+                                     uint32_t size, bool exclusive,
+                                     bool reverse, const void *in,
+                                     void *out);
 
 /// Dot product reduction
 extern void jitc_reduce_dot(JitBackend backend, VarType type,
@@ -38,10 +45,6 @@ extern bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size);
 
 /// 'Any' reduction for boolean arrays
 extern bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size);
-
-/// Exclusive prefix sum
-extern void jitc_prefix_sum(JitBackend backend, VarType vt, bool exclusive,
-                            const void *in, uint32_t size, void *out);
 
 /// Mask compression
 extern uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size,

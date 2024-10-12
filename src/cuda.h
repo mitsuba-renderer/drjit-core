@@ -79,17 +79,15 @@ extern CUfunction *jitc_cuda_mkperm_phase_4_tiny;
 extern CUfunction *jitc_cuda_mkperm_phase_4_small;
 extern CUfunction *jitc_cuda_mkperm_phase_4_large;
 extern CUfunction *jitc_cuda_transpose;
-extern CUfunction *jitc_cuda_prefix_sum_exc_small[(int) VarType::Count];
-extern CUfunction *jitc_cuda_prefix_sum_exc_large[(int) VarType::Count];
-extern CUfunction *jitc_cuda_prefix_sum_inc_small[(int) VarType::Count];
-extern CUfunction *jitc_cuda_prefix_sum_inc_large[(int) VarType::Count];
-extern CUfunction *jitc_cuda_prefix_sum_large_init;
 extern CUfunction *jitc_cuda_compress_small;
 extern CUfunction *jitc_cuda_compress_large;
+extern CUfunction *jitc_cuda_compress_large_init;
 extern CUfunction *jitc_cuda_poke[(int) VarType::Count];
-extern CUfunction *jitc_cuda_reduce[(int) ReduceOp::Count]
-                                   [(int) VarType::Count];
 extern CUfunction *jitc_cuda_block_reduce[(int) ReduceOp::Count]
                                          [(int) VarType::Count][10];
+extern CUfunction *jitc_cuda_block_reduce_vec[(int) ReduceOp::Count]
+                                             [(int) VarType::Count];
+extern CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
+                                                [(int) VarType::Count][10];
 extern CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count];
 extern CUfunction *jitc_cuda_aggregate;
