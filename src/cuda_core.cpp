@@ -5,7 +5,7 @@
 #include "internal.h"
 #include "io.h"
 #include "optix.h"
-#include "../resources/kernels.h"
+#include "resources/kernels.h"
 #include <lz4.h>
 
 CUresult jitc_cuda_cuinit_result = CUDA_ERROR_NOT_INITIALIZED;
@@ -25,18 +25,16 @@ CUfunction *jitc_cuda_mkperm_phase_4_tiny = nullptr;
 CUfunction *jitc_cuda_mkperm_phase_4_small = nullptr;
 CUfunction *jitc_cuda_mkperm_phase_4_large = nullptr;
 CUfunction *jitc_cuda_transpose = nullptr;
-CUfunction *jitc_cuda_prefix_sum_exc_small[(int) VarType::Count] { };
-CUfunction *jitc_cuda_prefix_sum_exc_large[(int) VarType::Count] { };
-CUfunction *jitc_cuda_prefix_sum_inc_small[(int) VarType::Count] { };
-CUfunction *jitc_cuda_prefix_sum_inc_large[(int) VarType::Count] { };
-CUfunction *jitc_cuda_prefix_sum_large_init = nullptr;
 CUfunction *jitc_cuda_compress_small = nullptr;
 CUfunction *jitc_cuda_compress_large = nullptr;
+CUfunction *jitc_cuda_compress_large_init = nullptr;
 CUfunction *jitc_cuda_poke[(int)VarType::Count] { };
-CUfunction *jitc_cuda_reduce[(int) ReduceOp::Count]
-                            [(int) VarType::Count] = { };
 CUfunction *jitc_cuda_block_reduce[(int) ReduceOp::Count]
                                   [(int) VarType::Count][10] = { };
+CUfunction *jitc_cuda_block_reduce_vec[(int) ReduceOp::Count]
+                                      [(int) VarType::Count] = { };
+CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
+                                         [(int) VarType::Count][10] = { };
 CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count] = { };
 CUfunction *jitc_cuda_aggregate = nullptr;
 
@@ -167,14 +165,12 @@ bool jitc_cuda_init() {
     size_t asize = sizeof(CUfunction) * device_count;
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
         jitc_cuda_poke[k] = (CUfunction *) malloc_check_zero(asize);
-        jitc_cuda_prefix_sum_exc_small[k] = (CUfunction *) malloc_check_zero(asize);
-        jitc_cuda_prefix_sum_inc_small[k] = (CUfunction *) malloc_check_zero(asize);
-        jitc_cuda_prefix_sum_exc_large[k] = (CUfunction *) malloc_check_zero(asize);
-        jitc_cuda_prefix_sum_inc_large[k] = (CUfunction *) malloc_check_zero(asize);
         for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
-            jitc_cuda_reduce[j][k] = (CUfunction *) malloc_check_zero(asize);
-            for (int l = 0; l < 10; ++l)
+            for (int l = 0; l < 10; ++l) {
                 jitc_cuda_block_reduce[j][k][l] = (CUfunction *) malloc_check_zero(asize);
+                jitc_cuda_block_prefix_reduce[j][k][l] = (CUfunction *) malloc_check_zero(asize);
+            }
+            jitc_cuda_block_reduce_vec[j][k] = (CUfunction *) malloc_check_zero(asize);
         }
         jitc_cuda_reduce_dot[k] = (CUfunction *) malloc_check_zero(asize);
     }
@@ -281,9 +277,9 @@ bool jitc_cuda_init() {
         LOAD(mkperm_phase_4_small);
         LOAD(mkperm_phase_4_large);
         LOAD(transpose);
-        LOAD(prefix_sum_large_init);
         LOAD(compress_small);
         LOAD(compress_large);
+        LOAD(compress_large_init);
         LOAD(aggregate);
 
         #undef LOAD
@@ -311,11 +307,11 @@ bool jitc_cuda_init() {
             }
 
             for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
-                snprintf(name, sizeof(name), "reduce_%s_%s", red_name[j],
+                snprintf(name, sizeof(name), "block_reduce_%s_%s_vec_1024", red_name[j],
                          type_name_short[k]);
                 if (strstr(kernels_list, name)) {
                     cuda_check(cuModuleGetFunction(&func, m, name));
-                    jitc_cuda_reduce[j][k][i] = func;
+                    jitc_cuda_block_reduce_vec[j][k][i] = func;
                 }
                 for (uint32_t l = 0; l < 10; ++l) {
                     snprintf(name, sizeof(name), "block_reduce_%s_%s_%u", red_name[j],
@@ -324,31 +320,13 @@ bool jitc_cuda_init() {
                         cuda_check(cuModuleGetFunction(&func, m, name));
                         jitc_cuda_block_reduce[j][k][l][i] = func;
                     }
+                    snprintf(name, sizeof(name), "block_prefix_reduce_%s_%s_%u", red_name[j],
+                             type_name_short[k], 1 << (l + 1));
+                    if (strstr(kernels_list, name)) {
+                        cuda_check(cuModuleGetFunction(&func, m, name));
+                        jitc_cuda_block_prefix_reduce[j][k][l][i] = func;
+                    }
                 }
-            }
-
-            snprintf(name, sizeof(name), "prefix_sum_exc_small_%s", type_name_short[k]);
-            if (strstr(kernels_list, name)) {
-                cuda_check(cuModuleGetFunction(&func, m, name));
-                jitc_cuda_prefix_sum_exc_small[k][i] = func;
-            }
-
-            snprintf(name, sizeof(name), "prefix_sum_inc_small_%s", type_name_short[k]);
-            if (strstr(kernels_list, name)) {
-                cuda_check(cuModuleGetFunction(&func, m, name));
-                jitc_cuda_prefix_sum_inc_small[k][i] = func;
-            }
-
-            snprintf(name, sizeof(name), "prefix_sum_exc_large_%s", type_name_short[k]);
-            if (strstr(kernels_list, name)) {
-                cuda_check(cuModuleGetFunction(&func, m, name));
-                jitc_cuda_prefix_sum_exc_large[k][i] = func;
-            }
-
-            snprintf(name, sizeof(name), "prefix_sum_inc_large_%s", type_name_short[k]);
-            if (strstr(kernels_list, name)) {
-                cuda_check(cuModuleGetFunction(&func, m, name));
-                jitc_cuda_prefix_sum_inc_large[k][i] = func;
             }
 
             snprintf(name, sizeof(name), "reduce_dot_%s", type_name_short[k]);
@@ -438,21 +416,19 @@ void jitc_cuda_shutdown() {
     Z(jitc_cuda_mkperm_phase_4_small);
     Z(jitc_cuda_mkperm_phase_4_large);
     Z(jitc_cuda_transpose);
-    Z(jitc_cuda_prefix_sum_large_init);
     Z(jitc_cuda_compress_small);
     Z(jitc_cuda_compress_large);
+    Z(jitc_cuda_compress_large_init);
     Z(jitc_cuda_module);
 
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
-        Z(jitc_cuda_prefix_sum_exc_small[k]);
-        Z(jitc_cuda_prefix_sum_exc_large[k]);
-        Z(jitc_cuda_prefix_sum_inc_small[k]);
-        Z(jitc_cuda_prefix_sum_inc_large[k]);
         Z(jitc_cuda_poke[k]);
         for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
-            Z(jitc_cuda_reduce[j][k]);
-            for (uint32_t l = 0; l < 10; ++l)
+            Z(jitc_cuda_block_reduce_vec[j][k]);
+            for (uint32_t l = 0; l < 10; ++l) {
                 Z(jitc_cuda_block_reduce[j][k][l]);
+                Z(jitc_cuda_block_prefix_reduce[j][k][l]);
+            }
         }
         Z(jitc_cuda_reduce_dot[k]);
     }

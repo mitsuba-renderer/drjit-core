@@ -836,6 +836,9 @@ extern JIT_EXPORT void jit_var_gather_packet(size_t n, uint32_t source,
                                              uint32_t index, uint32_t mask,
                                              uint32_t *out);
 
+/// Reverse the order of a JIT array
+extern JIT_EXPORT uint32_t jit_var_reverse(uint32_t index);
+
 #if defined(__cplusplus)
 /// Reduction operations for \ref jit_var_scatter() \ref jit_reduce()
 enum class ReduceOp : uint32_t {
@@ -1947,8 +1950,12 @@ extern JIT_EXPORT uint32_t jit_var_tile(uint32_t index, uint32_t count);
 extern JIT_EXPORT uint32_t jit_var_reduce_dot(uint32_t index_1,
                                               uint32_t index_2);
 
-/// Compute an exclusive (exclusive == 1) or inclusive (exclusive == 0) prefix sum (asynchronous)
-extern JIT_EXPORT uint32_t jit_var_prefix_sum(uint32_t index, int exclusive);
+/// Compute an exclusive (exclusive == 1) or inclusive (exclusive == 0) blocked prefix sum (asynchronous)
+extern JIT_EXPORT uint32_t jit_var_block_prefix_reduce(JIT_ENUM ReduceOp op,
+                                                       uint32_t index,
+                                                       uint32_t block_size,
+                                                       int exclusive,
+                                                       int reverse);
 
 // ====================================================================
 //  Assortment of tuned kernels for initialization, reductions, etc.
@@ -1987,55 +1994,57 @@ extern JIT_EXPORT void jit_reduce(JIT_ENUM JitBackend backend, JIT_ENUM VarType 
                                   const void *in, uint32_t size, void *out);
 
 /**
- * \brief Redduce elements within blocks
+ * \brief Reduce elements within blocks of the given input array
  *
- * This function reduces elements in contiguous blocks of size \c block_size
- * in the input array \c in and writes them to \c out. For example, a sum reduction of
- * <tt>a, b, * c, d, e, f</tt> turns into <tt>a+b, c+d, e+f</tt> when the
- * c block_size is set to \c 2. The input array must contain
- * <tt>size * block_size</tt> elements, and the output array must have space for
- * <tt>size</tt> elements.
+ * This function reduces contiguous blocks from \c in with size \c block_size
+ * and writes the result to to \c out. For example, sum-reducing <tt>a, b, c, d,
+ * e, f</tt> with <tt>block_size == 2</tt> produces <tt>a+b, c+d, e+f</tt>.
+ *
+ * By setting <tt>block_size == size</tt>, the function reduces the entire
+ * array.
+ *
+ * It is legal for \c size to be *indivisible* by \c block_size, in which case
+ * the reduction over the last block considers fewer elements.
+ *
+ * The input array must have size \c size, and the output array must have
+ * size <tt>(size + block_size - 1) / block_size</tt>.
  */
-extern JIT_EXPORT void jit_block_sum(JIT_ENUM JitBackend backend, JIT_ENUM VarType type,
-                                     JIT_ENUM ReduceOp op,
-                                     const void *in, uint32_t size,
-                                     uint32_t block_size, void *out);
+extern JIT_EXPORT void jit_block_reduce(JIT_ENUM JitBackend backend,
+                                        JIT_ENUM VarType type,
+                                        JIT_ENUM ReduceOp op,
+                                        uint32_t size,
+                                        uint32_t block_size,
+                                        const void *in,
+                                        void *out);
 
-/** \brief Compute n prefix sum over the given input array
+/**
+ * \brief Prefix-reduce elements within blocks of the given input array
  *
- * Both exclusive and inclusive variants are supported. If desired, the scan
- * can be performed in-place (i.e., <tt>out == in</tt>). The operation runs
- * asynchronously.
+ * This function prefix-reduces contiguous blocks from \c in with size
+ * \c block_size and writes the result to to \c out. For example, an inclusive
+ * sum-reduction of <tt>a, b, c, d, e, f</tt> with <tt>block_size == 2</tt>
+ * produces <tt>a, a+b, c, c+d, e, e+f</tt>.
  *
- * The operation is currenly implemented for the following numeric types:
- * ``VarType::Int32``, ``VarType::UInt32``, ``VarType::UInt64``,
- * ``VarType::Float32``, and ``VarType::Float64``.
+ * Both exclusive and inclusive variants are supported. If desired, the
+ * reduction can be performed in-place (i.e., <tt>out == in</tt>).
  *
- * Note that the CUDA implementation may round \c size to the maximum of the
- * following three values for performance and implementation-related reasons
- * (the prefix sum uses a tree-based parallelization scheme).
+ * By setting <tt>block_size == size</tt>, the function reduces the entire
+ * array.
  *
- * - the value 4
- * - the next highest power of two (when size <= 4096),
- * - the next highest multiple of 2K (when size > 4096),
+ * It is legal for \c size to be *indivisible* by \c block_size, in which case
+ * the reduction over the last block considers fewer elements.
  *
- * For this reason, the the supplied memory regions must be sufficiently large
- * to avoid out-of-bounds reads and writes. This is not an issue for memory
- * obtained using \ref jit_malloc(), which internally rounds allocations to the
- * next largest power of two and enforces a 64 byte minimum allocation size.
- *
- * The CUDA backend implementation for *large* numeric types (double precision
- * floats, 64 bit integers) has the following technical limitation: when
- * reducing 64-bit integers, their values must be smaller than 2**62. When
- * reducing double precision arrays, the two least significant mantissa bits
- * are clamped to zero when forwarding the prefix from one 512-wide block to
- * the next (at a very minor loss in accuracy). See the implementation for
- * details on this.
+ * Both the input and output array are expected to have \c size elements.
  */
-extern JIT_EXPORT void jit_prefix_sum(JIT_ENUM JitBackend backend,
-                                      JIT_ENUM VarType type, int exclusive,
-                                      const void *in, uint32_t size, void *out);
-
+extern JIT_EXPORT void jit_block_prefix_reduce(JIT_ENUM JitBackend backend,
+                                               JIT_ENUM VarType type,
+                                               JIT_ENUM ReduceOp op,
+                                               uint32_t block_size,
+                                               uint32_t size,
+                                               int exclusive,
+                                               int reverse,
+                                               const void *in,
+                                               void *out);
 /**
  * \brief Compress a mask into a list of nonzero indices
  *

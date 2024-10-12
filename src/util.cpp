@@ -44,16 +44,25 @@ void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t si
 }
 
 void jitc_reduce(JitBackend backend, VarType type, ReduceOp op,
-                 const void *ptr, uint32_t size, void *out) {
-    thread_state(backend)->reduce(type, op, ptr, size, out);
+                 uint32_t size, const void *in, void *out) {
+    thread_state(backend)->block_reduce(type, op, size, size, in, out);
 }
 
-/// Sum over elements within blocks
-void jitc_block_reduce(JitBackend backend, VarType vt, ReduceOp op, const void *in,
-                       uint32_t size, uint32_t block_size, void *out) {
-    thread_state(backend)->block_reduce(vt, op, in, size, block_size, out);
+/// Reduce over elements within blocks
+void jitc_block_reduce(JitBackend backend, VarType vt, ReduceOp op,
+                       uint32_t size, uint32_t block_size, const void *in,
+                       void *out) {
+    thread_state(backend)->block_reduce(vt, op, size, block_size, in, out);
 }
 
+/// Implements various kinds of prefix reductions
+void jitc_block_prefix_reduce(JitBackend backend, VarType vt, ReduceOp op,
+                              uint32_t size, uint32_t block_size,
+                              bool exclusive, bool reverse, const void *in,
+                              void *out) {
+    thread_state(backend)->block_prefix_reduce(vt, op, size, block_size,
+                                               exclusive, reverse, in, out);
+}
 
 void jitc_reduce_dot(JitBackend backend, VarType type,
                      const void *ptr_1, const void *ptr_2,
@@ -63,18 +72,72 @@ void jitc_reduce_dot(JitBackend backend, VarType type,
 
 /// 'All' reduction for boolean arrays
 bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
-    return thread_state(backend)->all(values, size);
+    /* When \c size is not a multiple of 4, the implementation will initialize up
+       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
+       reduction algorithm can be used. This is fine for allocations made using
+       \ref jit_malloc(), which allow for this. */
+
+    uint32_t size_4    = ceil_div(size, 4),
+             trailing  = size_4 * 4 - size;
+
+    jitc_log(Debug, "jit_all(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
+
+    if (trailing) {
+        bool filler = true;
+        jitc_memset_async(backend, values + size, trailing, sizeof(bool), &filler);
+    }
+
+    uint8_t buf[4], *tmp;
+    if (backend == JitBackend::CUDA)
+        tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
+    else
+        tmp = buf;
+
+    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::And, size_4,
+                      size_4, values, tmp);
+    jitc_sync_thread();
+
+    bool result = (tmp[0] & tmp[1] & tmp[2] & tmp[3]) != 0;
+
+    if (backend == JitBackend::CUDA)
+        jitc_free(tmp);
+
+    return result;
 }
 
 /// 'Any' reduction for boolean arrays
 bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
-    return thread_state(backend)->any(values, size);
-}
+    /* When \c size is not a multiple of 4, the implementation will initialize up
+       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
+       reduction algorithm can be used. This is fine for allocations made using
+       \ref jit_malloc(), which allow for this. */
 
-/// Exclusive prefix sum
-void jitc_prefix_sum(JitBackend backend, VarType vt, bool exclusive,
-                     const void *in, uint32_t size, void *out) {
-    thread_state(backend)->prefix_sum(vt, exclusive, in, size, out);
+    uint32_t size_4   = ceil_div(size, 4),
+             trailing = size_4 * 4 - size;
+
+    jitc_log(Debug, "jit_any(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
+
+    if (trailing) {
+        bool filler = false;
+        jitc_memset_async(backend, values + size, trailing, sizeof(bool), &filler);
+    }
+
+    uint8_t buf[4], *tmp;
+    if (backend == JitBackend::CUDA)
+        tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
+    else
+        tmp = buf;
+
+    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::Or, size_4,
+                      size_4, values, tmp);
+
+    jitc_sync_thread();
+    bool result = (tmp[0] | tmp[1] | tmp[2] | tmp[3]) != 0;
+
+    if (backend == JitBackend::CUDA)
+        jitc_free(tmp);
+
+    return result;
 }
 
 /// Mask compression

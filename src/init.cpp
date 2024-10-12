@@ -714,3 +714,8 @@ void KernelHistory::clear() {
     m_data = nullptr;
     m_size = m_capacity = 0;
 }
+
+/// Default implementations of ThreadState functions
+ThreadState::~ThreadState() { }
+void ThreadState::barrier() { }
+void ThreadState::notify_free(const void *) { }

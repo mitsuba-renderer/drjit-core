@@ -1,10 +1,83 @@
 #include "test.h"
 #include <algorithm>
+#include <memory>
+
+template <typename Value> inline Value fmix32(Value h) {
+    h += 1;
+    h ^= h >> 16;
+    h *= 0x85ebca6b;
+    h ^= h >> 13;
+    h *= 0xc2b2ae35;
+    h ^= h >> 16;
+    return h;
+}
+
+template <typename Value> inline Value block_sum_ref(uint32_t size, uint32_t block_size) {
+    using Scalar = typename Value::Value;
+
+    uint32_t blocks = (size + block_size - 1) / block_size;
+    std::unique_ptr<Scalar[]> buf(new Scalar[blocks]);
+
+    Scalar accum = 0;
+    for (uint32_t i = 0, j = 0; i < size;) {
+        accum += fmix32((Scalar) i);
+
+        if (++i % block_size == 0) {
+            buf[j++] = accum;
+            accum = 0;
+        }
+    }
+
+    if (size % block_size != 0)
+        buf[blocks - 1] = accum;
+
+    return Value::copy(buf.get(), blocks);
+}
+
+template <typename Value> inline Value block_sum_ref_const(uint32_t size, uint32_t block_size) {
+    using Scalar = typename Value::Value;
+    uint32_t blocks = (size + block_size - 1) / block_size;
+    std::unique_ptr<Scalar[]> buf(new Scalar[blocks]);
+
+    for (uint32_t i = 0; i < blocks; ++i)
+        buf[i] = std::min(size - i*block_size, block_size);
+
+    return Value::copy(buf.get(), blocks);
+}
+
+template <typename Value> inline Value block_prefix_sum_ref(uint32_t size, uint32_t block_size, bool exclusive, bool reverse) {
+    using Scalar = typename Value::Value;
+    std::unique_ptr<Scalar[]> buf(new Scalar[size]);
+
+    Scalar accum = 0;
+    for (uint32_t i = 0; i < size; ++i) {
+        uint32_t j = reverse ? (size - 1 - i) : i;
+
+        if (reverse) {
+            if (j % block_size == block_size - 1)
+                accum = 0;
+        } else {
+            if (i % block_size == 0)
+                accum = 0;
+        }
+
+        Scalar prev = accum;
+        accum += fmix32((Scalar) j);
+        buf[j] = exclusive ? prev : accum;
+    }
+
+    return Value::copy(buf.get(), size);
+}
+
+// Try reductions over a range of arrays sizes
+const uint32_t red_sizes[] {
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 32, 60, 128, 250, 333,
+    1024, 16384, 16388*10, 9973*17, 98973*17*3
+};
 
 TEST_BOTH_FLOAT_AGNOSTIC(01_all_any) {
     using Bool = Array<bool>;
 
-    scoped_set_log_level ssll(LogLevel::Info);
     for (uint32_t i = 0; i < 100; ++i) {
         uint32_t size = 23*i*i*i + 1;
 
@@ -33,166 +106,167 @@ TEST_BOTH_FLOAT_AGNOSTIC(01_all_any) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(02_prefix_sum_exc_u32) {
-    scoped_set_log_level ssll(LogLevel::Info);
-    for (uint32_t i = 0; i < 100; ++i) {
-        uint32_t size = 23*i*i*i + 1;
-
-        UInt32 result, ref;
-
-        if (i < 15) {
-            result = arange<UInt32>(size);
-            ref    = (result * (result - 1)) / 2;
-        } else {
-            result = full<UInt32>(1, size);
-            ref    = arange<UInt32>(size);
+TEST_BOTH_FLOAT_AGNOSTIC(02_block_reduce_u32_const) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
+            UInt32 v0 = full<UInt32>(1, size),
+                   v1 = block_sum(v0, block_size);
+            UInt32 vr = block_sum_ref_const<UInt32>(size, block_size);
+            // printf("vr: %s\n", vr.str());
+            // printf("v0: %s\n", v0.str());
+            // printf("v1: %s\n", v1.str());
+            jit_assert(v1 == vr);
         }
-        jit_var_schedule(result.index());
-        jit_var_schedule(ref.index());
-        jit_eval();
-        jit_prefix_sum(Float::Backend, VarType::UInt32, true, result.data(), size, result.data());
-        jit_assert(result == ref);
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(03_prefix_sum_inc_u32) {
-    scoped_set_log_level ssll(LogLevel::Info);
-    for (uint32_t i = 0; i < 100; ++i) {
-        uint32_t size = 23*i*i*i + 1;
-
-        UInt32 result, ref;
-
-        if (i < 15) {
-            result = arange<UInt32>(size);
-            ref    = ((result + 1) * result) / 2;
-        } else {
-            result = full<UInt32>(1, size);
-            ref    = arange<UInt32>(size) + 1;
+TEST_BOTH_FLOAT_AGNOSTIC(02_block_reduce_u32) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
+            UInt32 v0 = fmix32(arange<UInt32>(size));
+            UInt32 v1 = block_sum(v0, block_size);
+            UInt32 vr = block_sum_ref<UInt32>(size, block_size);
+            jit_assert(v1 == vr);
         }
-        jit_var_schedule(result.index());
-        jit_var_schedule(ref.index());
-        jit_eval();
-        jit_prefix_sum(Float::Backend, VarType::UInt32, false, result.data(), size, result.data());
-        jit_assert(result == ref);
     }
 }
 
-TEST_BOTH_FP32(04_prefix_sum_exc_f32) {
-    scoped_set_log_level ssll(LogLevel::Info);
-    for (uint32_t i = 0; i < 80; ++i) {
-        uint32_t size = 23*i*i*i + 1;
+TEST_BOTH_FLOAT_AGNOSTIC(03_block_reduce_u64) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
 
-        Float result = full<Float>(1, size);
-        Float ref    = arange<Float>(size);
-        jit_var_schedule(result.index());
-        jit_var_schedule(ref.index());
-        jit_prefix_sum(Float::Backend, VarType::Float32, true, result.data(), size, result.data());
-        float f = hsum(abs(result - ref)).read(0);
-        jit_assert(f < 1e-6);
-    }
-}
-
-TEST_BOTH_FP32(05_prefix_sum_inc_f32) {
-    for (uint32_t i = 0; i < 80; ++i) {
-        uint32_t size = 23*i*i*i + 1;
-
-        Float result = full<Float>(1, size);
-        Float ref    = arange<Float>(size) + 1.f;
-        jit_var_schedule(result.index());
-        jit_var_schedule(ref.index());
-        jit_prefix_sum(Float::Backend, VarType::Float32, false, result.data(), size, result.data());
-        float f = hsum(abs(result - ref)).read(0);
-        jit_assert(f < 1e-6);
-    }
-}
-
-TEST_BOTH_FLOAT_AGNOSTIC(06_prefix_sum_exc_u64) {
-    using UInt64 = typename UInt32::template ReplaceValue<uint64_t>;
-    scoped_set_log_level ssll(LogLevel::Info);
-    for (uint32_t i = 0; i < 100; ++i) {
-        uint32_t size = 23*i*i*i + 1;
-
-        UInt64 result, ref;
-
-        if (i < 15) {
-            result = arange<UInt64>(size);
-            ref    = (result * (result - 1)) / 2;
-        } else {
-            result = full<UInt64>(1, size);
-            ref    = arange<UInt64>(size);
+            using UInt64 = Array<uint64_t>;
+            UInt64 v0 = fmix32(arange<UInt64>(size));
+            UInt64 v1 = block_sum(v0, block_size);
+            UInt64 vr = block_sum_ref<UInt64>(size, block_size);
+            jit_assert(v1 == vr);
         }
-        jit_var_schedule(result.index());
-        jit_var_schedule(ref.index());
-        jit_eval();
-        jit_prefix_sum(UInt64::Backend, VarType::UInt64, true, result.data(), size, result.data());
-
-        jit_assert(result == ref);
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(07_prefix_sum_inc_u64) {
-    using UInt64 = typename UInt32::template ReplaceValue<uint64_t>;
-    scoped_set_log_level ssll(LogLevel::Info);
-    for (uint32_t i = 0; i < 100; ++i) {
-        uint32_t size = 23*i*i*i + 1;
+TEST_BOTH_FLOAT_AGNOSTIC(04_block_prefix_reduce_u32_inc_fwd) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
 
-        UInt64 result, ref;
-
-        if (i < 15) {
-            result = arange<UInt64>(size);
-            ref    = (result * (result + 1)) / 2;
-        } else {
-            result = full<UInt64>(1, size);
-            ref    = arange<UInt64>(size) + 1;
+            UInt32 v0 = fmix32(arange<UInt32>(size));
+            UInt32 v1 = block_prefix_sum(v0, block_size, false, false);
+            UInt32 vr = block_prefix_sum_ref<UInt32>(size, block_size, false, false);
+            jit_assert(v1 == vr);
         }
-        jit_var_schedule(result.index());
-        jit_var_schedule(ref.index());
-        jit_eval();
-        jit_prefix_sum(UInt64::Backend, VarType::UInt64, false, result.data(), size, result.data());
-
-        jit_assert(result == ref);
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(08_prefix_sum_exc_f64) {
-    using Double = typename Float::template ReplaceValue<double>;
-    scoped_set_log_level ssll(LogLevel::Info);
-    for (uint32_t i = 0; i < 100; ++i) {
-        uint32_t size = 23*i*i*i + 1;
+TEST_BOTH_FLOAT_AGNOSTIC(05_block_prefix_reduce_u32_exc_fwd) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
 
-        Double input  = full<Double>(1, size);
-        Double output = empty<Double>(size);
-        Double ref    = arange<Double>(size);
-        jit_var_schedule(input.index());
-        jit_var_schedule(ref.index());
-        jit_eval();
-        jit_prefix_sum(Double::Backend, VarType::Float64, true, input.data(), size, output.data());
-        double f = hsum(abs(output - ref)).read(0);
-        jit_assert(f < 1e-6);
+            UInt32 v0 = fmix32(arange<UInt32>(size));
+            UInt32 v1 = block_prefix_sum(v0, block_size, true, false);
+            UInt32 vr = block_prefix_sum_ref<UInt32>(size, block_size, true, false);
+            jit_assert(v1 == vr);
+        }
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(09_prefix_sum_inc_f64) {
-    using Double = typename Float::template ReplaceValue<double>;
-    scoped_set_log_level ssll(LogLevel::Info);
-    for (uint32_t i = 0; i < 100; ++i) {
-        uint32_t size = 23*i*i*i + 1;
+TEST_BOTH_FLOAT_AGNOSTIC(06_block_prefix_reduce_u32_inc_bwd) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
 
-        Double input  = full<Double>(1, size);
-        Double output = empty<Double>(size);
-        Double ref    = arange<Double>(size)+1.0;
-        jit_var_schedule(input.index());
-        jit_var_schedule(ref.index());
-        jit_eval();
-        jit_prefix_sum(Double::Backend, VarType::Float64, false, input.data(), size, output.data());
-        double f = hsum(abs(output - ref)).read(0);
-        jit_assert(f < 1e-6);
+            UInt32 v0 = fmix32(arange<UInt32>(size));
+            UInt32 v1 = block_prefix_sum(v0, block_size, false, true);
+            UInt32 vr = block_prefix_sum_ref<UInt32>(size, block_size, false, true);
+            jit_assert(v1 == vr);
+        }
     }
 }
 
+TEST_BOTH_FLOAT_AGNOSTIC(07_block_prefix_reduce_u32_exc_bwd) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
 
-TEST_BOTH(10_compress) {
-    scoped_set_log_level ssll(LogLevel::Info);
+            UInt32 v0 = fmix32(arange<UInt32>(size));
+            UInt32 v1 = block_prefix_sum(v0, block_size, true, true);
+            UInt32 vr = block_prefix_sum_ref<UInt32>(size, block_size, true, true);
+            jit_assert(v1 == vr);
+        }
+    }
+}
+
+TEST_BOTH_FLOAT_AGNOSTIC(08_block_prefix_reduce_u64_inc_fwd) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
+
+            using UInt64 = Array<uint64_t>;
+            UInt64 v0 = fmix32(arange<UInt64>(size));
+            UInt64 v1 = block_prefix_sum(v0, block_size, false, false);
+            UInt64 vr = block_prefix_sum_ref<UInt64>(size, block_size, false, false);
+            jit_assert(v1 == vr);
+        }
+    }
+}
+
+TEST_BOTH_FLOAT_AGNOSTIC(09_block_prefix_reduce_u64_exc_fwd) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
+            using UInt64 = Array<uint64_t>;
+
+            UInt64 v0 = fmix32(arange<UInt64>(size));
+            UInt64 v1 = block_prefix_sum(v0, block_size, true, false);
+            UInt64 vr = block_prefix_sum_ref<UInt64>(size, block_size, true, false);
+            jit_assert(v1 == vr);
+        }
+    }
+}
+
+TEST_BOTH_FLOAT_AGNOSTIC(10_block_prefix_reduce_u64_inc_bwd) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
+
+            using UInt64 = Array<uint64_t>;
+            UInt64 v0 = fmix32(arange<UInt64>(size));
+            UInt64 v1 = block_prefix_sum(v0, block_size, false, true);
+            UInt64 vr = block_prefix_sum_ref<UInt64>(size, block_size, false, true);
+            jit_assert(v1 == vr);
+        }
+    }
+}
+
+TEST_BOTH_FLOAT_AGNOSTIC(11_block_prefix_reduce_u64_exc_bwd) {
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size : red_sizes) {
+            if (block_size > size)
+                continue;
+
+            using UInt64 = Array<uint64_t>;
+            UInt64 v0 = fmix32(arange<UInt64>(size));
+            UInt64 v1 = block_prefix_sum(v0, block_size, true, true);
+            UInt64 vr = block_prefix_sum_ref<UInt64>(size, block_size, true, true);
+            jit_assert(v1 == vr);
+        }
+    }
+}
+
+TEST_BOTH_FLOAT_AGNOSTIC(12_compress) {
     for (uint32_t i = 0; i < 30; ++i) {
         uint32_t size = 23*i*i*i + 1;
         for (uint32_t j = 0; j <= i; ++j) {
@@ -234,8 +308,7 @@ TEST_BOTH(10_compress) {
     }
 }
 
-TEST_BOTH(11_mkperm) {
-    scoped_set_log_level ssll(LogLevel::Info);
+TEST_BOTH_FLOAT_AGNOSTIC(13_mkperm) {
     srand(0);
     for (uint32_t i = 0; i < 30; ++i) {
         uint32_t size = 23*i*i*i + 1;
@@ -322,7 +395,7 @@ TEST_BOTH(11_mkperm) {
 }
 
 #if 0
-TEST_BOTH(12_block_ops) {
+TEST_BOTH(14_block_ops) {
     Float a(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f);
 
     jit_log(Info, "block_sum:  %s\n", block_sum(a, 3).str());

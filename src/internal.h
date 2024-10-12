@@ -649,7 +649,7 @@ struct ThreadState {
 #endif
 
 
-    virtual ~ThreadState(){}
+    virtual ~ThreadState();
     ThreadState() = default;
     ThreadState(const ThreadState &other) = default;
 
@@ -660,7 +660,7 @@ struct ThreadState {
      * to run until all kernels in the current launch have finished. This should
      * be called after a set of concurrent kernels have been launched.
      */
-    virtual void barrier() = 0;
+    virtual void barrier();
 
     virtual Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
                          uint32_t size, std::vector<void *> *kernel_params,
@@ -670,27 +670,20 @@ struct ThreadState {
     virtual void memset_async(void *ptr, uint32_t size, uint32_t isize,
                               const void *src) = 0;
 
-    /// Reduce the given array to a single value
-    virtual void reduce(VarType type, ReduceOp rtype, const void *ptr,
-                        uint32_t size, void *out) = 0;
+    /// Reduce elements within blocks
+    virtual void block_reduce(VarType vt, ReduceOp op, uint32_t size,
+                              uint32_t block_size, const void *in,
+                              void *out) = 0;
 
-    /// Reduce within blocks
-    virtual void block_reduce(VarType type, ReduceOp op, const void *in,
-                              uint32_t size, uint32_t block_size, void *out) = 0;
+    /// Implements various kinds of prefix reductions
+    virtual void block_prefix_reduce(VarType vt, ReduceOp op, uint32_t size,
+                                     uint32_t block_size, bool exclusive,
+                                     bool reverse, const void *in,
+                                     void *out) = 0;
 
     /// Compute a dot product of two equal-sized arrays
     virtual void reduce_dot(VarType type, const void *ptr_1,
                             const void *ptr_2,
-                            uint32_t size, void *out) = 0;
-
-    /// 'All' reduction for boolean arrays
-    virtual bool all(uint8_t *values, uint32_t size) = 0;
-
-    /// 'Any' reduction for boolean arrays
-    virtual bool any(uint8_t *values, uint32_t size) = 0;
-
-    /// Exclusive prefix sum
-    virtual void prefix_sum(VarType vt, bool exclusive, const void *in,
                             uint32_t size, void *out) = 0;
 
     /// Mask compression
@@ -723,7 +716,7 @@ struct ThreadState {
 
     /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
     /// This is required for kernel freezing.
-    virtual void notify_free(const void *ptr) = 0;
+    virtual void notify_free(const void *ptr);
 };
 
 /// Key data structure for kernel source code & device ID

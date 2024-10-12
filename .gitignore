@@ -11,6 +11,8 @@ tests/**/*.raw
 Testing
 /kernels/kernels_*.ptx
 /kernels/generate
+/kernels/kernels.c
+/kernels/kernels.h
 build
 .vscode
 *.vcxproj
@@ -19,6 +21,7 @@ drjit-core.sln
 drjit-core.dir
 Release
 Debug
+\.cache
 
 libdrjit-core.so
 libdrjit-core.dylib
@@ -37,4 +40,7 @@ tests/test_array
 tests/test_half
 tests/triangle
 tests/microbenchmark
-/resources/generate
+/resources/pack
+/resources/kernels_50.ptx
+/resources/kernels_70.ptx
+/resources/kernels.c

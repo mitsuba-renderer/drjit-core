@@ -2039,39 +2039,58 @@ void jitc_reduce_scalar_mul(VarType vt, uint32_t size, void *ptr) {
 uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, int symbolic) {
     if (index == 0) {
         return 0;
+    } else if (block_size == 0) {
+        jitc_raise("jitc_var_block_reduce(): block_size cannot be 0!");
     } else if (block_size == 1) {
         jitc_var_inc_ref(index);
         return index;
     }
 
     const Variable *v = jitc_var(index);
-
     JitBackend backend = (JitBackend) v->backend;
     VarType vt = (VarType) v->type;
     uint32_t size = v->size,
-             reduced = size / block_size;
-
-    if (reduced * block_size != size)
-        jitc_raise("jit_var_block_reduce(r%u): variable size (%u) must be an integer "
-                   "multiple of 'block_size' (%u)", index, size, block_size);
+             reduced = ceil_div(size, block_size);
 
     if (v->is_literal()) {
-        uint64_t value = v->literal;
+        uint64_t value_header = v->literal,
+                 value_trailer = v->literal;
+
+        uint32_t trailer_size = size - (reduced - 1) * block_size;
+
         switch (op) {
-            case ReduceOp::Add: jitc_reduce_scalar_add(vt, block_size, &value); break;
-            case ReduceOp::Mul: jitc_reduce_scalar_mul(vt, block_size, &value); break;
-            default: break; // Nothing to do for the other reducion types
+            case ReduceOp::Add:
+                jitc_reduce_scalar_add(vt, block_size, &value_header);
+                jitc_reduce_scalar_add(vt, trailer_size, &value_trailer);
+                break;
+
+            case ReduceOp::Mul:
+                jitc_reduce_scalar_mul(vt, block_size, &value_header);
+                jitc_reduce_scalar_mul(vt, trailer_size, &value_trailer);
+                break;
+
+            default:
+                break; // Nothing to do for the other reducion types
         }
-        return jitc_var_literal((JitBackend) v->backend, (VarType) v->type,
-                                &value, reduced, 0);
+
+        Ref result = steal(jitc_var_literal((JitBackend) v->backend, (VarType) v->type, &value_header, reduced, 0));
+
+        if (reduced * block_size != size) {
+
+            Ref trailer = steal(jitc_var_literal((JitBackend) v->backend, (VarType) v->type, &value_trailer, reduced, 0)),
+                counter = steal(jitc_var_counter(backend, reduced, true)),
+                limit = steal(jitc_var_u32(backend, reduced - 1)),
+                mask = steal(jitc_var_lt(counter, limit));
+            result = steal(jitc_var_select(mask, result, trailer));
+        }
+
+        return result.release();
     }
 
     if (symbolic == -1) {
         bool can_scatter_reduce = jitc_can_scatter_reduce(backend, vt, op),
              is_evaluated = v->is_evaluated(),
-             can_evaluate =
-                 !v->symbolic && !(backend == JitBackend::CUDA &&
-                                   (block_size & (block_size - 1)) != 0);
+             can_evaluate = !v->symbolic;
 
         if (can_scatter_reduce != can_evaluate)
             symbolic = can_scatter_reduce; // one strategy admissible
@@ -2108,7 +2127,7 @@ uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size,
                                                     : AllocType::HostAsync,
                         reduced * (size_t) type_size[(int) vt]);
         Ref out_v = steal(jitc_var_mem_map(backend, vt, out, reduced, 1));
-        jitc_block_reduce(backend, vt, op, jitc_var(index)->data, size, block_size, out);
+        jitc_block_reduce(backend, vt, op, size, block_size, jitc_var(index)->data, out);
 
         return out_v.release();
     } else {
@@ -2230,7 +2249,7 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp op,
         jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
                                                 : AllocType::HostAsync,
                     (size_t) type_size[(int) vt]);
-    jitc_reduce(backend, vt, op, values, size, data);
+    jitc_block_reduce(backend, vt, op, size, size, values, data);
     return jitc_var_mem_map(backend, vt, data, 1, 1);
 }
 
@@ -2281,7 +2300,11 @@ uint32_t jitc_var_reduce_dot(uint32_t index_1, uint32_t index_2) {
     }
 }
 
-uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
+uint32_t jitc_var_block_prefix_reduce(ReduceOp op,
+                                      uint32_t index,
+                                      uint32_t block_size,
+                                      bool exclusive,
+                                      bool reverse) {
     if (!index)
         return index;
 
@@ -2291,17 +2314,34 @@ uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
     uint32_t size = v->size;
 
     if (v->is_literal()) {
-        Ref ctr = steal(jitc_var_counter(backend, size, true));
-        if (vt != VarType::UInt32)
-            ctr = steal(jitc_var_cast(ctr, vt, false));
+        if (op == ReduceOp::Max || op == ReduceOp::Min) {
+            jitc_var_inc_ref(index);
+            return index;
+        } else if (op == ReduceOp::Add) {
+            Ref ctr = steal(jitc_var_counter(backend, size, true));
+            if (block_size != size) {
+                Ref bsize = steal(jitc_var_u32(backend, block_size));
+                ctr = steal(jitc_var_mod(ctr, bsize));
+            }
 
-        if (!exclusive) {
-            Ref one = steal(jitc_var_literal(backend, vt, &type_one[(int) vt], 1, 0));
-            ctr = steal(jitc_var_add(one, ctr));
+            if (reverse) {
+                Ref size_v = steal(jitc_var_u32(backend, block_size - 1));
+                ctr = steal(jitc_var_sub(size_v, ctr));
+            }
+
+            if (!exclusive) {
+                Ref one = steal(jitc_var_u32(backend, 1));
+                ctr = steal(jitc_var_add(ctr, one));
+            }
+
+            if (vt != VarType::UInt32)
+                ctr = steal(jitc_var_cast(ctr, vt, false));
+
+            return jitc_var_mul(ctr, index);
         }
+    }
 
-        return jitc_var_mul(ctr, index);
-    } else if (!v->is_evaluated() || v->is_dirty()) {
+    if (!v->is_evaluated() || v->is_dirty()) {
         jitc_var_eval(index);
         v = jitc_var(index);
     }
@@ -2315,10 +2355,11 @@ uint32_t jitc_var_prefix_sum(uint32_t index, bool exclusive) {
 
     Ref result = steal(jitc_var_mem_map(backend, vt, data_out, size, 1));
 
-    jitc_prefix_sum(backend, vt, exclusive, data_in, size, data_out);
+    jitc_block_prefix_reduce(backend, vt, op, size, block_size,
+                             exclusive, reverse, data_in, data_out);
+
     return result.release();
 }
-
 
 std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
     Variable *v = jitc_var(index);
@@ -2396,6 +2437,22 @@ void jitc_var_reduce_expanded(uint32_t index) {
     );
 
     jitc_var(index)->reduce_op = (uint32_t) ReduceOp::Identity;
+}
+
+uint32_t jitc_var_reverse(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    const Variable *v = jitc_var(index);
+    uint32_t size = v->size;
+    JitBackend backend = (JitBackend) v->backend;
+
+    Ref i0 = steal(jitc_var_u32(backend, size - 1)),
+        i1 = steal(jitc_var_counter(backend, size, true)),
+        i2 = steal(jitc_var_sub(i0, i1)),
+        mask = steal(jitc_var_bool(backend, true));
+
+    return jitc_var_gather(index, i2, mask);
 }
 
 /// Return a human-readable summary of registered variables
