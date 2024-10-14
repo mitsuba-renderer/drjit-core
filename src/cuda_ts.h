@@ -1,13 +1,13 @@
 #include "internal.h"
 #include "log.h"
 
-struct CUDAThreadState: ThreadState{
+struct CUDAThreadState : ThreadState {
 
-    void barrier() override{}
+    void barrier() override {}
 
     Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
                  uint32_t size, std::vector<void *> *kernel_params,
-                 const std::vector<uint32_t> *) override;
+                 const std::vector<uint32_t> *kernel_param_ids) override;
 
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
@@ -18,12 +18,11 @@ struct CUDAThreadState: ThreadState{
                 void *out) override;
 
     /// Reduce elements within blocks
-    void block_reduce(VarType type, ReduceOp op, const void *in,
-                      uint32_t size, uint32_t block_size, void *out) override;
+    void block_reduce(VarType type, ReduceOp op, const void *in, uint32_t size,
+                      uint32_t block_size, void *out) override;
 
     /// Compute a dot product of two equal-sized arrays
-    void reduce_dot(VarType type, const void *ptr_1,
-                    const void *ptr_2,
+    void reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
                     uint32_t size, void *out) override;
 
     /// 'All' reduction for boolean arrays
@@ -58,13 +57,14 @@ struct CUDAThreadState: ThreadState{
     // Enqueue a function to be run on the host once backend computation is done
     void enqueue_host_func(void (*callback)(void *), void *payload) override;
 
-    /// LLVM: reduce a variable that was previously expanded due to dr.ReduceOp.Expand
+    /// LLVM: reduce a variable that was previously expanded due to
+    /// dr.ReduceOp.Expand
     void reduce_expanded(VarType, ReduceOp, void *, uint32_t,
                          uint32_t) override {
-      jitc_raise("jitc_reduce_expanded(): unsupported by CUDAThreadState!");
+        jitc_raise("jitc_reduce_expanded(): unsupported by CUDAThreadState!");
     }
 
     void notify_free(const void *) override {};
 
-    ~CUDAThreadState(){}
+    ~CUDAThreadState() {}
 };
