@@ -684,8 +684,7 @@ int jit_var_is_unaligned(uint32_t index) {
     lock_guard guard(state.lock);
     Variable *var = jitc_var(index);
 
-    return (JitBackend) var->backend == JitBackend::LLVM &&
-           (VarKind) var->kind == VarKind::Evaluated && var->unaligned;
+    return (VarKind) var->kind == VarKind::Evaluated && var->unaligned;
 }
 
 uint32_t jit_var_resize(uint32_t index, size_t size) {

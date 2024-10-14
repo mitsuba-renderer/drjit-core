@@ -1210,7 +1210,12 @@ extern JIT_EXPORT int jit_var_is_zero_literal(uint32_t index);
 /// Check if a variable represents a normal (not NaN/infinity) literal
 extern JIT_EXPORT int jit_var_is_finite_literal(uint32_t index);
 
-/// Check if the data field of a variable is unaligned
+/**
+ * \breif Check if the data field of a variable is unaligned
+ *
+ * This function returns true if the data pointer of the variable is not
+ * properly aligned in memory. Otherwise it returns false.
+ */
 extern JIT_EXPORT int jit_var_is_unaligned(uint32_t index);
 
 /**
