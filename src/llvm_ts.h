@@ -1,6 +1,6 @@
 #include "internal.h"
 
-struct LLVMThreadState: ThreadState{
+struct LLVMThreadState : ThreadState {
 
     void barrier() override;
 
@@ -17,12 +17,11 @@ struct LLVMThreadState: ThreadState{
                 void *out) override;
 
     /// Reduce elements within blocks
-    void block_reduce(VarType type, ReduceOp op, const void *in,
-                      uint32_t size, uint32_t block_size, void *out) override;
+    void block_reduce(VarType type, ReduceOp op, const void *in, uint32_t size,
+                      uint32_t block_size, void *out) override;
 
     /// Compute a dot product of two equal-sized arrays
-    void reduce_dot(VarType type, const void *ptr_1,
-                    const void *ptr_2,
+    void reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
                     uint32_t size, void *out) override;
 
     /// 'All' reduction for boolean arrays
@@ -64,5 +63,5 @@ struct LLVMThreadState: ThreadState{
 
     void notify_free(const void *) override {};
 
-    ~LLVMThreadState(){}
+    ~LLVMThreadState() {}
 };

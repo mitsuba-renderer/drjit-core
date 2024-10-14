@@ -308,9 +308,11 @@ void LLVMThreadState::barrier() {
     scheduled_tasks.clear();
 }
 
-Task *LLVMThreadState::launch(Kernel kernel, KernelKey *, XXH128_hash_t,
-                              uint32_t size, std::vector<void *> *kernel_params,
-                              const std::vector<uint32_t> *) {
+Task *
+LLVMThreadState::launch(Kernel kernel, KernelKey * /*key*/,
+                        XXH128_hash_t /*hash*/, uint32_t size,
+                        std::vector<void *> *kernel_params,
+                        const std::vector<uint32_t> * /*kernel_param_ids*/) {
     Task *ret_task = nullptr;
 
     uint32_t packet_size = jitc_llvm_vector_width,

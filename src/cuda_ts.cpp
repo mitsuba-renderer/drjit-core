@@ -41,9 +41,11 @@ static void submit_gpu(KernelType type, CUfunction kernel, uint32_t block_count,
     }
 }
 
-Task *CUDAThreadState::launch(Kernel kernel, KernelKey *, XXH128_hash_t,
-                              uint32_t size, std::vector<void *> *kernel_params,
-                              const std::vector<uint32_t> *) {
+Task *
+CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
+                        XXH128_hash_t /*hash*/, uint32_t size,
+                        std::vector<void *> *kernel_params,
+                        const std::vector<uint32_t> * /*kernel_param_ids*/) {
 
     uint32_t kernel_param_count = kernel_params->size();
 
