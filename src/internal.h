@@ -653,7 +653,11 @@ struct ThreadState {
     ThreadState() = default;
     ThreadState(const ThreadState &other) = default;
 
-    /// Inserts a barrier task
+    /// Schedules a barrier taks.
+    /// Ensures that all kernel kernel launches are executed after all tasks
+    /// scheduled before the barrier.
+    /// This should be called after multiple kernels are scheduled to run in
+    /// parallel, to synchronize execution.
     virtual void barrier() = 0;
 
     virtual Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
@@ -715,6 +719,8 @@ struct ThreadState {
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
                                  uint32_t exp, uint32_t size) = 0;
 
+    /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
+    /// This is required for kernel freezing.
     virtual void notify_free(const void *ptr) = 0;
 };
 

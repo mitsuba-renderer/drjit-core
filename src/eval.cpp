@@ -725,6 +725,8 @@ void jitc_eval_impl(ThreadState *ts) {
         jitc_run(ts, group);
     }
 
+    // Ensure that subsequent kernel launches are not started before all
+    // currently scheduled tasks have finished.
     ts->barrier();
 
     /* Variables and their dependencies are now computed, hence internal edges
