@@ -654,10 +654,10 @@ struct ThreadState {
     ThreadState(const ThreadState &other) = default;
 
     /// Schedules a barrier taks.
-    /// Ensures that all kernel kernel launches are executed after all tasks
-    /// scheduled before the barrier.
-    /// This should be called after multiple kernels are scheduled to run in
-    /// parallel, to synchronize execution.
+    /// The barrier ensures that subsequently launched kernel can't start to run
+    /// until all kernels in the current launch have finished.
+    /// This should be called after a set of kernels have been launched in
+    /// parallel.
     virtual void barrier() = 0;
 
     virtual Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
