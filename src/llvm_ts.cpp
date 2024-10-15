@@ -290,6 +290,11 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
 static std::vector<Task *> scheduled_tasks;
 
 void LLVMThreadState::barrier() {
+    // All tasks in 'scheduled_tasks' have 'jitc_task' (if present) as parent.
+    // To create a barrier, we release 'jitc_task' and initialize it with a new
+    // dummy task that has all members of 'scheduled_tasks' as parents. This
+    // allows groups of kernel launches to run in parallel, while serializing
+    // subsequent groups.
     if (scheduled_tasks.size() == 1) {
         task_release(jitc_task);
         jitc_task = scheduled_tasks[0];
