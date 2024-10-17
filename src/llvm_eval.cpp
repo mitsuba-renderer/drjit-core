@@ -513,7 +513,22 @@ static void jitc_llvm_render(Variable *v) {
             break;
 
         case VarKind::Not:
-            fmt("    $v = xor $V, $s\n", v, a0, jitc_llvm_ones_str[v->type]);
+            if (jitc_is_float(v)) {
+                VarType itype;
+                switch ((VarType) v->type) {
+                    case VarType::Float16: itype = VarType::UInt16; break;
+                    case VarType::Float32: itype = VarType::UInt32; break;
+                    case VarType::Float64: itype = VarType::UInt64; break;
+                    default: jitc_fail("jit_var_eval(): internal error while compiling VarKind::Not");
+                }
+                fmt("    $v_0 = bitcast $V to $B\n"
+                    "    $v_1 = xor $B $v_0, $s\n"
+                    "    $v = bitcast $B $v_1 to $T\n",
+                    v, a0, v, v, v, v, jitc_llvm_ones_str[(int) itype],
+                    v, v, v, v);
+            } else {
+                fmt("    $v = xor $V, $s\n", v, a0, jitc_llvm_ones_str[v->type]);
+            }
             break;
 
         case VarKind::Sqrt:

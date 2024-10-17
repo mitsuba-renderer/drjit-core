@@ -175,7 +175,7 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
         jitc_var_inc_ref(i_t, v_t);
         jitc_var_inc_ref(i_f, v_f);
         jitc_var_inc_ref(pred);
-        uint32_t index_2 = jitc_var_new(v2);
+        uint32_t index_2 = jitc_var_new(v2, true);
         cd->indices_out.emplace_back(
             index_2,
             jitc_var(index_2)->counter
