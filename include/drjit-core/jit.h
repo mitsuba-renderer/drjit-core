@@ -201,7 +201,7 @@ extern JIT_EXPORT void *jit_cuda_lookup(const char *name);
  *
  * An event will be recorded into the thread's states stream and the external stream
  * will wait on the event before performing any subsequent work.
- * 
+ *
  * \param stream The CUstream handle of the external stream
  */
 extern JIT_EXPORT void jit_cuda_sync_stream(uintptr_t stream);
@@ -2332,6 +2332,10 @@ extern JIT_EXPORT void jit_profile_range_pop();
 // ====================================================================
 //                               Other
 // ====================================================================
+
+/// Query/set the status of variable leak warnings
+extern JIT_EXPORT int jit_leak_warnings();
+extern JIT_EXPORT void jit_set_leak_warnings(int value);
 
 /// Return the item size of a JIT variable type
 extern JIT_EXPORT size_t jit_type_size(JIT_ENUM VarType type) JIT_NOEXCEPT;

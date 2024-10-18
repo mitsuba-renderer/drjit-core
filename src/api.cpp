@@ -1489,3 +1489,11 @@ uint32_t jit_var_reverse(uint32_t index) {
     lock_guard guard(state.lock);
     return jitc_var_reverse(index);
 }
+
+int jit_leak_warnings() {
+    return (int) state.leak_warnings;
+}
+
+void jit_set_leak_warnings(int value) {
+    state.leak_warnings = (bool) value;
+}

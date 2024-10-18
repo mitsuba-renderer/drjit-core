@@ -843,6 +843,9 @@ struct State {
     /// Kernel launch history
     KernelHistory kernel_history = KernelHistory();
 
+    /// Print variable leak warnings?
+    bool leak_warnings = true;
+
 #if defined(DRJIT_ENABLE_OPTIX)
     /// Default OptiX pipeline for testcases etc.
     OptixPipelineData *optix_default_pipeline = nullptr;

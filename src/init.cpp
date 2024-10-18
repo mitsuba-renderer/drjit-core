@@ -159,7 +159,7 @@ void jitc_shutdown(int light) {
             scoped_set_context guard(ts->context);
             cuda_check(cuStreamSynchronize(ts->stream));
         }
-        if (!ts->mask_stack.empty())
+        if (!ts->mask_stack.empty() && state.leak_warnings)
             jitc_log(Warn, "jit_shutdown(): leaked %zu active masks!",
                      ts->mask_stack.size());
     }
@@ -234,9 +234,10 @@ void jitc_shutdown(int light) {
             if (!ts->prefix_stack.empty()) {
                 for (char *s : ts->prefix_stack)
                     free(s);
-                jitc_log(Warn,
-                         "jit_shutdown(): leaked %zu prefix stack entries.",
-                         ts->prefix_stack.size());
+                if (state.leak_warnings)
+                    jitc_log(Warn,
+                             "jit_shutdown(): leaked %zu prefix stack entries.",
+                             ts->prefix_stack.size());
                 free(ts->prefix);
             }
 
@@ -252,8 +253,9 @@ void jitc_shutdown(int light) {
                         kv.first.dep[0], kv.first.dep[1], kv.first.dep[2],
                         kv.first.dep[3]);
 
-            jitc_log(Warn, "jit_shutdown(): detected a common subexpression "
-                           "elimination cache leak (see above).");
+            if (state.leak_warnings)
+                jitc_log(Warn, "jit_shutdown(): detected a common subexpression "
+                               "elimination cache leak (see above).");
         }
 
         pool_destroy();
@@ -263,7 +265,8 @@ void jitc_shutdown(int light) {
     thread_state_llvm = nullptr;
     thread_state_cuda = nullptr;
 
-    if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn) {
+    if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn &&
+        state.leak_warnings) {
         size_t n_leaked = state.variables.size() - state.unused_variables.size() - 1;
 
         if (n_leaked > 0) {
