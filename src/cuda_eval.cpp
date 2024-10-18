@@ -1005,6 +1005,8 @@ static void jitc_cuda_render_trace(const Variable *v,
     if (disabled) {
         for (uint32_t i = 0; i < 32; ++i)
             fmt("    mov.b32 $v_out_$u, 0;\n", v, i);
+        if (some_masked)
+            fmt("\nl_masked_$u:\n", v->reg_index);
         return;
     }
 
