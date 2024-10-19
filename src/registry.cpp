@@ -39,6 +39,7 @@ struct Ptr {
 // Per-domain information: a forward map (index-> pointer) and a list of unused entries
 struct Domain {
     const char *name;
+    JitBackend backend;
     uint32_t id_bound;
     std::vector<Ptr> fwd_map;
     std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>
@@ -76,6 +77,7 @@ uint32_t jitc_registry_put(JitBackend backend, const char *domain_name, void *pt
         r.domains.emplace_back();
         Domain &domain = r.domains.back();
         domain.name = domain_name;
+        domain.backend = backend;
         domain.id_bound = 0;
     }
 
@@ -149,11 +151,36 @@ uint32_t jitc_registry_id(const void *ptr) {
 
 uint32_t jitc_registry_id_bound(JitBackend backend, const char *domain) {
     Registry &r = registry;
+    if (!domain) {
+        uint32_t i = 0;
+        for (Domain &domain : r.domains) {
+            if (domain.backend == backend)
+                for (auto ptr : domain.fwd_map)
+                    if (ptr.active)
+                        i++;
+        }
+        return i;
+    }
     auto it = r.domain_ids.find(DomainKey{ backend, domain });
     if (it == r.domain_ids.end())
         return 0;
     else
         return r.domains[it->second].id_bound;
+}
+
+void jitc_registry_fill_ptrs(JitBackend backend, void **dest) {
+    Registry &r = registry;
+
+    uint32_t i = 0;
+    for (Domain &domain : r.domains) {
+        if (domain.backend == backend)
+            for (auto ptr : domain.fwd_map) {
+                if (ptr.active) {
+                    dest[i] = ptr.ptr;
+                    i++;
+                }
+            }
+    }
 }
 
 void *jitc_registry_ptr(JitBackend backend, const char *domain_name, uint32_t id) {

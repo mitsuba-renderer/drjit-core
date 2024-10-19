@@ -983,6 +983,11 @@ uint32_t jit_registry_id_bound(JitBackend backend, const char *domain) {
     return jitc_registry_id_bound(backend, domain);
 }
 
+void jit_registry_fill_ptrs(JitBackend backend, void **dest) {
+    lock_guard guard(state.lock);
+    return jitc_registry_fill_ptrs(backend, dest);
+}
+
 void *jit_registry_ptr(JitBackend backend, const char *domain, uint32_t id) {
     lock_guard guard(state.lock);
     return jitc_registry_ptr(backend, domain, id);
