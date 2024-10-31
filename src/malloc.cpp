@@ -511,15 +511,17 @@ void jitc_malloc_shutdown() {
     for (int i = 0; i < (int) AllocType::Count; ++i)
         total += leak_count[i];
 
-    if (total > 0) {
-        jitc_log(Warn, "jit_malloc_shutdown(): leaked");
-        for (int i = 0; i < (int) AllocType::Count; ++i) {
-            if (leak_count[i] == 0)
-                continue;
+    if (jit_leak_warnings()) {
+        if (total > 0) {
+            jitc_log(Warn, "jit_malloc_shutdown(): leaked");
+            for (int i = 0; i < (int) AllocType::Count; ++i) {
+                if (leak_count[i] == 0)
+                    continue;
 
-            jitc_log(Warn, " - %s memory: %s in %zu allocation%s",
-                    alloc_type_name[i], jitc_mem_string(leak_size[i]),
-                    leak_count[i], leak_count[i] > 1 ? "s" : "");
+                jitc_log(Warn, " - %s memory: %s in %zu allocation%s",
+                        alloc_type_name[i], jitc_mem_string(leak_size[i]),
+                        leak_count[i], leak_count[i] > 1 ? "s" : "");
+            }
         }
     }
 }
