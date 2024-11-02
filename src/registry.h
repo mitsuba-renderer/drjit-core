@@ -22,12 +22,13 @@ extern void jitc_registry_remove(const void *ptr);
 extern uint32_t jitc_registry_id(const void *ptr);
 
 /// Return the largest instance ID for the given domain
-/// If the \c domain is a nullptr, it returns the largest instance ID for the given backend
+/// If the \c domain is a nullptr, it returns the number of active entries in
+/// all domains for the given backend
 extern uint32_t jitc_registry_id_bound(JitBackend backend, const char *domain);
 
 /// Fills the \c dest pointer array with all pointers registered in the registry
 /// \c dest has to point to an array with \c jit_registry_id_bound(backend, nullptr) entries
-void extern jitc_registry_fill_ptrs(JitBackend backend, void **dest);
+void extern jitc_registry_get_pointers(JitBackend backend, void **dest);
 
 /// Return the pointer value associated with a given instance ID
 extern void *jitc_registry_ptr(JitBackend backend, const char *domain, uint32_t id);

@@ -152,14 +152,14 @@ uint32_t jitc_registry_id(const void *ptr) {
 uint32_t jitc_registry_id_bound(JitBackend backend, const char *domain) {
     Registry &r = registry;
     if (!domain) {
-        uint32_t i = 0;
+        uint32_t n = 0;
         for (Domain &domain : r.domains) {
             if (domain.backend == backend)
                 for (auto ptr : domain.fwd_map)
                     if (ptr.active)
-                        i++;
+                        n++;
         }
-        return i;
+        return n;
     }
     auto it = r.domain_ids.find(DomainKey{ backend, domain });
     if (it == r.domain_ids.end())
@@ -168,16 +168,16 @@ uint32_t jitc_registry_id_bound(JitBackend backend, const char *domain) {
         return r.domains[it->second].id_bound;
 }
 
-void jitc_registry_fill_ptrs(JitBackend backend, void **dest) {
-    Registry &r = registry;
+void jitc_registry_get_pointers(JitBackend backend, void **dest) {
+    const Registry &r = registry;
 
-    uint32_t i = 0;
-    for (Domain &domain : r.domains) {
+    uint32_t n = 0;
+    for (const Domain &domain : r.domains) {
         if (domain.backend == backend)
             for (auto ptr : domain.fwd_map) {
                 if (ptr.active) {
-                    dest[i] = ptr.ptr;
-                    i++;
+                    dest[n] = ptr.ptr;
+                    n++;
                 }
             }
     }
