@@ -997,7 +997,7 @@ static void jitc_cuda_render_trace(const Variable *v,
     if (valid->is_literal()) {
         if (valid->literal == 0)
             disabled = true;
-    } else {
+    } else if (!disabled) {
         fmt("    @!$v bra l_masked_$u;\n", valid, v->reg_index);
         some_masked = true;
     }
