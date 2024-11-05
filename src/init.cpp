@@ -464,6 +464,15 @@ void jitc_sync_thread(ThreadState *ts) {
         Task *task = jitc_task;
         if (!task)
             return;
+
+        /* task_wait allows other tasks from the thread pool to be
+         * started on this thread while we wait.
+         *
+         * However we don't want the ThreadState dynamic internal
+         * variables (e.g. scheduled, side_effects, mask_stack) to
+         * be shared across these tasks
+         */
+        scoped_reset_thread_state ts_guard(ts);
         {
             unlock_guard guard(state.lock);
             task_wait(task);
@@ -721,4 +730,20 @@ void KernelHistory::clear() {
 /// Default implementations of ThreadState functions
 ThreadState::~ThreadState() { }
 void ThreadState::barrier() { }
+void ThreadState::reset_state() {
+    scheduled.clear();
+    side_effects.clear();
+    side_effects_symbolic.clear();
+    mask_stack.clear();
+    prefix_stack.clear();
+    record_stack.clear();
+    prefix = nullptr;
+    scope = 2;
+    call_self_value = 0;
+    call_self_index = 0;
+#if defined(DRJIT_ENABLE_OPTIX)
+    optix_pipeline = nullptr;
+    optix_sbt = nullptr;
+#endif
+}
 void ThreadState::notify_free(const void *) { }

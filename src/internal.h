@@ -565,7 +565,7 @@ struct WeakRef {
 struct KernelKey;
 
 /// Represents a single stream of a parallel communication
-struct ThreadState {
+struct ThreadStateBase {
     /// Backend type
     JitBackend backend;
 
@@ -647,8 +647,10 @@ struct ThreadState {
     OptixPipelineData *optix_pipeline = nullptr;
     OptixShaderBindingTable *optix_sbt = nullptr;
 #endif
+};
 
 
+struct ThreadState : public ThreadStateBase {
     virtual ~ThreadState();
     ThreadState() = default;
     ThreadState(const ThreadState &other) = default;
@@ -717,6 +719,26 @@ struct ThreadState {
     /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
     /// This is required for kernel freezing.
     virtual void notify_free(const void *ptr);
+
+    /// Reset internal dynamic state
+    void reset_state();
+};
+
+/// RAII helper for scoped reset dynamic thread state
+class scoped_reset_thread_state {
+public:
+    scoped_reset_thread_state(ThreadState* ts) :ts(ts), cached_ts(*ts) {
+        ts->reset_state();
+    }
+
+    ~scoped_reset_thread_state() {
+        *ts = std::move(cached_ts);
+    }
+    scoped_reset_thread_state(const scoped_reset_thread_state &) = delete;
+    scoped_reset_thread_state &operator=(const scoped_reset_thread_state &) = delete;
+private:
+    ThreadStateBase* ts = nullptr;
+    ThreadStateBase cached_ts;
 };
 
 /// Key data structure for kernel source code & device ID
