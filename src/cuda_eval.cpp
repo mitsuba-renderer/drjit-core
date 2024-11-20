@@ -708,8 +708,11 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::Gather: {
                 bool index_zero = a1->is_literal() && a1->literal == 0;
-                bool is_masked = !a2->is_literal() || a2->literal != 1;
+                bool unmasked = a2->is_literal() && a2->literal == 1;
                 bool is_bool = v->type == (uint32_t) VarType::Bool;
+
+                if (!unmasked)
+                    fmt("    @!$v bra l_$u_masked;\n", a2, v->reg_index);
 
                 if (index_zero) {
                     fmt("    mov.u64 %rd3, $v;\n", a0);
@@ -721,21 +724,19 @@ static void jitc_cuda_render(Variable *v) {
                         a1, a1, v, a0);
                 }
 
-                if (is_masked) {
-                    if (is_bool)
-                        fmt("    mov.b16 %w0, 0;\n");
-                    else
-                        fmt("    mov.$b $v, 0;\n", v, v);
-                    fmt("    @$v ", a2);
+                if (is_bool) {
+                    fmt("    ld.global.nc.u8 %w0, [%rd3];\n"
+                        "    setp.ne.u16 $v, %w0, 0;\n", v);
                 } else {
-                    put("    ");
+                    fmt("    ld.global.nc.$t $v, [%rd3];\n", v, v);
                 }
 
-                if (is_bool)
-                    fmt("ld.global.nc.u8 %w0, [%rd3];\n"
-                        "    setp.ne.u16 $v, %w0, 0;\n", v);
-                else
-                    fmt("ld.global.nc.$b $v, [%rd3];\n", v, v);
+                if (!unmasked)
+                    fmt("    bra.uni l_$u_done;\n\n"
+                        "l_$u_masked:\n"
+                        "    mov.$b $v, 0;\n\n"
+                        "l_$u_done:\n", v->reg_index,
+                        v->reg_index, v, v, v->reg_index);
             }
             break;
 
