@@ -575,7 +575,7 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::Select:
             if (!jitc_is_bool(a1)) {
-                fmt("    selp.$b $v, $v, $v, $v;\n", v, v, a1, a2, a0);
+                fmt("    selp.$t $v, $v, $v, $v;\n", v, v, a1, a2, a0);
             } else {
                 fmt("    and.pred %p3, $v, $v;\n"
                     "    and.pred %p2, !$v, $v;\n"
