@@ -18,6 +18,7 @@
 #include "loop.h"
 #include "trace.h"
 #include "call.h"
+#include "texture.h"
 #include <set>
 
 std::vector<CallData *> calls_assembled;
@@ -600,6 +601,10 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
         call->use_thread_id = true;
     } else if (kind == VarKind::CallInput) {
         return;
+    } else if (kind == VarKind::TexLookup) {
+        TexLookupData *tld = (TexLookupData*) v->data;
+        if (tld->active)
+            jitc_var_call_analyze(call, inst_id, tld->active, data_offset);
     } else if (kind == VarKind::Call) {
         CallData *call2 = (CallData *) v->data;
         call->use_self  |= call2->use_self;

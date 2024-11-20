@@ -20,6 +20,7 @@
 #include "trace.h"
 #include "op.h"
 #include "array.h"
+#include "texture.h"
 #include <tsl/robin_set.h>
 
 // ====================================================================
@@ -200,6 +201,13 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
                 PacketScatterData *psd = (PacketScatterData *) v->data;
                 for (uint32_t i : psd->values)
                     jitc_var_traverse(size, i, depth);
+            }
+            break;
+
+        case VarKind::TexLookup: {
+                TexLookupData *tld = (TexLookupData*) v->data;
+                if (tld->active)
+                    jitc_var_traverse(size, tld->active, depth);
             }
             break;
 

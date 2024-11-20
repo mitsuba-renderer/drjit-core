@@ -48,6 +48,7 @@
 #include "loop.h"
 #include "optix.h"
 #include "trace.h"
+#include "texture.h"
 #include "cuda_eval.h"
 #include "cuda_array.h"
 #include "cuda_scatter.h"
@@ -790,19 +791,14 @@ static void jitc_cuda_render(Variable *v) {
             fmt("    mov.u32 $v, self;\n", v);
             break;
 
-        case VarKind::TexLookup:
+        case VarKind::TexLookup: {
             fmt("    .reg.$t $v_out_<4>;\n", v, v);
 
-            if (v->literal /* masked */) {
-                fmt("    mov.v4.$b {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, {0, 0, 0, 0};\n"
-                    "    setp.ne.b64 %p3, $v, 0;\n"
-                    "    @%p3 ",
-                    v, v, v, v, v,
-                    a0);
-            } else {
-                put("    ");
-            }
+            uint32_t active = ((TexLookupData *) v->data)->active;
+            if (active)
+                fmt("    @!$v bra l_$u_masked;\n", jitc_var(active), v->reg_index);
 
+            put("    ");
             if (a3)
                 fmt("tex.3d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}];\n",
                     v, v, v, v, v, a0, a1, a2, a3, a3);
@@ -812,6 +808,14 @@ static void jitc_cuda_render(Variable *v) {
             else
                 fmt("tex.1d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}];\n",
                     v, v, v, v, v, a0, a1);
+
+            if (active)
+                fmt("    bra.uni l_$u_done;\n\n"
+                    "l_$u_masked:\n"
+                    "    mov.v4.$b {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, {0, 0, 0, 0};\n\n"
+                    "l_$u_done:\n",
+                    v->reg_index, v->reg_index, v, v, v, v, v, v->reg_index);
+            }
             break;
 
         case VarKind::TexFetchBilerp:

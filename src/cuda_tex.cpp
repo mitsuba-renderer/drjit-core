@@ -4,6 +4,7 @@
 #include "var.h"
 #include "op.h"
 #include "eval.h"
+#include "texture.h"
 #include <string.h>
 #include <memory>
 #include <atomic>
@@ -182,7 +183,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         texture->arrays[tex] = array;
 
         if (tex_channels == 1)
-            view_desc.format = format == 0 ? 
+            view_desc.format = format == 0 ?
                 CU_RES_VIEW_FORMAT_FLOAT_1X32 : CU_RES_VIEW_FORMAT_FLOAT_1X16;
         else if (tex_channels == 2)
             view_desc.format = format == 0 ?
@@ -542,22 +543,31 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
         // Perform a fetch per texture ..
         v.kind = (uint32_t) VarKind::TexLookup;
         memset(v.dep, 0, sizeof(v.dep));
+
         const Variable *active_v = jitc_var(active);
         if (active_v->is_literal() && active_v->literal == 1) {
-            v.dep[0] = tex.indices[ti];
-            jitc_var_inc_ref(tex.indices[ti]);
-            v.literal = 0;
-        } else {
-            v.literal = 1; // encode a masked operation
-            uint64_t zero_i = 0;
-            Ref zero = steal(jitc_var_literal((JitBackend) v.backend, VarType::Pointer, &zero_i, 1, 0));
-            v.dep[0] = jitc_var_select(active, tex.indices[ti], zero);
+            active = 0;
         }
+        std::unique_ptr<TexLookupData> tex_lookup_data(new TexLookupData(active));
+
+        v.dep[0] = tex.indices[ti];
+        jitc_var_inc_ref(tex.indices[ti]);
+
         for (size_t j = 0; j < ndim; ++j) {
             v.dep[j + 1] = pos[j];
             jitc_var_inc_ref(pos[j]);
         }
+
+        v.data = tex_lookup_data.get();
         Ref tex_load = steal(jitc_var_new(v));
+
+        jitc_var_set_callback(
+            tex_load,
+            [](uint32_t, int free, void *p) {
+                if (free)
+                    delete (TexLookupData *) p;
+            },
+            tex_lookup_data.release(), true);
 
         // .. and then extract components
         v.kind = (uint32_t) VarKind::Extract;
