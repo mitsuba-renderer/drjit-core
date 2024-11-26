@@ -91,7 +91,8 @@ extern void jitc_var_call(const char *domain, bool symbolic, uint32_t self,
 
 extern void jitc_call_upload(ThreadState *ts);
 
-extern CallBucket *jitc_var_call_reduce(JitBackend backend, const char *domain,
+extern CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
+                                        const char *domain, uint32_t scope,
                                         uint32_t index,
                                         uint32_t *bucket_count_out);
 
