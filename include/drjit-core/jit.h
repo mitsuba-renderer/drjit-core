@@ -480,8 +480,8 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  * Raises an exception when ``ptr`` is ``nullptr``, or when it has already been
  * registered with *any* domain.
  */
-extern JIT_EXPORT uint32_t jit_registry_put(JIT_ENUM JitBackend backend,
-                                            const char *domain, void *ptr);
+extern JIT_EXPORT uint32_t jit_registry_put(const char *variant, const char *domain,
+                                            uint32_t scope, void *ptr);
 
 /**
  * \brief Remove a pointer from the registry
@@ -494,21 +494,24 @@ extern JIT_EXPORT void jit_registry_remove(const void *ptr);
 extern JIT_EXPORT uint32_t jit_registry_id(const void *ptr);
 
 /// Return the largest instance ID for the given domain
-/// If the \c domain is a nullptr, it returns the number of active entries in
-/// all domains for the given backend
-extern JIT_EXPORT uint32_t jit_registry_id_bound(JitBackend backend,
-                                                 const char *domain);
+/// If the \c domain is \c nullptr, it returns the number of active entries in
+/// all domains for the given variant.
+extern JIT_EXPORT uint32_t jit_registry_id_bound(const char *variant,
+                                                 const char *domain,
+                                                 uint32_t scope);
 
-/// Fills the \c dest pointer array with all pointers registered in the registry
-/// \c dest has to point to an array with \c jit_registry_id_bound(backend, nullptr) entries
-extern JIT_EXPORT void jit_registry_get_pointers(JitBackend backend, void **dest);
+/// Fills the \c dest pointer array with all pointers registered in the registry.
+/// \c dest must point to an array with \c jit_registry_id_bound(variant, nullptr) entries.
+extern JIT_EXPORT void jit_registry_get_pointers(const char *variant, void **dest);
 
 /// Return the pointer value associated with a given instance ID
-extern JIT_EXPORT void *jit_registry_ptr(JitBackend backend,
-                                         const char *domain, uint32_t id);
+extern JIT_EXPORT void *jit_registry_ptr(const char *variant,
+                                         const char *domain, uint32_t scope,
+                                         uint32_t id);
 
 /// Return an arbitrary pointer value associated with a given domain
-extern JIT_EXPORT void *jit_registry_peek(JitBackend backend, const char *domain);
+extern JIT_EXPORT void *jit_registry_peek(const char *variant,
+                                          const char *domain, uint32_t scope);
 
 /// Disable any instances that are currently registered in the registry
 extern JIT_EXPORT void jit_registry_clear();
@@ -2175,8 +2178,9 @@ struct CallBucket {
  * set of instances.
  */
 extern JIT_EXPORT struct CallBucket *
-jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *domain,
-                     uint32_t index, uint32_t *bucket_count_inout);
+jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *variant,
+                    const char *domain, uint32_t scope, uint32_t index,
+                    uint32_t *bucket_count_inout);
 
 /**
  * \brief Insert a function call to a ray tracing functor into the LLVM program

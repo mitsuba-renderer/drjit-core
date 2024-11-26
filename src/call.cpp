@@ -7,18 +7,20 @@
     license that can be found in the LICENSE file.
 */
 
+#include <set>
+#include <string.h>
+
+#include "call.h"
+#include "eval.h"
 #include "internal.h"
 #include "log.h"
-#include "var.h"
-#include "eval.h"
-#include "registry.h"
-#include "util.h"
+#include "loop.h"
 #include "op.h"
 #include "profile.h"
-#include "loop.h"
+#include "registry.h"
 #include "trace.h"
-#include "call.h"
-#include <set>
+#include "util.h"
+#include "var.h"
 
 std::vector<CallData *> calls_assembled;
 
@@ -688,7 +690,8 @@ void jitc_call_upload(ThreadState *ts) {
 }
 
 // Compute a permutation to reorder an array of registered pointers
-CallBucket *jitc_var_call_reduce(JitBackend backend, const char *domain,
+CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
+                                 const char *domain, uint32_t scope,
                                  uint32_t index, uint32_t *bucket_count_inout) {
 
     struct CallReduceRecord {
@@ -711,7 +714,7 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *domain,
 
     uint32_t bucket_count;
     if (domain)
-        bucket_count = jitc_registry_id_bound(backend, domain);
+        bucket_count = jitc_registry_id_bound(variant, domain, scope);
     else
         bucket_count = *bucket_count_inout;
 
@@ -796,7 +799,7 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *domain,
 
         CallBucket bucket_out;
         if (domain)
-            bucket_out.ptr = jitc_registry_ptr(backend, domain, bucket.id);
+            bucket_out.ptr = jitc_registry_ptr(variant, domain, scope, bucket.id);
         else
             bucket_out.ptr = nullptr;
 

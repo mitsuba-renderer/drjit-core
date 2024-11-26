@@ -72,7 +72,9 @@ namespace drjit {
 template <size_t n_callables, size_t n_inputs, size_t n_outputs>
 void symbolic_call(
         JitBackend backend,
+        const char* variant,
         const char* domain,
+        uint32_t scope,
         bool symbolic,
         uint32_t self,
         uint32_t mask,
@@ -101,10 +103,10 @@ void symbolic_call(
 
                 uint32_t call_index =  (uint32_t) i + 1;
 
-                void *ptr = jit_registry_ptr(backend, domain,
-                    call_index);
+                void *ptr =
+                    jit_registry_ptr(variant, domain, scope, call_index);
 
-                scoped_set_self set_self(backend, 
+                scoped_set_self set_self(backend,
                     call_index);
 
                 call(ptr, call_inputs, &rv_values[i * n_outputs]);
@@ -201,7 +203,7 @@ TEST_BOTH(01_recorded_vcall) {
 
         Float y = Float::steal(outputs[0]);
 
-        jit_assert(strcmp(y.str(), 
+        jit_assert(strcmp(y.str(),
             "[0, 22, 204, 0, 28, 210, 0, 34, 216, 0]") == 0);
     }
 
@@ -286,7 +288,7 @@ TEST_BOTH(02_calling_conventions) {
 
         Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
-        uint32_t inputs[n_inputs] = { 
+        uint32_t inputs[n_inputs] = {
             p0.index(), p1.index(), p2.index(), p3.index(), p4.index() };
         uint32_t outputs[n_outputs] = { 0 };
 
@@ -508,7 +510,7 @@ TEST_BOTH(04_extra_data) {
                 outputs);
 
             Float result = Float::steal(outputs[0]);
-            jit_assert(strcmp(result.str(), 
+            jit_assert(strcmp(result.str(),
                 "[0, 9, 13, 0, 21, 28, 0, 33, 43, 0]") == 0);
         }
     }

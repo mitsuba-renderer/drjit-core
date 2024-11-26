@@ -963,9 +963,10 @@ uint32_t jit_mkperm(JitBackend backend, const uint32_t *values, uint32_t size,
     return jitc_mkperm(backend, values, size, bucket_count, perm, offsets);
 }
 
-uint32_t jit_registry_put(JitBackend backend, const char *domain, void *ptr) {
+uint32_t jit_registry_put(const char *variant, const char *domain,
+                          uint32_t scope, void *ptr) {
     lock_guard guard(state.lock);
-    return jitc_registry_put(backend, domain, ptr);
+    return jitc_registry_put(variant, domain, scope, ptr);
 }
 
 void jit_registry_remove(const void *ptr) {
@@ -978,24 +979,27 @@ uint32_t jit_registry_id(const void *ptr) {
     return jitc_registry_id(ptr);
 }
 
-uint32_t jit_registry_id_bound(JitBackend backend, const char *domain) {
+uint32_t jit_registry_id_bound(const char *variant, const char *domain,
+                               uint32_t scope) {
     lock_guard guard(state.lock);
-    return jitc_registry_id_bound(backend, domain);
+    return jitc_registry_id_bound(variant, domain, scope);
 }
 
-void jit_registry_get_pointers(JitBackend backend, void **dest) {
+void jit_registry_get_pointers(const char *variant, void **dest) {
     lock_guard guard(state.lock);
-    return jitc_registry_get_pointers(backend, dest);
+    return jitc_registry_get_pointers(variant, dest);
 }
 
-void *jit_registry_ptr(JitBackend backend, const char *domain, uint32_t id) {
+void *jit_registry_ptr(const char *variant, const char *domain, uint32_t scope,
+                       uint32_t id) {
     lock_guard guard(state.lock);
-    return jitc_registry_ptr(backend, domain, id);
+    return jitc_registry_ptr(variant, domain, scope, id);
 }
 
-void *jit_registry_peek(JitBackend backend, const char *domain) {
+void *jit_registry_peek(const char *variant, const char *domain,
+                        uint32_t scope) {
     lock_guard guard(state.lock);
-    return jitc_registry_peek(backend, domain);
+    return jitc_registry_peek(variant, domain, scope);
 }
 
 void jit_registry_clear() {
@@ -1030,11 +1034,13 @@ void jit_aggregate(JitBackend backend, void *dst, AggregationEntry *agg,
     return jitc_aggregate(backend, dst, agg, size);
 }
 
-struct CallBucket *
-jit_var_call_reduce(JitBackend backend, const char *domain, uint32_t index,
-                     uint32_t *bucket_count_inout) {
+struct CallBucket *jit_var_call_reduce(JitBackend backend, const char *variant,
+                                       const char *domain, uint32_t scope,
+                                       uint32_t index,
+                                       uint32_t *bucket_count_inout) {
     lock_guard guard(state.lock);
-    return jitc_var_call_reduce(backend, domain, index, bucket_count_inout);
+    return jitc_var_call_reduce(backend, variant, domain, scope, index,
+                                bucket_count_inout);
 }
 
 void jit_kernel_history_clear() {
