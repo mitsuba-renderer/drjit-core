@@ -144,6 +144,20 @@ void symbolic_call(
     }
 }
 
+const char *backend_name(JitBackend backend) {
+    switch (backend) {
+        case JitBackend::CUDA:
+            return "CUDA";
+        case JitBackend::LLVM:
+            return "LLVM";
+        case JitBackend::None:
+            return "None";
+        default:
+            throw std::runtime_error("Unsupported backend");
+    }
+}
+
+
 TEST_BOTH(01_recorded_vcall) {
     /// Test a simple virtual function call
     struct Base {
@@ -170,8 +184,10 @@ TEST_BOTH(01_recorded_vcall) {
     const size_t n_inputs       = 1;
     const size_t n_outputs      = 1;
 
-    uint32_t i1 = jit_registry_put(Backend, domain, &a1);
-    uint32_t i2 = jit_registry_put(Backend, domain, &a2);
+    uint32_t i1 = jit_registry_put(backend_name(Backend),
+                                   domain, /* scope */ 0, &a1);
+    uint32_t i2 = jit_registry_put(backend_name(Backend),
+                                   domain, /* scope */ 0, &a2);
     jit_assert(i1 == 1 && i2 == 2);
 
     using BasePtr = Array<Base *>;
@@ -194,7 +210,10 @@ TEST_BOTH(01_recorded_vcall) {
         Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
         symbolic_call<n_callables, n_inputs, n_outputs>(
-            Backend, domain,
+            Backend,
+            backend_name(Backend),
+            domain,
+            0, /* scope */
             false, /* symbolic */
             self.index(), mask.index(),
             f_call,
@@ -252,9 +271,12 @@ TEST_BOTH(02_calling_conventions) {
     const size_t n_inputs       = 5;
     const size_t n_outputs      = 5;
 
-    uint32_t i1 = jit_registry_put(Backend, "Base", &b1);
-    uint32_t i2 = jit_registry_put(Backend, "Base", &b2);
-    uint32_t i3 = jit_registry_put(Backend, "Base", &b3);
+    uint32_t i1 =
+        jit_registry_put(backend_name(Backend), "Base", /* scope */ 0, &b1);
+    uint32_t i2 =
+        jit_registry_put(backend_name(Backend), "Base", /* scope */ 0, &b2);
+    uint32_t i3 =
+        jit_registry_put(backend_name(Backend), "Base", /* scope */ 0, &b3);
     (void) i1; (void) i2; (void) i3;
 
     auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
@@ -293,7 +315,10 @@ TEST_BOTH(02_calling_conventions) {
         uint32_t outputs[n_outputs] = { 0 };
 
         symbolic_call<n_callables, n_inputs, n_outputs>(
-            Backend, domain,
+            Backend,
+            backend_name(Backend),
+            domain,
+            0, /* scope */
             false, /* symbolic */
             self.index(), mask.index(),
             f_call,
@@ -350,8 +375,10 @@ TEST_BOTH(03_devirtualize) {
     const size_t n_outputs      = 3;
 
     D1 d1; D2 d2;
-    uint32_t i1 = jit_registry_put(Backend, domain, &d1);
-    uint32_t i2 = jit_registry_put(Backend, domain, &d2);
+    uint32_t i1 =
+        jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &d1);
+    uint32_t i2 =
+        jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &d2);
     jit_assert(i1 == 1 && i2 == 2);
 
     using BasePtr = Array<Base *>;
@@ -391,7 +418,10 @@ TEST_BOTH(03_devirtualize) {
             uint32_t outputs[n_outputs] = { 0 };
 
             symbolic_call<n_callables, n_inputs, n_outputs>(
-                Backend, domain,
+                Backend,
+                backend_name(Backend),
+                domain,
+                0, /* scope */
                 false, /* symbolic */
                 self.index(), call_mask.index(),
                 f_call,
@@ -469,8 +499,10 @@ TEST_BOTH(04_extra_data) {
     const size_t n_outputs      = 1;
 
     E1 e1; E2 e2;
-    uint32_t i1 = jit_registry_put(Backend, domain, &e1);
-    uint32_t i2 = jit_registry_put(Backend, domain, &e2);
+    uint32_t i1 =
+        jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &e1);
+    uint32_t i2 =
+        jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &e2);
     jit_assert(i1 == 1 && i2 == 2);
 
     auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
@@ -502,7 +534,10 @@ TEST_BOTH(04_extra_data) {
             uint32_t outputs[n_outputs] = { 0 };
 
             symbolic_call<n_callables, n_inputs, n_outputs>(
-                Backend, domain,
+                Backend,
+                backend_name(Backend),
+                domain,
+                0, /* scope */
                 false, /* symbolic */
                 self.index(), mask.index(),
                 f_call,
@@ -561,14 +596,19 @@ TEST_BOTH_FP32(05_side_effects) {
         jit_set_flag(JitFlag::OptimizeCalls, i);
 
         F1 f1; F2 f2;
-        uint32_t i1 = jit_registry_put(Backend, domain, &f1);
-        uint32_t i2 = jit_registry_put(Backend, domain, &f2);
+        uint32_t i1 =
+            jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &f1);
+        uint32_t i2 =
+            jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &f2);
         jit_assert(i1 == 1 && i2 == 2);
 
         Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
         symbolic_call<n_callables, n_inputs, n_outputs>(
-            Backend, domain,
+            Backend,
+            backend_name(Backend),
+            domain,
+            0, /* scope */
             false, /* symbolic */
             self.index(), mask.index(),
             f_call,
@@ -629,8 +669,10 @@ TEST_BOTH_FP32(06_side_effects_only_once) {
         jit_set_flag(JitFlag::OptimizeCalls, i);
 
         G1 g1; G2 g2;
-        uint32_t i1 = jit_registry_put(Backend, domain, &g1);
-        uint32_t i2 = jit_registry_put(Backend, domain, &g2);
+        uint32_t i1 =
+            jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &g1);
+        uint32_t i2 =
+            jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &g2);
         jit_assert(i1 == 1 && i2 == 2);
 
         uint32_t outputs[n_outputs] = { 0 };
@@ -638,7 +680,10 @@ TEST_BOTH_FP32(06_side_effects_only_once) {
         Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
         symbolic_call<n_callables, n_inputs, n_outputs>(
-            Backend, domain,
+            Backend,
+            backend_name(Backend),
+            domain,
+            0, /* scope */
             false, /* symbolic */
             self.index(), mask.index(),
             f_call,
@@ -694,8 +739,10 @@ TEST_BOTH(07_multiple_calls) {
     Float x = opaque<Float>(10, 1);
 
     H1 h1; H2 h2;
-    uint32_t i1 = jit_registry_put(Backend, domain, &h1);
-    uint32_t i2 = jit_registry_put(Backend, domain, &h2);
+    uint32_t i1 =
+        jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &h1);
+    uint32_t i2 =
+        jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &h2);
     jit_assert(i1 == 1 && i2 == 2);
 
     auto f_call = [](void *self2, uint32_t* inputs, uint32_t* outputs) {
@@ -716,7 +763,10 @@ TEST_BOTH(07_multiple_calls) {
         uint32_t outputs[n_outputs] = { 0 };
 
         symbolic_call<n_callables, n_inputs, n_outputs>(
-            Backend, domain,
+            Backend,
+            backend_name(Backend),
+            domain,
+            0, /* scope */
             false, /* symbolic */
             self.index(), mask.index(),
             f_call,
@@ -727,7 +777,10 @@ TEST_BOTH(07_multiple_calls) {
         inputs[0] = y.index();
 
         symbolic_call<n_callables, n_inputs, n_outputs>(
-            Backend, domain,
+            Backend,
+            backend_name(Backend),
+            domain,
+            0, /* scope */
             false, /* symbolic */
             self.index(), mask.index(),
             f_call,
@@ -778,12 +831,14 @@ TEST_BOTH(08_big) {
 
     for (int i = 0; i < n1; ++i) {
         v1[i].v = (Float) (float) i;
-        i1[i] = jit_registry_put(Backend, domain1, &v1[i]);
+        i1[i] = jit_registry_put(backend_name(Backend), domain1, /* scope */ 0,
+                                 &v1[i]);
     }
 
     for (int i = 0; i < n2; ++i) {
         v2[i].v = (Float) (100.f + (float) i);
-        i2[i] = jit_registry_put(Backend, domain2, &v2[i]);
+        i2[i] = jit_registry_put(backend_name(Backend), domain2, /* scope */ 0,
+                                 &v2[i]);
     }
 
     using Base1Ptr = Array<Base1 *>;
@@ -820,7 +875,10 @@ TEST_BOTH(08_big) {
         uint32_t outputs2[n_outputs] = { 0 };
 
         symbolic_call<n1, n_inputs, n_outputs>(
-            Backend, domain1,
+            Backend,
+            backend_name(Backend),
+            domain1,
+            0, /* scope */
             false, /* symbolic */
             self1.index(), mask1.index(),
             f_call1,
@@ -828,7 +886,10 @@ TEST_BOTH(08_big) {
             outputs1);
 
         symbolic_call<n2, n_inputs, n_outputs>(
-            Backend, domain2,
+            Backend,
+            backend_name(Backend),
+            domain2,
+            0, /* scope */
             false, /* symbolic */
             self2.index(), mask2.index(),
             f_call2,
@@ -878,8 +939,10 @@ TEST_BOTH(09_self) {
     const size_t n_outputs      = 1;
 
     I i1, i2;
-    uint32_t i1_id = jit_registry_put(Backend, domain, &i1);
-    uint32_t i2_id = jit_registry_put(Backend, domain, &i2);
+    uint32_t i1_id =
+        jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &i1);
+    uint32_t i2_id =
+        jit_registry_put(backend_name(Backend), domain, /* scope */ 0, &i2);
 
     UInt32 self(i1_id, i2_id);
 
@@ -895,7 +958,10 @@ TEST_BOTH(09_self) {
     Mask mask = Mask::steal(jit_var_mask_default(Backend, self.size()));
 
     symbolic_call<n_callables, n_inputs, n_outputs>(
-        Backend, domain,
+        Backend,
+        backend_name(Backend),
+        domain,
+        0, /* scope */
         false, /* symbolic */
         self.index(), mask.index(),
         f_call,
@@ -945,7 +1011,10 @@ TEST_BOTH(10_recursion) {
             Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
             symbolic_call<n_callables, n_inputs, n_outputs>(
-                Backend, "Base1",
+                Backend,
+                backend_name(Backend),
+                "Base1",
+                0, /* scope */
                 true, /* symbolic */
                 ptr.index(), mask.index(),
                 f_call,
@@ -960,10 +1029,14 @@ TEST_BOTH(10_recursion) {
     i11.c = 2;
     i12.c = 3;
     I2 i21, i22;
-    uint32_t i11_id = jit_registry_put(Backend, "Base1", &i11);
-    uint32_t i12_id = jit_registry_put(Backend, "Base1", &i12);
-    uint32_t i21_id = jit_registry_put(Backend, "Base2", &i21);
-    uint32_t i22_id = jit_registry_put(Backend, "Base2", &i22);
+    uint32_t i11_id =
+        jit_registry_put(backend_name(Backend), "Base1", /* scope */ 0, &i11);
+    uint32_t i12_id =
+        jit_registry_put(backend_name(Backend), "Base1", /* scope */ 0, &i12);
+    uint32_t i21_id =
+        jit_registry_put(backend_name(Backend), "Base2", /* scope */ 0, &i21);
+    uint32_t i22_id =
+        jit_registry_put(backend_name(Backend), "Base2", /* scope */ 0, &i22);
 
     const size_t n_callables    = 2;
     const size_t n_inputs       = 2;
@@ -988,7 +1061,10 @@ TEST_BOTH(10_recursion) {
     Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
     symbolic_call<n_callables, n_inputs, n_outputs>(
-        Backend, "Base2",
+        Backend,
+        backend_name(Backend),
+        "Base2",
+        0, /* scope */
         false, /* symbolic */
         self2.index(), mask.index(),
         f_call,
@@ -1039,7 +1115,10 @@ TEST_BOTH(11_recursion_with_local) {
             Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
             symbolic_call<n_callables, n_inputs, n_outputs>(
-                Backend, "Base1",
+                Backend,
+                backend_name(Backend),
+                "Base1",
+                0, /* scope */
                 true, /* symbolic */
                 ptr.index(), mask.index(),
                 f_call,
@@ -1054,10 +1133,14 @@ TEST_BOTH(11_recursion_with_local) {
     i11.c = dr::opaque<Float>(2);
     i12.c = dr::opaque<Float>(3);
     I2 i21, i22;
-    uint32_t i11_id = jit_registry_put(Backend, "Base1", &i11);
-    uint32_t i12_id = jit_registry_put(Backend, "Base1", &i12);
-    uint32_t i21_id = jit_registry_put(Backend, "Base2", &i21);
-    uint32_t i22_id = jit_registry_put(Backend, "Base2", &i22);
+    uint32_t i11_id =
+        jit_registry_put(backend_name(Backend), "Base1", /* scope */ 0, &i11);
+    uint32_t i12_id =
+        jit_registry_put(backend_name(Backend), "Base1", /* scope */ 0, &i12);
+    uint32_t i21_id =
+        jit_registry_put(backend_name(Backend), "Base2", /* scope */ 0, &i21);
+    uint32_t i22_id =
+        jit_registry_put(backend_name(Backend), "Base2", /* scope */ 0, &i22);
 
     const size_t n_callables    = 2;
     const size_t n_inputs       = 2;
@@ -1082,7 +1165,10 @@ TEST_BOTH(11_recursion_with_local) {
     Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
     symbolic_call<n_callables, n_inputs, n_outputs>(
-        Backend, "Base2",
+        Backend,
+        backend_name(Backend),
+        "Base2",
+        0, /* scope */
         false, /* symbolic */
         self2.index(), mask.index(),
         f_call,
@@ -1124,7 +1210,10 @@ TEST_BOTH_FP32(12_nested_with_side_effects) {
             };
 
             symbolic_call<n_callables, n_inputs, n_outputs>(
-                Backend, "Base",
+                Backend,
+                backend_name(Backend),
+                "Base",
+                0, /* scope */
                 true, /* symbolic */
                 self.index(), mask.index(),
                 f_call,
@@ -1162,14 +1251,19 @@ TEST_BOTH_FP32(12_nested_with_side_effects) {
         jit_set_flag(JitFlag::OptimizeCalls, i);
 
         F1 f1; F2 f2;
-        uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
-        uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
+        uint32_t i1 =
+            jit_registry_put(backend_name(Backend), "Base", /* scope */ 0, &f1);
+        uint32_t i2 =
+            jit_registry_put(backend_name(Backend), "Base", /* scope */ 0, &f2);
         jit_assert(i1 == 1 && i2 == 2);
 
         Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
         symbolic_call<n_callables, n_inputs, n_outputs>(
-            Backend, "Base",
+            Backend,
+            backend_name(Backend),
+            "Base",
+            0, /* scope */
             false, /* symbolic */
             self.index(), mask.index(),
             f_call,
@@ -1228,8 +1322,10 @@ TEST_BOTH(13_load_bool_data) {
         jit_set_flag(JitFlag::OptimizeCalls, i);
 
         F1 f1; F2 f2;
-        uint32_t i1 = jit_registry_put(Backend, "Base", &f1);
-        uint32_t i2 = jit_registry_put(Backend, "Base", &f2);
+        uint32_t i1 =
+            jit_registry_put(backend_name(Backend), "Base", /* scope */ 0, &f1);
+        uint32_t i2 =
+            jit_registry_put(backend_name(Backend), "Base", /* scope */ 0, &f2);
         jit_assert(i1 == 1 && i2 == 2);
 
         uint32_t outputs[n_outputs] = { 0 };
@@ -1237,7 +1333,10 @@ TEST_BOTH(13_load_bool_data) {
         Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
         symbolic_call<n_callables, n_inputs, n_outputs>(
-            Backend, "Base",
+            Backend,
+            backend_name(Backend),
+            "Base",
+            0, /* scope */
             false, /* symbolic */
             self.index(), mask.index(),
             f_call,
