@@ -13,27 +13,23 @@
 #include "registry.h"
 #include "log.h"
 
-// Dr.Jit maintains an ID registry per variant, class and scope.
+// Dr.Jit maintains an ID registry per variant and domain (e.g. class).
 // This class separates multiple parallel data structures maintaining
 // this information.
 struct DomainKey {
     const char *variant;
     const char *domain;
-    uint32_t scope;
 
     struct Eq {
         bool operator()(DomainKey k1, DomainKey k2) const {
             return (strcmp(k1.variant, k2.variant) == 0)
-                && (strcmp(k1.domain, k2.domain) == 0)
-                && (k1.scope == k2.scope);
+                && (strcmp(k1.domain, k2.domain) == 0);
         }
     };
 
     struct Hash {
         size_t operator()(DomainKey k) const {
-            // TODO: is this a correct way to combine hashes?
-            return hash_str(k.variant, (size_t) k.scope)
-                 ^ hash_str(k.domain, (size_t) k.scope);
+            return hash_str(k.variant, 0) ^ hash_str(k.domain, 1);
         }
     };
 };
@@ -69,8 +65,7 @@ struct Registry {
 static Registry registry;
 
 /// Register a pointer with Dr.Jit's pointer registry
-uint32_t jitc_registry_put(const char *variant, const char *domain_name,
-                           uint32_t scope, void *ptr) {
+uint32_t jitc_registry_put(const char *variant, const char *domain_name, void *ptr) {
     Registry &r = registry;
 
     auto [it1, result1] =
@@ -79,8 +74,8 @@ uint32_t jitc_registry_put(const char *variant, const char *domain_name,
         jitc_raise("jit_registry_put(domain=\"%s\", ptr=%p): pointer is "
                    "already registered!", domain_name, ptr);
 
-    // Allocate a domain entry for the key (variant, domain, scope) if unregistered
-    auto [it2, result2] = r.domain_ids.try_emplace(DomainKey{ variant, domain_name, scope },
+    // Allocate a domain entry for the key (variant, domain) if unregistered
+    auto [it2, result2] = r.domain_ids.try_emplace(DomainKey{ variant, domain_name },
                                                    (uint32_t) r.domains.size());
     if (result2) {
         r.domains.emplace_back();
@@ -158,8 +153,7 @@ uint32_t jitc_registry_id(const void *ptr) {
     return it->second.index + 1;
 }
 
-uint32_t jitc_registry_id_bound(const char *variant, const char *domain,
-                                uint32_t scope) {
+uint32_t jitc_registry_id_bound(const char *variant, const char *domain) {
     assert(variant != nullptr);
     Registry &r = registry;
     if (!domain) {
@@ -172,7 +166,7 @@ uint32_t jitc_registry_id_bound(const char *variant, const char *domain,
         }
         return n;
     }
-    auto it = r.domain_ids.find(DomainKey{ variant, domain, scope });
+    auto it = r.domain_ids.find(DomainKey{ variant, domain });
     if (it == r.domain_ids.end())
         return 0;
     else
@@ -194,21 +188,20 @@ void jitc_registry_get_pointers(const char *variant, void **dest) {
     }
 }
 
-void *jitc_registry_ptr(const char *variant, const char *domain_name,
-                        uint32_t scope, uint32_t id) {
+void *jitc_registry_ptr(const char *variant, const char *domain_name, uint32_t id) {
     if (id == 0)
         return nullptr;
 
     Registry &r = registry;
-    auto it = r.domain_ids.find(DomainKey{ variant, domain_name, scope });
+    auto it = r.domain_ids.find(DomainKey{ variant, domain_name });
     void *ptr = nullptr;
 
     if (it != r.domain_ids.end()) {
         Domain &domain = r.domains[it->second];
         if (id - 1 >= domain.fwd_map.size())
-            jitc_raise("jit_registry_ptr(variant=\"%s\", domain=\"%s\", scope=%u, id=%u):"
+            jitc_raise("jit_registry_ptr(variant=\"%s\", domain=\"%s\", id=%u):"
                        " instance is not registered!",
-                       variant, domain_name, scope, id);
+                       variant, domain_name, id);
         Ptr entry = domain.fwd_map[id - 1];
         if (entry.active)
             ptr = entry.ptr;
@@ -217,10 +210,9 @@ void *jitc_registry_ptr(const char *variant, const char *domain_name,
     return ptr;
 }
 
-void *jitc_registry_peek(const char *variant, const char *domain,
-                         uint32_t scope) {
+void *jitc_registry_peek(const char *variant, const char *domain) {
     Registry &r = registry;
-    auto it = r.domain_ids.find(DomainKey{ variant, domain, scope });
+    auto it = r.domain_ids.find(DomainKey{ variant, domain });
     void *ptr = nullptr;
 
     if (it != r.domain_ids.end()) {
