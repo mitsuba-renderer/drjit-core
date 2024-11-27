@@ -691,8 +691,8 @@ void jitc_call_upload(ThreadState *ts) {
 
 // Compute a permutation to reorder an array of registered pointers
 CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
-                                 const char *domain, uint32_t scope,
-                                 uint32_t index, uint32_t *bucket_count_inout) {
+                                 const char *domain, uint32_t index,
+                                 uint32_t *bucket_count_inout) {
 
     struct CallReduceRecord {
         CallBucket *buckets;
@@ -714,7 +714,7 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
 
     uint32_t bucket_count;
     if (domain)
-        bucket_count = jitc_registry_id_bound(variant, domain, scope);
+        bucket_count = jitc_registry_id_bound(variant, domain);
     else
         bucket_count = *bucket_count_inout;
 
@@ -799,7 +799,7 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
 
         CallBucket bucket_out;
         if (domain)
-            bucket_out.ptr = jitc_registry_ptr(variant, domain, scope, bucket.id);
+            bucket_out.ptr = jitc_registry_ptr(variant, domain, bucket.id);
         else
             bucket_out.ptr = nullptr;
 
