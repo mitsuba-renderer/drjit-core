@@ -1,3 +1,4 @@
+#include "drjit-core/jit.h"
 #include "test.h"
 #include "traits.h"
 
@@ -1301,4 +1302,84 @@ TEST_BOTH(13_load_bool_data) {
         jit_registry_remove(&f1);
         jit_registry_remove(&f2);
     }
+}
+
+/**
+ * This tests that it is possible to record vcalls in a frozen function.
+ * The registry has to stay constant between recording and replaying the frozen
+ * function. This is ensured in the python FrozenFunction.
+ * We do not test accessing a member field of any of the classes, as this would
+ * require registry traversal which requires nanobind for the \c
+ * nanobind::intrusive_base class.
+ */
+TEST_BOTH(14_frozen_vcall) {
+    jit_set_flag(JitFlag::VCallOptimize, true);
+    jit_set_flag(JitFlag::SymbolicCalls, true);
+
+    struct Base {
+        virtual UInt32 f(UInt32 x) = 0;
+    };
+
+    struct A1 : Base {
+        UInt32 f(UInt32 x) override { return x + 1; }
+    };
+
+    struct A2 : Base {
+        UInt32 f(UInt32 x) override { return x + 2; }
+    };
+
+    A1 a1;
+    A2 a2;
+
+    const char *domain       = "Base";
+    const size_t n_callables = 2;
+    const size_t n_inputs    = 1;
+    const size_t n_outputs   = 1;
+
+    uint32_t i1 = jit_registry_put(Backend, domain, &a1);
+    uint32_t i2 = jit_registry_put(Backend, domain, &a2);
+    jit_assert(i1 == 1 && i2 == 2);
+
+    using BasePtr = Array<Base *>;
+
+    auto f_call = [](void *self, uint32_t *inputs, uint32_t *outputs) {
+        Base *base = (Base *) self;
+        UInt32 x  = UInt32::borrow(inputs[0]);
+        UInt32 y  = base->f(x);
+        jit_var_inc_ref(y.index());
+
+        outputs[0] = y.index();
+    };
+
+    auto func = [n_inputs, n_outputs, &f_call, &domain](UInt32 self, UInt32 x) {
+        uint32_t vcall_inputs[n_inputs]   = { x.index() };
+        uint32_t vcall_outputs[n_outputs] = { 0 };
+
+        Mask mask = Mask::steal(jit_var_bool(Backend, true));
+
+        symbolic_call<n_callables, n_inputs, n_outputs>(
+            Backend, domain, false, self.index(), mask.index(), f_call,
+            vcall_inputs, vcall_outputs);
+
+        auto result = UInt32::borrow(vcall_outputs[0]);
+
+        return result;
+    };
+
+    FrozenFunction frozen(Backend, func);
+
+    for (uint32_t i = 0; i < 3; i++) {
+        // The size of the base pointer is changed when replaying
+        BasePtr self = (arange<UInt32>(10 + i) + i) % 3;
+        UInt32 x     = arange<UInt32>(10 + i) + i;
+
+        auto result = frozen(self, x);
+
+        auto reference = func(self, x);
+
+        jit_assert(all(eq(result, reference)));
+    }
+
+    jit_registry_remove(&a1);
+    jit_registry_remove(&a2);
 }
