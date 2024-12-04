@@ -247,9 +247,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
              width = jitc_llvm_vector_width;
 
     if (backend == JitBackend::CUDA) {
-        uintptr_t size = 0;
-        memcpy(&size, &group.size, sizeof(uint32_t));
-        kernel_params.push_back((void *) size);
+        kernel_params.push_back((void *) (uintptr_t) group.size);
 
         // The first 3 variables are reserved on the CUDA backend
         n_regs = 4;

@@ -490,3 +490,12 @@ void jitc_llvm_compile(Kernel &kernel) {
         jitc_fail("jit_llvm_compile(): VirtualProtect() failed: %u", GetLastError());
 #endif
 }
+
+std::pair<uint32_t, uint32_t> jitc_llvm_expand_replication_factor(uint32_t size, uint32_t tsize) {
+    uint32_t workers = pool_size() + 1;
+    // 1 cache line per worker for scalar targets, otherwise be a bit more
+    // reasonable
+    uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u;
+
+    return std::pair(workers, replication_per_worker);
+}
