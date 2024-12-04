@@ -107,3 +107,10 @@ extern void jitc_llvm_set_target(const char *target_cpu,
 /// Insert a ray tracing function call into the LLVM program
 extern void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
                                 const uint32_t *in, uint32_t *out);
+
+/// Computes the workers and replication_per_worker factors for the
+/// ``jitc_var_expand`` function, given the size and type size.
+/// ``jitc_var_expand`` Expands a variable to a larger storage area to avoid
+/// atomic scatter.
+extern std::pair<uint32_t, uint32_t>
+jitc_llvm_expand_replication_factor(uint32_t size, uint32_t tsize);
