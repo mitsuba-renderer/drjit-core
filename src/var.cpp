@@ -15,6 +15,7 @@
 #include "util.h"
 #include "op.h"
 #include "registry.h"
+#include "llvm.h"
 
 /// Descriptive names for the various variable types
 const char *type_name[(int) VarType::Count] {
@@ -2389,13 +2390,12 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
     Variable *v = jitc_var(index);
     VarType vt = (VarType) v->type;
 
-    uint32_t tsize = ::type_size[v->type],
-             workers = pool_size() + 1,
-             size = v->size;
+    uint32_t tsize = ::type_size[v->type], size = v->size;
 
-    // 1 cache line per worker for scalar targets, otherwise be a bit more reasonable
-    uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u,
-             index_scale = replication_per_worker * size;
+    auto [workers, replication_per_worker] =
+        jitc_llvm_expand_replication_factor(size, tsize);
+
+    uint32_t index_scale = replication_per_worker * size;
 
     if (workers == 1) {
         jitc_var_inc_ref(index);
