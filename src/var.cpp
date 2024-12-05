@@ -1405,7 +1405,7 @@ uint32_t jitc_var_schedule_force(uint32_t index, int *rv) {
 
 
 /// Evaluate the variable \c index right away if it is unevaluated/dirty.
-int jitc_var_eval(uint32_t index) {
+int jitc_var_eval(uint32_t index, bool raise_dirty_error) {
     if (!jitc_var_schedule(index))
         return 0;
 
@@ -1413,7 +1413,7 @@ int jitc_var_eval(uint32_t index) {
     jitc_eval(thread_state(v->backend));
 
     v = jitc_var(index);
-    if (unlikely(v->is_dirty()))
+    if (unlikely(v->is_dirty() && raise_dirty_error))
         jitc_raise_dirty_error(index);
     else if (unlikely(!v->is_evaluated() || !v->data))
         jitc_raise("jit_var_eval(): invalid/uninitialized variable r%u!", index);

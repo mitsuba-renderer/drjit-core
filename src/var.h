@@ -163,7 +163,7 @@ extern void jitc_var_eval_literal(uint32_t index, Variable *v);
 extern void jitc_var_eval_undefined(uint32_t index, Variable *v);
 
 /// Evaluate the variable \c index right away, if it is unevaluated/dirty.
-extern int jitc_var_eval(uint32_t index);
+extern int jitc_var_eval(uint32_t index, bool raise_dirty_error = true);
 
 /// Return the pointer location of the variable, evaluate if needed
 extern uint32_t jitc_var_data(uint32_t index, bool eval_dirty, void **ptr_out);

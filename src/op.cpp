@@ -2385,10 +2385,12 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // operation like dr.if_stmt()), then use that instead.
     target_v = jitc_var(target);
 
+    // Flush any potential conflicting writes by evaluating the target before the scatter
     if (target_v->is_dirty() && op == ReduceOp::Identity
                              && mode != ReduceMode::Permute
                              && mode != ReduceMode::NoConflicts) {
-        jitc_var_eval(target);
+        bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
+        jitc_var_eval(target, raise_dirty_error);
         target_v = jitc_var(target);
     }
 
@@ -2499,10 +2501,12 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     const uint32_t target_size = target_v->size;
     const JitBackend backend = var_info.backend;
 
+    // Flush any potential conflicting writes by evaluating the target before the scatter
     if (target_v->is_dirty() && op == ReduceOp::Identity
                              && mode != ReduceMode::Permute
                              && mode != ReduceMode::NoConflicts) {
-        jitc_var_eval(target);
+        bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
+        jitc_var_eval(target, raise_dirty_error);
         jitc_var_eval(index_);
         jitc_var_eval(mask);
 
