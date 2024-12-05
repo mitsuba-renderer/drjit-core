@@ -2385,6 +2385,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // operation like dr.if_stmt()), then use that instead.
     target_v = jitc_var(target);
 
+    // Avoid any write contention by evaluating the target before the scatter
     if (target_v->is_dirty() && op == ReduceOp::Identity
                              && mode != ReduceMode::Permute
                              && mode != ReduceMode::NoConflicts) {
@@ -2499,6 +2500,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     const uint32_t target_size = target_v->size;
     const JitBackend backend = var_info.backend;
 
+    // Avoid any write contention by evaluating target before the scatter
     if (target_v->is_dirty() && op == ReduceOp::Identity
                              && mode != ReduceMode::Permute
                              && mode != ReduceMode::NoConflicts) {

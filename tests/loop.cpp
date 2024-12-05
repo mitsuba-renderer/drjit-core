@@ -686,3 +686,82 @@ TEST_BOTH(08_eval_side_effect_in_loop) {
         jit_assert(strcmp(j.str(), "[12, 13, 11]") == 0);
     }
 }
+
+TEST_BOTH(09_test_multiple_scatter_loop) {
+    // Tests that we can scatter multiple times in loop body
+
+    jit_set_flag(JitFlag::KernelHistory, true);
+    jit_set_flag(JitFlag::LoopOptimize, false);
+
+    UInt32 i = zeros<UInt32>(10);
+    UInt32 target = zeros<UInt32>(10);
+
+    jit_kernel_history_clear();
+
+    scatter(target, UInt32(1), UInt32(0), true);
+    {
+        uint32_t var_indices[1] = { i.index() };
+        dr::scoped_record record_guard(Backend);
+
+        Ref loop = steal(jit_var_loop_start("MyLoop",
+            false, /* symbolic */
+            1, var_indices));
+
+        UInt32 il = UInt32::steal(var_indices[0]);
+
+        do {
+            Mask active_i = il < 1;
+
+            Mask active = Mask::steal(jit_var_mask_apply(
+                active_i.index(), (uint32_t) jit_var_size(active_i.index())));
+
+            Ref loop_cond = steal(jit_var_loop_cond(loop, active.index()));
+
+            scatter(target, UInt32(1), UInt32(1), active);
+            scatter(target, UInt32(1), UInt32(2), active);
+            scatter(target, UInt32(1), UInt32(3), active);
+
+            il += 1;
+
+            var_indices[0] = il.index();
+
+            int rv = jit_var_loop_end(loop, loop_cond, var_indices,
+                record_guard.checkpoint);
+
+            // All done
+            if (rv) {
+                i = UInt32::steal(var_indices[0]);
+                record_guard.disarm();
+                break;
+            }
+
+        } while (true);
+    }
+
+    scatter(target, UInt32(1), UInt32(4), true);
+
+    jit_assert(strcmp(target.str(), "[1, 1, 1, 1, 1, 0, 0, 0, 0, 0]") == 0);
+
+    size_t kernel_launches = 0;
+    {
+        KernelHistoryEntry *data = jit_kernel_history();
+        KernelHistoryEntry *e = data;
+        while (e && (uint32_t) e->backend) {
+            if (e->type == KernelType::JIT) {
+                kernel_launches++;
+            }
+
+            free(e->ir);
+            e++;
+        }
+    }
+
+    jit_kernel_history_clear();
+
+    // One for initial scatter
+    // One for loop
+    // One for post scatter
+    jit_assert(kernel_launches == 3);
+
+    jit_set_flag(JitFlag::KernelHistory, false);
+}
