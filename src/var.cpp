@@ -1413,7 +1413,7 @@ int jitc_var_eval(uint32_t index) {
     jitc_eval(thread_state(v->backend));
 
     v = jitc_var(index);
-    if (unlikely(v->is_dirty()))
+    if (unlikely(!jit_flag(JitFlag::SymbolicScope) && v->is_dirty()))
         jitc_raise_dirty_error(index);
     else if (unlikely(!v->is_evaluated() || !v->data))
         jitc_raise("jit_var_eval(): invalid/uninitialized variable r%u!", index);
