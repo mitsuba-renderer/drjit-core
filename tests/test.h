@@ -144,3 +144,8 @@ private:
     LogLevel m_stderr_level;
 };
 
+template <typename Array>
+Array tile(const Array &source, uint32_t count) {
+    return Array::steal(jit_var_tile(source.index(), count));
+}
+

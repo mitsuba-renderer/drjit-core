@@ -2144,10 +2144,10 @@ uint32_t jitc_var_tile(uint32_t index, uint32_t block_size) {
 
     jitc_check_size("jit_var_tile", out_size);
 
-    uint64_t bsize_u64 = block_size, one_u64 = 1;
+    uint64_t vsize_u64 = size, one_u64 = 1;
     Ref counter = steal(jitc_var_counter(backend, out_size, true)),
-        bsize   = steal(jitc_var_literal(backend, VarType::UInt32, &bsize_u64, 1, 0)),
-        offset  = steal(jitc_var_div(counter, bsize)),
+        vsize   = steal(jitc_var_literal(backend, VarType::UInt32, &vsize_u64, 1, 0)),
+        offset  = steal(jitc_var_mod(counter, vsize)),
         t_mask  = steal(jitc_var_literal(backend, VarType::Bool, &one_u64, 1, 0));
 
     return jitc_var_gather(index, offset, t_mask);
