@@ -391,3 +391,11 @@ TEST_BOTH_FLOAT_AGNOSTIC(13_mask_conflict) {
 
     jit_assert(ctr_1.read(0) == 1 && ctr_2.read(0) == 2);
 }
+
+TEST_BOTH_FLOAT_AGNOSTIC(14_tile_simple) {
+    UInt32 x = tile(arange<UInt32>(3), 1);
+    jit_assert(strcmp(x.str(), "[0, 1, 2]") == 0);
+
+    x = tile(arange<UInt32>(3), 3);
+    jit_assert(strcmp(x.str(), "[0, 1, 2, 0, 1, 2, 0, 1, 2]") == 0);
+}
