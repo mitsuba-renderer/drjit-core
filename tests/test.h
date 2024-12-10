@@ -149,3 +149,8 @@ Array tile(const Array &source, uint32_t count) {
     return Array::steal(jit_var_tile(source.index(), count));
 }
 
+template <typename Array>
+Array repeat(const Array &source, uint32_t count) {
+    return Array::steal(jit_var_repeat(source.index(), count));
+}
+

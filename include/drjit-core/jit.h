@@ -1943,8 +1943,11 @@ extern JIT_EXPORT uint32_t jit_var_reduce(JIT_ENUM JitBackend backend,
 extern JIT_EXPORT uint32_t jit_var_block_reduce(JIT_ENUM ReduceOp op, uint32_t index,
                                                 uint32_t block_size, int symbolic);
 
-/// Replicate values of an array into larger blocks
+/// Tile the array into larger blocks
 extern JIT_EXPORT uint32_t jit_var_tile(uint32_t index, uint32_t count);
+
+/// Repeat values of an array into larger blocks
+extern JIT_EXPORT uint32_t jit_var_repeat(uint32_t index, uint32_t count);
 
 /// Perform a dot product reduction of two compatible arrays
 extern JIT_EXPORT uint32_t jit_var_reduce_dot(uint32_t index_1,

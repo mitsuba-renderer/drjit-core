@@ -2136,6 +2136,9 @@ uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size,
 }
 
 uint32_t jitc_var_tile(uint32_t index, uint32_t block_size) {
+    if (index == 0)
+        return 0;
+
     const Variable *v = jitc_var(index);
 
     JitBackend backend = (JitBackend) v->backend;
@@ -2148,6 +2151,27 @@ uint32_t jitc_var_tile(uint32_t index, uint32_t block_size) {
     Ref counter = steal(jitc_var_counter(backend, out_size, true)),
         vsize   = steal(jitc_var_literal(backend, VarType::UInt32, &vsize_u64, 1, 0)),
         offset  = steal(jitc_var_mod(counter, vsize)),
+        t_mask  = steal(jitc_var_literal(backend, VarType::Bool, &one_u64, 1, 0));
+
+    return jitc_var_gather(index, offset, t_mask);
+}
+
+uint32_t jitc_var_repeat(uint32_t index, uint32_t block_size) {
+    if (index == 0)
+        return 0;
+
+    const Variable *v = jitc_var(index);
+
+    JitBackend backend = (JitBackend) v->backend;
+    size_t size = v->size,
+           out_size = size * block_size;
+
+    jitc_check_size("jitc_var_repeat", out_size);
+
+    uint64_t bsize_u64 = block_size, one_u64 = 1;
+    Ref counter = steal(jitc_var_counter(backend, out_size, true)),
+        bsize   = steal(jitc_var_literal(backend, VarType::UInt32, &bsize_u64, 1, 0)),
+        offset  = steal(jitc_var_div(counter, bsize)),
         t_mask  = steal(jitc_var_literal(backend, VarType::Bool, &one_u64, 1, 0));
 
     return jitc_var_gather(index, offset, t_mask);

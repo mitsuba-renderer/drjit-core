@@ -399,3 +399,11 @@ TEST_BOTH_FLOAT_AGNOSTIC(14_tile_simple) {
     x = tile(arange<UInt32>(3), 3);
     jit_assert(strcmp(x.str(), "[0, 1, 2, 0, 1, 2, 0, 1, 2]") == 0);
 }
+
+TEST_BOTH_FLOAT_AGNOSTIC(15_repeat_simple) {
+    UInt32 x = repeat(arange<UInt32>(3), 1);
+    jit_assert(strcmp(x.str(), "[0, 1, 2]") == 0);
+
+    x = repeat(arange<UInt32>(3), 3);
+    jit_assert(strcmp(x.str(), "[0, 0, 0, 1, 1, 1, 2, 2, 2]") == 0);
+}
