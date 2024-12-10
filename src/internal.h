@@ -967,6 +967,12 @@ extern void jitc_set_flags(uint32_t flags);
 
 extern uint32_t jitc_flags();
 
+/// Selectively enables/disables flags
+extern void jitc_set_flag(JitFlag flag, int enable);
+
+/// Checks whether a given flag is active. Returns zero or one.
+extern int jitc_flag(JitFlag flag);
+
 /// Push a new label onto the prefix stack
 extern void jitc_prefix_push(JitBackend backend, const char *label);
 
