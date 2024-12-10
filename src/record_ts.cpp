@@ -1867,9 +1867,7 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
         record_ts->add_input(inputs[i]);
     }
 
-    uint32_t flags = jitc_flags();
-    flags |= (uint32_t) JitFlag::FreezingScope;
-    jitc_set_flags(flags);
+    jitc_set_flag(JitFlag::FreezingScope, true);
 }
 Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
                             uint32_t n_outputs) {
@@ -1884,7 +1882,8 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
 
         jitc_assert(rts->record_stack.empty(),
                     "Kernel recording ended while still recording loop!");
-        
+
+        jitc_set_flag(JitFlag::FreezingScope, false);
         if (rts->m_exception) {
             std::rethrow_exception(rts->m_exception);
         }
@@ -1898,12 +1897,8 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         } else {
             thread_state_llvm = internal;
         }
-        Recording *recording = new Recording(rts->m_recording);
+        Recording *recording = new Recording(std::move(rts->m_recording));
         recording->validate();
-
-        uint32_t flags = jitc_flags();
-        flags &= ~(uint32_t) JitFlag::FreezingScope;
-        jitc_set_flags(flags);
         delete rts;
 
         return recording;
@@ -2137,9 +2132,7 @@ void jitc_freeze_abort(JitBackend backend) {
 
         delete rts;
 
-        uint32_t flags = jitc_flags();
-        flags &= ~(uint32_t) JitFlag::FreezingScope;
-        jitc_set_flags(flags);
+        jitc_set_flag(JitFlag::FreezingScope, false);
     }
 }
 
@@ -2157,7 +2150,7 @@ int jitc_freeze_pause(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
-        jit_set_flag(JitFlag::FreezingScope, false);
+        jitc_set_flag(JitFlag::FreezingScope, false);
         return rts->pause();
     } else {
         jitc_fail(
@@ -2171,7 +2164,7 @@ int jitc_freeze_resume(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
-        jit_set_flag(JitFlag::FreezingScope, true);
+        jitc_set_flag(JitFlag::FreezingScope, true);
         return rts->resume();
     } else {
         jitc_fail(

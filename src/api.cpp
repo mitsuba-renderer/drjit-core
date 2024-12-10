@@ -160,18 +160,11 @@ uint32_t jit_flags() {
 }
 
 void jit_set_flag(JitFlag flag, int enable) {
-    uint32_t flags = jitc_flags();
-
-    if (enable)
-        flags |= (uint32_t) flag;
-    else
-        flags &= ~(uint32_t) flag;
-
-    jitc_set_flags(flags);
+    jitc_set_flag(flag, enable);
 }
 
 int jit_flag(JitFlag flag) {
-    return (jitc_flags() & (uint32_t) flag) ? 1 : 0;
+    return jitc_flag(flag);
 }
 
 uint32_t jit_record_checkpoint(JitBackend backend) {
