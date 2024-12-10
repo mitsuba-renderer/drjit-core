@@ -660,6 +660,21 @@ uint32_t jitc_flags() {
     return jitc_flags_v;
 }
 
+void jitc_set_flag(JitFlag flag, int enable) {
+    uint32_t flags = jitc_flags();
+
+    if (enable)
+        flags |= (uint32_t) flag;
+    else
+        flags &= ~(uint32_t) flag;
+
+    jitc_set_flags(flags);
+}
+
+int jitc_flag(JitFlag flag) {
+    return (jitc_flags() & (uint32_t) flag) ? 1 : 0;
+}
+
 /// ==========================================================================
 
 KernelHistory::KernelHistory() : m_data(nullptr), m_size(0), m_capacity(0) { }
