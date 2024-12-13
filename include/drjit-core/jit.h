@@ -467,10 +467,10 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  *
  * This function registers the specified pointer \c ptr with the registry,
  * returning the associated ID value, which is guaranteed to be unique within
- * the specified domain \c domain. The domain is normally an identifier that is
- * associated with the "flavor" of the pointer (e.g. instances of a particular
- * class), and which ensures that the returned ID values are as low as
- * possible.
+ * the specified domain identified by the \c (variant, domain) strings.
+ * The domain is normally an identifier that is associated with the "flavor"
+ * of the pointer (e.g. instances of a particular class), and which ensures
+ * that the returned ID values are as low as possible.
  *
  * Caution: for reasons of efficiency, the \c domain parameter is assumed to a
  * static constant that will remain alive. The RTTI identifier
@@ -480,7 +480,7 @@ extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
  * Raises an exception when ``ptr`` is ``nullptr``, or when it has already been
  * registered with *any* domain.
  */
-extern JIT_EXPORT uint32_t jit_registry_put(JIT_ENUM JitBackend backend,
+extern JIT_EXPORT uint32_t jit_registry_put(const char *variant,
                                             const char *domain, void *ptr);
 
 /**
@@ -494,21 +494,22 @@ extern JIT_EXPORT void jit_registry_remove(const void *ptr);
 extern JIT_EXPORT uint32_t jit_registry_id(const void *ptr);
 
 /// Return the largest instance ID for the given domain
-/// If the \c domain is a nullptr, it returns the number of active entries in
-/// all domains for the given backend
-extern JIT_EXPORT uint32_t jit_registry_id_bound(JitBackend backend,
+/// If the \c domain is \c nullptr, it returns the number of active entries in
+/// all domains for the given variant.
+extern JIT_EXPORT uint32_t jit_registry_id_bound(const char *variant,
                                                  const char *domain);
 
-/// Fills the \c dest pointer array with all pointers registered in the registry
-/// \c dest has to point to an array with \c jit_registry_id_bound(backend, nullptr) entries
-extern JIT_EXPORT void jit_registry_get_pointers(JitBackend backend, void **dest);
+/// Fills the \c dest pointer array with all pointers registered in the registry.
+/// \c dest must point to an array with \c jit_registry_id_bound(variant, nullptr) entries.
+extern JIT_EXPORT void jit_registry_get_pointers(const char *variant, void **dest);
 
 /// Return the pointer value associated with a given instance ID
-extern JIT_EXPORT void *jit_registry_ptr(JitBackend backend,
+extern JIT_EXPORT void *jit_registry_ptr(const char *variant,
                                          const char *domain, uint32_t id);
 
 /// Return an arbitrary pointer value associated with a given domain
-extern JIT_EXPORT void *jit_registry_peek(JitBackend backend, const char *domain);
+extern JIT_EXPORT void *jit_registry_peek(const char *variant,
+                                          const char *domain);
 
 /// Disable any instances that are currently registered in the registry
 extern JIT_EXPORT void jit_registry_clear();
@@ -2152,13 +2153,14 @@ struct CallBucket {
  *
  * This function expects an array of integers, whose entries correspond to
  * pointers that have previously been registered by calling \ref
- * jit_registry_put() with domain \c domain. It then invokes \ref jit_mkperm()
- * to compute a permutation that reorders the array into coherent buckets. The
- * buckets are returned using an array of type \ref CallBucket, which contains
- * both the resolved pointer address (obtained via \ref
- * jit_registry_get_ptr()) and the variable index of an unsigned 32 bit array
- * containing the corresponding entries of the input array. The total number of
- * buckets is returned via the \c bucket_count_inout argument.
+ * jit_registry_put() with domain \c (variant, domain).
+ * It then invokes \ref jit_mkperm() to compute a permutation that reorders
+ * the array into coherent buckets. The buckets are returned using an array
+ * of type \ref CallBucket, which contains both the resolved pointer address
+ * (obtained via \ref jit_registry_get_ptr()) and the variable index of an
+ * unsigned 32 bit array containing the corresponding entries of the
+ * input array.
+ * The total number of buckets is returned via the \c bucket_count_inout argument.
  *
  * Alternatively, this function can be used to to dispatch using an arbitrary
  * index list. In this case, \c domain should be set to \c nullptr and the
@@ -2175,8 +2177,9 @@ struct CallBucket {
  * set of instances.
  */
 extern JIT_EXPORT struct CallBucket *
-jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *domain,
-                     uint32_t index, uint32_t *bucket_count_inout);
+jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *variant,
+                    const char *domain, uint32_t index,
+                    uint32_t *bucket_count_inout);
 
 /**
  * \brief Insert a function call to a ray tracing functor into the LLVM program
