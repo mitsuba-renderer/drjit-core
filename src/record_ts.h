@@ -100,10 +100,12 @@ struct Operation {
     /// Does this operation use optix?
     bool uses_optix = false;
 
+#if defined(DRJIT_ENABLE_OPTIX)
     /// A copy of the shader binding table including a deepcopy of its hitgroups
     /// and missgroups, used by the kernel. The callables are filled in by the
     /// \c CUDAThreadState::launch function.
     OptixShaderBindingTable *sbt;
+#endif
 };
 
 /// Denotes the type of variable.

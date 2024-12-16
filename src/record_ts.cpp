@@ -293,7 +293,9 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
     if (dynamic_cast<RecordThreadState *>(ts) != nullptr)
         jitc_raise("replay(): Tried to replay while recording!");
 
+#if defined(DRJIT_ENABLE_OPTIX)
     OptixShaderBindingTable *tmp_sbt = ts->optix_sbt;
+#endif
     scoped_set_context_maybe guard2(ts->context);
 
     // Initialize replay_variables
@@ -387,7 +389,9 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
         }
     }
 
+#if defined(DRJIT_ENABLE_OPTIX)
     ts->optix_sbt = tmp_sbt;
+#endif
 
     if (dry_run)
         return true;
@@ -716,6 +720,7 @@ void RecordThreadState::record_launch(
 
     // If this kernel uses optix, we have to copy the shader binding table for
     // replaying
+#if defined(DRJIT_ENABLE_OPTIX)
     if (uses_optix) {
         op.uses_optix = true;
 
@@ -740,6 +745,7 @@ void RecordThreadState::record_launch(
         jitc_memcpy(backend, op.sbt->missRecordBase, optix_sbt->missRecordBase,
                     miss_group_size);
     }
+#endif
 
     // Record max_input_size if we have only pointer inputs.
     // Therefore, if max_input_size > 0 we know this at replay.
@@ -909,14 +915,18 @@ int Recording::replay_launch(Operation &op) {
 
         std::vector<uint32_t> kernel_calls;
         Kernel kernel = op.kernel.kernel;
+#if defined(DRJIT_ENABLE_OPTIX)
         if (op.uses_optix) {
             uses_optix    = true;
             ts->optix_sbt = op.sbt;
         }
+#endif
         ts->launch(kernel, op.kernel.key, op.kernel.hash, launch_size,
                    &kernel_params, nullptr);
+#if defined(DRJIT_ENABLE_OPTIX)
         if (op.uses_optix)
             uses_optix = false;
+#endif
     }
 
     return true;
