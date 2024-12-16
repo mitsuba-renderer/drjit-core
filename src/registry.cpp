@@ -159,7 +159,7 @@ uint32_t jitc_registry_id_bound(const char *variant, const char *domain) {
     if (!domain) {
         uint32_t n = 0;
         for (Domain &d : r.domains) {
-            if (strcmp(d.variant, variant) == 0)
+            if (variant == nullptr || strcmp(d.variant, variant) == 0)
                 for (auto ptr : d.fwd_map)
                     if (ptr.active)
                         n++;
@@ -178,7 +178,7 @@ void jitc_registry_get_pointers(const char *variant, void **dest) {
 
     uint32_t n = 0;
     for (const Domain &domain : r.domains) {
-        if (strcmp(domain.variant, variant) == 0)
+        if (variant == nullptr || strcmp(domain.variant, variant) == 0)
             for (auto ptr : domain.fwd_map) {
                 if (ptr.active) {
                     dest[n] = ptr.ptr;
