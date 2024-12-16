@@ -1332,9 +1332,6 @@ TEST_BOTH(14_frozen_vcall) {
     A2 a2;
 
     const char *domain       = "Base";
-    const size_t n_callables = 2;
-    const size_t n_inputs    = 1;
-    const size_t n_outputs   = 1;
 
     uint32_t i1 = jit_registry_put(backend_name(Backend), domain, &a1);
     uint32_t i2 = jit_registry_put(backend_name(Backend), domain, &a2);
@@ -1351,7 +1348,11 @@ TEST_BOTH(14_frozen_vcall) {
         outputs[0] = y.index();
     };
 
-    auto func = [n_inputs, n_outputs, &f_call, &domain](UInt32 self, UInt32 x) {
+    auto func = [&f_call, &domain](UInt32 self, UInt32 x) {
+        const size_t n_callables = 2;
+        const size_t n_inputs    = 1;
+        const size_t n_outputs   = 1;
+
         uint32_t vcall_inputs[n_inputs]   = { x.index() };
         uint32_t vcall_outputs[n_outputs] = { 0 };
 
