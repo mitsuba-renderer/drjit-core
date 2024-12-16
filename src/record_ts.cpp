@@ -163,12 +163,14 @@ struct ReplayVariable {
             // Copy the variable, so that it isn't changed by this recording.
             // Captured variables are only used for vcall offset buffers, which
             // are not supposed to change between replay calls.
-            index = jitc_var_copy(index);
 
             Variable *v = jitc_var(index);
-            data        = v->data;
             alloc_size  = v->size * type_size[v->type];
             data_size   = alloc_size;
+            if (!dry_run) {
+                index = jitc_var_copy(index);
+                data  = v->data;
+            }
         }
     }
 
@@ -1745,7 +1747,12 @@ int Recording::replay_aggregate(Operation &op) {
 
     size_t agg_size = sizeof(AggregationEntry) * op.size;
 
-    if (backend == JitBackend::CUDA)
+    // In dry-run mode, we allocate a buffer on the CPU to reuse the code for
+    // inferring the size of generated buffers. The pointer is freed at the end
+    // of this function.
+    if (dry_run)
+        agg = (AggregationEntry *) malloc_check(agg_size);
+    else if (backend == JitBackend::CUDA)
         agg = (AggregationEntry *) jitc_malloc(AllocType::HostPinned, agg_size);
     else
         agg = (AggregationEntry *) malloc_check(agg_size);
@@ -1800,6 +1807,9 @@ int Recording::replay_aggregate(Operation &op) {
 
     if (!dry_run)
         ts->aggregate(dst_rv.data, agg, (uint32_t) (p - agg));
+
+    if (dry_run)
+        free(agg);
 
     return true;
 }
@@ -1933,6 +1943,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
  *     The size of the offset buffer in bytes.
  */
 uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
+    jitc_log(LogLevel::Debug, "capture_call_offset(ptr=%p, dsize=%zu)", ptr, dsize);
     uint32_t size = dsize / type_size[(uint32_t) VarType::UInt64];
 
     AllocType atype =
@@ -2151,6 +2162,15 @@ void jitc_freeze_destroy(Recording *recording) {
             jitc_var_dec_ref(rv.index);
         }
     }
+#if defined(DRJIT_ENABLE_OPTIX)
+    for (Operation &op : recording->operations) {
+        if (op.uses_optix){
+            jitc_free(op.sbt->hitgroupRecordBase);
+            jitc_free(op.sbt->missRecordBase);
+            delete op.sbt;
+        }
+    }
+#endif
     delete recording;
 }
 

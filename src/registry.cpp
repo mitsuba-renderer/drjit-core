@@ -155,17 +155,8 @@ uint32_t jitc_registry_id(const void *ptr) {
 
 uint32_t jitc_registry_id_bound(const char *variant, const char *domain) {
     assert(variant != nullptr);
+    assert(domain != nullptr);
     Registry &r = registry;
-    if (!domain) {
-        uint32_t n = 0;
-        for (Domain &d : r.domains) {
-            if (strcmp(d.variant, variant) == 0)
-                for (auto ptr : d.fwd_map)
-                    if (ptr.active)
-                        n++;
-        }
-        return n;
-    }
     auto it = r.domain_ids.find(DomainKey{ variant, domain });
     if (it == r.domain_ids.end())
         return 0;
@@ -173,18 +164,22 @@ uint32_t jitc_registry_id_bound(const char *variant, const char *domain) {
         return r.domains[it->second].id_bound;
 }
 
-void jitc_registry_get_pointers(const char *variant, void **dest) {
+void jitc_registry_get_pointers(const char *variant, const char *domain,
+                                void **dest) {
+    assert(variant != nullptr);
+    assert(domain != nullptr);
     const Registry &r = registry;
-
-    uint32_t n = 0;
-    for (const Domain &domain : r.domains) {
-        if (strcmp(domain.variant, variant) == 0)
-            for (auto ptr : domain.fwd_map) {
-                if (ptr.active) {
-                    dest[n] = ptr.ptr;
-                    n++;
-                }
+    auto it = r.domain_ids.find(DomainKey{ variant, domain });
+    if (it == r.domain_ids.end())
+        return;
+    else{
+        const Domain &d = r.domains[it->second];
+        for (uint32_t i = 0; i < d.fwd_map.size(); i++) {
+            auto ptr = d.fwd_map[i];
+            if (ptr.active) {
+                dest[i] = ptr.ptr;
             }
+        }
     }
 }
 
