@@ -1336,8 +1336,8 @@ TEST_BOTH(14_frozen_vcall) {
     const size_t n_inputs    = 1;
     const size_t n_outputs   = 1;
 
-    uint32_t i1 = jit_registry_put(Backend, domain, &a1);
-    uint32_t i2 = jit_registry_put(Backend, domain, &a2);
+    uint32_t i1 = jit_registry_put(backend_name(Backend), domain, &a1);
+    uint32_t i2 = jit_registry_put(backend_name(Backend), domain, &a2);
     jit_assert(i1 == 1 && i2 == 2);
 
     using BasePtr = Array<Base *>;
@@ -1358,7 +1358,7 @@ TEST_BOTH(14_frozen_vcall) {
         Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
         symbolic_call<n_callables, n_inputs, n_outputs>(
-            Backend, domain, false, self.index(), mask.index(), f_call,
+            Backend, backend_name(Backend), domain, false, self.index(), mask.index(), f_call,
             vcall_inputs, vcall_outputs);
 
         auto result = UInt32::borrow(vcall_outputs[0]);
