@@ -1933,6 +1933,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
  *     The size of the offset buffer in bytes.
  */
 uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
+    jitc_log(LogLevel::Debug, "capture_call_offset(ptr=%p, dsize=%zu)", ptr, dsize);
     uint32_t size = dsize / type_size[(uint32_t) VarType::UInt64];
 
     AllocType atype =
@@ -2149,6 +2150,13 @@ void jitc_freeze_destroy(Recording *recording) {
     for (RecordedVariable &rv : recording->recorded_variables) {
         if (rv.init == RecordedVarInit::Captured) {
             jitc_var_dec_ref(rv.index);
+        }
+    }
+    for (Operation &op : recording->operations){
+        if (op.uses_optix){
+            jitc_free(op.sbt->hitgroupRecordBase);
+            jitc_free(op.sbt->missRecordBase);
+            delete op.sbt;
         }
     }
     delete recording;
