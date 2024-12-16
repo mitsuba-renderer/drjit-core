@@ -168,6 +168,8 @@ extern int jitc_var_eval(uint32_t index, bool raise_dirty_error = true);
 /// Return the pointer location of the variable, evaluate if needed
 extern uint32_t jitc_var_data(uint32_t index, bool eval_dirty, void **ptr_out);
 
+extern VarState jitc_var_state(uint32_t index);
+
 /// Return a human-readable summary of registered variables
 extern const char *jitc_var_whos();
 

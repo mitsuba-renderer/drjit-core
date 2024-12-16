@@ -22,14 +22,13 @@ extern void jitc_registry_remove(const void *ptr);
 extern uint32_t jitc_registry_id(const void *ptr);
 
 /// Return the largest instance ID for the given domain
-/// If the \c domain is \c nullptr, it returns the number of active entries in
-/// all domains for the given variant.
 extern uint32_t jitc_registry_id_bound(const char *variant, const char *domain);
 
 /// Fills the \c dest pointer array with all pointers registered in the registry
 /// for this \c variant.
 /// \c dest must point to an array with \c jit_registry_id_bound(variant, nullptr) entries.
-void extern jitc_registry_get_pointers(const char *variant, void **dest);
+void extern jitc_registry_get_pointers(const char *variant,
+                                       const char *domain_name, void **dest);
 
 /// Return the pointer value associated with a given instance ID
 extern void *jitc_registry_ptr(const char *variant, const char *domain,
