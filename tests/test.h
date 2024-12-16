@@ -373,7 +373,7 @@ public:
 
         make_opaque(args...);
 
-        // Make input opaque and add it to \c input_vector, borrowing it
+        // Add input to \c input_vector, borrowing it
         std::vector<uint32_t> input_vector;
         auto op = [&input_vector](uint32_t index) {
             // Borrow from the index and add it to the input_vector
