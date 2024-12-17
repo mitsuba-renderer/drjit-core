@@ -105,10 +105,13 @@ uint32_t jitc_array_read(uint32_t source, uint32_t offset, uint32_t mask_) {
     fail_if(offset == 0, "offset is uninitialized.");
     fail_if(mask_ == 0, "mask is uninitialized.");
 
-    Ref mask = steal(jitc_var_mask_apply(mask_, 1));
     Variable *vo = jitc_var(offset),
              *vs = jitc_var(source),
-             *vm = jitc_var(mask);
+             *vm = jitc_var(mask_);
+    Ref mask = steal(jitc_var_mask_apply(mask_, vm->size));
+
+    vm = jitc_var(mask);
+
     JitBackend backend = (JitBackend) vm->backend;
     uint32_t array_length = vs->array_length;
 
@@ -243,9 +246,12 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
     fail_if(value == 0, "value is uninitialized.");
     fail_if(mask_ == 0, "mask is uninitialized.");
 
-    Ref mask = steal(jitc_var_mask_apply(mask_, 1));
-    Variable *vm = jitc_var(mask),
+    Variable *vm = jitc_var(mask_),
              *vo = jitc_var(offset);
+    Ref mask = steal(jitc_var_mask_apply(mask_, vm->size));
+
+    vm = jitc_var(mask);
+
     JitBackend backend = (JitBackend) vm->backend;
 
     if (vm->is_literal() && vm->literal == 0) {
