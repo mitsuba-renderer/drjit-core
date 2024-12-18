@@ -2081,8 +2081,16 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     if ((VarType) index_v->type != VarType::UInt32)
         jitc_raise("jit_var_scatter_inc(): 'index' must be an unsigned 32-bit array.");
 
-    if (mask_v->is_literal() && mask_v->literal == 0)
-        return 0;
+    if (mask_v->is_literal() && mask_v->literal == 0) {
+        // The return value is undefined (no need to gether the current
+        // values at these indices), but at least let's return an array
+        // of the correct width. We use a large value to make it clear
+        // that it is an arbitrary number, not the previous value of
+        // the target array.
+        return jitc_var_new_node_0(var_info.backend, VarKind::Literal,
+                                   VarType::UInt32, var_info.size, var_info.symbolic,
+                                   /* payload */ (uint32_t) -1);
+    }
 
     uint32_t flags = jitc_flags();
     var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;

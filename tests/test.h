@@ -216,7 +216,7 @@ template <typename... Args> static void make_opaque(Args &&...args) {
 /// Constructable type, used to construct frozen function outputs
 template <typename T, typename = void> struct constructable {
     static constexpr bool value = false;
-    static T construct(const std::function<uint32_t()> &cb) {
+    static T construct(const std::function<uint32_t()> & /*cb*/) {
         static_assert(sizeof(T) == 0, "Could not construct type!");
     }
 };
