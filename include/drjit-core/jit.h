@@ -1011,6 +1011,7 @@ extern JIT_EXPORT void jit_var_scatter_add_kahan(uint32_t *target_1,
  * The main difference is that this variant returns the *old* value before the
  * atomic write (in contrast to the more general scatter reduction, where doing
  * so would be rather complicated).
+ * Note that the value returned for masked lanes is undefined.
  *
  * This operation is a building block for stream compaction: threads can
  * scatter-increment a global counter to request a spot in an array.

@@ -317,4 +317,11 @@ TEST_BOTH(18_scatter_inc_mask) {
             abort();
         }
     }
+
+    // With an all-false literal mask, an array of
+    // the correct width should still be returned.
+    UInt32 idx = zeros<UInt32>(7);
+    Mask all_false = Mask(false);
+    UInt32 arbitrary = scatter_inc(counter, idx, all_false);
+    jit_assert(jit_var_size(arbitrary.index()) == 7);
 }
