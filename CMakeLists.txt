@@ -203,6 +203,12 @@ if (MSVC)
   # MSVC doesn't define this instruction set macro unlike all other compilers
   # so force enable it
   target_compile_definitions(drjit-core PUBLIC -D__F16C__)
+
+  # Workaround to avoid a particular crash due to MS VC++ runtime library binary 
+  # incompatibility. In general the runtime version needs to be at least as new 
+  # as toolset version but this define provides one such "escape hatch" if that 
+  # strictly isn't the case to combat against a commonly encountered reported crash
+  target_compile_definitions(drjit-core PUBLIC -D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR)
 endif()
 
 if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
