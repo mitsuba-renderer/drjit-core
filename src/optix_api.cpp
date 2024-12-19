@@ -84,10 +84,19 @@ bool jitc_optix_api_init() {
         jitc_log(
             Warn,
             "jit_optix_api_init(): DrJit considers the driver of your graphics "
-            "card buggy and prone to miscompilation by (we explicitly do not "
+            "card buggy and prone to miscompilation (we explicitly do not "
             "support OptiX with CUDA 11.5, which roughly corresponds to driver "
-            "versions >= 495 and < 510). Please install a newer driver version "
-            "(or an older one is fine, too).");
+            "versions >= 495 and < 510). Please install an older or newer driver.");
+        return false;
+    }
+
+    if (jitc_cuda_version_major == 12 && jitc_cuda_version_minor == 7) {
+        jitc_log(
+            Warn,
+            "jit_optix_api_init(): DrJit considers the driver of your graphics "
+            "card buggy and prone to miscompilation (we explicitly do not "
+            "support OptiX with CUDA version 11.7, which corresponds to driver "
+            "version 565). Please install an older or newer driver.");
         return false;
     }
 
