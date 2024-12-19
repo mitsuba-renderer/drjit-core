@@ -1362,7 +1362,7 @@ TEST_BOTH(14_frozen_vcall) {
             Backend, backend_name(Backend), domain, false, self.index(), mask.index(), f_call,
             vcall_inputs, vcall_outputs);
 
-        auto result = UInt32::borrow(vcall_outputs[0]);
+        auto result = UInt32::steal(vcall_outputs[0]);
 
         return result;
     };
