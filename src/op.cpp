@@ -557,6 +557,10 @@ uint32_t jitc_var_mod(uint32_t a0, uint32_t a1) {
     if (info.simplify && info.literal) {
         result = jitc_eval_literal(
             info, [](auto l0, auto l1) { return eval_mod(l0, l1); }, v0, v1);
+    } else if (jitc_is_uint(info.type) && v1->is_literal() && jitc_is_pow2(v1->literal)) {
+        uint64_t value = v1->literal - 1;
+        Ref tmp = steal(jitc_var_literal(info.backend, info.type, &value, info.size, 0));
+        return jitc_var_and(a0, tmp);
     } else if (v1->is_literal() && jitc_is_one(v1)) {
         uint64_t value = 0;
         result = jitc_var_literal(info.backend, info.type, &value, info.size, 0);
