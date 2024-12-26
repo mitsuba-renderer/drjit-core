@@ -977,9 +977,10 @@ uint32_t jit_registry_id_bound(const char *variant, const char *domain) {
     return jitc_registry_id_bound(variant, domain);
 }
 
-void jit_registry_get_pointers(const char *variant, void **dest) {
+void jit_registry_get_pointers(const char *variant, const char *domain_name,
+                               void **dest) {
     lock_guard guard(state.lock);
-    return jitc_registry_get_pointers(variant, dest);
+    return jitc_registry_get_pointers(variant, domain_name, dest);
 }
 
 void *jit_registry_ptr(const char *variant, const char *domain, uint32_t id) {

@@ -503,7 +503,9 @@ extern JIT_EXPORT uint32_t jit_registry_id_bound(const char *variant,
 /// Fills the \c dest pointer array with all pointers registered in the registry.
 /// \c dest must point to an array with \c jit_registry_id_bound(variant, nullptr) entries.
 /// If variant is \c nullptr, it traverses all registry entries.
-extern JIT_EXPORT void jit_registry_get_pointers(const char *variant, void **dest);
+extern JIT_EXPORT void jit_registry_get_pointers(const char *variant,
+                                                 const char *domain_name,
+                                                 void **dest);
 
 /// Return the pointer value associated with a given instance ID
 extern JIT_EXPORT void *jit_registry_ptr(const char *variant,

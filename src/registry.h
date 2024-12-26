@@ -31,7 +31,8 @@ extern uint32_t jitc_registry_id_bound(const char *variant, const char *domain);
 /// for this \c variant.
 /// \c dest must point to an array with \c jit_registry_id_bound(variant, nullptr) entries.
 /// If variant is \c nullptr, it traverses all registry entries.
-void extern jitc_registry_get_pointers(const char *variant, void **dest);
+void extern jitc_registry_get_pointers(const char *variant,
+                                       const char *domain_name, void **dest);
 
 /// Return the pointer value associated with a given instance ID
 extern void *jitc_registry_ptr(const char *variant, const char *domain,
