@@ -21,8 +21,8 @@
  *   executed kernel, and a tuple of indices into the ``recording.dependencies``
  *   vector. This records the accesses the operation has performed on variables.
  *
- * - ``recording.dependencies``: A vector of AccessInfo which are used used to
- *   record how operations access different variables. Every entry records an
+ * - ``recording.dependencies``: A vector of ``AccessInfo`` which are used used
+ *   to record how operations access different variables. Every entry records an
  *   index (``slot``) into the ``recording.recorded_variables`` vector,
  *   representing the memory region it refers to. Additionally, it stores the
  *   type of access (Input or Output) and the variable type as which the
@@ -107,12 +107,12 @@
  * - Some operations might require dry running the recording before being able
  *   to replay them. One example, is the ``reduce_expanded`` case, which results
  *   in different kernels depending on the size of its input size. During dry
- *   running, the size of variable is inferred in the same way as when
+ *   running, the size of the variable is inferred in the same way as when
  *   replaying, without actually executing any operations. In these cases, we
  *   set the ``requires_dry_run`` flag in the recording. The ``Compress``
- *   operation however creates an output which size depends on the content of
+ *   operation however creates an output which's size depends on the content of
  *   the compressed array. We therefore return false when encountering a
- *   ``Comrpess`` operation in dry run mode, which should result in a
+ *   ``Compress`` operation in dry run mode, which should result in a
  *   re-recording of the frozen function.
  * - Recording the ``poke`` operation is currently unsupported, as it will write
  *   to some offset pointer in a memory region, which cannot be tracked.

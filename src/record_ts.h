@@ -226,7 +226,7 @@ struct AccessInfo {
  * This struct stores the operations and variables recorded as well as how the
  * operations access the variables. Every operation indexes into the \ref
  * dependencies vector with a start and end index. The \c AccessInfo structs in
- * that slice then records the information required to infer how an operation
+ * that slice then record the information required to infer how an operation
  * accessed a variable. When calling \c add_param during recording, the \c
  * AccessInfo struct is placed on top of the dependencies vector. This function
  * also modifies the state of the RecordedVariable, accessed by the operation.
