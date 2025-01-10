@@ -967,8 +967,8 @@ void RecordThreadState::record_expand(uint32_t index) {
             jitc_reduce_identity((VarType) v->type, (ReduceOp) v->reduce_op);
 
         jitc_log(LogLevel::Debug,
-                 "record(): expand(dst=s%u, src=literal 0x%lx)", dst_slot,
-                 identity);
+                 "record(): expand(dst=s%u, src=literal 0x%llx)", dst_slot,
+                 (unsigned long long) identity);
 
         op.size = v->size;
     }
@@ -1010,9 +1010,10 @@ int Recording::replay_expand(Operation &op) {
         // v->literal == identity
         size = op.size;
         jitc_log(LogLevel::Debug,
-                 "jitc_memcpy_async(dst=%p, src= literal 0x%lx, "
+                 "jitc_memcpy_async(dst=%p, src= literal 0x%llx, "
                  "size=%zu)",
-                 dst_rv.data, op.data, (size_t) size * tsize);
+                 dst_rv.data, (unsigned long long) op.data,
+                 (size_t) size * tsize);
     }
 
     if (size != op.size)
