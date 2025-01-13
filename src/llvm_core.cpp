@@ -133,6 +133,8 @@ bool jitc_llvm_init() {
         jitc_llvm_vector_width = 8;
     if (strstr(jitc_llvm_target_features, "+avx512vl"))
         jitc_llvm_vector_width = 16;
+    if (strstr(jitc_llvm_target_features, "+neon"))
+        jitc_llvm_vector_width = 4;
 
 #if defined(__APPLE__) && defined(__aarch64__)
     jitc_llvm_vector_width = 4;
