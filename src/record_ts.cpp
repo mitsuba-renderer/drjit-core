@@ -1747,7 +1747,12 @@ int Recording::replay_aggregate(Operation &op) {
 
     size_t agg_size = sizeof(AggregationEntry) * op.size;
 
-    if (backend == JitBackend::CUDA)
+    // In dry-run mode, we allocate a buffer on the CPU to reuse the code for
+    // inferring the size of generated buffers. The pointer is freed at the end
+    // of this function.
+    if (dry_run)
+        agg = (AggregationEntry *) malloc_check(agg_size);
+    else if (backend == JitBackend::CUDA)
         agg = (AggregationEntry *) jitc_malloc(AllocType::HostPinned, agg_size);
     else
         agg = (AggregationEntry *) malloc_check(agg_size);
@@ -1802,6 +1807,9 @@ int Recording::replay_aggregate(Operation &op) {
 
     if (!dry_run)
         ts->aggregate(dst_rv.data, agg, (uint32_t) (p - agg));
+
+    if (dry_run)
+        free(agg);
 
     return true;
 }
