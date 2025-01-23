@@ -163,12 +163,14 @@ struct ReplayVariable {
             // Copy the variable, so that it isn't changed by this recording.
             // Captured variables are only used for vcall offset buffers, which
             // are not supposed to change between replay calls.
-            index = jitc_var_copy(index);
 
             Variable *v = jitc_var(index);
-            data        = v->data;
             alloc_size  = v->size * type_size[v->type];
             data_size   = alloc_size;
+            if (!dry_run) {
+                index = jitc_var_copy(index);
+                data  = v->data;
+            }
         }
     }
 
