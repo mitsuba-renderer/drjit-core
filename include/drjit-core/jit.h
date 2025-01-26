@@ -2360,8 +2360,14 @@ extern JIT_EXPORT const char *jit_type_name(JIT_ENUM VarType type) JIT_NOEXCEPT;
 struct VarInfo {
     JitBackend backend;
     VarType type;
+    VarState state;
     size_t size;
+    union{
+        uint64_t literal;
+        void *data;
+    };
     bool is_array;
+    bool unaligned;
 };
 
 /**

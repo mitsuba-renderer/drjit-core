@@ -1344,6 +1344,24 @@ uint32_t jitc_var_data(uint32_t index, bool eval_dirty, void **ptr_out) {
     return index;
 }
 
+VarState jitc_var_state(uint32_t index) {
+    if (index == 0)
+        return VarState::Invalid;
+    const Variable *v = jitc_var(index);
+    if (v->symbolic)
+        return VarState::Symbolic;
+    else if (v->is_dirty())
+        return VarState::Dirty;
+    else if (v->is_evaluated())
+        return VarState::Evaluated;
+    else if (v->is_literal())
+        return VarState::Literal;
+    else if (v->is_undefined())
+        return VarState::Undefined;
+    else
+        return VarState::Unevaluated;
+}
+
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
 int jitc_var_schedule(uint32_t index) {
     if (index == 0)

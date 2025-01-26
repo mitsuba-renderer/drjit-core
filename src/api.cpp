@@ -615,19 +615,7 @@ VarState jit_var_state(uint32_t index) {
         return VarState::Invalid;
 
     lock_guard guard(state.lock);
-    const Variable *v = jitc_var(index);
-    if (v->symbolic)
-        return VarState::Symbolic;
-    else if (v->is_dirty())
-        return VarState::Dirty;
-    else if (v->is_evaluated())
-        return VarState::Evaluated;
-    else if (v->is_literal())
-        return VarState::Literal;
-    else if (v->is_undefined())
-        return VarState::Undefined;
-    else
-        return VarState::Unevaluated;
+    return jitc_var_state(index);
 }
 
 int jit_var_is_zero_literal(uint32_t index) {
@@ -1344,11 +1332,24 @@ const char *jit_type_name(VarType type) noexcept {
 }
 
 VarInfo jit_set_backend(uint32_t index) noexcept {
+    VarInfo info;
+
     lock_guard guard(state.lock);
     Variable *var = jitc_var(index);
     default_backend = (JitBackend) var->backend;
-    return VarInfo{ (JitBackend) var->backend, (VarType) var->type,
-                    var->size, var->is_array() };
+
+    info.backend = (JitBackend)var->backend;
+    info.type = (VarType)var->type;
+    info.state = jitc_var_state(index);
+    info.size = var->size;
+    info.is_array = var->is_array();
+    info.unaligned = var->unaligned;
+    if(info.state == VarState::Literal)
+        info.literal = var->literal;
+    else if (info.state == VarState::Evaluated)
+        info.data = var->data;
+
+    return info;
 }
 
 uint32_t jit_var_loop_start(const char *name, bool symbolic, size_t n_indices, uint32_t *indices) {
