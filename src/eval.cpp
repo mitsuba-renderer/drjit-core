@@ -425,6 +425,24 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     memcpy(kernel_name, buffer.get() + hash_offset - prefix_len,
            prefix_len + 32);
 
+    if (uses_optix && callable_count > 0) {
+        // Work around a bug in OptiX with driver version 570. When a two
+        // pipelines share the same set of direct callables, the driver shares the
+        // compiled result. This caching contaminates the second pipeline with
+        // globals from the first, which causes a linker issue when the 'params'
+        // buffer has a different size. We work around the issue by inserting a
+        // unique callable that prevents this optimization.
+
+        buffer.fmt_cuda(2,
+            "\n.visible .func (.param .align 8 .b8 result[16]) __direct_callable__id() {\n"
+            "    st.param.u64 [result+0], 0x$Q;\n"
+            "    st.param.u64 [result+8], 0x$Q;\n"
+            "}",
+            kernel_hash.low64,
+            kernel_hash.high64
+        );
+    }
+
     if (unlikely(trace || (jitc_flags() & (uint32_t) JitFlag::PrintIR))) {
         buffer.put('\n');
         if (state.log_callback)

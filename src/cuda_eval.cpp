@@ -135,7 +135,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
     } else {
         put("    call (%r0), _optix_get_launch_index_x, ();\n"
             "    call (%r2), _optix_get_launch_dimension_x, ();\n"
-            "    ld.const.u32 %r1, [params + 4];\n"
+            "    ld.const.u32 %r1, [params+4];\n"
             "    add.u32 %r0, %r0, %r1;\n\n"
             "body:\n");
     }
