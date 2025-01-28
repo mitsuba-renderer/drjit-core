@@ -356,7 +356,7 @@ template <typename T> T eval_not(T v) {
 static bool eval_not(bool v) { return !v; }
 
 uint32_t jitc_var_not(uint32_t a0) {
-    auto [info, v0] = jitc_var_check<IsIntOrBool>("jit_var_not", a0);
+    auto [info, v0] = jitc_var_check("jit_var_not", a0);
 
     uint32_t result = 0;
     if (info.simplify && info.literal)
