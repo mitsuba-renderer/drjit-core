@@ -48,7 +48,7 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
                         std::vector<void *> *kernel_params,
                         const std::vector<uint32_t> * /*kernel_param_ids*/) {
 
-    uint32_t kernel_param_count = kernel_params->size();
+    uint32_t kernel_param_count = (uint32_t) kernel_params->size();
 
     // Pass parameters through global memory if too large or using OptiX
     if (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT) {

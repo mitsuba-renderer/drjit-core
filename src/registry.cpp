@@ -216,10 +216,10 @@ void *jitc_registry_peek(const char *variant, const char *domain) {
     void *ptr = nullptr;
 
     if (it != r.domain_ids.end()) {
-        Domain &domain = r.domains[it->second];
-        uint32_t bound = domain.id_bound;
+        Domain &d = r.domains[it->second];
+        uint32_t bound = d.id_bound;
         if (bound > 0) {
-            Ptr entry = domain.fwd_map[bound - 1];
+            Ptr entry = d.fwd_map[bound - 1];
             return entry.ptr;
         }
     }

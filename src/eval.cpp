@@ -406,7 +406,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     buffer.clear();
     if (backend == JitBackend::CUDA)
-        jitc_cuda_assemble(ts, group, n_regs, kernel_params.size());
+        jitc_cuda_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
     else
         jitc_llvm_assemble(ts, group);
 
