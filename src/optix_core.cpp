@@ -103,7 +103,7 @@ OptixDeviceContext jitc_optix_context() {
         size_t log_size = sizeof(log);
 
         OptixModule mod;
-        jitc_optix_check(optixModuleCreateFromPTX(
+        jitc_optix_check(optixModuleCreate(
             ctx, &mco, &pco, minimal, strlen(minimal), log, &log_size, &mod));
 
         OptixProgramGroupDesc pgd { };
@@ -229,7 +229,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                         const char *kern_name, Kernel &kernel) {
     char error_log[16384];
 
-    if (!optixModuleCreateFromPTXWithTasks)
+    if (!optixModuleCreateWithTasks)
         jitc_fail("jit_optix_compile(): OptiX not initialized, make sure "
                   "evaluation happens before Optix shutdown!");
 
@@ -253,13 +253,13 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
 
     OptixTask task;
     error_log[0] = '\0';
-    int rv = optixModuleCreateFromPTXWithTasks(
+    int rv = optixModuleCreateWithTasks(
         optix_context, &mco, &pipeline.compile_options, buf, buf_size,
         error_log, &log_size, &kernel.optix.mod, &task);
 
     if (rv) {
         jitc_log(Error, "jit_optix_compile(): "
-                 "optixModuleCreateFromPTXWithTasks() failed. Please see the "
+                 "optixModuleCreateWithTasks() failed. Please see the "
                  "PTX assembly listing and error message below:\n\n%s\n\n%s",
                  buf, error_log);
         jitc_optix_check(rv);
@@ -362,11 +362,6 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
 
     OptixPipelineLinkOptions link_options {};
     link_options.maxTraceDepth = 1;
-#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
-    link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
-#else
-    link_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
-#endif
 
     size_t size_before = pipeline.program_groups.size();
 
@@ -400,7 +395,8 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     OptixStackSizes ssp = {};
     for (size_t i = 0; i < pipeline.program_groups.size(); ++i) {
         OptixStackSizes ss;
-        rv = optixProgramGroupGetStackSize(pipeline.program_groups[i], &ss);
+        rv = optixProgramGroupGetStackSize(pipeline.program_groups[i], &ss,
+                                           kernel.optix.pipeline);
         if (rv) {
             jitc_log(Error, "jit_optix_compile(): optixProgramGroupGetStackSize() "
                             "failed:\n\n%s", error_log);
