@@ -707,14 +707,13 @@ void RecordThreadState::record_launch(
     op.dependency_range = std::pair(start, end);
 
     op.kernel.kernel   = kernel;
-    op.kernel.precomputed_hash =
-        KernelHash::compute_hash(hash.high64, key->device, key->flags);
     op.kernel.key      = (KernelKey *) std::malloc(sizeof(KernelKey));
     size_t str_size    = buffer.size() + 1;
     op.kernel.key->str = (char *) malloc_check(str_size);
     std::memcpy(op.kernel.key->str, key->str, str_size);
     op.kernel.key->device = key->device;
     op.kernel.key->flags  = key->flags;
+    op.kernel.key->high64 = key->high64;
 
     op.size = size;
 
@@ -1846,8 +1845,7 @@ bool Recording::check_kernel_cache() {
         Operation &op = operations[i];
         if (op.type == OpType::KernelLaunch) {
             // Test if this kernel is still in the cache
-            auto it = state.kernel_cache.find(*op.kernel.key,
-                                              op.kernel.precomputed_hash);
+            auto it = state.kernel_cache.find(*op.kernel.key);
             if (it == state.kernel_cache.end())
                 return false;
         }

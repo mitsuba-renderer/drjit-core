@@ -500,10 +500,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 #endif
 
-    KernelKey kernel_key((char *) buffer.get(), ts->device, flags);
-    auto it = state.kernel_cache.find(
-        kernel_key,
-        KernelHash::compute_hash(kernel_hash.high64, ts->device, flags));
+    KernelKey kernel_key((char *) buffer.get(), kernel_hash.high64, ts->device,
+                         flags);
+    auto it = state.kernel_cache.find(kernel_key);
     Kernel kernel;
     memset(&kernel, 0, sizeof(Kernel)); // quench uninitialized variable warning on MSVC
 

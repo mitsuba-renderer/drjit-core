@@ -746,8 +746,11 @@ struct KernelKey {
     char *str = nullptr;
     int device = 0;
     uint64_t flags = 0;
+    // upper 64 bit of the hashed kernel source code
+    uint64_t high64 = 0;
 
-    KernelKey(char *str, int device, uint64_t flags) : str(str), device(device), flags(flags) { }
+    KernelKey(char *str, uint64_t high64, int device, uint64_t flags)
+        : str(str), device(device), flags(flags), high64(high64) {}
 
     bool operator==(const KernelKey &k) const {
         return strcmp(k.str, str) == 0 && device == k.device && flags == k.flags;
@@ -757,12 +760,8 @@ struct KernelKey {
 /// Helper class to hash KernelKey instances
 struct KernelHash {
     size_t operator()(const KernelKey &k) const {
-        return compute_hash(hash_kernel(k.str).high64, k.device, k.flags);
-    }
-
-    static size_t compute_hash(size_t kernel_hash, int device, uint64_t flags) {
-        size_t hash = kernel_hash;
-        hash_combine(hash, (size_t) flags + size_t(device + 1));
+        size_t hash = k.high64;
+        hash_combine(hash, (size_t) k.flags + size_t(k.device + 1));
         return hash;
     }
 };

@@ -59,7 +59,6 @@ struct Operation {
         /// Additional information of a kernel launch
         struct {
             KernelKey *key;
-            size_t precomputed_hash;
             Kernel kernel;
             XXH128_hash_t hash;
         } kernel;
