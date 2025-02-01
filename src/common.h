@@ -52,9 +52,14 @@ inline void lock_destroy(Lock &) { }
 inline void lock_acquire(Lock &lock) { os_unfair_lock_lock(&lock);  }
 inline void lock_release(Lock &lock) { os_unfair_lock_unlock(&lock); }
 #else
+#if defined(_WIN32)
+#include <shared_mutex>
+using Lock = std::shared_mutex; // Based on the faster Win7 SRWLOCK
+#else
 #include <mutex>
-
 using Lock = std::mutex;
+#endif
+
 inline void lock_init(Lock &) { }
 inline void lock_destroy(Lock &) { }
 inline void lock_acquire(Lock &lock) { lock.lock(); }
