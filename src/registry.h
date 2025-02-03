@@ -26,7 +26,8 @@ extern uint32_t jitc_registry_id_bound(const char *variant, const char *domain);
 
 /// Fills the \c dest pointer array with all pointers registered in the registry
 /// for this \c variant.
-/// \c dest must point to an array with \c jit_registry_id_bound(variant, nullptr) entries.
+/// \c dest must point to an array with \c jit_registry_id_bound(variant,
+/// domain, nullptr) entries.
 void extern jitc_registry_get_pointers(const char *variant,
                                        const char *domain_name, void **dest);
 
