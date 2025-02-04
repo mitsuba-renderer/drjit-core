@@ -99,6 +99,7 @@ static std::vector<uint32_t> eval_callbacks;
 
 /// Temporary todo list needed to correctly process loops in jitc_var_traverse()
 static std::vector<VisitedKey> visit_later;
+static std::vector<uint32_t> decref_later;
 
 // ====================================================================
 
@@ -110,8 +111,10 @@ bool jitc_var_maybe_suppress_scatter(uint32_t index, Variable *v, uint32_t depth
         return false;
 
     jitc_log(Debug, "jit_eval(): eliding scatter r%u, whose output is unreferenced.", index);
+
     if (callable_depth == 0)
-        jitc_var_dec_ref(index, v);
+        decref_later.push_back(index);
+
     return true;
 }
 
@@ -666,6 +669,7 @@ void jitc_eval(ThreadState *ts) {
 void jitc_eval_impl(ThreadState *ts) {
     visited.clear();
     visit_later.clear();
+    decref_later.clear();
     schedule.clear();
 
     for (WeakRef wr: ts->scheduled) {
@@ -690,6 +694,9 @@ void jitc_eval_impl(ThreadState *ts) {
         VisitedKey vk = visit_later[i];
         jitc_var_traverse(vk.size, vk.index, vk.depth);
     }
+
+    for (uint32_t index: decref_later)
+        jitc_var_dec_ref(index);
 
     if (schedule.empty())
         return;
@@ -806,6 +813,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
 
     visited.clear();
     visit_later.clear();
+    decref_later.clear();
     schedule.clear();
     callable_depth++;
 
@@ -834,6 +842,9 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         VisitedKey vk = visit_later[i];
         jitc_var_traverse(vk.size, vk.index, vk.depth);
     }
+
+    for (uint32_t index: decref_later)
+        jitc_var_dec_ref(index);
 
     std::stable_sort(
         schedule.begin(), schedule.end(),

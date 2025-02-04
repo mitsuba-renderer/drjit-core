@@ -189,9 +189,8 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                 // Remove variables that are the target of side effects from the loop state
                 eliminate = true;
             } else if (indices[i] == ld->inner_in[i]) {
-                // Remove loop-invariant state variables. Do this always when optimizations are
-                // turned on. Otherwise, only do it when they aren't compatible with the loop shape.
-                eliminate = optimize || v2->size != size;
+                // Remove loop-invariant state variables when optimizations are turned on
+                eliminate = optimize;
             } else {
                 // Remove loop-invariant literal constants.
                 eliminate = optimize && v1->is_literal() &&
@@ -250,39 +249,48 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
                     "jit_var_loop_end(): loop state variable %zu has become "
                     "uninitialized (i.e., it now has size 0)", i);
 
-            const Variable *v1 = jitc_var(ld->inner_in[i]);
+            uint32_t inner_in = ld->inner_in[i],
+                     outer_in = ld->outer_in[i];
+
+            const Variable *v1 = jitc_var(inner_in);
             Variable *v2 = jitc_var(index);
 
             uint32_t new_index;
             if (v2->is_array() || v2->is_dirty()) {
                 jitc_var_inc_ref(index);
                 new_index = index;
-            } else if (ld->inner_in[i] != ld->outer_in[i]) {
-                if (v2->size != size && size != 1 && v2->size != 1)
-                    jitc_raise(
-                        "jit_var_loop_end(): loop state variable %zu (r%u) has "
-                        "a final shape (size %u) that is incompatible with "
-                        "that of the loop (size %u)",
-                        i, index, v2->size, size);
-
-                size = std::max(v2->size, size);
-
-                if (backend == JitBackend::LLVM) {
-                    new_index = jitc_var_select(active, index, ld->inner_in[i]);
+            } else if (inner_in != outer_in) {
+                if (inner_in == index) {
+                    new_index = outer_in;
+                    jitc_var_inc_ref(new_index);
                 } else {
-                    new_index = index;
-                    jitc_var_inc_ref(index);
+                    if (v2->size != size && size != 1 && v2->size != 1) {
+                        jitc_raise(
+                            "jit_var_loop_end(): loop state variable %zu (r%u) has "
+                            "a final shape (size %u) that is incompatible with "
+                            "that of the loop (size %u)",
+                            i, index, v2->size, size);
+                    }
+
+                    size = std::max(v2->size, size);
+
+                    if (backend == JitBackend::LLVM) {
+                        new_index = jitc_var_select(active, index, inner_in);
+                    } else {
+                        new_index = index;
+                        jitc_var_inc_ref(index);
+                    }
                 }
             } else {
-                if (index != ld->inner_in[i] &&
+                if (index != inner_in &&
                     !(v2->is_literal() && v1->is_literal() && v1->literal == v2->literal))
                     jitc_raise(
                         "jit_var_loop_end(): loop state variable %zu (r%u) was "
                         "presumed to be constant, but it changed (to r%u) when "
                         "re-recording the loop a second time",
-                        i, index, ld->inner_in[i]);
-                jitc_var_inc_ref(ld->inner_in[i]);
-                new_index = ld->inner_in[i];
+                        i, index, inner_in);
+                jitc_var_inc_ref(inner_in);
+                new_index = inner_in;
             }
             ld->inner_out.push_back(new_index);
         }
@@ -338,7 +346,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             index_new = jitc_var_new(v3, true);
             state_vars_actual_size += type_size[(int) vt]*array_length;
             state_vars_actual++;
-        } else if (ld->inner_in[i] != ld->outer_in[i]) {
+        } else if (ld->inner_in[i] != ld->outer_in[i] && ld->inner_out[i] != ld->outer_in[i]) {
             v_phi.literal = (uint64_t) i;
             v_phi.type = (uint32_t) vt;
             jitc_var_inc_ref(ld->loop_start);
