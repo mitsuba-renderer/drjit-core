@@ -1896,8 +1896,15 @@ uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size) {
             mask = borrow(index_2);
     }
 
-    if (!mask && backend == JitBackend::LLVM)
-        mask = steal(jitc_var_mask_default(backend, size));
+    if (backend == JitBackend::LLVM) {
+        Ref default_mask = steal(jitc_var_mask_default(backend, size));
+        if (!mask) {
+            mask = borrow(default_mask);
+        } else if (jitc_var(mask)->is_evaluated() && size == 1) {
+            // Scalar evaluated parameters get broadcasted, we need to re-apply the default mask
+            mask = steal(jitc_var_and(mask, default_mask));
+        }
+    }
 
     uint32_t result;
     // Combine given mask with mask stack
