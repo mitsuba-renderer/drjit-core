@@ -421,7 +421,7 @@ public:
 
     /// LLVM: Notify the thread state, that a variable has been expanded using
     /// \c jitc_var_expand. This is required to record the ThreadState.
-    void notify_expanded(uint32_t index) override;
+    void notify_expand(uint32_t index) override;
 
     /// LLVM: reduce a variable that was previously expanded due to
     /// dr.ReduceOp.Expand

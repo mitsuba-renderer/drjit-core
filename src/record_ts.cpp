@@ -1015,7 +1015,7 @@ int Recording::replay_expand(Operation &op) {
 
 /// LLVM: Notify the thread state, that a variable has been expanded using
 /// \c jitc_var_expand. This is required to record the ThreadState.
-void RecordThreadState::notify_expanded(uint32_t index){
+void RecordThreadState::notify_expand(uint32_t index){
     // Reductions in LLVM might be split into three operations. First the
     // variable is expanded by its size times the number of workers + 1 Then the
     // kernel writes into the expanded variable with some offset, and finally

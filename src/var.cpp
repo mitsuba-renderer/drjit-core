@@ -2455,7 +2455,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
              new_size / size);
 
     uint32_t dst_index = dst.release();
-    thread_state_llvm->notify_expanded(dst_index);
+    thread_state_llvm->notify_expand(dst_index);
 
     return { dst_index, index_scale };
 }
