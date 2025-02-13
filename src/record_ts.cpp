@@ -588,31 +588,6 @@ void RecordThreadState::record_launch(
     size_t input_size = 0;
     size_t ptr_size   = 0;
 
-    // Handle reduce_expanded case.
-    // Reductions in LLVM might be split into three operations. First the
-    // variable is expanded by its size times the number of workers + 1 Then the
-    // kernel writes into the expanded variable with some offset, and finally
-    // the variable is reduced. The expand operation allocates a new memory
-    // region and copies the old content into it. We catch this case if the
-    // input variable of a kernel has a reduce_op associated with it.
-    for (uint32_t param_index = 0; param_index < kernel_param_ids->size();
-         param_index++) {
-        uint32_t index       = kernel_param_ids->at(param_index);
-        Variable *v          = jitc_var(index);
-        ParamType param_type = (ParamType) v->param_type;
-        if ((VarType) v->type == VarType::Pointer) {
-            jitc_log(LogLevel::Debug, "pointer walking r%u points to r%u",
-                     index, v->dep[3]);
-            // Follow pointer
-            index = v->dep[3];
-            v     = jitc_var(index);
-        }
-
-        if (param_type == ParamType::Input && v->reduce_op) {
-            record_expand(index);
-        }
-    }
-
 #ifndef NDEBUG
     jitc_log(LogLevel::Debug, "record(): recording kernel %u %016llx",
              m_recording.n_kernels++, (unsigned long long) hash.high64);
@@ -1036,6 +1011,24 @@ int Recording::replay_expand(Operation &op) {
     dst_rv.data_size = size * type_size[(uint32_t) dst_info.vtype];
 
     return true;
+}
+
+/// LLVM: Notify the thread state, that a variable has been expanded using
+/// \c jitc_var_expand. This is required to record the ThreadState.
+void RecordThreadState::notify_expanded(uint32_t index){
+    // Reductions in LLVM might be split into three operations. First the
+    // variable is expanded by its size times the number of workers + 1 Then the
+    // kernel writes into the expanded variable with some offset, and finally
+    // the variable is reduced. The expand operation allocates a new memory
+    // region and copies the old content into it. We catch this case if the
+    // input variable of a kernel has a reduce_op associated with it.
+    if (!paused()){
+        try {
+            record_expand(index);
+        } catch (...) {
+            record_exception();
+        }
+    }
 }
 
 /// LLVM: reduce a variable that was previously expanded due to

@@ -711,6 +711,10 @@ struct ThreadState : public ThreadStateBase {
     // Enqueue a function to be run on the host once backend computation is done
     virtual void enqueue_host_func(void (*callback)(void *), void *payload) = 0;
 
+    /// LLVM: Notify the thread state, that a variable has been expanded using
+    /// \c jitc_var_expand. This is required to record the ThreadState.
+    virtual void notify_expanded(uint32_t index);
+
     /// LLVM: reduce a variable that was previously expanded due to
     /// dr.ReduceOp.Expand
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
