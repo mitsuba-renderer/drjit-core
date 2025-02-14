@@ -419,6 +419,10 @@ public:
     /// This should only occur outside of frozen functions.
     void enqueue_host_func(void (*callback)(void *), void *payload) override;
 
+    /// LLVM: Notify the thread state, that a variable has been expanded using
+    /// \c jitc_var_expand. This is required to record the ThreadState.
+    void notify_expand(uint32_t index) override;
+
     /// LLVM: reduce a variable that was previously expanded due to
     /// dr.ReduceOp.Expand
     void reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
