@@ -96,6 +96,7 @@ template <typename T> struct reduction_add {
     __device__ Value operator()(Value a, Value b) const {
         return add_(a, b);
     }
+    __device__ Value operator()(Value a) const { return a; }
 };
 
 template <typename T> struct reduction_mul {
@@ -104,6 +105,7 @@ template <typename T> struct reduction_mul {
     __device__ Value operator()(Value a, Value b) const {
         return mul_(a, b);
     }
+    __device__ Value operator()(Value a) const { return a; }
 };
 
 template <typename T> struct reduction_max {
@@ -116,6 +118,7 @@ template <typename T> struct reduction_max {
     __device__ Value operator()(Value a, Value b) const {
         return max_(a, b);
     }
+    __device__ Value operator()(Value a) const { return a; }
 };
 
 template <> struct reduction_max<half> {
@@ -124,6 +127,7 @@ template <> struct reduction_max<half> {
     __device__ half operator()(half a, half b) const {
         return max_(a, b);
     }
+    __device__ half operator()(half a) const { return a; }
 };
 
 template <typename T> struct reduction_min {
@@ -136,6 +140,7 @@ template <typename T> struct reduction_min {
     __device__ Value operator()(Value a, Value b) const {
         return min_(a, b);
     }
+    __device__ Value operator()(Value a) const { return a; }
 };
 
 template <> struct reduction_min<half> {
@@ -144,6 +149,7 @@ template <> struct reduction_min<half> {
     __device__ half operator()(half a, half b) const {
         return min_(a, b);
     }
+    __device__ half operator()(half a) const { return a; }
 };
 
 template <typename T> struct reduction_or {
@@ -152,6 +158,7 @@ template <typename T> struct reduction_or {
     __device__ Value operator()(Value a, Value b) const {
         return a | b;
     }
+    __device__ Value operator()(Value a) const { return a; }
 };
 
 template <typename T> struct reduction_and {
@@ -159,6 +166,33 @@ template <typename T> struct reduction_and {
     __device__ Value init() { return (Value) -1; }
     __device__ Value operator()(Value a, Value b) const {
         return a & b;
+    }
+    __device__ Value operator()(Value a) const { return a; }
+};
+
+template <typename T> struct reduction_logical_or {
+    using Value = T;
+    __device__ Value init() { return (Value) 0; }
+    __device__ Value operator()(Value a, Value b) const {
+        return a | b;
+    }
+    __device__ Value operator()(Value a) const {
+        a |= (a >> 16) | (a << 16);
+        a |= ((a & 0xff00ff00) >> 8) | ((a & 0x00ff00ff) << 8);
+        return a;
+    }
+};
+
+template <typename T> struct reduction_logical_and {
+    using Value = T;
+    __device__ Value init() { return (Value) -1; }
+    __device__ Value operator()(Value a, Value b) const {
+        return a & b;
+    }
+    __device__ Value operator()(Value a) const {
+        a &= (a >> 16) | (a << 16);
+        a &= ((a & 0xff00ff00) >> 8) | ((a & 0x00ff00ff) << 8);
+        return a;
     }
 };
 

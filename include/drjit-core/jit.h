@@ -872,6 +872,12 @@ enum class ReduceOp : uint32_t {
     /// Binary OR
     Or,
 
+    /// Logical and (for masks, internal use only)
+    LogicalAnd,
+
+    /// Logical or (for masks, internal use only)
+    LogicalOr,
+
     // This isn't an operation, it just tracks the total number of supported strategies
     Count
 };

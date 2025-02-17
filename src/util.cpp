@@ -20,8 +20,10 @@
 #  pragma warning (disable: 4146) // unary minus operator applied to unsigned type, result still unsigned
 #endif
 
-const char *red_name[(int) ReduceOp::Count] = { "identity", "add", "mul",
-                                                "min", "max", "and", "or" };
+const char *red_name[(int) ReduceOp::Count] = {
+    "identity", "add", "mul",         "min",       "max",
+    "and",      "or",  "logical_and", "logical_or"
+};
 
 /// Fill a device memory region with constants of a given type
 void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size_,
@@ -93,11 +95,11 @@ bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
     else
         tmp = buf;
 
-    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::And, size_4,
+    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::LogicalAnd, size_4,
                       size_4, values, tmp);
     jitc_sync_thread();
 
-    bool result = (tmp[0] & tmp[1] & tmp[2] & tmp[3]) != 0;
+    bool result = tmp[0];
 
     if (backend == JitBackend::CUDA)
         jitc_free(tmp);
@@ -128,11 +130,11 @@ bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
     else
         tmp = buf;
 
-    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::Or, size_4,
+    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::LogicalOr, size_4,
                       size_4, values, tmp);
 
     jitc_sync_thread();
-    bool result = (tmp[0] | tmp[1] | tmp[2] | tmp[3]) != 0;
+    bool result = tmp[0];
 
     if (backend == JitBackend::CUDA)
         jitc_free(tmp);

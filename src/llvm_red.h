@@ -13,6 +13,7 @@ template <typename T> struct RedAdd {
     static Value init() { return Value(0); }
 
     static Value reduce(Value a, Value b) { return a + b; }
+    static Value reduce(Value a) { return a; }
 };
 
 template <typename T> struct RedMul {
@@ -21,6 +22,7 @@ template <typename T> struct RedMul {
     static Value init() { return Value(1); }
 
     static Value reduce(Value a, Value b) { return a * b; }
+    static Value reduce(Value a) { return a; }
 };
 
 template <typename T> struct RedMin {
@@ -33,6 +35,7 @@ template <typename T> struct RedMin {
             return std::numeric_limits<Value>::infinity();
     }
     static Value reduce(Value a, Value b) { return std::min(a, b); }
+    static Value reduce(Value a) { return a; }
 };
 
 template <typename T> struct RedMax {
@@ -46,6 +49,7 @@ template <typename T> struct RedMax {
     }
 
     static Value reduce(Value a, Value b) { return std::max(a, b); }
+    static Value reduce(Value a) { return a; }
 };
 
 template <typename T> struct RedOr {
@@ -61,9 +65,51 @@ template <typename T> struct RedOr {
             return Value(0);
         }
     }
+
+    static Value reduce(Value a) { return a; }
 };
 
 template <typename T> struct RedAnd {
+    using Value = T;
+
+    static Value init() { return Value(-1); }
+
+    static Value reduce(Value a, Value b) {
+        if constexpr (std::is_integral_v<Value>) {
+            return a & b;
+        } else {
+            (void) a; (void) b;
+            return Value(0);
+        }
+    }
+
+    static Value reduce(Value a) { return a; }
+};
+
+template <typename T> struct RedLogicalOr {
+    using Value = T;
+
+    static Value init() { return Value(0); }
+
+    static Value reduce(Value a, Value b) {
+        if constexpr (std::is_integral_v<Value>) {
+            return a | b;
+        } else {
+            (void) a; (void) b;
+            return Value(0);
+        }
+    }
+
+    static Value reduce(Value a) {
+        if constexpr (std::is_integral_v<Value>) {
+            a |= (a >> 16) | (a << 16);
+            a |= ((a & 0xff00ff00) >> 8) | ((a & 0x00ff00ff) << 8);
+        }
+        return a;
+    }
+};
+
+template <typename T> struct RedLogicalAnd {
 
     using Value = T;
 
@@ -76,6 +122,14 @@ template <typename T> struct RedAnd {
             (void) a; (void) b;
             return Value(0);
         }
+    }
+
+    static Value reduce(Value a) {
+        if constexpr (std::is_integral_v<Value>) {
+            a &= (a >> 16) | (a << 16);
+            a &= ((a & 0xff00ff00) >> 8) | ((a & 0x00ff00ff) << 8);
+        }
+        return a;
     }
 };
 
@@ -112,7 +166,7 @@ static BlockReduction create_block_reduction_2() {
             for (uint32_t j = start; j < end; ++j)
                 accum = Red::reduce(accum, (Value) in[j]);
 
-            out[i] = (T) accum;
+            out[i] = (T) Red::reduce(accum);
         }
     };
 }
@@ -193,6 +247,10 @@ static BlockPrefixReduction create_block_prefix_reduction_2() {
                 return Name##_2<T, RedOr<T>>();                                \
             case ReduceOp::And:                                                \
                 return Name##_2<T, RedAnd<T>>();                               \
+            case ReduceOp::LogicalOr:                                          \
+                return Name##_2<T, RedLogicalOr<T>>();                         \
+            case ReduceOp::LogicalAnd:                                         \
+                return Name##_2<T, RedLogicalAnd<T>>();                        \
             default:                                                           \
                 jitc_raise(#Name "(): unsupported reduction type!");           \
         }                                                                      \

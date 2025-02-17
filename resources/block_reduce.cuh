@@ -215,7 +215,7 @@ __device__ void block_reduce(block_reduce_params params) {
     }
 
     if (pos_in_chunk == 0 && (!MultiChunk || chunk < params.chunk_count))
-        out[chunk] = (T) value;
+        out[chunk] = (T) red(value);
 }
 
 // ----------------------------------------------------------------------------
@@ -268,5 +268,8 @@ BLOCK_RED(or, uint32_t, Vec4, u32)
 BLOCK_RED(or, uint64_t, Vec2, u64)
 BLOCK_RED(and, uint32_t, Vec4, u32)
 BLOCK_RED(and, uint64_t, Vec2, u64)
+
+BLOCK_RED(logical_or, uint32_t, Vec4, u32)
+BLOCK_RED(logical_and, uint32_t, Vec4, u32)
 
 // ----------------------------------------------------------------------------
