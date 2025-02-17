@@ -762,4 +762,4 @@ void ThreadState::reset_state() {
 #endif
 }
 void ThreadState::notify_free(const void *) { }
-void ThreadState::notify_expand(uint32_t index) { }
+void ThreadState::notify_expand(uint32_t) { }

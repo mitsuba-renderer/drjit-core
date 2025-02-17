@@ -274,7 +274,6 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
     constexpr bool is_intel = true;
 #endif
 
-
     if (has_target_features || is_intel) {
         put(" \"target-features\"=\"");
 
@@ -534,6 +533,92 @@ static void jitc_llvm_render(Variable *v) {
         case VarKind::Sqrt:
             fmt_intrinsic("declare $T @llvm.sqrt.v$w$h($T)", v, v, a0);
             fmt("    $v = call $T @llvm.sqrt.v$w$h($V)\n", v, v, v, a0);
+            break;
+
+        case VarKind::RSqrtApprox:
+            if (jitc_llvm_has_neon && jitc_llvm_vector_width == 4) {
+                fmt_intrinsic("declare <$w x float> @llvm.aarch64.neon.frsqrte.v4f32(<$w x float>)");
+                fmt_intrinsic("declare <$w x float> @llvm.aarch64.neon.frsqrts.v4f32(<$w x float>, <$w x float>)");
+                fmt("    $v_0 = call <$w x float> @llvm.aarch64.neon.frsqrte.v4f32($V)\n"
+                    "    $v_1 = fmul <$w x float> $v_0, $v_0\n"
+                    "    $v_2 = call <$w x float> @llvm.aarch64.neon.frsqrts.v4f32($V_1, $V)\n"
+                    "    $v_3 = fmul <$w x float> $v_0, $v_2\n"
+                    "    $v_4 = fmul <$w x float> $v_3, $v_3\n"
+                    "    $v_5 = call <$w x float> @llvm.aarch64.neon.frsqrts.v4f32($V_4, $V)\n"
+                    "    $v = fmul <$w x float> $v_3, $v_5\n",
+                    v, a0,
+                    v, v, v,
+                    v, v, a0,
+                    v, v, v,
+                    v, v, v,
+                    v, v, a0,
+                    v, v, v);
+            } else if (jitc_llvm_has_avx512 && jitc_llvm_vector_width == 16) {
+                fmt_intrinsic("declare <$w x float> @llvm.x86.avx512.rsqrt14.ps.$u(<$w x float>, <$w x float>, i16)", jitc_llvm_vector_width * 32);
+                fmt_intrinsic("declare <$w x i1> @llvm.x86.avx512.fpclass.ps.$u(<$w x float>, i32)", jitc_llvm_vector_width * 32);
+                fmt_intrinsic("declare <$w x float> @llvm.fma.v$wf32(<$w x float>, <$w x float>, <$w x float>)");
+                fmt("    $v_0 = call <$w x float> @llvm.x86.avx512.rsqrt14.ps.$u($V, <$w x float> $z, i16 -1)\n"
+                    "    $v_1 = call <$w x i1> @llvm.x86.avx512.fpclass.ps.$u($V, i32 30)\n"
+                    "    $v_2 = insertelement <$w x float> undef, float 0.5, i32 0\n"
+                    "    $v_3 = insertelement <$w x float> undef, float 3.0, i32 0\n"
+                    "    $v_4 = shufflevector <$w x float> $v_2, <$w x float> undef, <$w x i32> $z\n"
+                    "    $v_5 = shufflevector <$w x float> $v_3, <$w x float> undef, <$w x i32> $z\n"
+                    "    $v_6 = fmul <$w x float> $v, $v_0\n"
+                    "    $v_7 = fmul <$w x float> $v_4, $v_0\n"
+                    "    $v_8 = fneg <$w x float> $v_6\n"
+                    "    $v_9 = call <$w x float> @llvm.fma.v$wf32(<$w x float> $v_8, <$w x float> $v_0, <$w x float> $v_5)\n"
+                    "    $v_10 = fmul <$w x float> $v_7, $v_9\n"
+                    "    $v = select <$w x i1> $v_1, <$w x float> $v_0, <$w x float> $v_10\n",
+                    v, jitc_llvm_vector_width * 32, a0,
+                    v, jitc_llvm_vector_width * 32, a0,
+                    v,
+                    v,
+                    v, v,
+                    v, v,
+                    v, a0, v,
+                    v, v, v,
+                    v, v,
+                    v, v, v, v,
+                    v, v, v,
+                    v, v, v, v);
+            } else if (jitc_llvm_has_avx && jitc_llvm_vector_width == 8) {
+                fmt_intrinsic("declare <$w x float> @llvm.x86.avx.rsqrt.ps.$u(<$w x float>)", jitc_llvm_vector_width * 32);
+                fmt_intrinsic("declare <$w x float> @llvm.x86.avx.blendv.ps.$u(<$w x float>, <$w x float>, <$w x float>)", jitc_llvm_vector_width * 32);
+                fmt_intrinsic("declare <$w x float> @llvm.fma.v$wf32(<$w x float>, <$w x float>, <$w x float>)");
+                fmt("    $v_0 = call <$w x float> @llvm.x86.avx.rsqrt.ps.$u($V)\n"
+                    "    $v_1 = insertelement <$w x float> undef, float 0.5, i32 0\n"
+                    "    $v_2 = insertelement <$w x float> undef, float 3.0, i32 0\n"
+                    "    $v_3 = shufflevector <$w x float> $v_1, <$w x float> undef, <$w x i32> $z\n"
+                    "    $v_4 = shufflevector <$w x float> $v_2, <$w x float> undef, <$w x i32> $z\n"
+                    "    $v_5 = fmul <$w x float> $v, $v_0\n"
+                    "    $v_6 = fmul <$w x float> $v_3, $v_0\n"
+                    "    $v_7 = fneg <$w x float> $v_5\n"
+                    "    $v_8 = call <$w x float> @llvm.fma.v$wf32(<$w x float> $v_7, <$w x float> $v_0, <$w x float> $v_4)\n"
+                    "    $v_9 = fmul <$w x float> $v_6, $v_8\n"
+                    "    $v = call <$w x float> @llvm.x86.avx.blendv.ps.$u(<$w x float> $v_9, <$w x float> $v_0, <$w x float> $v_5)\n",
+                    v, jitc_llvm_vector_width * 32, a0,
+                    v,
+                    v,
+                    v, v,
+                    v, v,
+                    v, a0, v,
+                    v, v, v,
+                    v, v,
+                    v, v, v, v,
+                    v, v, v,
+                    v, jitc_llvm_vector_width * 32, v, v, v);
+            } else {
+                fmt_intrinsic("declare $T @llvm.sqrt.v$w$h($T)", v, v, a0);
+                fmt("    $v_0 = insertelement <$w x float> undef, float 1.0, i32 0\n"
+                    "    $v_1 = shufflevector <$w x float> $v_0, <$w x float> undef, <$w x i32> $z\n"
+                    "    $v_2 = fdiv $V_1, $v\n"
+                    "    $v = call $T @llvm.sqrt.v$w$h($V_2)\n",
+                    v,
+                    v, v,
+                    v, v, a0,
+                    v, v, v, v
+                );
+            }
             break;
 
         case VarKind::Abs:

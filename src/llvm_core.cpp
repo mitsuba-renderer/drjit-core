@@ -66,6 +66,11 @@ LLVMTargetMachineRef jitc_llvm_tm = nullptr;
 /// Number of work items per block handed to nanothread
 uint32_t jitc_llvm_block_size = 16384;
 
+/// Various hardware capabilities
+bool jitc_llvm_has_avx = false;
+bool jitc_llvm_has_avx512 = false;
+bool jitc_llvm_has_neon = false;
+
 void jitc_llvm_update_strings();
 
 bool jitc_llvm_init() {
@@ -129,12 +134,18 @@ bool jitc_llvm_init() {
 
     if (strstr(jitc_llvm_target_features, "+sse4.2"))
         jitc_llvm_vector_width = 4;
-    if (strstr(jitc_llvm_target_features, "+avx"))
+    if (strstr(jitc_llvm_target_features, "+avx")) {
         jitc_llvm_vector_width = 8;
-    if (strstr(jitc_llvm_target_features, "+avx512vl"))
+        jitc_llvm_has_avx = true;
+    }
+    if (strstr(jitc_llvm_target_features, "+avx512vl")) {
         jitc_llvm_vector_width = 16;
-    if (strstr(jitc_llvm_target_features, "+neon"))
+        jitc_llvm_has_avx512 = true;
+    }
+    if (strstr(jitc_llvm_target_features, "+neon")) {
         jitc_llvm_vector_width = 4;
+        jitc_llvm_has_neon = true;
+    }
 
 #if defined(__APPLE__) && defined(__aarch64__)
     jitc_llvm_vector_width = 4;

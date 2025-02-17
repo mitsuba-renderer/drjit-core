@@ -1359,12 +1359,10 @@ uint32_t jitc_var_rsqrt(uint32_t a0) {
 
     bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
 
-    if (!result && info.backend == JitBackend::CUDA &&
-        info.type == VarType::Float32 && fast_math) {
+    if (!result && info.type == VarType::Float32 && fast_math)
         result =
             jitc_var_new_node_1(info.backend, VarKind::RSqrtApprox, info.type,
                                 info.size, info.symbolic, a0, v0);
-    }
 
     if (!result && info.size) {
         // Reciprocal, then square root (lower error than the other way around)
