@@ -73,6 +73,11 @@ extern char *jitc_llvm_u32_width_str;
 
 extern uint32_t jitc_llvm_block_size;
 
+/// Various hardware capabilities
+extern bool jitc_llvm_has_avx;
+extern bool jitc_llvm_has_avx512;
+extern bool jitc_llvm_has_neon;
+
 /// Try to load initialize LLVM backend
 extern bool jitc_llvm_init();
 
