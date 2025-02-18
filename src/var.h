@@ -215,6 +215,12 @@ extern bool jitc_var_all(uint32_t index);
 /// Reduce (Or) a boolean array to a single value, synchronizes.
 extern bool jitc_var_any(uint32_t index);
 
+/// Reduce (And) a boolean array to a single value, asynchronous.
+extern uint32_t jitc_var_all_async(JitBackend backend, uint32_t index);
+
+/// Reduce (Or) a boolean array to a single value, asynchronous.
+extern uint32_t jitc_var_any_async(JitBackend backend, uint32_t index);
+
 /// Reduce a variable to a single value
 extern uint32_t jitc_var_reduce(JitBackend backend, VarType vt,
                                 ReduceOp op, uint32_t index);

@@ -40,11 +40,17 @@ extern void jitc_reduce_dot(JitBackend backend, VarType type,
                             const void *ptr_1, const void *ptr_2,
                             uint32_t size, void *out);
 
-/// 'All' reduction for boolean arrays
+/// 'All' reduction for boolean arrays (synchronous)
 extern bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size);
 
-/// 'Any' reduction for boolean arrays
+/// 'All' reduction for boolean arrays (asynchronous)
+extern void jitc_all_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out);
+
+/// 'Any' reduction for boolean arrays (synchronous)
 extern bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size);
+
+/// 'Any' reduction for boolean arrays (asynchronous)
+extern void jitc_any_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out);
 
 /// Mask compression
 extern uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size,

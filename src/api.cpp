@@ -813,6 +813,16 @@ int jit_var_all(uint32_t index) {
     return jitc_var_all(index);
 }
 
+uint32_t jit_var_any_async(JitBackend backend, uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_var_any_async(backend, index);
+}
+
+uint32_t jit_var_all_async(JitBackend backend, uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_var_all_async(backend, index);
+}
+
 uint32_t jit_var_reduce(JitBackend backend, VarType vt, ReduceOp op,
                         uint32_t index) {
     lock_guard guard(state.lock);
