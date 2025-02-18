@@ -269,4 +269,7 @@ BLOCK_RED(or, uint64_t, Vec2, u64)
 BLOCK_RED(and, uint32_t, Vec4, u32)
 BLOCK_RED(and, uint64_t, Vec2, u64)
 
+BLOCK_RED_1(and, uint8_t, uint8_t, u8, 4)
+BLOCK_RED_1(or, uint8_t, uint8_t, u8, 4)
+
 // ----------------------------------------------------------------------------

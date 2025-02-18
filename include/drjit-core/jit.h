@@ -1943,6 +1943,14 @@ extern JIT_EXPORT int jit_var_all(uint32_t index);
 /// Reduce (Or) a boolean array to a single value (synchronous).
 extern JIT_EXPORT int jit_var_any(uint32_t index);
 
+/// Reduce (And) a boolean array to a single value (asynchronous).
+extern JIT_EXPORT uint32_t jit_var_all_async(JIT_ENUM JitBackend backend,
+                                             uint32_t index);
+
+/// Reduce (Or) a boolean array to a single value (asynchronous).
+extern JIT_EXPORT uint32_t jit_var_any_async(JIT_ENUM JitBackend backend,
+                                             uint32_t index);
+
 /// Reduce a variable to a single value (asynchronous)
 extern JIT_EXPORT uint32_t jit_var_reduce(JIT_ENUM JitBackend backend,
                                           JIT_ENUM VarType vt,

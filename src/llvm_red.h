@@ -200,6 +200,8 @@ static BlockPrefixReduction create_block_prefix_reduction_2() {
                                                                                \
     template <bool... Bs> static auto Name(VarType vt, ReduceOp op) {          \
         switch (vt) {                                                          \
+            case VarType::UInt8:                                               \
+                return Name##_1<uint8_t>(op);                                  \
             case VarType::Int32:                                               \
                 return Name##_1<int32_t>(op);                                  \
             case VarType::UInt32:                                              \

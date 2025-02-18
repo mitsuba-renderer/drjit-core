@@ -18,12 +18,12 @@ static const size_t kernels_dict_size_uncompressed = 65536;
 static const size_t kernels_dict_size_compressed = 19638;
 
 extern const char kernels_50[];
-static const size_t kernels_50_size_uncompressed = 1822483;
-static const size_t kernels_50_size_compressed = 192182;
+static const size_t kernels_50_size_uncompressed = 1825423;
+static const size_t kernels_50_size_compressed = 192523;
 
 extern const char kernels_70[];
-static const size_t kernels_70_size_uncompressed = 1818576;
-static const size_t kernels_70_size_compressed = 191333;
+static const size_t kernels_70_size_uncompressed = 1821516;
+static const size_t kernels_70_size_compressed = 191674;
 
 static const char *kernels_list =
     "compress_small,"
@@ -351,6 +351,8 @@ static const char *kernels_list =
     "block_reduce_and_u64_4,"
     "block_reduce_and_u64_2,"
     "block_reduce_and_u64_vec_1024,"
+    "block_reduce_and_u8_4,"
+    "block_reduce_or_u8_4,"
     "block_prefix_reduce_add_f16_1024,"
     "block_prefix_reduce_add_f16_512,"
     "block_prefix_reduce_add_f16_256,"

@@ -1952,6 +1952,30 @@ bool jitc_var_any(uint32_t index) {
     return jitc_any((JitBackend) v->backend, (uint8_t *) v->data, v->size);
 }
 
+uint32_t jitc_var_any_async(JitBackend backend, uint32_t index) {
+    if (!index)
+        return jitc_var_bool(backend, false);
+
+    const Variable *v = jitc_var(index);
+
+    if (unlikely((VarType) v->type != VarType::Bool ||
+                 (JitBackend) v->backend != backend))
+        jitc_raise("jit_var_any_async(r%u): invalid input!", index);
+
+    if (v->is_literal())
+        return jitc_var_bool(backend, (bool) v->literal);
+
+    uint8_t *mem = (uint8_t *) jitc_malloc(
+        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, 4);
+
+    jitc_var_eval(index);
+    v = jitc_var(index);
+
+    jitc_any_async(backend, (uint8_t *) v->data, v->size, mem);
+
+    return jitc_var_mem_map(backend, VarType::Bool, mem, 1, 1);
+}
+
 bool jitc_var_all(uint32_t index) {
     if (!index)
         return true;
@@ -1968,6 +1992,30 @@ bool jitc_var_all(uint32_t index) {
         v = jitc_var(index);
 
     return jitc_all((JitBackend) v->backend, (uint8_t *) v->data, v->size);
+}
+
+uint32_t jitc_var_all_async(JitBackend backend, uint32_t index) {
+    if (!index)
+        return jitc_var_bool(backend, true);
+
+    const Variable *v = jitc_var(index);
+
+    if (unlikely((VarType) v->type != VarType::Bool ||
+                 (JitBackend) v->backend != backend))
+        jitc_raise("jit_var_all_async(r%u): invalid input!", index);
+
+    if (v->is_literal())
+        return jitc_var_bool(backend, (bool) v->literal);
+
+    uint8_t *mem = (uint8_t *) jitc_malloc(
+        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, 4);
+
+    jitc_var_eval(index);
+    v = jitc_var(index);
+
+    jitc_all_async(backend, (uint8_t *) v->data, v->size, mem);
+
+    return jitc_var_mem_map(backend, VarType::Bool, mem, 1, 1);
 }
 
 uint32_t jitc_var_compress(uint32_t index) {

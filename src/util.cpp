@@ -70,8 +70,8 @@ void jitc_reduce_dot(JitBackend backend, VarType type,
     thread_state(backend)->reduce_dot(type, ptr_1, ptr_2, size, out);
 }
 
-/// 'All' reduction for boolean arrays
-bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
+/// 'All' reduction for boolean arrays (internal)
+void jitc_all_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
     /* When \c size is not a multiple of 4, the implementation will initialize up
        to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
        reduction algorithm can be used. This is fine for allocations made using
@@ -87,26 +87,12 @@ bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
         jitc_memset_async(backend, values + size, trailing, sizeof(bool), &filler);
     }
 
-    uint8_t buf[4], *tmp;
-    if (backend == JitBackend::CUDA)
-        tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
-    else
-        tmp = buf;
-
     jitc_block_reduce(backend, VarType::UInt32, ReduceOp::And, size_4,
-                      size_4, values, tmp);
-    jitc_sync_thread();
-
-    bool result = (tmp[0] & tmp[1] & tmp[2] & tmp[3]) != 0;
-
-    if (backend == JitBackend::CUDA)
-        jitc_free(tmp);
-
-    return result;
+                      size_4, values, out);
 }
 
-/// 'Any' reduction for boolean arrays
-bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
+/// 'Any' reduction for boolean arrays (asynchronous)
+void jitc_any_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
     /* When \c size is not a multiple of 4, the implementation will initialize up
        to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
        reduction algorithm can be used. This is fine for allocations made using
@@ -122,16 +108,50 @@ bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
         jitc_memset_async(backend, values + size, trailing, sizeof(bool), &filler);
     }
 
+    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::Or, size_4,
+                      size_4, values, out);
+}
+
+void jitc_any_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
+    jitc_any_async_4(backend, values, size, out);
+    jitc_block_reduce(backend, VarType::UInt8, ReduceOp::Or, 4, 4, values, out);
+}
+
+void jitc_all_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
+    jitc_all_async_4(backend, values, size, out);
+    jitc_block_reduce(backend, VarType::UInt8, ReduceOp::And, 4, 4, values, out);
+}
+
+/// 'All' reduction for boolean arrays
+bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
     uint8_t buf[4], *tmp;
     if (backend == JitBackend::CUDA)
         tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
     else
         tmp = buf;
 
-    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::Or, size_4,
-                      size_4, values, tmp);
-
+    jitc_all_async_4(backend, values, size, tmp);
     jitc_sync_thread();
+
+    bool result = (tmp[0] & tmp[1] & tmp[2] & tmp[3]) != 0;
+
+    if (backend == JitBackend::CUDA)
+        jitc_free(tmp);
+
+    return result;
+}
+
+/// 'Any' reduction for boolean arrays
+bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
+    uint8_t buf[4], *tmp;
+    if (backend == JitBackend::CUDA)
+        tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4);
+    else
+        tmp = buf;
+
+    jitc_any_async_4(backend, values, size, tmp);
+    jitc_sync_thread();
+
     bool result = (tmp[0] | tmp[1] | tmp[2] | tmp[3]) != 0;
 
     if (backend == JitBackend::CUDA)
