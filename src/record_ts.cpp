@@ -329,7 +329,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                     return false;
                 break;
             case OpType::Barrier: {
-                ProfilerPhase profiler(pr_barrier);
+                ProfilerPhase profiler2(pr_barrier);
                 if (!dry_run)
                     ts->barrier();
             }; break;
@@ -374,10 +374,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                     return false;
                 break;
             case OpType::Free: {
-                ProfilerPhase profiler(pr_free);
+                ProfilerPhase profiler2(pr_free);
 
-                uint32_t i         = op.dependency_range.first;
-                AccessInfo info     = dependencies[i];
+                uint32_t j         = op.dependency_range.first;
+                AccessInfo info    = dependencies[j];
                 ReplayVariable &rv = replay_variables[info.slot];
 
                 rv.free();
@@ -459,7 +459,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
 
 void RecordThreadState::barrier() {
     if (!paused()) {
-        uint32_t start = m_recording.dependencies.size();
+        uint32_t start = (uint32_t) m_recording.dependencies.size();
 
         Operation op;
         op.type             = OpType::Barrier;
@@ -483,9 +483,9 @@ void RecordThreadState::notify_free(const void *ptr) {
     if (has_variable(ptr)) {
         jitc_log(LogLevel::Debug, "record(): jitc_free(ptr=%p)", ptr);
 
-        uint32_t start = m_recording.dependencies.size();
+        uint32_t start = (uint32_t) m_recording.dependencies.size();
         add_in_param(ptr, VarType::Void, false);
-        uint32_t end = m_recording.dependencies.size();
+        uint32_t end = (uint32_t) m_recording.dependencies.size();
 
         Operation op;
         op.type             = OpType::Free;
@@ -505,7 +505,7 @@ void RecordThreadState::notify_free(const void *ptr) {
  */
 void RecordThreadState::add_input(uint32_t input) {
     try {
-        uint32_t input_index = m_recording.inputs.size();
+        uint32_t input_index = (uint32_t) m_recording.inputs.size();
         Variable *v          = jitc_var(input);
 
         uint32_t slot = add_variable(v->data);
@@ -531,7 +531,7 @@ void RecordThreadState::add_input(uint32_t input) {
  */
 void RecordThreadState::add_output(uint32_t output) {
     try {
-        uint32_t output_index = m_recording.outputs.size();
+        uint32_t output_index = (uint32_t) m_recording.outputs.size();
         Variable *v           = jitc_var(output);
         uint32_t slot;
         if (!has_variable(v->data)) {
@@ -565,23 +565,23 @@ bool RecordThreadState::resume() {
 
 Task *RecordThreadState::launch(Kernel kernel, KernelKey *key,
                                 XXH128_hash_t hash, uint32_t size,
-                                std::vector<void *> *kernel_params,
+                                std::vector<void *> *params,
                                 const std::vector<uint32_t> *kernel_param_ids) {
     if (!paused()) {
         try {
-            record_launch(kernel, key, hash, size, kernel_params,
+            record_launch(kernel, key, hash, size, params,
                           kernel_param_ids);
         } catch (...) {
             record_exception();
         }
     }
     pause_scope pause(this);
-    return m_internal->launch(kernel, key, hash, size, kernel_params, nullptr);
+    return m_internal->launch(kernel, key, hash, size, params, nullptr);
 }
 
 void RecordThreadState::record_launch(
     Kernel kernel, KernelKey *key, XXH128_hash_t hash, uint32_t size,
-    std::vector<void *> *kernel_params,
+    std::vector<void *> *params,
     const std::vector<uint32_t> *kernel_param_ids) {
     uint32_t kernel_param_offset = backend == JitBackend::CUDA ? 1 : 3;
 
@@ -596,7 +596,7 @@ void RecordThreadState::record_launch(
              (unsigned long long) hash.high64);
 #endif
 
-    uint32_t start = m_recording.dependencies.size();
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
     for (uint32_t param_index = 0; param_index < kernel_param_ids->size();
          param_index++) {
 
@@ -606,7 +606,7 @@ void RecordThreadState::record_launch(
 
         // Note, the ptr might not come from the variable but the \c
         // ScheduledVariable if it is an output.
-        void *ptr = kernel_params->at(kernel_param_offset + param_index);
+        void *ptr = params->at(kernel_param_offset + param_index);
         ParamType param_type = (ParamType) v->param_type;
 
         if (param_type == ParamType::Input &&
@@ -677,7 +677,7 @@ void RecordThreadState::record_launch(
         info.vtype          = (VarType) v->type;
         add_param(info);
     }
-    uint32_t end = m_recording.dependencies.size();
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     Operation op;
     op.type             = OpType::KernelLaunch;
@@ -826,7 +826,7 @@ int Recording::replay_launch(Operation &op) {
         launch_size = input_size != 0 ? input_size : ptr_size;
         // Apply the factor
         if (op.size > op.input_size && (op.size % op.input_size == 0)) {
-            uint32_t ratio = op.size / op.input_size;
+            uint32_t ratio = (uint32_t) (op.size / op.input_size);
 
             jitc_log(LogLevel::Debug,
                      "replay(): Inferring launch size by heuristic, "
@@ -834,7 +834,7 @@ int Recording::replay_launch(Operation &op) {
                      launch_size, ratio);
             launch_size = launch_size * ratio;
         } else if (op.input_size % op.size == 0) {
-            uint32_t fraction = op.input_size / op.size;
+            uint32_t fraction = (uint32_t) (op.input_size / op.size);
             jitc_log(LogLevel::Debug,
                      "replay(): Inferring launch size by heuristic, "
                      "launch_size(%u), fraction=%u",
@@ -845,7 +845,7 @@ int Recording::replay_launch(Operation &op) {
     if (launch_size == 0) {
         jitc_log(LogLevel::Debug, "replay(): Could not infer launch "
                                   "size, using recorded size");
-        launch_size = op.size;
+        launch_size = (uint32_t) op.size;
     }
 
     // Allocate output variables for kernel launch. The assumption here is that
@@ -921,7 +921,7 @@ void RecordThreadState::record_expand(uint32_t index) {
     memset.enabled    = false;
 
     Operation op;
-    uint32_t start = m_recording.dependencies.size();
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
     add_out_param(dst_slot, v->type);
     if (rv.last_memcpy) {
         Operation &memcpy = m_recording.operations[rv.last_memcpy - 1];
@@ -948,7 +948,7 @@ void RecordThreadState::record_expand(uint32_t index) {
 
         op.size = v->size;
     }
-    uint32_t end = m_recording.dependencies.size();
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     op.type             = OpType::Expand;
     op.dependency_range = std::pair(start, end);
@@ -984,7 +984,7 @@ int Recording::replay_expand(Operation &op) {
     } else {
         // Case where in jitc_var_expand, v->is_literal &&
         // v->literal == identity
-        size = op.size;
+        size = (uint32_t) op.size;
         jitc_log(LogLevel::Debug,
                  "jitc_memcpy_async(dst=%p, src= literal 0x%llx, "
                  "size=%zu)",
@@ -998,7 +998,7 @@ int Recording::replay_expand(Operation &op) {
     auto [workers, replication_per_worker] =
         jitc_llvm_expand_replication_factor(size, tsize);
 
-    size_t new_size = size * (size_t) replication_per_worker * (size_t) workers;
+    uint32_t new_size = size * replication_per_worker *  workers;
 
     dst_rv.alloc(backend, new_size, dst_info.vtype);
 
@@ -1008,7 +1008,7 @@ int Recording::replay_expand(Operation &op) {
     if (!dry_run && memcpy)
         ts->memcpy_async(dst_rv.data, src_ptr, (size_t) size * tsize);
 
-    dst_rv.data_size = size * type_size[(uint32_t) dst_info.vtype];
+    dst_rv.data_size = size * (size_t) type_size[(uint32_t) dst_info.vtype];
 
     return true;
 }
@@ -1055,9 +1055,9 @@ void RecordThreadState::record_reduce_expanded(VarType vt, ReduceOp reduce_op,
              "size=%u)",
              type_name[(uint32_t) vt], (uint32_t) reduce_op, data, exp, size);
 
-    uint32_t start = m_recording.dependencies.size();
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
     add_out_param(data, vt);
-    uint32_t end = m_recording.dependencies.size();
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     Operation op;
     op.type             = OpType::ReduceExpanded;
@@ -1118,12 +1118,12 @@ void RecordThreadState::memcpy_async(void *dst, const void *src, size_t size) {
 
             uint32_t dst_id = add_variable(dst);
             m_recording.recorded_variables[dst_id].last_memcpy =
-                m_recording.operations.size() + 1;
+                (uint32_t) m_recording.operations.size() + 1;
 
-            uint32_t start = m_recording.dependencies.size();
+            uint32_t start = (uint32_t) m_recording.dependencies.size();
             add_in_param(src_id);
             add_out_param(dst_id, m_recording.recorded_variables[src_id].type);
-            uint32_t end = m_recording.dependencies.size();
+            uint32_t end = (uint32_t) m_recording.dependencies.size();
 
             Operation op;
             op.type             = OpType::MemcpyAsync;
@@ -1216,11 +1216,11 @@ void RecordThreadState::record_memset_async(void *ptr, uint32_t size,
 
     uint32_t ptr_id = add_variable(ptr);
     m_recording.recorded_variables[ptr_id].last_memset =
-        m_recording.operations.size() + 1;
+        (uint32_t) m_recording.operations.size() + 1;
 
-    uint32_t start = m_recording.dependencies.size();
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
     add_out_param(ptr_id, VarType::Void);
-    uint32_t end = m_recording.dependencies.size();
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     Operation op;
     op.type             = OpType::MemsetAsync;
@@ -1240,16 +1240,16 @@ int Recording::replay_memset_async(Operation &op) {
     AccessInfo ptr_info = dependencies[dependency_index];
 
     ReplayVariable &ptr_var = replay_variables[ptr_info.slot];
-    ptr_var.alloc(backend, op.size, op.input_size);
+    ptr_var.alloc(backend, (uint32_t) op.size, (uint32_t) op.input_size);
 
-    uint32_t size = ptr_var.size(op.input_size);
+    uint32_t size = ptr_var.size((uint32_t) op.input_size);
 
     jitc_log(LogLevel::Debug,
              "replay(): memset_async(ptr=%p, size=%u, "
              "isize=%zu, src=%p)",
              ptr_var.data, size, op.input_size, &op.data);
     if (!dry_run)
-        ts->memset_async(ptr_var.data, size, op.input_size, &op.data);
+        ts->memset_async(ptr_var.data, size, (uint32_t) op.input_size, &op.data);
 
     return true;
 }
@@ -1275,10 +1275,10 @@ void RecordThreadState::record_compress(const uint8_t *in, uint32_t size,
     jitc_log(LogLevel::Debug, "record(): compress(in=%p, size=%u, out=%p)", in,
              size, out);
 
-    uint32_t start = m_recording.dependencies.size();
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
     add_in_param(in);
     add_out_param(out, VarType::UInt32);
-    uint32_t end = m_recording.dependencies.size();
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     Operation op;
     op.type             = OpType::Compress;
@@ -1352,11 +1352,11 @@ void RecordThreadState::record_mkperm(const uint32_t *values, uint32_t size,
                  "bucket_count=%u, perm=%p, offsets=%p)",
                  values, size, bucket_count, perm, offsets);
 
-        uint32_t start = m_recording.dependencies.size();
+        uint32_t start = (uint32_t) m_recording.dependencies.size();
         add_in_param(values);
         add_out_param(perm, VarType::UInt32);
         add_out_param(offsets, VarType::UInt32);
-        uint32_t end = m_recording.dependencies.size();
+        uint32_t end = (uint32_t) m_recording.dependencies.size();
 
         Operation op;
         op.type             = OpType::Mkperm;
@@ -1422,10 +1422,10 @@ void RecordThreadState::record_block_reduce(VarType vt, ReduceOp rop,
              "in=%p, out=%p)",
              (uint32_t) vt, (uint32_t) rop, size, block_size, in, out);
 
-    uint32_t start = m_recording.dependencies.size();
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
     add_in_param(in, vt);
     add_out_param(out, vt);
-    uint32_t end = m_recording.dependencies.size();
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     Operation op;
     op.type             = OpType::BlockReduce;
@@ -1450,7 +1450,7 @@ int Recording::replay_block_reduce(Operation &op) {
 
     uint32_t size = in_var.size(in_info.vtype);
 
-    uint32_t block_size = op.input_size;
+    uint32_t block_size = (uint32_t) op.input_size;
     if (op.input_size == op.size)
         block_size = size;
 
@@ -1508,10 +1508,10 @@ void RecordThreadState::record_block_prefix_reduce(VarType vt, ReduceOp rop,
         (uint32_t) vt, (uint32_t) rop, size, block_size, exclusive, reverse, in,
         out);
 
-    uint32_t start = m_recording.dependencies.size();
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
     add_in_param(in, vt);
     add_out_param(out, vt);
-    uint32_t end = m_recording.dependencies.size();
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     Operation op;
     op.type             = OpType::BlockPrefixReduce;
@@ -1537,7 +1537,7 @@ int Recording::replay_block_prefix_reduce(Operation &op) {
 
     uint32_t size = in_var.size(in_info.vtype);
 
-    uint32_t block_size = op.input_size;
+    uint32_t block_size = (uint32_t) op.input_size;
     if (op.input_size == op.size)
         block_size = size;
 
@@ -1594,11 +1594,11 @@ void RecordThreadState::record_reduce_dot(VarType type, const void *ptr_1,
         "record(): reduce_dot(type=%s, ptr_1=%p, ptr_2=%p, size=%u, out=%p)",
         type_name[(uint32_t) type], ptr_1, ptr_2, size, out);
 
-    uint32_t start = m_recording.dependencies.size();
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
     add_out_param(out, type);
     add_in_param(ptr_1, type);
     add_in_param(ptr_2, type);
-    uint32_t end = m_recording.dependencies.size();
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     Operation op;
     op.type             = OpType::ReduceDot;
@@ -1659,7 +1659,7 @@ void RecordThreadState::record_aggregate(void *dst, AggregationEntry *agg,
     jitc_log(LogLevel::Debug, "record(): aggregate(dst=%p, size=%u)", dst,
              size);
 
-    uint32_t start = m_recording.dependencies.size();
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
 
     add_out_param(dst, VarType::UInt8);
 
@@ -1717,7 +1717,7 @@ void RecordThreadState::record_aggregate(void *dst, AggregationEntry *agg,
         }
     }
 
-    uint32_t end = m_recording.dependencies.size();
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     Operation op;
     op.type             = OpType::Aggregate;
@@ -1813,8 +1813,9 @@ void RecordThreadState::poke(void *dst, const void *src, uint32_t size) {
     // \c src will therefore not be a pointer, allocated with \c jitc_malloc,
     // and we cannot track it.
     jitc_raise("RecordThreadState::poke(): this function cannot be recorded!");
-    pause_scope pause(this);
-    return m_internal->poke(dst, src, size);
+    (void) dst; (void) src; (void) size;
+    // pause_scope pause(this);
+    // return m_internal->poke(dst, src, size);
 }
 
 // Enqueue a function to be run on the host once backend computation is done
@@ -1822,8 +1823,9 @@ void RecordThreadState::enqueue_host_func(void (*callback)(void *),
                                           void *payload) {
     jitc_raise("RecordThreadState::enqueue_host_func(): this function cannot "
                "be recorded!");
-    pause_scope pause(this);
-    return m_internal->enqueue_host_func(callback, payload);
+    (void) callback; (void) payload;
+    // pause_scope pause(this);
+    // return m_internal->enqueue_host_func(callback, payload);
 }
 
 void Recording::validate() {
@@ -1866,18 +1868,16 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
     // Increment scope, can be used to track missing inputs
     jitc_new_scope(backend);
 
-    ThreadState *ts              = thread_state(backend);
-    RecordThreadState *record_ts = new RecordThreadState(ts);
+    ThreadState *ts_             = thread_state(backend);
+    RecordThreadState *record_ts = new RecordThreadState(ts_);
 
-    if (backend == JitBackend::CUDA) {
+    if (backend == JitBackend::CUDA)
         thread_state_cuda = record_ts;
-    } else {
+    else
         thread_state_llvm = record_ts;
-    }
 
-    for (uint32_t i = 0; i < n_inputs; ++i) {
+    for (uint32_t i = 0; i < n_inputs; ++i)
         record_ts->add_input(inputs[i]);
-    }
 
     jitc_set_flag(JitFlag::FreezingScope, true);
 }
@@ -1937,7 +1937,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
  */
 uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
     jitc_log(LogLevel::Debug, "capture_call_offset(ptr=%p, dsize=%zu)", ptr, dsize);
-    uint32_t size = dsize / type_size[(uint32_t) VarType::UInt64];
+    uint32_t size = (uint32_t) dsize / type_size[(uint32_t) VarType::UInt64];
 
     AllocType atype =
         backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync;
@@ -1958,7 +1958,7 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
     uint32_t slot;
     auto it = ptr_to_slot.find(ptr);
     if (it == ptr_to_slot.end()) {
-        slot = m_recording.recorded_variables.size();
+        slot = (uint32_t) m_recording.recorded_variables.size();
 
         m_recording.recorded_variables.push_back(rv);
 
@@ -2017,7 +2017,7 @@ uint32_t RecordThreadState::add_variable(const void *ptr) {
     auto it = ptr_to_slot.find(ptr);
 
     if (it == ptr_to_slot.end()) {
-        uint32_t slot = m_recording.recorded_variables.size();
+        uint32_t slot = (uint32_t) m_recording.recorded_variables.size();
 
         RecordedVariable rv;
 #ifndef NDEBUG
