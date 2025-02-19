@@ -1550,18 +1550,21 @@ enum class JitFlag : uint32_t {
        along with the KernelHistory feature. */
     LaunchBlocking = 1 << 16,
 
+    /// Treat any kind of synchronization as a failure and raise an exception
+    ForbidSynchronization = 1 << 17,
+
     /// Perform a local (warp/SIMD) reduction before issuing global atomics
-    ScatterReduceLocal = 1 << 17,
+    ScatterReduceLocal = 1 << 18,
 
     /// Set to \c true when Dr.Jit is capturing symbolic computation. This flag
     /// is managed automatically and should not be set by application code.
-    SymbolicScope = 1 << 18,
+    SymbolicScope = 1 << 19,
 
     /// Freeze functions annotated with dr.freeze
-    KernelFreezing = 1 << 19,
+    KernelFreezing = 1 << 20,
 
     /// Set to \c true when Dr.Jit is recording a frozen function
-    FreezingScope = 1 << 20,
+    FreezingScope = 1 << 21,
 
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
@@ -1599,10 +1602,11 @@ enum JitFlag {
     JitFlagPrintIR = 1 << 14,
     JitFlagKernelHistory = 1 << 15,
     JitFlagLaunchBlocking = 1 << 16,
-    JitFlagScatterReduceLocal = 1 << 17,
-    JitFlagSymbolic = 1 << 18
-    KernelFreezing = 1 << 19,
-    FreezingScope = 1 << 20,
+    JitFlagForbidSynchronization = 1 << 17,
+    JitFlagScatterReduceLocal = 1 << 18,
+    JitFlagSymbolic = 1 << 19
+    KernelFreezing = 1 << 20,
+    FreezingScope = 1 << 21,
 };
 #endif
 

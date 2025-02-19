@@ -455,6 +455,11 @@ void jitc_cuda_set_device(int device_id) {
 void jitc_sync_thread(ThreadState *ts) {
     if (!ts)
         return;
+
+    if (jitc_flag(JitFlag::ForbidSynchronization))
+        jitc_raise("Attempted to synchronize in a context, where "
+                   "synchronization was explicitly forbidden!");
+
     if (ts->backend == JitBackend::CUDA) {
         scoped_set_context guard(ts->context);
         CUstream stream = ts->stream;
