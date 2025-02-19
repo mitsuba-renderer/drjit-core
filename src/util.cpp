@@ -114,12 +114,12 @@ void jitc_any_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_
 
 void jitc_any_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
     jitc_any_async_4(backend, values, size, out);
-    jitc_block_reduce(backend, VarType::UInt8, ReduceOp::Or, 4, 4, values, out);
+    jitc_block_reduce(backend, VarType::UInt8, ReduceOp::Or, 4, 4, out, out);
 }
 
 void jitc_all_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
     jitc_all_async_4(backend, values, size, out);
-    jitc_block_reduce(backend, VarType::UInt8, ReduceOp::And, 4, 4, values, out);
+    jitc_block_reduce(backend, VarType::UInt8, ReduceOp::And, 4, 4, out, out);
 }
 
 /// 'All' reduction for boolean arrays
