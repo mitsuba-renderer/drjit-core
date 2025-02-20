@@ -38,6 +38,7 @@ enum class OpType {
     BlockPrefixReduce,
     ReduceDot,
     Aggregate,
+    SymbolicWidth,
     Free,
     Count,
 };
@@ -296,6 +297,8 @@ struct Recording {
 
     int replay_aggregate(Operation &op);
 
+    int replay_symbolic_width(Operation &op);
+
     /// This function is called after recording and checks that the recording is
     /// valid i.e. that no variables where left uninitialized.
     void validate();
@@ -427,6 +430,8 @@ public:
     /// dr.ReduceOp.Expand
     void reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                          uint32_t exp, uint32_t size) override;
+
+    void notify_symbolic_width(uint32_t index, uint32_t width_index) override;
 
     /**
      * This function is called every time a pointer is freed using \ref
