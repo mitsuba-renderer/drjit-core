@@ -373,6 +373,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 if (!replay_aggregate(op))
                     return false;
                 break;
+            case OpType::SymbolicWidth:
+                if(!replay_symbolic_width(op))
+                    return false;
+                break;
             case OpType::Free: {
                 ProfilerPhase profiler2(pr_free);
 
@@ -469,6 +473,41 @@ void RecordThreadState::barrier() {
 
     pause_scope pause(this);
     return m_internal->barrier();
+}
+
+void RecordThreadState::notify_symbolic_width(uint32_t index,
+                                              uint32_t width_index) {
+    if (!paused()) {
+        uint32_t start = m_recording.dependencies.size();
+        Variable *v1 = jitc_var(index);
+        Variable *v2 = jitc_var(width_index);
+        add_in_param(v1->data, (VarType) v1->type);
+        add_out_param(v2->data, VarType::UInt32);
+        uint32_t end = m_recording.dependencies.size();
+
+        Operation op;
+        op.type             = OpType::SymbolicWidth;
+        op.dependency_range = std::pair(start, end);
+        m_recording.operations.push_back(op);
+    }
+}
+
+int Recording::replay_symbolic_width(Operation &op){
+
+    uint32_t dependency_index = op.dependency_range.first;
+    AccessInfo in_info = dependencies[dependency_index];
+    AccessInfo out_info = dependencies[dependency_index + 1];
+
+    ReplayVariable &in_var = replay_variables[in_info.slot];
+    ReplayVariable &out_var = replay_variables[out_info.slot];
+
+    out_var.alloc(backend, 1, out_info.vtype);
+    uint32_t size = in_var.size(in_info.vtype);
+
+    if (!dry_run)
+        jitc_memcpy(backend, out_var.data, &size, sizeof(uint32_t));
+
+    return true;
 }
 
 /**
