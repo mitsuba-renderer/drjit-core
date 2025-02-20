@@ -248,3 +248,22 @@ TEST_LLVM(10_scatter) {
         jit_assert(all(eq(y, arange<UInt32>(10 + i) + 1)));
     }
 }
+
+TEST_BOTH(11_symbolic_width) {
+    auto func = [](UInt32 x) {
+        auto y = block_prefix_sum(x, x.size());
+        y = y / x.symbolic_width();
+        return y;
+    };
+
+    FrozenFunction frozen(Backend, func);
+
+    for (uint32_t i = 0; i < 4; i++) {
+        auto x = arange<UInt32>(10 + i);
+
+        auto res = frozen(x);
+        auto ref = func(x);
+
+        jit_assert(all(eq(res, ref)));
+    }
+}

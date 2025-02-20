@@ -738,6 +738,8 @@ struct ThreadState : public ThreadStateBase {
                                const MatrixDescr *in_d, void *out,
                                const MatrixDescr *out_d) = 0;
 
+    virtual void notify_symbolic_width(uint32_t index, uint32_t width_index);
+
     /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
     /// This is required for kernel freezing.
     virtual void notify_free(const void *ptr);

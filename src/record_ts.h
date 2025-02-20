@@ -38,6 +38,7 @@ enum class OpType {
     BlockPrefixReduce,
     ReduceDot,
     Aggregate,
+    SymbolicWidth,
     Free,
     Count,
 };
@@ -296,6 +297,8 @@ struct Recording {
 
     int replay_aggregate(Operation &op);
 
+    int replay_symbolic_width(Operation &op);
+
     /// This function is called after recording and checks that the recording is
     /// valid i.e. that no variables where left uninitialized.
     void validate();
@@ -432,6 +435,8 @@ public:
     void coop_vec_pack(uint32_t count,const void *in,
                        const MatrixDescr *in_d, void *out,
                        const MatrixDescr *out_d) override;
+
+    void notify_symbolic_width(uint32_t index, uint32_t width_index) override;
 
     /**
      * This function is called every time a pointer is freed using \ref
