@@ -172,11 +172,11 @@ public:
         m_size++;
     }
 
-    template <typename... Args> void emplace_back(Args &&...args) {
+    template <typename... Args> T &emplace_back(Args &&...args) {
         if (m_size == m_capacity)
             expand();
         new (&m_data[m_size]) T(std::forward<Args>(args)...);
-        m_size++;
+        return m_data[m_size++];
     }
 
     bool operator==(const vector &s) const {

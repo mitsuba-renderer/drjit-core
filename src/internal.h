@@ -742,6 +742,23 @@ struct ThreadState : public ThreadStateBase {
                                const MatrixDescr *in_d, void *out,
                                const MatrixDescr *out_d) = 0;
 
+    /// Reduces an array of booleans by filling trailing elements and applying a
+    /// UInt32 reduction.
+    virtual void block_reduce_bool(uint8_t *values, uint32_t size, uint8_t *out,
+                                   ReduceOp op);
+
+    /// Some kernels use the width of an array in a computation. When using the
+    /// kernel freezing feature, this requires special precautions to ensure
+    /// that the resulting capture remains usable with different array sizes.
+    /// This notification function exists so that this special-case handling can
+    /// be realized.
+    virtual void notify_opaque_width(uint32_t index, uint32_t width_index);
+
+    /// Notifies the thread state that an allocation should not be initialized
+    /// as part of the evaluation of an undefined variable. This is required for
+    /// frozen functions to handle undefined variables.
+    virtual void notify_init_undefined(uint32_t index);
+
     /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
     /// This is required for kernel freezing.
     virtual void notify_free(const void *ptr);

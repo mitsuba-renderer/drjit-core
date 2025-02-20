@@ -7,6 +7,7 @@
     license that can be found in the LICENSE file.
 */
 
+#include "drjit-core/jit.h"
 #include "internal.h"
 #include "cuda_ts.h"
 #include "llvm_ts.h"
@@ -768,3 +769,27 @@ void ThreadState::reset_state() {
 }
 void ThreadState::notify_free(const void *) { }
 void ThreadState::notify_expand(uint32_t) { }
+void ThreadState::notify_opaque_width(uint32_t, uint32_t) {}
+void ThreadState::notify_init_undefined(uint32_t) {}
+// TODO: rename to block_reduce_bool
+void ThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
+                                    uint8_t *out, ReduceOp op) {
+    /* When \c size is not a multiple of 4, the implementation will initialize
+       up to 3 bytes beyond the end of the supplied range so that an efficient
+       32 bit reduction algorithm can be used. This is fine for allocations made
+       using
+       \ref jit_malloc(), which allow for this. */
+
+    uint32_t size_4   = ceil_div(size, 4),
+             trailing = size_4 * 4 - size;
+
+    jitc_log(Debug, "jit_%s(" DRJIT_PTR ", size=%u)",
+             op == ReduceOp::Or ? "any" : "all", (uintptr_t) values, size);
+
+    if (trailing) {
+        bool filler = op == ReduceOp::Or ? false : true;
+        memset_async(values + size, trailing, sizeof(bool), &filler);
+    }
+
+    block_reduce(VarType::UInt32, op, size_4, size_4, values, out);
+}
