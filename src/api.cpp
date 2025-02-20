@@ -610,6 +610,24 @@ size_t jit_var_size(uint32_t index) {
     return (size_t) jitc_var(index)->size;
 }
 
+uint32_t jit_var_symbolic_width(uint32_t index){
+    if(index == 0)
+        return 0;
+
+    lock_guard guard(state.lock);
+
+    Variable *var = jitc_var(index);
+    uint32_t var_size = var->size;
+
+    uint32_t width_index = jitc_var_literal(
+        (JitBackend) var->backend, VarType::UInt32, &var_size, 1, true);
+
+    ThreadState *ts = thread_state(var->backend);
+    ts->notify_symbolic_width(index, width_index);
+
+    return width_index;
+}
+
 VarState jit_var_state(uint32_t index) {
     if (index == 0)
         return VarState::Invalid;
