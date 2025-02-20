@@ -248,3 +248,25 @@ TEST_LLVM(10_scatter) {
         jit_assert(all(eq(y, arange<UInt32>(10 + i) + 1)));
     }
 }
+
+TEST_BOTH(11_opaque_width) {
+    auto func = [](UInt32 x) {
+        auto y = block_prefix_sum(x+1, x.size());
+        if (jit_flag(JitFlag::FreezingScope))
+            y = y / x.opaque_width_();
+        else
+            y = y / x.size();
+        return y;
+    };
+
+    FrozenFunction frozen(Backend, func);
+
+    for (uint32_t i = 0; i < 4; i++) {
+        auto x = arange<UInt32>(10 + i);
+
+        auto res = frozen(x);
+        auto ref = func(x);
+
+        jit_assert(all(eq(res, ref)));
+    }
+}
