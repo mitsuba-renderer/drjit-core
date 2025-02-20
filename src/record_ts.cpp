@@ -137,10 +137,10 @@
 #include "var.h"
 
 const char *op_type_name[(int) OpType::Count]{
-    "Barrier",        "KernelLaunch",      "MemsetAsync", "Expand",
-    "ReduceExpanded", "Compress",          "MemcpyAsync", "Mkperm",
-    "BlockReduce",    "BlockPrefixReduce", "ReduceDot",   "Aggregate",
-    "Free",
+    "Barrier",        "KernelLaunch",      "MemsetAsync",          "Expand",
+    "ReduceExpanded", "Compress",          "MemcpyAsync",          "Mkperm",
+    "BlockReduce",    "BlockPrefixReduce", "ReduceDot",            "Aggregate",
+    "OpaqueWidth",    "InitUndefined",     "BoolReduceBoolAsync4", "Free"
 };
 
 static bool dry_run = false;
@@ -200,12 +200,19 @@ struct ReplayVariable {
         size_t size = (data_size / (size_t) tsize);
 
         if (size == 0)
-            jitc_raise("replay(): Error, determining size of variable! init "
-                       "%u, dsize=%zu",
-                       (uint32_t) init, data_size);
+            jitc_raise(
+                "replay(): Error, determining size of variable! init "
+                "%u, dsize=%zu. This can occur if the size of a kernel could "
+                "not be inferred correctly during replay, or if a memcopy "
+                "operation referenced a pointer not allocated with jit_alloc.",
+                (uint32_t) init, data_size);
 
         if (size * (size_t) tsize != data_size)
-            jitc_raise("replay(): Error, determining size of variable!");
+            jitc_raise("replay(): Error, determining size of variable! init "
+                "%u, dsize=%zu. This can occur if the size of a kernel could "
+                "not be inferred correctly during replay, or if a memcopy "
+                "operation referenced a pointer not allocated with jit_alloc.",
+                (uint32_t) init, data_size);
 
         return (uint32_t) size;
     }
@@ -293,7 +300,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
 #endif
 
     if (dynamic_cast<RecordThreadState *>(ts) != nullptr)
-        jitc_raise("replay(): Tried to replay while recording!");
+        jitc_raise("replay(): Tried to replay while recording! This should not "
+                   "occur, as calling frozen functions while recording one "
+                   "will not replay the inner function. This indicates a bug "
+                   "in the Dr.Jit's freeze.cpp file.");
 
 #if defined(DRJIT_ENABLE_OPTIX)
     OptixShaderBindingTable *tmp_sbt = ts->optix_sbt;
@@ -371,6 +381,18 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 break;
             case OpType::Aggregate:
                 if (!replay_aggregate(op))
+                    return false;
+                break;
+            case OpType::OpaqueWidth:
+                if(!replay_opaque_width(op))
+                    return false;
+                break;
+            case OpType::InitUndefined:
+                if(!replay_init_undefined(op))
+                    return false;
+                break;
+            case OpType::BoolBlockReduceBool:
+                if (!replay_block_reduce_bool(op))
                     return false;
                 break;
             case OpType::Free: {
@@ -469,6 +491,68 @@ void RecordThreadState::barrier() {
 
     pause_scope pause(this);
     return m_internal->barrier();
+}
+
+void RecordThreadState::notify_opaque_width(uint32_t index,
+                                            uint32_t width_index) {
+    if (!paused()) {
+        uint32_t start = m_recording.dependencies.size();
+        Variable *v1   = jitc_var(index);
+        Variable *v2   = jitc_var(width_index);
+        add_in_param(v1->data, (VarType) v1->type);
+        add_out_param(v2->data, VarType::UInt32);
+        uint32_t end = m_recording.dependencies.size();
+
+        Operation op;
+        op.type             = OpType::OpaqueWidth;
+        op.dependency_range = std::pair(start, end);
+        m_recording.operations.push_back(op);
+    }
+}
+
+int Recording::replay_opaque_width(Operation &op) {
+
+    uint32_t dependency_index = op.dependency_range.first;
+    AccessInfo in_info        = dependencies[dependency_index];
+    AccessInfo out_info       = dependencies[dependency_index + 1];
+
+    ReplayVariable &in_var  = replay_variables[in_info.slot];
+    ReplayVariable &out_var = replay_variables[out_info.slot];
+
+    out_var.alloc(backend, 1, out_info.vtype);
+    uint32_t size = in_var.size(in_info.vtype);
+
+    if (!dry_run)
+        jitc_memcpy(backend, out_var.data, &size, sizeof(uint32_t));
+
+    return true;
+}
+
+void RecordThreadState::notify_init_undefined(uint32_t index) {
+    if (!paused()) {
+        uint32_t start = m_recording.dependencies.size();
+        Variable *v   = jitc_var(index);
+        add_out_param(v->data, (VarType) v->type);
+        uint32_t end = m_recording.dependencies.size();
+
+        Operation op;
+        op.type             = OpType::InitUndefined;
+        op.dependency_range = std::pair(start, end);
+        op.size = v->size;
+        m_recording.operations.push_back(op);
+    }
+}
+
+int Recording::replay_init_undefined(Operation &op) {
+
+    uint32_t dependency_index = op.dependency_range.first;
+    AccessInfo out_info        = dependencies[dependency_index];
+
+    ReplayVariable &out_var = replay_variables[out_info.slot];
+
+    out_var.alloc(backend, op.size, out_info.vtype);
+
+    return true;
 }
 
 /**
@@ -585,8 +669,11 @@ void RecordThreadState::record_launch(
     const std::vector<uint32_t> *kernel_param_ids) {
     uint32_t kernel_param_offset = backend == JitBackend::CUDA ? 1 : 3;
 
+    // The size of the largest variable used by the kernel directly.
     size_t input_size = 0;
-    size_t ptr_size   = 0;
+    // The size of the largest variable which is a multiple or fraction of the
+    // launch size, that is used indirectly (through a pointer).
+    size_t ptr_size = 0;
 
 #ifndef NDEBUG
     jitc_log(LogLevel::Debug, "record(): recording kernel %u %016llx",
@@ -636,7 +723,11 @@ void RecordThreadState::record_launch(
                           ptr_index, index, ptr, v->data);
 
             pointer_access = true;
-            ptr_size       = std::max(ptr_size, (size_t) v->size);
+            // Only consider pointers who's size is either a fraction or
+            // multiple of the launch size.
+            if (v->size % size == 0 || size % v->size == 0) {
+                ptr_size = std::max(ptr_size, (size_t) v->size);
+            }
         }
 
         uint32_t slot;
@@ -722,6 +813,26 @@ void RecordThreadState::record_launch(
                     miss_group_size);
     }
 #endif
+
+    // Find out which pointer variables, if any contributed to the final size of
+    // the kernel. We only use those when inferring the launch size.
+    if (input_size == 0)
+        for (uint32_t i = 0; i < kernel_param_ids->size(); i++) {
+
+            uint32_t index = kernel_param_ids->at(i);
+            Variable *v    = jitc_var(index);
+
+            if ((VarType) v->type == VarType::Pointer) {
+
+                // Follow pointer
+                index              = v->dep[3];
+                v                  = jitc_var(index);
+
+                if (ptr_size == v->size)
+                    m_recording.dependencies[start + i].pointer_input_size =
+                        true;
+            }
+        }
 
     // Record max_input_size if we have only pointer inputs.
     // Therefore, if max_input_size > 0 we know this at replay.
@@ -809,7 +920,7 @@ int Recording::replay_launch(Operation &op) {
 
             if (!info.pointer_access)
                 input_size = std::max(input_size, size);
-            else
+            else if (info.pointer_input_size)
                 ptr_size = std::max(ptr_size, size);
         }
     }
@@ -844,7 +955,7 @@ int Recording::replay_launch(Operation &op) {
     }
     if (launch_size == 0) {
         jitc_log(LogLevel::Debug, "replay(): Could not infer launch "
-                                  "size, using recorded size");
+                                  "size, using recorded size %zu.", op.size);
         launch_size = (uint32_t) op.size;
     }
 
@@ -1096,6 +1207,63 @@ int Recording::replay_reduce_expanded(Operation &op) {
     return true;
 }
 
+void RecordThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
+                                          uint8_t *out, ReduceOp op) {
+    if (!paused()) {
+        try {
+            record_block_reduce_bool(values, size, out, op);
+        } catch (...) {
+            record_exception();
+        }
+    }
+    pause_scope pause(this);
+    return m_internal->block_reduce_bool(values, size, out, op);
+}
+
+void RecordThreadState::record_block_reduce_bool(uint8_t *values, uint32_t size,
+                                                 uint8_t *out, ReduceOp rop) {
+    jitc_log(LogLevel::Debug,
+             "record(): %s_async_4(values=%p, size=%u, out=%p)",
+             rop == ReduceOp::Or ? "any" : "all", values, size, out);
+
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
+    add_in_param(values, VarType::Bool);
+    add_out_param(out, VarType::Bool);
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
+
+    Operation op;
+    op.type             = OpType::BoolBlockReduceBool;
+    op.dependency_range = std::pair(start, end);
+    op.rtype = rop;
+    op.size = size;
+    m_recording.operations.push_back(op);
+}
+
+int Recording::replay_block_reduce_bool(Operation &op) {
+
+    uint32_t dependency_index = op.dependency_range.first;
+
+    AccessInfo in_info        = dependencies[dependency_index];
+    AccessInfo out_info       = dependencies[dependency_index + 1];
+
+    ReplayVariable &in_var = replay_variables[in_info.slot];
+    ReplayVariable &out_var = replay_variables[out_info.slot];
+
+    out_var.alloc(backend, 1, VarType::Bool);
+
+    uint32_t size = in_var.size(VarType::Bool);
+
+    jitc_log(LogLevel::Debug,
+             "record(): %s_async_4(values=%p, size=%u, out=%p)",
+             op.rtype == ReduceOp::Or ? "any" : "all", in_var.data, size, out_var.data);
+
+    if (!dry_run)
+        ts->block_reduce_bool((uint8_t *) in_var.data, size,
+                              (uint8_t *) out_var.data, op.rtype);
+
+    return true;
+}
+
 /// Perform a synchronous copy operation
 void RecordThreadState::memcpy(void *dst, const void *src, size_t size) {
     jitc_log(LogLevel::Debug, "record(): memcpy(dst=%p, src=%p, size=%zu)", dst,
@@ -1158,7 +1326,10 @@ void RecordThreadState::memcpy_async(void *dst, const void *src, size_t size) {
             } else {
                 jitc_raise(
                     "record(): Tried to record a memcpy_async operation, "
-                    "but the source pointer %p was not known.",
+                    "but the source pointer %p is unknown. This can occur if "
+                    "the source of the memcopy was not found during traversal "
+                    "of the function inputs, or did not refer to the start of "
+                    "a variables memory region.",
                     src);
             }
         }
@@ -1812,10 +1983,11 @@ void RecordThreadState::poke(void *dst, const void *src, uint32_t size) {
     // At the time of writing, \c poke is only called from \c jit_var_write.
     // \c src will therefore not be a pointer, allocated with \c jitc_malloc,
     // and we cannot track it.
-    jitc_raise("RecordThreadState::poke(): this function cannot be recorded!");
-    (void) dst; (void) src; (void) size;
-    // pause_scope pause(this);
-    // return m_internal->poke(dst, src, size);
+    jitc_raise("RecordThreadState::poke(): this function cannot be recorded! "
+               "This function might be called when writing into a JIT array.");
+    (void) dst;
+    (void) src;
+    (void) size;
 }
 
 // Enqueue a function to be run on the host once backend computation is done
@@ -1824,23 +1996,71 @@ void RecordThreadState::enqueue_host_func(void (*callback)(void *),
     jitc_raise("RecordThreadState::enqueue_host_func(): this function cannot "
                "be recorded!");
     (void) callback; (void) payload;
-    // pause_scope pause(this);
-    // return m_internal->enqueue_host_func(callback, payload);
 }
 
 void Recording::validate() {
     for (uint32_t i = 0; i < recorded_variables.size(); i++) {
         RecordedVariable &rv = recorded_variables[i];
         if (rv.state == RecordedVarState::Uninitialized) {
+            Operation &last_op = operations[rv.last_op];
 #ifndef NDEBUG
-            jitc_raise("record(): Variable at slot s%u %p was left in an "
-                       "uninitialized state!",
-                       i, rv.ptr);
+            if (last_op.type == OpType::Aggregate) {
+                jitc_raise(
+                    "validate(): The frozen function included a virtual "
+                    "function call involving variable s%u <%p>, last used by "
+                    "operation o%u. Dr.Jit would normally traverse a registry "
+                    "of all relevant object instances in order to collect "
+                    "their member variables. However, when recording this "
+                    "frozen function, this traversal was skipped because no "
+                    "such object instance was found in the function's inputs. "
+                    "You can trigger traversal by including the relevant "
+                    "objects in the function input, or by specifying them "
+                    "using the state_fn argument. Alternatively, this error "
+                    "might be caused by a nested "
+                    "virtual function call.",
+                    i, rv.ptr, rv.last_op);
+            } else
+                jitc_raise(
+                    "validate(): Variable at slot s%u <%p> was used by %s operation "
+                    "o%u but left in an uninitialized state! This indicates "
+                    "that the associated variable was used, but not traversed "
+                    "as part of the frozen function input.",
+                    i, rv.ptr, op_type_name[(uint32_t) last_op.type], rv.last_op);
 #else
-            jitc_raise("record(): Variable at slot s%u was left in an "
-                       "uninitialized state!",
-                       i);
+            if (last_op.type == OpType::Aggregate) {
+                jitc_raise(
+                    "validate(): The frozen function included a virtual "
+                    "function call involving variable s%u. Dr.Jit would "
+                    "normally traverse a registry of all relevant object "
+                    "instances in order to collect their member variables. "
+                    "However, when recording this frozen function, this "
+                    "traversal was skipped because no such object instance was "
+                    "found in the function's inputs. You can trigger traversal "
+                    "by including the relevant objects in the function input, "
+                    "or by specifying them using the state_fn argument. "
+                    "Alternatively, this error might be caused by a nested "
+                    "virtual function call.",
+                    i);
+            } else
+                jitc_raise(
+                    "validate(): Variable at slot s%u was used by %s operation "
+                    "o%u but left in an uninitialized state! This indicates "
+                    "that the associated variable was used, but not traversed "
+                    "as part of the frozen function input.",
+                    i, op_type_name[(uint32_t) last_op.type], rv.last_op);
 #endif
+        }
+    }
+    for (uint32_t i = 0; i < operations.size(); i++) {
+        Operation &op = operations[i];
+        if (op.type == OpType::Compress && requires_dry_run) {
+            jitc_log(
+                LogLevel::Warn,
+                "You tried to record a frozen function that calls "
+                "drjit.compress and also requires the frozen function to be "
+                "dry run. This will result in the frozen function being "
+                "re-traced for every call. If possible try to split up your "
+                "function.");
         }
     }
 }
@@ -1856,6 +2076,23 @@ bool Recording::check_kernel_cache() {
         }
     }
     return true;
+}
+
+void Recording::destroy() {
+    for (RecordedVariable &rv : this->recorded_variables) {
+        if (rv.init == RecordedVarInit::Captured) {
+            jitc_var_dec_ref(rv.index);
+        }
+    }
+#if defined(DRJIT_ENABLE_OPTIX)
+    for (Operation &op : this->operations) {
+        if (op.uses_optix) {
+            jitc_free(op.sbt->hitgroupRecordBase);
+            jitc_free(op.sbt->missRecordBase);
+            delete op.sbt;
+        }
+    }
+#endif
 }
 
 /**
@@ -1901,9 +2138,16 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
     } else {
         slot                  = it.value();
         RecordedVariable &old = m_recording.recorded_variables[slot];
-        if (old.init != RecordedVarInit::None)
-            jitc_fail("record(): Tried to overwrite an initialized variable "
-                      "with an offset buffer!");
+        if (old.init != RecordedVarInit::None) {
+            // The offset buffer allocation can be reused. If this happens, we
+            // have to capture the new version, while leaving the old one
+            // intact. We therefore evict the old entry in the ``ptr_to_slot``
+            // mapping and insert the new value.
+            uint32_t slot = m_recording.recorded_variables.size();
+            m_recording.recorded_variables.push_back(rv);
+            ptr_to_slot[ptr] = slot;
+            return slot;
+        }
 
         m_recording.recorded_variables[slot] = rv;
     }
@@ -1958,8 +2202,9 @@ uint32_t RecordThreadState::capture_variable(uint32_t index,
 uint32_t RecordThreadState::add_variable(const void *ptr) {
     auto it = ptr_to_slot.find(ptr);
 
+    uint32_t slot;
     if (it == ptr_to_slot.end()) {
-        uint32_t slot = (uint32_t) m_recording.recorded_variables.size();
+        slot = (uint32_t) m_recording.recorded_variables.size();
 
         RecordedVariable rv;
 #ifndef NDEBUG
@@ -1969,12 +2214,13 @@ uint32_t RecordThreadState::add_variable(const void *ptr) {
 
         ptr_to_slot.insert({ ptr, slot });
 
-        return slot;
-    } else {
-        uint32_t slot = it.value();
+    } else
+        slot = it.value();
 
-        return slot;
-    }
+    m_recording.recorded_variables[slot].last_op =
+        (uint32_t) m_recording.operations.size();
+
+    return slot;
 }
 
 /// Return the slot index given the data pointer of a variable.
@@ -1984,7 +2230,8 @@ uint32_t RecordThreadState::get_variable(const void *ptr) {
 
     if (it == ptr_to_slot.end())
         jitc_raise("Failed to find the slot corresponding to the variable "
-                   "with data at %p",
+                   "with data at %p! This can occur if the pointer does not "
+                   "point to the start of an allocated memory region.",
                    ptr);
 
     return it.value();
@@ -2187,6 +2434,10 @@ struct DisabledThreadState : ThreadState {
     void enqueue_host_func(void (* /*callback*/)(void *),
                            void * /*payload*/) override {
         record_exception();
+    };
+    void block_reduce_bool(uint8_t * /*values*/, uint32_t /*size*/,
+                           uint8_t * /*out*/, ReduceOp /*op*/) override {
+        record_exception();
     }
     void notify_expand(uint32_t /*index*/) override {};
     void reduce_expanded(VarType /*vt*/, ReduceOp /*reduce_op*/,
@@ -2274,7 +2525,12 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
             unset_disabled_thread_state(&thread_state_cuda);
         }
         Recording *recording = new Recording(std::move(rts->m_recording));
-        recording->validate();
+        try{
+            recording->validate();
+        } catch (const std::exception &e) {
+            recording->destroy();
+            throw;
+        }
         delete rts;
 
         return recording;
@@ -2291,6 +2547,8 @@ void jitc_freeze_abort(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
+
+        rts->m_recording.destroy();
 
         ThreadState *internal = rts->m_internal;
 
@@ -2313,20 +2571,7 @@ void jitc_freeze_abort(JitBackend backend) {
 }
 
 void jitc_freeze_destroy(Recording *recording) {
-    for (RecordedVariable &rv : recording->recorded_variables) {
-        if (rv.init == RecordedVarInit::Captured) {
-            jitc_var_dec_ref(rv.index);
-        }
-    }
-#if defined(DRJIT_ENABLE_OPTIX)
-    for (Operation &op : recording->operations) {
-        if (op.uses_optix){
-            jitc_free(op.sbt->hitgroupRecordBase);
-            jitc_free(op.sbt->missRecordBase);
-            delete op.sbt;
-        }
-    }
-#endif
+    recording->destroy();
     delete recording;
 }
 

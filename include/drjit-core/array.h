@@ -253,6 +253,11 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return jit_var_size(m_index);
     }
 
+    auto opaque_width_() {
+        using UInt32 = JitArray<Backend_, uint32_t>;
+        return UInt32::steal(jit_var_opaque_width(m_index));
+    }
+
     void resize(size_t size) {
         uint32_t index = jit_var_resize(m_index, size);
         jit_var_dec_ref(m_index);

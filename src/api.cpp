@@ -169,6 +169,10 @@ int jit_flag(JitFlag flag) {
     return jitc_flag(flag);
 }
 
+void jit_state_lock() { lock_acquire(state.lock); }
+
+void jit_state_unlock() { lock_release(state.lock); }
+
 uint32_t jit_record_checkpoint(JitBackend backend) {
     uint32_t result = (uint32_t) thread_state(backend)->side_effects_symbolic.size();
     if (jit_flag(JitFlag::SymbolicScope))
@@ -618,6 +622,28 @@ size_t jit_var_size(uint32_t index) {
 
     lock_guard guard(state.lock);
     return (size_t) jitc_var(index)->size;
+}
+
+uint32_t jit_var_opaque_width(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    lock_guard guard(state.lock);
+
+    Variable *var      = jitc_var(index);
+    JitBackend backend = (JitBackend) var->backend;
+    uint32_t var_size  = var->size;
+
+    // The variable has to be evaluated, to notify the ThreadState
+    jitc_var_eval(index);
+
+    uint32_t width_index =
+        jitc_var_literal(backend, VarType::UInt32, &var_size, 1, true);
+
+    ThreadState *ts = thread_state(backend);
+    ts->notify_opaque_width(index, width_index);
+
+    return width_index;
 }
 
 VarState jit_var_state(uint32_t index) {
@@ -1374,25 +1400,17 @@ const char *jit_type_name(VarType type) noexcept {
 }
 
 VarInfo jit_set_backend(uint32_t index) noexcept {
-    VarInfo info;
-
     lock_guard guard(state.lock);
-    Variable *var = jitc_var(index);
-    default_backend = (JitBackend) var->backend;
 
-    info.backend = (JitBackend)var->backend;
-    info.type = (VarType)var->type;
-    info.state = jitc_var_state(index);
-    info.size = var->size;
-    info.is_array = var->is_array();
-    info.is_coop_vec = var->coop_vec;
-    info.unaligned = var->unaligned;
-    if(info.state == VarState::Literal)
-        info.literal = var->literal;
-    else if (info.state == VarState::Evaluated)
-        info.data = var->data;
-
+    VarInfo info = jitc_var_info(index);
+    default_backend = info.backend;
     return info;
+}
+
+VarInfo jit_var_info(uint32_t index) noexcept {
+    lock_guard guard(state.lock);
+
+    return jitc_var_info(index);
 }
 
 uint32_t jit_var_loop_start(const char *name, bool symbolic, size_t n_indices, uint32_t *indices) {
