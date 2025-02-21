@@ -1176,7 +1176,9 @@ extern JIT_EXPORT uint32_t jit_var_data(uint32_t index, void **ptr_out);
 /// Query the size of a given variable
 extern JIT_EXPORT size_t jit_var_size(uint32_t index);
 
-extern JIT_EXPORT uint32_t jit_var_symbolic_width(uint32_t index);
+/// Query the size of a given variable, as an opaque variable. This also
+/// notifies the ThreadState, allowing us to record this for frozen functions.
+extern JIT_EXPORT uint32_t jit_var_opaque_width(uint32_t index);
 
 /// Query the type of a given variable
 extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
