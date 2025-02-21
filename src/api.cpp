@@ -619,7 +619,7 @@ size_t jit_var_size(uint32_t index) {
     return (size_t) jitc_var(index)->size;
 }
 
-uint32_t jit_var_symbolic_width(uint32_t index){
+uint32_t jit_var_opaque_width(uint32_t index){
     if(index == 0)
         return 0;
 
@@ -627,6 +627,9 @@ uint32_t jit_var_symbolic_width(uint32_t index){
 
     Variable *var = jitc_var(index);
     uint32_t var_size = var->size;
+
+    // The variable has to be evaluated, to notify the ThreadState
+    jitc_var_eval(index);
 
     uint32_t width_index = jitc_var_literal(
         (JitBackend) var->backend, VarType::UInt32, &var_size, 1, true);

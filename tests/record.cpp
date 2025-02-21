@@ -251,8 +251,11 @@ TEST_LLVM(10_scatter) {
 
 TEST_BOTH(11_symbolic_width) {
     auto func = [](UInt32 x) {
-        auto y = block_prefix_sum(x, x.size());
-        y = y / x.symbolic_width();
+        auto y = block_prefix_sum(x+1, x.size());
+        if (jit_flag(JitFlag::FreezingScope))
+            y = y / x.symbolic_width();
+        else
+            y = y / x.size();
         return y;
     };
 
