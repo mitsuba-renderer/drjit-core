@@ -610,8 +610,8 @@ size_t jit_var_size(uint32_t index) {
     return (size_t) jitc_var(index)->size;
 }
 
-uint32_t jit_var_opaque_width(uint32_t index){
-    if(index == 0)
+uint32_t jit_var_opaque_width(uint32_t index) {
+    if (index == 0)
         return 0;
 
     lock_guard guard(state.lock);
