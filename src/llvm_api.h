@@ -169,6 +169,8 @@ DR_LLVM_SYM(LLVMBool (*LLVMGetTargetFromTriple)(const char *, LLVMTargetRef *,
 DR_LLVM_SYM(LLVMTargetMachineRef (*LLVMCreateTargetMachine)(
     LLVMTargetRef, const char *, const char *, const char *,
     LLVMCodeGenOptLevel, LLVMRelocMode, LLVMCodeModel));
+DR_LLVM_SYM(void (*LLVMSetTargetMachineFastISel)(
+    LLVMTargetMachineRef,LLVMBool));
 DR_LLVM_SYM(LLVMOrcThreadSafeContextRef (*LLVMOrcCreateNewThreadSafeContext)());
 DR_LLVM_SYM(LLVMOrcThreadSafeModuleRef (*LLVMOrcCreateNewThreadSafeModule)(
     LLVMModuleRef, LLVMOrcThreadSafeContextRef));

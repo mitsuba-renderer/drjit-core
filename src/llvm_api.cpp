@@ -147,6 +147,7 @@ bool jitc_llvm_api_init() {
     LOAD(mcjit, LLVMGetFunctionAddress);
 
     LOAD(orcv2, LLVMCreateTargetMachine);
+    LOAD(orcv2, LLVMSetTargetMachineFastISel);
     LOAD(orcv2, LLVMGetTargetFromTriple);
     LOAD(orcv2, LLVMOrcCreateNewThreadSafeContext);
     LOAD(orcv2, LLVMOrcDisposeThreadSafeContext);
@@ -294,6 +295,7 @@ void jitc_llvm_api_shutdown() {
     // ORCv2
     CLEAR(LLVMGetTargetFromTriple);
     CLEAR(LLVMCreateTargetMachine);
+    CLEAR(LLVMSetTargetMachineFastISel);
     CLEAR(LLVMOrcCreateNewThreadSafeContext);
     CLEAR(LLVMOrcDisposeThreadSafeContext);
     CLEAR(LLVMOrcCreateNewThreadSafeModule);

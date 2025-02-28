@@ -46,6 +46,7 @@ bool jitc_llvm_orcv2_init() {
             target_ref, jitc_llvm_target_triple, jitc_llvm_target_cpu,
             jitc_llvm_target_features, LLVMCodeGenLevelAggressive, LLVMRelocPIC,
             LLVMCodeModelSmall);
+        LLVMSetTargetMachineFastISel(tm, false);
         if (i == 0)
             jitc_llvm_tm = tm;
     }
