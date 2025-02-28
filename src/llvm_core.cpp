@@ -168,6 +168,7 @@ bool jitc_llvm_init() {
 
     if (jitc_llvm_api_has_orcv2() && jitc_llvm_orcv2_init()) {
         jitc_llvm_use_orcv2 = true;
+        jitc_log(Warn, "jit_llvm_init(): Using ORCv2!");
     } else if (jitc_llvm_api_has_mcjit() && jitc_llvm_mcjit_init()) {
         jitc_llvm_use_orcv2 = false;
     } else {
