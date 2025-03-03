@@ -2201,7 +2201,7 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
             if (is_llvm && jitc_llvm_version_major < 16)
                 return false;
 
-#if defined(__x86_64__)
+#if defined(__x86_64__) || defined(_M_X64)
             // FP16 min/max reduction requires a global offset table on x86_64,
             // which breaks the compilation
             if (is_llvm && (op == ReduceOp::Min || op == ReduceOp::Max))
