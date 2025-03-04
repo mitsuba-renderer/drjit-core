@@ -274,4 +274,6 @@ DR_CUDA_SYM(CUresult (*cuTexObjectGetResourceDesc)(CUDA_RESOURCE_DESC *,
                                                    CUtexObject));
 DR_CUDA_SYM(CUresult (*cuMemcpy3DAsync)(const CUDA_MEMCPY3D *, CUstream));
 DR_CUDA_SYM(CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream));
+DR_CUDA_SYM(CUresult (*cuProfilerStart)());
+DR_CUDA_SYM(CUresult (*cuProfilerStop)());
 #endif

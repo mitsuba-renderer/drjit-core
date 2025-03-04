@@ -133,6 +133,9 @@ bool jitc_cuda_api_init() {
         LOAD(cuTexObjectDestroy);
         LOAD(cuMemcpy2DAsync, "v2");
         LOAD(cuMemcpy3DAsync, "v2");
+
+        LOAD(cuProfilerStart);
+        LOAD(cuProfilerStop);
         #undef LOAD
     } while (false);
 
@@ -175,6 +178,7 @@ void jitc_cuda_api_shutdown() {
     Z(cuArrayCreate); Z(cuArray3DCreate); Z(cuArray3DGetDescriptor);
     Z(cuArrayDestroy); Z(cuTexObjectCreate); Z(cuTexObjectGetResourceDesc);
     Z(cuTexObjectDestroy); Z(cuMemcpy2DAsync); Z(cuMemcpy3DAsync);
+    Z(cuProfilerStart); Z(cuProfilerStop);
     #undef Z
 
 #if !defined(_WIN32)

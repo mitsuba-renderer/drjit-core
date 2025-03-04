@@ -2356,6 +2356,12 @@ extern JIT_EXPORT void jit_profile_range_push(const char *message);
 /// Inform the profiler (if present) about the end of a tracked range
 extern JIT_EXPORT void jit_profile_range_pop();
 
+/// Mark the start of a profiled region
+extern JIT_EXPORT void jit_profile_start();
+
+/// Mark the end of a profiled region
+extern JIT_EXPORT void jit_profile_stop();
+
 // ====================================================================
 //                               Other
 // ====================================================================

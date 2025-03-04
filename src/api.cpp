@@ -1557,3 +1557,15 @@ void jit_freeze_destroy(Recording *recording) {
     lock_guard guard(state.lock);
     jitc_freeze_destroy(recording);
 }
+
+void jit_profile_start() {
+    lock_guard guard(state.lock);
+    if (cuProfilerStart)
+        cuProfilerStart();
+}
+
+void jit_profile_stop() {
+    lock_guard guard(state.lock);
+    if (cuProfilerStart)
+        cuProfilerStop();
+}
