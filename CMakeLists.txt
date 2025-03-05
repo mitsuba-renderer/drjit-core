@@ -93,6 +93,8 @@ if (DRJIT_ENABLE_OPTIX)
     src/optix.h
     src/optix_api.h
     src/optix_api.cpp
+    src/optix_coop_vec.h
+    src/optix_coop_vec.cpp
     src/optix_core.cpp)
 endif()
 
@@ -119,6 +121,7 @@ add_library(
   src/registry.h      src/registry.cpp
   src/util.h          src/util.cpp
   src/record_ts.h     src/record_ts.cpp
+  src/coop_vec.h      src/coop_vec.cpp
 
   # CUDA backend
   src/cuda_api.h
@@ -158,6 +161,8 @@ add_library(
   src/llvm_packet.cpp
   src/llvm_array.h
   src/llvm_array.cpp
+  src/llvm_coop_vec.h
+  src/llvm_coop_vec.cpp
 
   src/io.h       src/io.cpp
   src/eval.h     src/eval.cpp

@@ -148,9 +148,9 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
 };
 
-static const char *append_reduce_op_direct(VarType vt, ReduceOp op, const Variable *v) {
+static const char *jitc_llvm_append_reduce_op_direct(VarType vt, ReduceOp op, const Variable *v) {
     if (jitc_llvm_vector_width > 32)
-        jitc_fail("append_reduce_op_direct(): internal error -- code generation "
+        jitc_fail("jitc_llvm_append_reduce_op_direct(): internal error -- code generation "
                   "assumes a vector length of <= 32 entries");
 
     uint32_t ptr_align = (uint32_t) sizeof(void *),
@@ -219,7 +219,7 @@ static const char *append_reduce_op_direct(VarType vt, ReduceOp op, const Variab
     return "atomic"; // variant name
 }
 
-static const char *append_reduce_op_local(VarType vt, ReduceOp op, const Variable *v) {
+const char *jitc_llvm_append_reduce_op_local(VarType vt, ReduceOp op, const Variable *v) {
     uint32_t ptr_align = (uint32_t) sizeof(void *),
              ptr_align_vec = std::min(ptr_align * jitc_llvm_vector_width, jitc_llvm_max_align),
              shiftamt = log2i_ceil(type_size[(int) vt]);
@@ -229,7 +229,7 @@ static const char *append_reduce_op_local(VarType vt, ReduceOp op, const Variabl
                *cmp_op = jitc_is_float(v) ? "fcmp one" : "icmp ne";
 
     auto [vector_reduce_name, vector_reduce_modifier, vector_reduce_identity,
-          vector_reduce_identity_type, vector_reduce_version] 
+          vector_reduce_identity_type, vector_reduce_version]
             = jitc_llvm_vector_reduce_config(vt, op);
 
     fmt_intrinsic("declare $t @llvm$e.vector.reduce$s.$s.v$w$h($s$T)",
@@ -328,7 +328,7 @@ static const char *append_reduce_op_local(VarType vt, ReduceOp op, const Variabl
     return "atomic_local"; // variant name
 }
 
-static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Variable *v) {
+static const char *jitc_llvm_append_reduce_op_noconflict(VarType vt, ReduceOp op, const Variable *v) {
     uint32_t ptr_align = (uint32_t) sizeof(void *),
              ptr_align_vec = std::min(ptr_align * jitc_llvm_vector_width, jitc_llvm_max_align),
              shiftamt = log2i_ceil(type_size[(int) vt]);
@@ -338,7 +338,7 @@ static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Va
 
 
     auto [vector_reduce_name, vector_reduce_modifier, vector_reduce_identity,
-          vector_reduce_identity_type, vector_reduce_version] 
+          vector_reduce_identity_type, vector_reduce_version]
             = jitc_llvm_vector_reduce_config(vt, op);
 
     fmt_intrinsic("declare $t @llvm$e.vector.reduce$s.$s.v$w$h($s$T)",
@@ -373,7 +373,7 @@ static const char *append_reduce_op_noconflict(VarType vt, ReduceOp op, const Va
                 break;
 
         default:
-            jitc_fail("append_reduce_op_noconflict(): unsupported operation!");
+            jitc_fail("jitc_llvm_append_reduce_op_noconflict(): unsupported operation!");
     }
 
     char scalar_op[128];
@@ -518,15 +518,15 @@ void jitc_llvm_render_scatter_reduce(const Variable *v,
 
     switch (mode) {
         case ReduceMode::Direct:
-            variant = append_reduce_op_direct(vt, op, value);
+            variant = jitc_llvm_append_reduce_op_direct(vt, op, value);
             break;
 
         case ReduceMode::Local:
-            variant = append_reduce_op_local(vt, op, value);
+            variant = jitc_llvm_append_reduce_op_local(vt, op, value);
             break;
 
         case ReduceMode::NoConflicts:
-            variant = append_reduce_op_noconflict(vt, op, value);
+            variant = jitc_llvm_append_reduce_op_noconflict(vt, op, value);
             break;
 
         default:

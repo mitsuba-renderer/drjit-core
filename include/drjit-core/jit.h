@@ -179,6 +179,9 @@ extern JIT_EXPORT void* jit_cuda_pop_context();
 /// Query the compute capability of the current device (e.g. '52')
 extern JIT_EXPORT int jit_cuda_compute_capability();
 
+/// Get the major and minor CUDA version
+extern JIT_EXPORT void jit_cuda_version(int *major, int *minor);
+
 /**
  * \brief Override generated PTX version and compute capability
  *
@@ -637,7 +640,10 @@ enum class JitOp : uint32_t {
     Rcp, Rsqrt,
 
     // Multi-function generator (CUDA)
-    Sin, Cos, Exp2, Log2,
+    Sin, Cos, Exp2, Log2, Tanh,
+
+    // Step function
+    Step,
 
     // Total number of operations
     Count
@@ -798,6 +804,9 @@ extern JIT_EXPORT uint32_t jit_var_exp2_intrinsic(uint32_t a0);
 
 /// Approximate `log2(a0)` and return a variable representing the result
 extern JIT_EXPORT uint32_t jit_var_log2_intrinsic(uint32_t a0);
+
+/// Approximate `tanh(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_tanh_intrinsic(uint32_t a0);
 
 /// Return a variable indicating valid lanes within a function call
 extern JIT_EXPORT uint32_t jit_var_call_mask(JitBackend backend);
@@ -2403,6 +2412,7 @@ struct VarInfo {
         void *data;
     };
     bool is_array;
+    bool is_coop_vec;
     bool unaligned;
 };
 
@@ -2676,6 +2686,114 @@ extern JIT_EXPORT void jit_freeze_abort(JitBackend backend);
  *     The recording to destroy.
  */
 extern JIT_EXPORT void jit_freeze_destroy(Recording *recording);
+
+// ====================================================================
+//                       Cooperative vector API
+// ====================================================================
+
+/// Pack a set of regular Dr.Jit variables to form a cooperative vector
+extern JIT_EXPORT uint32_t jit_coop_vec_pack(uint32_t n, const uint32_t *in);
+
+/// Unpack a cooperative vector into its components
+extern JIT_EXPORT void jit_coop_vec_unpack(uint32_t index, uint32_t n, uint32_t *out);
+
+/// Create a cooperative vectors, whose components are a uniform literal constant
+extern JIT_EXPORT uint32_t jit_coop_vec_literal(JIT_ENUM JitBackend backend,
+                                                JIT_ENUM VarType type,
+                                                const void *value,
+                                                size_t size JIT_DEF(1),
+                                                uint32_t length JIT_DEF(1));
+
+/// Load a cooperative vector from memory
+extern JIT_EXPORT uint32_t jit_coop_vec_load(uint32_t buffer, uint32_t offset, uint32_t length);
+
+/// Determine the length of a cooperative vector
+extern JIT_EXPORT uint32_t jit_coop_vec_length(uint32_t index);
+
+/// Perform a unary operation on a cooperative vector
+extern JIT_EXPORT uint32_t jit_coop_vec_unary_op(JitOp op, uint32_t a0);
+
+/// Perform a binary operation on a pair of cooperative vectors
+extern JIT_EXPORT uint32_t jit_coop_vec_binary_op(JitOp op, uint32_t a0, uint32_t a1);
+
+/// Perform a ternary operation on a triplet of cooperative vectors
+extern JIT_EXPORT uint32_t jit_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a2);
+
+/// Encodes a type of request for jit_coop_vec_pack_matrices()
+enum class MatrixLayout : uint32_t {
+    RowMajor,
+    InferencingOptimal,
+    TrainingOptimal
+};
+
+/// Summary of a matrix/vector that has been packed into a buffer
+struct MatrixDescr {
+    VarType dtype;       //< Variable type
+    MatrixLayout layout; //< Layout type
+    uint32_t rows, cols; //< Shape of the matrix
+    uint32_t offset;     //< Offset from the beginning of the buffer (in elements)
+    uint32_t stride;     //< Row stride (in elements)
+    uint32_t size;       //< Total size (in elements)
+};
+
+/// Check if the backend supports cooperative vector operations
+extern JIT_EXPORT bool jit_coop_vec_supported(JitBackend backend);
+
+/**
+ * \brief Pack a sequence of matrices from row-major into a representation that
+ * is optimal for inference/training.
+ *
+ * The function can also perform the reverse (i.e., convert from
+ * training/inference-optimal back to row-major).
+ *
+ * The matrix/vector layout and offsets must be specified via the ``in_descr``
+ * and ``out_descr`` parameters, which should point to descriptor arrays with
+ * ``count`` records.
+ *
+ * The ``in`` and ``out`` arguments specify Dr.Jit variables from which data
+ * will be read/written.
+ *
+ * The operation launches a backend conversion kernel that runs asynchronously.
+ */
+extern JIT_EXPORT void jit_coop_vec_pack_matrices(uint32_t count,
+                                                  uint32_t in,
+                                                  const MatrixDescr *in_descr,
+                                                  uint32_t out,
+                                                  const MatrixDescr *out_descr);
+
+/// Query the backend to compute the size of an array/vector in a given layout
+extern JIT_EXPORT MatrixDescr jit_coop_vec_compute_layout(uint32_t index,
+                                                          const MatrixDescr *in,
+                                                          MatrixLayout layout,
+                                                          uint32_t offset);
+
+/// Perform a matrix-vector multiplication + bias addition
+extern JIT_EXPORT uint32_t jit_coop_vec_matvec(uint32_t A_index,
+                                               const MatrixDescr *A_descr,
+                                               uint32_t x_index,
+                                               uint32_t b_index,
+                                               const MatrixDescr *b_descr,
+                                               int transpose);
+
+/// Accumulate the coop. vector 'index' into the buffer 'target' with offset.
+/// Potentially create a new buffer of size 'size' if target == 0.
+extern JIT_EXPORT uint32_t jit_coop_vec_accum(uint32_t target,
+                                              uint32_t target_size,
+                                              uint32_t offset,
+                                              uint32_t index);
+
+/// Cast a cooperative vector to a different precision
+extern JIT_EXPORT uint32_t jit_coop_vec_cast(uint32_t index, VarType vt);
+
+/// Accumulate the outer product of cooperative vectors 'a' and 'b' into buffer
+/// 'target', at a location described by 'descr'. Potentially create a new
+/// buffer of size 'size' if target == 0.
+extern JIT_EXPORT uint32_t jit_coop_vec_outer_product_accum(
+    uint32_t target,
+    uint32_t target_size,
+    const MatrixDescr *descr,
+    uint32_t a,
+    uint32_t b);
 
 #if defined(__cplusplus)
 }

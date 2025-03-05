@@ -362,7 +362,7 @@ bool jitc_cuda_init() {
         cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
         cuda_check(cuEventCreate(&device.sync_stream_event, CU_EVENT_DISABLE_TIMING));
 
-        uint32_t driver_to_ptx_isa_mappling[43][2] = {
+        uint32_t driver_to_ptx_isa_mappling[][2] = {
             { 10, 10 },  { 11, 11 },  { 20, 12 },  { 21, 13 },  { 22, 14 },
             { 23, 14 },  { 30, 20 },  { 31, 21 },  { 32, 22 },  { 40, 23 },
             { 41, 23 },  { 42, 30 },  { 50, 31 },  { 55, 32 },  { 60, 40 },
@@ -374,10 +374,13 @@ bool jitc_cuda_init() {
             { 126, 85 }, { 127, 86 }, { 128, 87 }
         };
 
+        const uint32_t table_size = sizeof(driver_to_ptx_isa_mappling) /
+                                    (uint32_t) (sizeof(uint32_t) * 2);
+
         uint32_t driver_version = jitc_cuda_version_major*10+jitc_cuda_version_minor;
         uint32_t ptx_version = 0;
 
-        for (uint32_t i = 0; i < 43; ++i) {
+        for (uint32_t i = 0; i < table_size; ++i) {
             uint32_t driver_version_i = driver_to_ptx_isa_mappling[i][0],
                      ptx_version_i    = driver_to_ptx_isa_mappling[i][1];
 

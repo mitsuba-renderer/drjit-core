@@ -428,6 +428,11 @@ public:
     void reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                          uint32_t exp, uint32_t size) override;
 
+    /// Pack a set of matrices/vectors for use with the cooperative vector API
+    void coop_vec_pack(uint32_t count,const void *in,
+                       const MatrixDescr *in_d, void *out,
+                       const MatrixDescr *out_d) override;
+
     /**
      * This function is called every time a pointer is freed using \ref
      * jitc_free. It records the operation and removes the mapping from that
