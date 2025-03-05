@@ -14,17 +14,12 @@
 #define DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
 #endif
 
-#define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
-extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
-
 static bool jitc_optix_cache_hit = false;
 static bool jitc_optix_cache_global_disable = false;
 
 void jitc_optix_log(unsigned int level, const char *tag, const char *message, void *) {
-    size_t len = strlen(message);
-    if (level <= (uint32_t) state.log_level_stderr)
-        fprintf(stderr, "jit_optix_log(): [%s] %s%s", tag, message,
-                (len > 0 && message[len - 1] == '\n') ? "" : "\n");
+    if (level <= (uint32_t) std::max(state.log_level_callback, state.log_level_stderr))
+        jitc_log((LogLevel) level, "jit_optix_log(): [%s] %s", tag, message);
 
     if (strcmp(tag, "DISKCACHE") == 0 &&
         strncmp(message, "Cache miss for key", 18) == 0)

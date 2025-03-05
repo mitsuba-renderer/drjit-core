@@ -19,6 +19,9 @@ struct OptixShaderBindingTable;
 struct ThreadState;
 struct OptixPipelineData;
 
+// Is the cooperative vector ABI available?
+extern bool jitc_optix_has_abi_105;
+
 /// Create an OptiX device context on the current ThreadState
 extern OptixDeviceContext jitc_optix_context();
 
@@ -60,3 +63,14 @@ extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
 
 /// Optional: set the desired launch size
 extern void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples);
+
+/// Convert a Dr.Jit variable type into an OptiX CoopVec variable type
+extern uint32_t jitc_optix_coop_vec_type_id(VarType vt);
+
+/// Convert a Dr.Jit matrix layout type into an OptiX CoopVec matrix layout type
+extern uint32_t jitc_optix_coop_vec_layout_id(MatrixLayout ml);
+
+#define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
+using OptixResult = int;
+extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
+

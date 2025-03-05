@@ -112,6 +112,7 @@ extern uint32_t jitc_var_sin_intrinsic(uint32_t a0);
 extern uint32_t jitc_var_cos_intrinsic(uint32_t a0);
 extern uint32_t jitc_var_exp2_intrinsic(uint32_t a0);
 extern uint32_t jitc_var_log2_intrinsic(uint32_t a0);
+extern uint32_t jitc_var_tanh_intrinsic(uint32_t a0);
 
 /// Extra data describing a packet scatter operatoin
 struct PacketScatterData {

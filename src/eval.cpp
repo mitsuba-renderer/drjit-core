@@ -17,6 +17,7 @@
 #include "optix.h"
 #include "loop.h"
 #include "call.h"
+#include "coop_vec.h"
 #include "trace.h"
 #include "op.h"
 #include "array.h"
@@ -186,6 +187,16 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
                 for (uint32_t i = 0; i < call->n_inst; ++i)
                     jitc_var_traverse(size, call->inner_out[v->literal + i * call->n_out], depth + 1);
 
+            }
+            break;
+
+        case VarKind::CoopVecNew: {
+                CoopVecNewData *cvid = (CoopVecNewData *) v->data;
+                for (uint32_t index2 : cvid->indices) {
+                    if (index2 == 0)
+                        continue;
+                    jitc_var_traverse(size, index2, depth);
+                }
             }
             break;
 

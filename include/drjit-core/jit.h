@@ -625,7 +625,10 @@ enum class JitOp : uint32_t {
     Rcp, Rsqrt,
 
     // Multi-function generator (CUDA)
-    Sin, Cos, Exp2, Log2,
+    Sin, Cos, Exp2, Log2, Tanh,
+
+    // Step function
+    Step,
 
     // Total number of operations
     Count
@@ -786,6 +789,9 @@ extern JIT_EXPORT uint32_t jit_var_exp2_intrinsic(uint32_t a0);
 
 /// Approximate `log2(a0)` and return a variable representing the result
 extern JIT_EXPORT uint32_t jit_var_log2_intrinsic(uint32_t a0);
+
+/// Approximate `tanh(a0)` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_tanh_intrinsic(uint32_t a0);
 
 /// Return a variable indicating valid lanes within a function call
 extern JIT_EXPORT uint32_t jit_var_call_mask(JitBackend backend);
@@ -2660,6 +2666,68 @@ extern JIT_EXPORT void jit_freeze_abort(JitBackend backend);
  *     The recording to destroy.
  */
 extern JIT_EXPORT void jit_freeze_destroy(Recording *recording);
+
+// ====================================================================
+//                       Cooperative vector API
+// ====================================================================
+
+/// Create a cooperative vector from a given regular variable & size
+extern JIT_EXPORT uint32_t jit_coop_vec_new(const uint32_t *indices, uint32_t size);
+
+/// Assign an entry in a cooperative vector. Note that 'index' specifies
+/// compile-time index and not a variable ID
+extern JIT_EXPORT uint32_t jit_coop_vec_set(uint32_t vec, uint32_t index, uint32_t value);
+
+/// Extract an entry from a cooperative vector. Note that 'index' specifies a
+/// compile-time index and not a variable ID
+extern JIT_EXPORT uint32_t jit_coop_vec_get(uint32_t vec, uint32_t index);
+
+/// Perform a unary operation on a cooperative vector
+extern JIT_EXPORT uint32_t jit_coop_vec_unary_op(JitOp op, uint32_t a0);
+
+/// Perform a binary operation on a pair of cooperative vectors
+extern JIT_EXPORT uint32_t jit_coop_vec_binary_op(JitOp op, uint32_t a0, uint32_t a1);
+
+/// Perform a ternary operation on a triplet of cooperative vectors
+extern JIT_EXPORT uint32_t jit_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a2);
+
+/// Encodes a type of request for jit_coop_vec_pack()
+enum class MatrixLayout : uint32_t {
+    RowMajor,
+    InferencingOptimal,
+    TrainingOptimal
+};
+
+/// Summary of a matrix/vector that has been packed into a buffer
+struct MatrixDescr {
+    VarType dtype;       //< Variable type
+    MatrixLayout layout; //< Layout type
+    uint32_t rows, cols; //< Shape of the matrix
+    uint32_t offset;     //< Offset from the beginning of the buffer (in elements)
+    uint32_t stride;     //< Row stride (in elements)
+    uint32_t size;       //< Total size (in elements)
+};
+
+/// Pack a sequence of matrices from row-major into a representation that is
+/// optimal for inference/training, or do the reverse.
+extern JIT_EXPORT void jit_coop_vec_pack(uint32_t count,
+                                         uint32_t in,
+                                         const MatrixDescr *in_descr,
+                                         uint32_t out,
+                                         const MatrixDescr *out_descr);
+
+extern JIT_EXPORT MatrixDescr jit_coop_vec_compute_layout(uint32_t index,
+                                                          const MatrixDescr *in,
+                                                          MatrixLayout layout,
+                                                          uint32_t offset);
+
+/// Perform a matrix-vector multiplication + addition
+extern JIT_EXPORT uint32_t jit_coop_vec_matvec(uint32_t A_index,
+                                               const MatrixDescr *A_descr,
+                                               uint32_t x_index,
+                                               uint32_t b_index,
+                                               const MatrixDescr *b_descr,
+                                               int transpose);
 
 #if defined(__cplusplus)
 }

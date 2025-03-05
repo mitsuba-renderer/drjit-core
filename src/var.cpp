@@ -177,7 +177,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "rcp", "rcp.approx", "rsqrt.approx",
 
     // Multi-function generator (CUDA)
-    "sin", "cos", "exp2", "log2",
+    "sin", "cos", "exp2", "log2", "tanh",
 
     // Casts
     "cast", "bitcast",
@@ -267,7 +267,16 @@ const char *var_kind_name[(int) VarKind::Count] {
     "array_read",
 
     // Write an element to a variable array
-    "array_write"
+    "array_write",
+
+    // Cooperative vector API
+    "coop_vec_new",
+    "coop_vec_get",
+    "coop_vec_set",
+    "coop_vec_unary_op",
+    "coop_vec_binary_op",
+    "coop_vec_ternary_op",
+    "coop_vec_mat_vec"
 };
 
 /// Temporary string buffer for miscellaneous variable-related tasks

@@ -52,6 +52,7 @@
 #include "cuda_array.h"
 #include "cuda_scatter.h"
 #include "cuda_packet.h"
+#include "optix_coop_vec.h"
 
 // Forward declarations
 static void jitc_cuda_render(Variable *v);
@@ -371,6 +372,11 @@ static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
 }
 
 static void jitc_cuda_render(Variable *v) {
+#if defined(DRJIT_ENABLE_OPTIX)
+    if (v->coop_vec)
+        return jitc_optix_render_coop_vec(v);
+#endif
+
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
@@ -573,6 +579,12 @@ static void jitc_cuda_render(Variable *v) {
             jitc_cuda_render_array_select(v, a0, a1, a2);
             break;
 
+#if defined(DRJIT_ENABLE_OPTIX)
+        case VarKind::CoopVecGet:
+            jitc_optix_render_coop_vec_get(v, a0);
+            break;
+#endif
+
         case VarKind::Select:
             if (!jitc_is_bool(a1)) {
                 fmt("    selp.$b $v, $v, $v, $v;\n", v, v, a1, a2, a0);
@@ -674,6 +686,10 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::Log2:
             fmt("    lg2.approx.ftz.$t $v, $v;\n", v, v, a0);
+            break;
+
+        case VarKind::Tanh:
+            fmt("    tanh.approx.$t $v, $v;\n", v, v, a0);
             break;
 
 

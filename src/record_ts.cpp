@@ -1976,6 +1976,13 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
     return slot;
 }
 
+void RecordThreadState::coop_vec_pack(uint32_t count, const void *in,
+                                      const MatrixDescr *in_d, void *out,
+                                      const MatrixDescr *out_d) {
+    (void) count; (void) in; (void) in_d; (void) out; (void) out_d;
+    jitc_raise("drjit.[un]pack(): currently not supported within frozen functions.");
+}
+
 /**
  * This function tries to capture a variable that is not known to the
  * recording \c ThreadState.

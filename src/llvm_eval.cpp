@@ -77,6 +77,7 @@
 #include "llvm_array.h"
 #include "llvm_eval.h"
 #include "llvm_packet.h"
+#include "llvm_coop_vec.h"
 
 // Forward declaration
 static void jitc_llvm_render(Variable *v);
@@ -467,6 +468,9 @@ static inline bool jitc_fp16_supported_llvm(VarKind kind) {
 }
 
 static void jitc_llvm_render(Variable *v) {
+    if (v->coop_vec)
+        return jitc_llvm_render_coop_vec(v);
+
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
              *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
@@ -1056,6 +1060,10 @@ static void jitc_llvm_render(Variable *v) {
         case VarKind::Extract:
             fmt("    $v = bitcast $T $v_out_$u to $T\n", v, v, a0,
                 (uint32_t) v->literal, v);
+            break;
+
+        case VarKind::CoopVecGet:
+            jitc_llvm_render_coop_vec_get(v, a0);
             break;
 
         case VarKind::ThreadIndex:

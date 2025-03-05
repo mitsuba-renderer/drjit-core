@@ -181,7 +181,7 @@ bool jitc_llvm_init() {
 
     jitc_llvm_update_strings();
 
-    char major_str[5] = "?", minor_str[5] = "?", patch_str[5] = "?";
+    char major_str[11] = "?", minor_str[11] = "?", patch_str[11] = "?";
 
     if (jitc_llvm_version_major >= 0)
         snprintf(major_str, sizeof(major_str), "%i", jitc_llvm_version_major);

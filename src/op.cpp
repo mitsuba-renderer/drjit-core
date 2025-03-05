@@ -1469,6 +1469,29 @@ uint32_t jitc_var_log2_intrinsic(uint32_t a0) {
 
 // --------------------------------------------------------------------------
 
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
+T eval_tanh(T value) { return T(std::tanh(value)); }
+
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
+T eval_tanh(T) { jitc_fail("eval_tanh(): unsupported operands!"); }
+
+uint32_t jitc_var_tanh_intrinsic(uint32_t a0) {
+    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_tanh_intrinsic", a0);
+
+    uint32_t result = 0;
+    if (info.simplify && info.literal)
+        result = jitc_eval_literal(info, [](auto l0) { return eval_tanh(l0); }, v0);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_1(info.backend, VarKind::Tanh, info.type,
+                                     info.size, info.symbolic, a0, v0);
+
+    jitc_trace("jit_var_tanh_intrinsic(r%u <- r%u)", result, a0);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
 uint32_t jitc_var_cast(uint32_t a0, VarType target_type, int reinterpret) {
     if (a0 == 0)
         return 0;
@@ -1771,6 +1794,16 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
         Ref tmp = steal(jitc_var_resize(src, var_info.size));
         result = jitc_var_and(tmp, mask);
         msg = " [elided, scalar source]";
+    }
+
+    if (!result) {
+        index_v = jitc_var(index);
+        src_v = jitc_var(src);
+        if ((VarKind) index_v->kind == VarKind::Counter &&
+            index_v->size == src_v->size) {
+            result = jitc_var_and(src, mask);
+            msg = " [elided, identity gather]";
+        }
     }
 
     // Don't perform the gather operation if the inputs are trivial / can be re-indexed
@@ -2737,6 +2770,7 @@ uint32_t jitc_var_op(JitOp op, const uint32_t *dep) {
         case JitOp::Cos:    return jitc_var_cos_intrinsic(dep[0]);
         case JitOp::Exp2:   return jitc_var_exp2_intrinsic(dep[0]);
         case JitOp::Log2:   return jitc_var_log2_intrinsic(dep[0]);
+        case JitOp::Tanh:   return jitc_var_tanh_intrinsic(dep[0]);
         case JitOp::Eq:     return jitc_var_eq(dep[0], dep[1]);
         case JitOp::Neq:    return jitc_var_neq(dep[0], dep[1]);
         case JitOp::Lt:     return jitc_var_lt(dep[0], dep[1]);
