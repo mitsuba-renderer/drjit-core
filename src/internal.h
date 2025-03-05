@@ -74,7 +74,7 @@ enum class VarKind : uint32_t {
     Rcp, RcpApprox, RSqrtApprox,
 
     // Multi-function generator (CUDA)
-    Sin, Cos, Exp2, Log2,
+    Sin, Cos, Exp2, Log2, Tanh,
 
     // Casts
     Cast, Bitcast,
@@ -169,6 +169,19 @@ enum class VarKind : uint32_t {
     // Write an element to a variable array
     ArrayWrite,
 
+    // Cooperative Vector API
+    CoopVecLiteral,
+    CoopVecPack,
+    CoopVecUnpack,
+    CoopVecLoad,
+    CoopVecCast,
+    CoopVecUnaryOp,
+    CoopVecBinaryOp,
+    CoopVecTernaryOp,
+    CoopVecMatVec,
+    CoopVecAccum,
+    CoopVecOuterProductAccum,
+
     // Denotes the number of different node types
     Count
 };
@@ -260,8 +273,8 @@ struct alignas(64) Variable {
     /// If set, evaluation will have side effects on other variables
     uint32_t side_effect : 1;
 
-    /// Unused flag
-    uint32_t unused_2: 1;
+    /// Is this a cooperative vector?
+    uint32_t coop_vec : 1;
 
     // =========== Entries that are temporarily used in jitc_eval() ============
     // (+11 bits -> 32 bits with all the preceding individiual bits = 4 bytes)
@@ -304,7 +317,8 @@ struct alignas(64) Variable {
         /// Reference count stash, see \ref jit_var_stash_ref()
         uint16_t ref_count_stashed;
 
-        /// Variable arrays (is_array() == 1) store their array length here
+        /// Variable arrays (is_array() == 1) and cooperative vectors
+        /// (coop_vec == 1) store their array length here
         uint16_t array_length;
     };
 
@@ -319,6 +333,7 @@ struct alignas(64) Variable {
     bool is_node()      const { return (uint32_t) kind > (uint32_t) VarKind::Literal; }
     bool is_dirty()     const { return ref_count_se > 0; }
     bool is_array()     const { return array_state != (uint32_t) ArrayState::Invalid; }
+    bool is_coop_vec_literal()   const { return kind == (uint32_t) VarKind::CoopVecLiteral; }
 };
 
 static_assert(sizeof(Variable) == 64);
@@ -347,38 +362,34 @@ struct VariableExtra {
 struct VariableKey {
     uint32_t size;
     uint32_t dep[4];
-    uint32_t kind      : 8;
-    uint32_t backend   : 2;
-    uint32_t type      : 4;
-    uint32_t write_ptr : 1;
-    uint32_t unused    : 1;
-    uint32_t scope_lo  : 16;
+    uint32_t kind         : 8;
+    uint32_t backend      : 2;
+    uint32_t type         : 4;
+    uint32_t write_ptr    : 1;
+    uint32_t unused       : 1;
+    uint32_t array_length : 16;
+    uint32_t scope;
     uint64_t literal;
 
     // The LVN data structure is significantly more efficient when
     // a single key fits into exactly 32 bytes. Hence the elaborate
     // bit packing below.
     VariableKey(const Variable &v) {
-        uint32_t scope_hi = v.scope;
         size = v.size;
-        for (int i = 0; i < 4; ++i) {
-            uint32_t d = v.dep[i];
-            d ^= scope_hi & 0xF0000000;
-            dep[i] = d;
-            scope_hi <<= 4;
-        }
+        memcpy(dep, v.dep, sizeof(uint32_t)*4);
         kind = v.kind;
         backend = v.backend;
         type = v.type;
         write_ptr = v.write_ptr;
         unused = 0;
-        scope_lo = v.scope;
+        scope = v.scope;
+        array_length = (v.is_array() || v.coop_vec) ? v.array_length : 0;
         literal = v.literal;
     }
 
     bool operator==(const VariableKey &v) const {
         return memcmp((const void *) this, (const void *) &v,
-                      8 * sizeof(uint32_t)) == 0;
+                      9 * sizeof(uint32_t)) == 0;
     }
 };
 
@@ -387,9 +398,7 @@ struct VariableKey {
 /// Helper class to hash VariableKey instances
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        // 'scope_hi' field not included in hash key, the hash function
-        // is faster when processing exactly 32 bytes.
-        return hash((const void *) &k, 8 * sizeof(uint32_t), 0);
+        return hash((const void *) &k, 9 * sizeof(uint32_t), 0);
     }
 };
 
@@ -401,7 +410,7 @@ using LVNMap =
                    /* StoreHash = */ true>;
 
 static_assert(
-    sizeof(VariableKey) == 8 * sizeof(uint32_t),
+    sizeof(VariableKey) == 9 * sizeof(uint32_t),
     "VariableKey: incorrect size, likely an issue with padding/packing!");
 
 /// Caches basic information about a CUDA device
@@ -548,6 +557,8 @@ struct OptixPipelineCompileOptions {
     unsigned int exceptionFlags;
     const char* pipelineLaunchParamsVariableName;
     unsigned int usesPrimitiveTypeFlags;
+    int allowOpacityMicromaps;
+    int allowClusteredGeometry; // OptiX 9.0 ABI
 };
 
 struct OptixPipelineData {
@@ -722,6 +733,11 @@ struct ThreadState : public ThreadStateBase {
     /// dr.ReduceOp.Expand
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
                                  uint32_t exp, uint32_t size) = 0;
+
+    /// Pack a set of matrices/vectors for use with the cooperative vector API
+    virtual void coop_vec_pack(uint32_t count, const void *in,
+                               const MatrixDescr *in_d, void *out,
+                               const MatrixDescr *out_d) = 0;
 
     /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
     /// This is required for kernel freezing.
@@ -1064,7 +1080,7 @@ inline bool jitc_is_bool(const Variable *v) { return jitc_is_bool((VarType) v->t
 
 inline bool jitc_is_zero(Variable *v) { return v->is_literal() && v->literal == 0; }
 inline bool jitc_is_any_zero(Variable *v) {
-    if (!v->is_literal())
+    if (!v->is_literal() && !v->is_coop_vec_literal())
         return false;
 
     switch ((VarType) v->type) {
@@ -1076,7 +1092,7 @@ inline bool jitc_is_any_zero(Variable *v) {
 }
 
 inline bool jitc_is_one(Variable *v) {
-    if (!v->is_literal())
+    if (!v->is_literal() && !v->is_coop_vec_literal())
         return false;
 
     uint64_t one;
@@ -1092,5 +1108,6 @@ inline bool jitc_is_one(Variable *v) {
 
 extern bool jitc_is_max(Variable *v);
 extern bool jitc_is_min(Variable *v);
+inline void jitc_var_set_data(Variable &v, void *data) { v.data = data; }
 
 extern const char *var_kind_name[(int) VarKind::Count];

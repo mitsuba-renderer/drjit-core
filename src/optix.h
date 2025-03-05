@@ -14,6 +14,7 @@
 using OptixDeviceContext = void *;
 using OptixProgramGroup = void*;
 using OptixModule = void*;
+using OptixResult = int;
 struct OptixPipelineCompileOptions;
 struct OptixShaderBindingTable;
 struct ThreadState;
@@ -72,3 +73,29 @@ extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
 
 /// Optional: set the desired launch size
 extern void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples);
+
+/// Convert a Dr.Jit variable type into an OptiX CoopVec variable type
+extern uint32_t jitc_optix_coop_vec_type_id(VarType vt);
+
+/// Convert a Dr.Jit matrix layout type into an OptiX CoopVec matrix layout type
+extern uint32_t jitc_optix_coop_vec_layout_id(MatrixLayout ml);
+
+#define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
+extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
+
+// Is the cooperative vector ABI available?
+extern bool jitc_optix_has_abi_105;
+
+#if defined(DRJIT_ENABLE_OPTIX)
+/// Maximum cooperative vector size in a program
+extern uint32_t jitc_optix_max_coopvec_size;
+
+/// Should OptiX use continuation callables (vs. direct callables?)
+inline bool jitc_optix_use_continuation_callables() {
+    // Prefer continuation callables when compiling programs that use coperative vectors
+    // (This gives slightly better performance)
+    return jitc_optix_max_coopvec_size > 0;
+}
+#else
+inline bool jitc_optix_use_continuation_callables() { return false; }
+#endif

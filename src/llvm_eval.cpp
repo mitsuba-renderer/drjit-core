@@ -77,6 +77,7 @@
 #include "llvm_array.h"
 #include "llvm_eval.h"
 #include "llvm_packet.h"
+#include "llvm_coop_vec.h"
 
 // Forward declaration
 static void jitc_llvm_render(Variable *v);
@@ -473,6 +474,9 @@ static void jitc_llvm_render(Variable *v) {
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
+    if (v->coop_vec)
+        return jitc_llvm_render_coop_vec(v, a0, a1, a2, a3);
+
     bool f32_upcast = jitc_is_half(v) && !jitc_fp16_supported_llvm((VarKind)v->kind);
 
     if (f32_upcast) {
@@ -523,10 +527,10 @@ static void jitc_llvm_render(Variable *v) {
                 fmt("    $v_0 = bitcast $V to $B\n"
                     "    $v_1 = xor $B $v_0, $s\n"
                     "    $v = bitcast $B $v_1 to $T\n",
-                    v, a0, v, v, v, v, jitc_llvm_ones_str[(int) itype],
+                    v, a0, v, v, v, v, jitc_llvm_ones_bit_str[(int) itype],
                     v, v, v, v);
             } else {
-                fmt("    $v = xor $V, $s\n", v, a0, jitc_llvm_ones_str[v->type]);
+                fmt("    $v = xor $V, $s\n", v, a0, jitc_llvm_ones_bit_str[v->type]);
             }
             break;
 
@@ -1059,6 +1063,18 @@ static void jitc_llvm_render(Variable *v) {
                 (uint32_t) v->literal, v);
             break;
 
+        case VarKind::CoopVecUnpack:
+            jitc_llvm_render_coop_vec_unpack(v, a0);
+            break;
+
+        case VarKind::CoopVecAccum:
+            jitc_llvm_render_coop_vec_accum(v, a0, a1, a2);
+            break;
+
+        case VarKind::CoopVecOuterProductAccum:
+            jitc_llvm_render_coop_vec_outer_product_accum(v, a0, a1, a2, a3);
+            break;
+
         case VarKind::ThreadIndex:
             fmt("    $v_1 = insertelement <$w x i32> undef, i32 %thread_id, i32 0\n"
                 "    $v = shufflevector <$w x i32> $v_1, <$w x i32> undef, <$w x i32> $z\n", v, v, v);
@@ -1370,7 +1386,7 @@ static void jitc_llvm_render_trace(const Variable *v,
 
     fmt("\n    ; -------- Ray $s -------\n", shadow_ray ? "test" : "trace");
 
-	// Copy input parameters to staging area
+    // Copy input parameters to staging area
     uint32_t offset = 0;
     for (uint32_t i = 0; i < 13; ++i) {
         if (jitc_llvm_vector_width == 1 && i == 0)
@@ -1387,17 +1403,17 @@ static void jitc_llvm_render_trace(const Variable *v,
         offset += type_size[v2->type] * width;
     }
 
-	// Reset geomID field to ones as required
+    // Reset geomID field to ones as required
     if (!shadow_ray) {
         fmt( "    $v_in_geomid_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
             "{    $v_in_geomid_1 = bitcast i8* $v_in_geomid_0 to <$w x i32> *\n|}"
              "    store <$w x i32> $s, {<$w x i32>*} $v_in_geomid_1, align $u\n",
             v, (14 * float_size + 5 * 4) * width,
             v, v,
-            jitc_llvm_ones_str[(int) VarType::Int32], v, float_size * width);
+            jitc_llvm_ones_bit_str[(int) VarType::Int32], v, float_size * width);
     }
 
-	// Determine whether to mark the rays as coherent or incoherent
+    // Determine whether to mark the rays as coherent or incoherent
     const Variable *coherent = jitc_var(indices[0]);
 
     fmt( "    $v_in_ctx_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
@@ -1411,7 +1427,7 @@ static void jitc_llvm_render_trace(const Variable *v,
         fmt_intrinsic("declare i1 @llvm$e.vector.reduce.and.v$wi1(<$w x i1>)");
 
         fmt("    $v_coherent_0 = call i1 @llvm$e.vector.reduce.and.v$wi1($V)\n"
-			"    $v_coherent_1 = zext i1 $v_coherent_0 to i32\n"
+            "    $v_coherent_1 = zext i1 $v_coherent_0 to i32\n"
             "    $v_ctx = insertelement <6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>, i32 $v_coherent_1, i32 0\n"
             "    store <6 x i32> $v_ctx, {<6 x i32>*} $v_in_ctx_1, align 4\n",
             v, coherent, v, v, v, v, v, v);

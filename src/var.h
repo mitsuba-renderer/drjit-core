@@ -10,6 +10,7 @@
 #pragma once
 
 #include <drjit-core/jit.h>
+#include <drjit-core/nanostl.h>
 #include <utility>
 
 enum class VarKind : uint32_t;
@@ -331,3 +332,24 @@ extern const char *type_name_ptx_bin    [(int) VarType::Count];
 extern const char *type_name_ptx_bin2   [(int) VarType::Count];
 extern const char *type_prefix          [(int) VarType::Count];
 extern const char *type_size_str        [(int) VarType::Count];
+
+void jitc_var_set_data(Variable &v, void *data);
+
+/// Just like jitc_var_new, but furthermore stash a pointer whose lifetime becomes tied to the variable
+template <typename T> uint32_t jitc_var_new_take_ownership(Variable &v, drjit::unique_ptr<T> payload, bool disable_lvn = false) {
+    jitc_var_set_data(v, payload.get());
+
+    uint32_t result = jitc_var_new(v, disable_lvn);
+
+    jitc_var_set_callback(
+        result,
+        [](uint32_t, int free, void *p) {
+            if (free)
+                delete (T *) p;
+        },
+        payload.release(), true);
+
+    return result;
+}
+
+
