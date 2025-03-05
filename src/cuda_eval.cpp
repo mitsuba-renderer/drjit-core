@@ -54,6 +54,7 @@
 #include "cuda_packet.h"
 #if defined(DRJIT_ENABLE_OPTIX)
 #  include <drjit-core/optix.h>
+#  include "optix_coop_vec.h"
 #endif
 
 // Forward declarations
@@ -380,6 +381,11 @@ static void jitc_cuda_render(Variable *v) {
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
+#if defined(DRJIT_ENABLE_OPTIX)
+    if (v->coop_vec)
+        return jitc_optix_render_coop_vec(v, a0, a1, a2, a3);
+#endif
+
     const ThreadState *ts = thread_state_cuda;
 
     bool f32_upcast = jitc_is_half(v) &&
@@ -576,6 +582,20 @@ static void jitc_cuda_render(Variable *v) {
             jitc_cuda_render_array_select(v, a0, a1, a2);
             break;
 
+#if defined(DRJIT_ENABLE_OPTIX)
+        case VarKind::CoopVecUnpack:
+            jitc_optix_render_coop_vec_unpack(v, a0);
+            break;
+
+        case VarKind::CoopVecAccum:
+            jitc_optix_render_coop_vec_accum(v, a0, a1, a2);
+            break;
+
+        case VarKind::CoopVecOuterProductAccum:
+            jitc_optix_render_coop_vec_outer_product_accum(v, a0, a1, a2, a3);
+            break;
+#endif
+
         case VarKind::Select:
             if (!jitc_is_bool(a1)) {
                 fmt("    selp.$b $v, $v, $v, $v;\n", v, v, a1, a2, a0);
@@ -677,6 +697,10 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::Log2:
             fmt("    lg2.approx.ftz.$t $v, $v;\n", v, v, a0);
+            break;
+
+        case VarKind::Tanh:
+            fmt("    tanh.approx.$t $v, $v;\n", v, v, a0);
             break;
 
 

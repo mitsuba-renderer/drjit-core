@@ -141,8 +141,11 @@ static void print_float_with_unit(char *buf, size_t bufsize, double value,
                                   bool accurate, const char *unit) {
     int digits_after_comma = accurate ? 5 : 3;
 
-    digits_after_comma =
-        std::max(digits_after_comma - int(std::log10(value)), 0);
+    if (value == 0)
+        digits_after_comma = 0;
+    else
+        digits_after_comma =
+            std::max(digits_after_comma - int(std::log10(value)), 0);
 
     int pos = snprintf(buf, bufsize, "%.*f", digits_after_comma, value);
 

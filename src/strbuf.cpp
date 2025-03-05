@@ -53,6 +53,12 @@ void StringBuffer::rewind_to(size_t pos) {
         *m_cur = '\0';
 }
 
+void StringBuffer::rewind(size_t rel) {
+    m_cur -= rel;
+    if (m_start != m_end)
+        *m_cur = '\0';
+}
+
 void StringBuffer::move_suffix(size_t suffix_start, size_t suffix_target) {
     size_t buffer_size = size(),
            suffix_size = buffer_size - suffix_start;

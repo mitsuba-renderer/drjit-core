@@ -1911,6 +1911,13 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
     return slot;
 }
 
+void RecordThreadState::coop_vec_pack(uint32_t count, const void *in,
+                                      const MatrixDescr *in_d, void *out,
+                                      const MatrixDescr *out_d) {
+    (void) count; (void) in; (void) in_d; (void) out; (void) out_d;
+    jitc_raise("drjit.[un]pack(): currently not supported within frozen functions.");
+}
+
 /**
  * This function tries to capture a variable that is not known to the
  * recording \c ThreadState.
@@ -2103,7 +2110,7 @@ struct DisabledThreadState : ThreadState {
      */
     void record_exception() {
         m_raised = true;
-    };
+    }
 
     /**
      * Actually throws the exception, if any was thrown during recording.
@@ -2123,69 +2130,72 @@ struct DisabledThreadState : ThreadState {
         }
     }
 
-    void barrier() override { record_exception(); };
+    void barrier() override { record_exception(); }
     Task *launch(Kernel /*kernel*/, KernelKey * /*key*/, XXH128_hash_t /*hash*/,
                  uint32_t /*size*/, std::vector<void *> * /*kernel_params*/,
                  const std::vector<uint32_t> * /*kernel_param_ids*/) override {
         record_exception();
         return nullptr;
-    };
+    }
     void memset_async(void * /*ptr*/, uint32_t /*size*/, uint32_t /*isize*/,
                       const void * /*src*/) override {
         record_exception();
-    };
+    }
     uint32_t compress(const uint8_t * /*in*/, uint32_t /*size*/,
                       uint32_t * /*out*/) override {
         record_exception();
         return 0;
-    };
+    }
     uint32_t mkperm(const uint32_t * /*values*/, uint32_t /*size*/,
                     uint32_t /*bucket_count*/, uint32_t * /*perm*/,
                     uint32_t * /*offsets*/) override {
         record_exception();
         return 0;
-    };
+    }
     void memcpy(void * /*dst*/, const void * /*src*/,
                 size_t /*size*/) override {
         record_exception();
-    };
+    }
     void memcpy_async(void * /*dst*/, const void * /*src*/,
                       size_t /*size*/) override {
         record_exception();
-    };
+    }
     void block_reduce(VarType /*vt*/, ReduceOp /*op*/, uint32_t /*size*/,
                       uint32_t /*block_size*/, const void * /*in*/,
                       void * /*out*/) override {
         record_exception();
-    };
+    }
     void block_prefix_reduce(VarType /*vt*/, ReduceOp /*op*/, uint32_t /*size*/,
                              uint32_t /*block_size*/, bool /*exclusive*/,
                              bool /*reverse*/, const void * /*in*/,
                              void * /*out*/) override {
         record_exception();
-    };
+    }
     void reduce_dot(VarType /*type*/, const void * /*ptr_1*/,
                     const void * /*ptr_2*/, uint32_t /*size*/,
                     void * /*out*/) override {
         record_exception();
-    };
+    }
     void poke(void * /*dst*/, const void * /*src*/,
               uint32_t /*size*/) override {
         record_exception();
-    };
+    }
     void aggregate(void * /*dst*/, AggregationEntry * /*agg*/,
                    uint32_t /*size*/) override {
         record_exception();
-    };
+    }
     void enqueue_host_func(void (* /*callback*/)(void *),
                            void * /*payload*/) override {
         record_exception();
-    };
+    }
     void notify_expand(uint32_t /*index*/) override {};
     void reduce_expanded(VarType /*vt*/, ReduceOp /*reduce_op*/,
                          void * /*data*/, uint32_t /*exp*/,
-                         uint32_t /*size*/) override {};
-    void notify_free(const void * /*ptr*/) override {};
+                         uint32_t /*size*/) override {}
+    void notify_free(const void * /*ptr*/) override {}
+    void coop_vec_pack(uint32_t /* count */, const void * /* in */,
+                       const MatrixDescr * /* in_d */, void * /* out */,
+                       const MatrixDescr * /* out_d */) override { }
 };
 
 void set_disabled_thread_state(ThreadState **ts, JitBackend recording_backend) {
