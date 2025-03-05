@@ -51,9 +51,6 @@ public:
     unlock_guard(Lock &lock) : m_lock(lock) { lock_release(m_lock); }
     ~unlock_guard() {
         lock_acquire(m_lock);
-        #if defined(DRJIT_SANITIZE_INTENSE)
-            jitc_sanitation_checkpoint();
-        #endif
     }
     unlock_guard(const unlock_guard &) = delete;
     unlock_guard &operator=(const unlock_guard &) = delete;

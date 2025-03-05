@@ -48,8 +48,11 @@ bool jitc_llvm_opaque_pointers = false;
 
 // Strings related to the vector width, used by template engine
 
-/// String of all ones, for different variable types
+/// The literal one, for different variable types
 char **jitc_llvm_ones_str = nullptr;
+
+/// All bits set, for different variable types
+char **jitc_llvm_ones_bit_str = nullptr;
 
 /// <i32 0, i32 1, ... > (up to the current vector width)
 char *jitc_llvm_u32_arange_str = nullptr;
@@ -96,7 +99,8 @@ bool jitc_llvm_init() {
     }
 
 
-    LLVMLinkInMCJIT();
+    if (LLVMLinkInMCJIT)
+        LLVMLinkInMCJIT();
     LLVMInitializeDrJitTargetInfo();
     LLVMInitializeDrJitTarget();
     LLVMInitializeDrJitTargetMC();
@@ -181,7 +185,7 @@ bool jitc_llvm_init() {
 
     jitc_llvm_update_strings();
 
-    char major_str[5] = "?", minor_str[5] = "?", patch_str[5] = "?";
+    char major_str[11] = "?", minor_str[11] = "?", patch_str[11] = "?";
 
     if (jitc_llvm_version_major >= 0)
         snprintf(major_str, sizeof(major_str), "%i", jitc_llvm_version_major);
@@ -229,7 +233,12 @@ void jitc_llvm_shutdown() {
             free(jitc_llvm_ones_str[i]);
         free(jitc_llvm_ones_str);
     }
-    jitc_llvm_ones_str = nullptr;
+    if (jitc_llvm_ones_bit_str) {
+        for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
+            free(jitc_llvm_ones_bit_str[i]);
+        free(jitc_llvm_ones_bit_str);
+    }
+    jitc_llvm_ones_bit_str = nullptr;
     free(jitc_llvm_u32_arange_str);
     jitc_llvm_u32_arange_str = nullptr;
     free(jitc_llvm_u32_width_str);
@@ -251,12 +260,38 @@ void jitc_llvm_update_strings() {
             free(jitc_llvm_ones_str[i]);
         free(jitc_llvm_ones_str);
     }
+    if (jitc_llvm_ones_bit_str) {
+        for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
+            free(jitc_llvm_ones_bit_str[i]);
+        free(jitc_llvm_ones_bit_str);
+    }
 
     jitc_llvm_ones_str =
+        (char **) malloc(sizeof(char *) * (uint32_t) VarType::Count);
+    jitc_llvm_ones_bit_str =
         (char **) malloc(sizeof(char *) * (uint32_t) VarType::Count);
 
     for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i) {
         VarType vt = (VarType) i;
+
+        buf.clear();
+        buf.put('<');
+        for (uint32_t j = 0; j < width; ++j) {
+            buf.put(type_name_llvm[i], strlen(type_name_llvm[i]));
+            buf.put(' ');
+
+            if (vt == VarType::Float16 || vt == VarType::Float32 ||
+                     vt == VarType::Float64){
+                buf.put("1.0");
+            } else {
+                buf.put("1");
+            }
+
+            if (j + 1 < width)
+                buf.put(", ");
+        }
+        buf.put('>');
+        jitc_llvm_ones_str[i] = strdup(buf.get());
 
         buf.clear();
         buf.put('<');
@@ -279,7 +314,7 @@ void jitc_llvm_update_strings() {
                 buf.put(", ");
         }
         buf.put('>');
-        jitc_llvm_ones_str[i] = strdup(buf.get());
+        jitc_llvm_ones_bit_str[i] = strdup(buf.get());
     }
 
     buf.clear();

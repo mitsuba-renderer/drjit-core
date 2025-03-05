@@ -14,17 +14,14 @@
 #define DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
 #endif
 
-#define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
-extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
-
 static bool jitc_optix_cache_hit = false;
 static bool jitc_optix_cache_global_disable = false;
 
 void jitc_optix_log(unsigned int level, const char *tag, const char *message, void *) {
-    size_t len = strlen(message);
-    if (level <= (uint32_t) state.log_level_stderr)
-        fprintf(stderr, "jit_optix_log(): [%s] %s%s", tag, message,
-                (len > 0 && message[len - 1] == '\n') ? "" : "\n");
+    // Note: cannot use jitc_var_log here. Parallel OptiX compilation may enter this
+    // region from another thread, causing deadlocks (with the Dr.Jit-Core lock + Python GIL)
+    if (level <= (uint32_t) std::max(state.log_level_callback, state.log_level_stderr))
+        fprintf(stderr, "jit_optix_log(): [%s] %s", tag, message);
 
     if (strcmp(tag, "DISKCACHE") == 0 &&
         strncmp(message, "Cache miss for key", 18) == 0)
@@ -43,8 +40,7 @@ static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
 #ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
     pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
 #else
-    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_DEBUG |
-                         OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
                          OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
 #endif
 
@@ -251,6 +247,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     OptixDeviceContext &optix_context = state.devices[ts->device].optix_context;
     OptixPipelineData &pipeline = *ts->optix_pipeline;
 
+#if 1 // Parallel compilation
     OptixTask task;
     error_log[0] = '\0';
     int rv = optixModuleCreateWithTasks(
@@ -284,6 +281,11 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
         );
     };
     execute_task(task);
+#else // Fallback: serial compilation
+    int rv = optixModuleCreate(
+        optix_context, &mco, &pipeline.compile_options, buf, buf_size,
+        error_log, &log_size, &kernel.optix.mod);
+#endif
 
     int compilation_state = 0;
     jitc_optix_check(

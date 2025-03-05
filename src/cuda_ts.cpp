@@ -5,6 +5,7 @@
 #include "optix.h"
 #include "eval.h"
 #include "util.h"
+#include "optix_api.h"
 
 static uint8_t *kernel_params_global = nullptr;
 
@@ -858,4 +859,73 @@ void CUDAThreadState::enqueue_host_func(void (*callback)(void *),
 
     scoped_set_context guard(context);
     cuda_check(cuLaunchHostFunc(stream, callback, payload));
+}
+
+void CUDAThreadState::coop_vec_pack(uint32_t count, const void *in_,
+                                    const MatrixDescr *in_d, void *out_,
+                                    const MatrixDescr *out_d) {
+#if defined(DRJIT_ENABLE_OPTIX)
+    scoped_set_context guard(context);
+    OptixDeviceContext ctx = jitc_optix_context();
+    const uint8_t *in = (const uint8_t *) in_;
+    uint8_t *out = (uint8_t *) out_;
+
+    std::vector<OptixCoopVecMatrixDescription> in_o, out_o;
+    in_o.reserve(count);
+    out_o.reserve(count);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        const MatrixDescr &id = in_d[i],
+                          &od = out_d[i];
+
+        uint32_t tsize = type_size[(int) id.dtype];
+
+        if (id.cols == 1) {
+            cuda_check(cuMemcpyAsync(out + od.offset * tsize,
+                                     in + id.offset * tsize,
+                                     id.size * tsize,
+                                     stream));
+        } else {
+            uint32_t type_id = jitc_optix_coop_vec_type_id(id.dtype);
+
+            OptixCoopVecMatrixDescription io;
+            io.N = id.rows;
+            io.K = id.cols;
+            io.offsetInBytes = id.offset * tsize;
+            io.elementType = type_id;
+            io.layout = jitc_optix_coop_vec_layout_id(id.layout);
+            io.rowColumnStrideInBytes = id.stride * tsize;
+            io.sizeInBytes = id.size * tsize;
+            in_o.push_back(io);
+
+            OptixCoopVecMatrixDescription oo;
+            oo.N = od.rows;
+            oo.K = od.cols;
+            oo.offsetInBytes = od.offset * tsize;
+            oo.elementType = type_id;
+            oo.layout = jitc_optix_coop_vec_layout_id(od.layout);
+            oo.rowColumnStrideInBytes = od.stride * tsize;
+            oo.sizeInBytes = od.size * tsize;
+            out_o.push_back(oo);
+        }
+    }
+
+    OptixNetworkDescription in_net, out_net;
+    in_net.layers = in_o.data();
+    in_net.numLayers = in_o.size();
+    out_net.layers = out_o.data();
+    out_net.numLayers = out_o.size();
+
+    if (!optixCoopVecMatrixConvert)
+        jitc_raise("jit_coop_vec_pack(): Cooperative vectors are not "
+                   "supported by your NVIDIA GPU driver. Please install "
+                   "driver version 570 or newer.");
+
+    if (in_net.numLayers)
+        jitc_optix_check(optixCoopVecMatrixConvert(
+            ctx, stream, 1, &in_net, (CUdeviceptr) in_, 0, &out_net, out_, 0));
+#else
+    (void) count; (void) in_; (void) in_d; (void) out_; (void) out_d;
+    jitc_raise("CUDAThreadState::coop_vec_pack(): requires OptiX support!");
+#endif
 }

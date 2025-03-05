@@ -62,8 +62,11 @@ extern int jitc_llvm_version_patch;
 
 /// Pre-generated strings for use by the template engine
 
-/// String of all ones, for different variable types
+/// Literal one, for different variable types
 extern char **jitc_llvm_ones_str;
+
+/// All bits set, for different variable types
+extern char **jitc_llvm_ones_bit_str;
 
 /// <i32 0, i32 1, ... > (up to the current vector width)
 extern char *jitc_llvm_u32_arange_str;

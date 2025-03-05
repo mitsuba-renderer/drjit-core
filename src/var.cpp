@@ -14,6 +14,7 @@
 #include "eval.h"
 #include "util.h"
 #include "op.h"
+#include "coop_vec.h"
 #include "registry.h"
 #include "llvm.h"
 
@@ -177,7 +178,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "rcp", "rcp.approx", "rsqrt.approx",
 
     // Multi-function generator (CUDA)
-    "sin", "cos", "exp2", "log2",
+    "sin", "cos", "exp2", "log2", "tanh",
 
     // Casts
     "cast", "bitcast",
@@ -267,7 +268,20 @@ const char *var_kind_name[(int) VarKind::Count] {
     "array_read",
 
     // Write an element to a variable array
-    "array_write"
+    "array_write",
+
+    // Cooperative vector API
+    "coop_vec_literal",
+    "coop_vec_pack",
+    "coop_vec_unpack",
+    "coop_vec_load",
+    "coop_vec_cast",
+    "coop_vec_unary_op",
+    "coop_vec_binary_op",
+    "coop_vec_ternary_op",
+    "coop_vec_mat_vec",
+    "coop_vec_accum",
+    "coop_vec_outer_product_accum"
 };
 
 /// Temporary string buffer for miscellaneous variable-related tasks
@@ -882,10 +896,16 @@ uint32_t jitc_var_call_input(uint32_t index) {
     v2.size = 1;
 
     bool optimize = jitc_flags() & (uint32_t) JitFlag::OptimizeCalls;
+    bool disable_lvn = !optimize;
 
     if (v->is_literal() && optimize) {
         v2.kind = (uint32_t) VarKind::Literal;
         v2.literal = v->literal;
+        // Temporarily stash the size here (subsequently read in call.cpp)
+        // Will have to be redesigned if the 'unused' field is ever used
+        // for another purpose.
+        v2.unused = v->size;
+        disable_lvn = true;
         return jitc_var_new(v2);
     } else {
         v2.kind = (uint32_t) VarKind::CallInput;
@@ -894,7 +914,7 @@ uint32_t jitc_var_call_input(uint32_t index) {
         jitc_var_inc_ref(index);
     }
 
-    return jitc_var_new(v2, !optimize);
+    return jitc_var_new(v2, disable_lvn);
 }
 
 uint32_t jitc_new_scope(JitBackend backend) {
@@ -1696,6 +1716,8 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         v2.symbolic = v->symbolic;
         v2.size = (uint32_t) size;
         v2.dep[0] = index;
+        v2.coop_vec = v->coop_vec;
+        v2.array_length = v->array_length;
         jitc_var_inc_ref(index, v);
         result = jitc_var_new(v2, true);
     }
@@ -2820,6 +2842,18 @@ const char *jitc_var_graphviz() {
                 var_buffer.put("]");
             }
             var_buffer.put(";\n");
+        }
+
+        switch ((VarKind) v.kind) {
+            case VarKind::CoopVecPack: {
+                    CoopVecPackData *cvid = (CoopVecPackData *) v.data;
+                    for (uint32_t index2 : cvid->indices)
+                        var_buffer.fmt("    %u -> %zu", index2, index);
+                }
+                break;
+
+            default:
+                break;
         }
     }
 

@@ -22,14 +22,15 @@
 #include "profile.h"
 #include "array.h"
 #include "record_ts.h"
+#include "coop_vec.h"
 #include <thread>
 #include <condition_variable>
 #include <drjit-core/half.h>
 #include <drjit-core/texture.h>
 
 #if defined(DRJIT_ENABLE_OPTIX)
-#include <drjit-core/optix.h>
-#include "optix.h"
+#  include <drjit-core/optix.h>
+#  include "optix.h"
 #endif
 
 #include <nanothread/nanothread.h>
@@ -334,6 +335,14 @@ void jit_llvm_version(int *major, int *minor, int *patch) {
         *patch = jitc_llvm_version_patch;
 }
 
+void jit_cuda_version(int *major, int *minor) {
+    lock_guard guard(state.lock);
+    if (major)
+        *major = jitc_cuda_version_major;
+    if (minor)
+        *minor = jitc_cuda_version_minor;
+}
+
 uint32_t jit_llvm_vector_width() {
     return jitc_llvm_vector_width;
 }
@@ -562,7 +571,7 @@ uint32_t jit_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t mask) {
 }
 
 uint32_t jit_var_pointer(JitBackend backend, const void *value,
-                             uint32_t dep, int write) {
+                         uint32_t dep, int write) {
     lock_guard guard(state.lock);
     return jitc_var_pointer(backend, value, dep, write);
 }
@@ -1322,6 +1331,11 @@ uint32_t jit_var_log2_intrinsic(uint32_t a0) {
     return jitc_var_log2_intrinsic(a0);
 }
 
+uint32_t jit_var_tanh_intrinsic(uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_var_tanh_intrinsic(a0);
+}
+
 uint32_t jit_var_cast(uint32_t index, VarType target_type,
                       int reinterpret) {
     lock_guard guard(state.lock);
@@ -1353,6 +1367,7 @@ VarInfo jit_set_backend(uint32_t index) noexcept {
     info.state = jitc_var_state(index);
     info.size = var->size;
     info.is_array = var->is_array();
+    info.is_coop_vec = var->coop_vec;
     info.unaligned = var->unaligned;
     if(info.state == VarState::Literal)
         info.literal = var->literal;
@@ -1568,4 +1583,89 @@ void jit_profile_stop() {
     lock_guard guard(state.lock);
     if (cuProfilerStart)
         cuProfilerStop();
+}
+
+uint32_t jit_coop_vec_pack(uint32_t n, const uint32_t *in) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_pack(n, in);
+}
+
+void jit_coop_vec_unpack(uint32_t index, uint32_t n, uint32_t *out) {
+    lock_guard guard(state.lock);
+    jitc_coop_vec_unpack(index, n, out);
+}
+
+uint32_t jit_coop_vec_literal(JitBackend backend, VarType type,
+                              const void *value, size_t size, uint32_t length) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_literal(backend, type, value, size, length);
+}
+
+uint32_t jit_coop_vec_load(uint32_t buffer, uint32_t offset, uint32_t length) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_load(buffer, offset, length);
+}
+
+uint32_t jit_coop_vec_unary_op(JitOp op, uint32_t a0) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_unary_op(op, a0);
+}
+
+uint32_t jit_coop_vec_binary_op(JitOp op, uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_binary_op(op, a0, a1);
+}
+
+uint32_t jit_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a2) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_ternary_op(op, a0, a1, a2);
+}
+
+void jit_coop_vec_pack_matrices(uint32_t count,
+                       uint32_t in, const MatrixDescr *in_descr,
+                       uint32_t out, const MatrixDescr *out_descr) {
+    lock_guard guard(state.lock);
+    jitc_coop_vec_pack_matrices(count, in, in_descr, out, out_descr);
+}
+
+MatrixDescr jit_coop_vec_compute_layout(uint32_t index,
+                                        const MatrixDescr *in,
+                                        MatrixLayout layout,
+                                        uint32_t offset) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_compute_layout(index, in, layout, offset);
+}
+
+uint32_t jit_coop_vec_matvec(uint32_t A_index, const MatrixDescr *A_descr,
+                             uint32_t x_index, uint32_t b_index,
+                             const MatrixDescr *b_descr, int transpose) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_matvec(A_index, A_descr, x_index, b_index, b_descr,
+                                transpose);
+}
+
+uint32_t jit_coop_vec_length(uint32_t index) {
+    lock_guard guard(state.lock);
+    const Variable *v = jitc_var(index);
+    if (!v->coop_vec)
+        jitc_raise("jit_coop_vec_length(): r%u is not a cooperative vector!", index);
+    return v->array_length;
+}
+
+uint32_t jit_coop_vec_accum(uint32_t target, uint32_t target_size,
+                            uint32_t offset, uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_accum(target, target_size, offset, index);
+}
+
+uint32_t jit_coop_vec_outer_product_accum(uint32_t target, uint32_t target_size,
+                                          const MatrixDescr *descr, uint32_t a,
+                                          uint32_t b) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_outer_product_accum(target, target_size, descr, a, b);
+}
+
+uint32_t jit_coop_vec_cast(uint32_t index, VarType vt) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_cast(index, vt);
 }

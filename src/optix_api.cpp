@@ -8,8 +8,12 @@
 */
 
 #define DR_OPTIX_SYM(...) __VA_ARGS__ = nullptr;
-#define DR_OPTIX_ABI_VERSION 87
-#define DR_OPTIX_FUNCTION_TABLE_SIZE 48
+
+// We target ABI 87 and upgrade to 105 if it is available
+#define DR_OPTIX_ABI_VERSION_87 87
+#define DR_OPTIX_ABI_VERSION_105 105
+#define DR_OPTIX_FUNCTION_TABLE_SIZE_87 48
+#define DR_OPTIX_FUNCTION_TABLE_SIZE_105 52
 
 #include "optix.h"
 #include "optix_api.h"
@@ -29,8 +33,10 @@ static void *jitc_optix_handle = nullptr;
 void *jitc_optix_win32_load_alternative();
 #endif
 
-static void *jitc_optix_table[DR_OPTIX_FUNCTION_TABLE_SIZE] { };
-static const char *jitc_optix_table_names[DR_OPTIX_FUNCTION_TABLE_SIZE] = {
+static void *jitc_optix_table_87[DR_OPTIX_FUNCTION_TABLE_SIZE_87] { };
+static void *jitc_optix_table_105[DR_OPTIX_FUNCTION_TABLE_SIZE_105] { };
+
+static const char *jitc_optix_table_names_87[DR_OPTIX_FUNCTION_TABLE_SIZE_87] = {
     "optixGetErrorName",
     "optixGetErrorString",
     "optixDeviceContextCreate",
@@ -80,6 +86,63 @@ static const char *jitc_optix_table_names[DR_OPTIX_FUNCTION_TABLE_SIZE] = {
     "optixDenoiserComputeAverageColor",
     "optixDenoiserCreateWithUserModel"
 };
+
+static const char *jitc_optix_table_names_105[DR_OPTIX_FUNCTION_TABLE_SIZE_105] = {
+    "optixGetErrorName",
+    "optixGetErrorString",
+    "optixDeviceContextCreate",
+    "optixDeviceContextDestroy",
+    "optixDeviceContextGetProperty",
+    "optixDeviceContextSetLogCallback",
+    "optixDeviceContextSetCacheEnabled",
+    "optixDeviceContextSetCacheLocation",
+    "optixDeviceContextSetCacheDatabaseSizes",
+    "optixDeviceContextGetCacheEnabled",
+    "optixDeviceContextGetCacheLocation",
+    "optixDeviceContextGetCacheDatabaseSizes",
+    "optixModuleCreate",
+    "optixModuleCreateWithTasks",
+    "optixModuleGetCompilationState",
+    "optixModuleDestroy",
+    "optixBuiltinISModuleGet",
+    "optixTaskExecute",
+    "optixProgramGroupCreate",
+    "optixProgramGroupDestroy",
+    "optixProgramGroupGetStackSize",
+    "optixPipelineCreate",
+    "optixPipelineDestroy",
+    "optixPipelineSetStackSize",
+    "optixAccelComputeMemoryUsage",
+    "optixAccelBuild",
+    "optixAccelGetRelocationInfo",
+    "optixCheckRelocationCompatibility",
+    "optixAccelRelocate",
+    "optixAccelCompact",
+    "optixAccelEmitProperty",
+    "optixConvertPointerToTraversableHandle",
+    "optixOpacityMicromapArrayComputeMemoryUsage",
+    "optixOpacityMicromapArrayBuild",
+    "optixOpacityMicromapArrayGetRelocationInfo",
+    "optixOpacityMicromapArrayRelocate",
+    "optixDisplacementMicromapArrayComputeMemoryUsage",
+    "optixDisplacementMicromapArrayBuild",
+    "optixClusterAccelComputeMemoryUsage",
+    "optixClusterAccelBuild",
+    "optixSbtRecordPackHeader",
+    "optixLaunch",
+    "optixCoopVecMatrixConvert",
+    "optixCoopVecMatrixComputeSize",
+    "optixDenoiserCreate",
+    "optixDenoiserDestroy",
+    "optixDenoiserComputeMemoryResources",
+    "optixDenoiserSetup",
+    "optixDenoiserInvoke",
+    "optixDenoiserComputeIntensity",
+    "optixDenoiserComputeAverageColor",
+    "optixDenoiserCreateWithUserModel"
+};
+
+bool jitc_optix_has_abi_105 = false;
 
 bool jitc_optix_api_init() {
     if (jitc_optix_handle)
@@ -140,16 +203,28 @@ bool jitc_optix_api_init() {
         return false;
     }
 
-    int rv = optixQueryFunctionTable(DR_OPTIX_ABI_VERSION, 0, 0, 0,
-                                     &jitc_optix_table, sizeof(jitc_optix_table));
+    int rv = optixQueryFunctionTable(DR_OPTIX_ABI_VERSION_105, 0, 0, 0,
+                                     &jitc_optix_table_105,
+                                     sizeof(jitc_optix_table_105));
     if (rv) {
-        jitc_log(Warn,
-                "jit_optix_api_init(): Failed to load OptiX library! Very likely, "
-                "your NVIDIA graphics driver is too old and not compatible "
-                "with the version of OptiX that is being used. In particular, "
-                "OptiX 8.0 requires driver revision R535 or newer.");
-        jitc_optix_api_shutdown();
-        return false;
+        jitc_optix_has_abi_105 = false;
+        memset(jitc_optix_table_105, 0, sizeof(jitc_optix_table_105));
+
+        // Next, try ABI 87
+        int rv = optixQueryFunctionTable(DR_OPTIX_ABI_VERSION_87, 0, 0, 0,
+                                         &jitc_optix_table_87,
+                                         sizeof(jitc_optix_table_87));
+        if (rv) {
+            jitc_log(Warn,
+                    "jit_optix_api_init(): Failed to load OptiX library! Very likely, "
+                    "your NVIDIA graphics driver is too old and not compatible "
+                    "with the version of OptiX that is being used. In particular, "
+                    "OptiX 8.0 requires driver revision R535 or newer.");
+            jitc_optix_api_shutdown();
+            return false;
+        }
+    } else {
+        jitc_optix_has_abi_105 = true;
     }
 
     #define LOAD(name) name = (decltype(name)) jitc_optix_lookup(#name)
@@ -174,9 +249,15 @@ bool jitc_optix_api_init() {
     LOAD(optixPipelineSetStackSize);
     LOAD(optixProgramGroupGetStackSize);
 
+    if (jitc_optix_has_abi_105) {
+        LOAD(optixCoopVecMatrixConvert);
+        LOAD(optixCoopVecMatrixComputeSize);
+    }
+
     #undef LOAD
 
-    jitc_log(Info, "jit_optix_api_init(): loaded OptiX (via 8.0 ABI).");
+    jitc_log(Info, "jit_optix_api_init(): loaded OptiX (via %s ABI).",
+             jitc_optix_has_abi_105 ? "9.0" : "8.0");
 
     return true;
 }
@@ -195,7 +276,8 @@ void jitc_optix_api_shutdown() {
     #endif
     jitc_optix_handle = nullptr;
 
-    memset(jitc_optix_table, 0, sizeof(jitc_optix_table));
+    memset(jitc_optix_table_87, 0, sizeof(jitc_optix_table_87));
+    memset(jitc_optix_table_105, 0, sizeof(jitc_optix_table_105));
 
     #define Z(x) x = nullptr
     Z(optixGetErrorName); Z(optixGetErrorString); Z(optixDeviceContextCreate);
@@ -206,13 +288,21 @@ void jitc_optix_api_shutdown() {
     Z(optixProgramGroupDestroy); Z(optixPipelineCreate);
     Z(optixPipelineDestroy); Z(optixLaunch); Z(optixSbtRecordPackHeader);
     Z(optixPipelineSetStackSize); Z(optixProgramGroupGetStackSize);
+    Z(optixCoopVecMatrixConvert); Z(optixCoopVecMatrixComputeSize);
     #undef Z
 }
 
 void *jitc_optix_lookup(const char *name) {
-    for (size_t i = 0; i < DR_OPTIX_FUNCTION_TABLE_SIZE; ++i) {
-        if (strcmp(name, jitc_optix_table_names[i]) == 0)
-            return jitc_optix_table[i];
+    if (jitc_optix_has_abi_105) {
+        for (size_t i = 0; i < DR_OPTIX_FUNCTION_TABLE_SIZE_105; ++i) {
+            if (strcmp(name, jitc_optix_table_names_105[i]) == 0)
+                return jitc_optix_table_105[i];
+        }
+    } else {
+        for (size_t i = 0; i < DR_OPTIX_FUNCTION_TABLE_SIZE_87; ++i) {
+            if (strcmp(name, jitc_optix_table_names_87[i]) == 0)
+                return jitc_optix_table_87[i];
+        }
     }
     jitc_raise("jit_optix_lookup(): function \"%s\" not found!", name);
 }

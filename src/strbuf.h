@@ -77,6 +77,9 @@ public:
      */
     void rewind_to(size_t pos);
 
+    /// Like \ref rewind_to(), but relative to the end of the buffer
+    void rewind(size_t rel);
+
     /// Delete trailing spaces and commas
     void delete_trailing_commas();
 
