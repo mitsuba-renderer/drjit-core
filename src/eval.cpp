@@ -17,6 +17,7 @@
 #include "optix.h"
 #include "loop.h"
 #include "call.h"
+#include "coop_vec.h"
 #include "trace.h"
 #include "op.h"
 #include "array.h"
@@ -186,6 +187,16 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
                 for (uint32_t i = 0; i < call->n_inst; ++i)
                     jitc_var_traverse(size, call->inner_out[v->literal + i * call->n_out], depth + 1);
 
+            }
+            break;
+
+        case VarKind::CoopVecPack: {
+                CoopVecPackData *cvid = (CoopVecPackData *) v->data;
+                for (uint32_t index2 : cvid->indices) {
+                    if (index2 == 0)
+                        continue;
+                    jitc_var_traverse(size, index2, depth);
+                }
             }
             break;
 
@@ -510,29 +521,29 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         bool cache_hit = false;
 
         if (ts->backend == JitBackend::CUDA) {
-			ProfilerPhase profiler(profiler_region_backend_compile);
-			if (!uses_optix) {
-				kernel.size = 1; // dummy size value to distinguish between OptiX and CUDA kernels
-				kernel.data = nullptr;
-				std::tie(kernel.cuda.mod, cache_hit) = jitc_cuda_compile(buffer.get());
-			} else {
-				#if defined(DRJIT_ENABLE_OPTIX)
-					cache_hit = jitc_optix_compile(
-						ts, buffer.get(), buffer.size(), kernel_name, kernel);
-				#endif
-			}
-		} else {
+            ProfilerPhase profiler(profiler_region_backend_compile);
+            if (!uses_optix) {
+                kernel.size = 1; // dummy size value to distinguish between OptiX and CUDA kernels
+                kernel.data = nullptr;
+                std::tie(kernel.cuda.mod, cache_hit) = jitc_cuda_compile(buffer.get());
+            } else {
+                #if defined(DRJIT_ENABLE_OPTIX)
+                    cache_hit = jitc_optix_compile(
+                        ts, buffer.get(), buffer.size(), kernel_name, kernel);
+                #endif
+            }
+        } else {
             cache_hit = jitc_kernel_load(buffer.get(), (uint32_t) buffer.size(),
                                          ts->backend, kernel_hash, kernel);
 
-			if (!cache_hit) {
-				ProfilerPhase profiler(profiler_region_backend_compile);
-				jitc_llvm_compile(kernel);
+            if (!cache_hit) {
+                ProfilerPhase profiler(profiler_region_backend_compile);
+                jitc_llvm_compile(kernel);
                 jitc_kernel_write(buffer.get(), (uint32_t) buffer.size(),
                                   ts->backend, kernel_hash, kernel);
-				jitc_llvm_disasm(kernel);
-			}
-		}
+                jitc_llvm_disasm(kernel);
+            }
+        }
 
         if (ts->backend == JitBackend::CUDA && !uses_optix) {
             // Locate the kernel entry point
