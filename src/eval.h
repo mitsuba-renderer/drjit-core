@@ -91,9 +91,6 @@ extern uint32_t callable_count_unique;
 /// Specifies the nesting level of virtual calls being compiled
 extern uint32_t callable_depth;
 
-/// List of enqueued bound checks
-extern std::vector<uint32_t> bounds_checks;
-
 /// Ordered list of variables that should be computed
 extern std::vector<ScheduledVariable> schedule;
 
