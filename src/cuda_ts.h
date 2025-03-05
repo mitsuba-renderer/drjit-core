@@ -51,4 +51,8 @@ struct CUDAThreadState : ThreadState {
                          uint32_t) override {
         jitc_raise("jitc_reduce_expanded(): unsupported by CUDAThreadState!");
     }
+
+    /// Pack a set of matrices/vectors for use with the cooperative vector API
+    void coop_vec_pack(uint32_t count, const void *in, const MatrixDescr *in_d,
+                       void *out, const MatrixDescr *out_d) override;
 };

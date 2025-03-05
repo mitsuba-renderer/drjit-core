@@ -30,31 +30,38 @@ using OptixTask = void*;
 using OptixModule = void*;
 using OptixProgramGroup = void*;
 using OptixPipeline = void*;
+using OptixCoopVecElemType = int;
+using OptixCoopVecMatrixLayout = int;
+struct OptixPipelineCompileOptions;
+struct OptixShaderBindingTable;
 
-#define OPTIX_EXCEPTION_FLAG_NONE                     0
-#define OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW           1
-#define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH              2
-#define OPTIX_EXCEPTION_FLAG_DEBUG                    8
-#define OPTIX_ERROR_VALIDATION_FAILURE                7053
-#define OPTIX_COMPILE_DEBUG_LEVEL_NONE                0x2350
-#define OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL             0x2351
-#define OPTIX_COMPILE_DEBUG_LEVEL_MODERATE            0x2353
-#define OPTIX_COMPILE_DEBUG_LEVEL_FULL                0x2352
-#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_0            0x2340
-#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_1            0x2341
-#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_2            0x2342
-#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_3            0x2343
-#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF      0
-#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL      ((int) 0xFFFFFFFF)
-#define OPTIX_MODULE_COMPILE_STATE_COMPLETED          0x2364
-#define OPTIX_PROGRAM_GROUP_KIND_RAYGEN               0x2421
-#define OPTIX_PROGRAM_GROUP_KIND_CALLABLES            0x2425
-#define OPTIX_PROGRAM_GROUP_KIND_MISS                 0x2422
-#define OPTIX_SBT_RECORD_HEADER_SIZE                  32
-#define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_ANY        0
-#define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS 1
+#define OPTIX_EXCEPTION_FLAG_NONE                        0
+#define OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW              1
+#define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH                 2
+#define OPTIX_EXCEPTION_FLAG_DEBUG                       8
+#define OPTIX_ERROR_VALIDATION_FAILURE                   7053
+#define OPTIX_COMPILE_DEBUG_LEVEL_NONE                   0x2350
+#define OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL                0x2351
+#define OPTIX_COMPILE_DEBUG_LEVEL_MODERATE               0x2353
+#define OPTIX_COMPILE_DEBUG_LEVEL_FULL                   0x2352
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_0               0x2340
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_1               0x2341
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_2               0x2342
+#define OPTIX_COMPILE_OPTIMIZATION_LEVEL_3               0x2343
+#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF         0
+#define OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL         ((int) 0xFFFFFFFF)
+#define OPTIX_MODULE_COMPILE_STATE_COMPLETED             0x2364
+#define OPTIX_PROGRAM_GROUP_KIND_RAYGEN                  0x2421
+#define OPTIX_PROGRAM_GROUP_KIND_CALLABLES               0x2425
+#define OPTIX_PROGRAM_GROUP_KIND_MISS                    0x2422
+#define OPTIX_SBT_RECORD_HEADER_SIZE                     32
+#define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_ANY           0
+#define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS    1
+#define OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE              (1 << 31)
+#define OPTIX_COOP_VEC_MATRIX_LAYOUT_ROW_MAJOR           0x2A40
+#define OPTIX_COOP_VEC_MATRIX_LAYOUT_TRAINING_OPTIMAL    0x2A43
+#define OPTIX_COOP_VEC_MATRIX_LAYOUT_INFERENCING_OPTIMAL 0x2A42
 #define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING (1u << 1)
-#define OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE           (1 << 31)
 
 struct OptixDeviceContextOptions {
     OptixLogCallback logCallbackFunction;
@@ -130,6 +137,21 @@ struct OptixProgramGroupOptions {
     OptixPayloadType *payloadType;
 };
 
+struct OptixCoopVecMatrixDescription {
+    unsigned int N;
+    unsigned int K;
+    unsigned int offsetInBytes;
+    OptixCoopVecElemType elementType;
+    OptixCoopVecMatrixLayout layout;
+    unsigned int rowColumnStrideInBytes;
+    unsigned int sizeInBytes;
+};
+
+struct OptixNetworkDescription {
+    OptixCoopVecMatrixDescription* layers;
+    unsigned int numLayers;
+};
+
 DR_OPTIX_SYM(OptixResult (*optixQueryFunctionTable)(int, unsigned int, void *,
                                                     const void **, void *,
                                                     size_t));
@@ -174,3 +196,11 @@ DR_OPTIX_SYM(OptixResult (*optixPipelineSetStackSize)(
 DR_OPTIX_SYM(OptixResult (*optixProgramGroupGetStackSize)(OptixProgramGroup,
                                                           OptixStackSizes *,
                                                           OptixPipeline));
+
+DR_OPTIX_SYM(OptixResult (*optixCoopVecMatrixConvert)(
+    OptixDeviceContext, CUstream, unsigned int, const OptixNetworkDescription *,
+    CUdeviceptr, size_t, const OptixNetworkDescription *, CUdeviceptr, size_t));
+
+DR_OPTIX_SYM(OptixResult (*optixCoopVecMatrixComputeSize)(
+    OptixDeviceContext, unsigned int, unsigned int, OptixCoopVecElemType,
+    OptixCoopVecMatrixLayout, size_t, size_t *));

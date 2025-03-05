@@ -406,15 +406,15 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     friend bool any(const JitArray &a) { return jit_var_any(a.m_index); }
     friend bool none(const JitArray &a) { return !jit_var_any(a.m_index); }
 
-	friend const char *label(const JitArray &v) {
-		return jit_var_label(v.m_index);
-	}
+    friend const char *label(const JitArray &v) {
+        return jit_var_label(v.m_index);
+    }
 
-	friend void set_label(JitArray &v, const char *label) {
-		uint32_t index = jit_var_set_label(v.m_index, 1, label);
-		jit_var_dec_ref(v.m_index);
-		v.m_index = index;
-	}
+    friend void set_label(JitArray &v, const char *label) {
+        uint32_t index = jit_var_set_label(v.m_index, 1, label);
+        jit_var_dec_ref(v.m_index);
+        v.m_index = index;
+    }
 protected:
     uint32_t m_index = 0;
 };
