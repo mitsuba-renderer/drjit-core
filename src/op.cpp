@@ -1914,9 +1914,6 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
             jitc_raise_dirty_error(index);
         if (jitc_var(src)->is_dirty())
             jitc_raise_dirty_error(src);
-
-        src_v = jitc_var(src);
-        index_v = jitc_var(index);
     }
 
     // At this point, we *will* have to evalute the source, if not done already.
