@@ -246,10 +246,10 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
     fail_if(value == 0, "value is uninitialized.");
     fail_if(mask_ == 0, "mask is uninitialized.");
 
-    Variable *vm = jitc_var(mask_),
-             *vo = jitc_var(offset);
-    Ref mask = steal(jitc_var_mask_apply(mask_, vm->size));
+    Variable *vm = jitc_var(mask_);
+    Ref mask     = steal(jitc_var_mask_apply(mask_, vm->size));
 
+    Variable *vo = jitc_var(offset);
     vm = jitc_var(mask);
 
     JitBackend backend = (JitBackend) vm->backend;
