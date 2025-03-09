@@ -190,8 +190,8 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
             }
             break;
 
-        case VarKind::CoopVecNew: {
-                CoopVecNewData *cvid = (CoopVecNewData *) v->data;
+        case VarKind::CoopVecPack: {
+                CoopVecPackData *cvid = (CoopVecPackData *) v->data;
                 for (uint32_t index2 : cvid->indices) {
                     if (index2 == 0)
                         continue;

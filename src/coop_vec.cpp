@@ -16,27 +16,32 @@
 #include "optix.h"
 #include <drjit-core/nanostl.h>
 
-uint32_t jitc_coop_vec_new(const uint32_t *indices, uint32_t size) {
-    for (uint32_t i = 0; i < size; ++i) {
-        if (indices[i] == 0)
-            jitc_raise("jit_coop_vec_new(): argument %u is uninitialized!", i);
+uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
+    for (uint32_t i = 0; i < n; ++i) {
+        if (in[i] == 0)
+            jitc_raise("jit_coop_vec_pack(): argument %u is uninitialized!", i);
     }
 
-    const Variable *arg_v = jitc_var(indices[0]);
+    const Variable *arg_v = jitc_var(in[0]);
     Variable v;
-    v.kind = (uint32_t) VarKind::CoopVecNew;
+    v.kind = (uint32_t) VarKind::CoopVecPack;
     v.type = arg_v->type;
     v.size = arg_v->size;
     v.backend = arg_v->backend;
-    v.array_length = size;
+    v.array_length = n;
     v.coop_vec = true;
     v.optix = v.backend == (uint32_t) JitBackend::CUDA;
 
-    drjit::unique_ptr<CoopVecNewData> cvid = new CoopVecNewData();
-    cvid->indices.reserve(size);
+    drjit::unique_ptr<CoopVecPackData> cvid = new CoopVecPackData();
+    cvid->indices.reserve(n);
 
-    for (uint32_t i = 0; i < size; ++i) {
-        uint32_t index = indices[i];
+    for (uint32_t i = 0; i < n; ++i) {
+        uint32_t index = in[i];
+        const Variable *v2 = jitc_var(index);
+        v.size = std::max(v.size, v2->size);
+        if (v2->backend != v.backend || v2->type != v.type)
+            jitc_raise("jit_coop_vec_pack(): inputs must have compatible types and backends!");
+
         jitc_var_inc_ref(index);
         cvid->indices.push_back(index);
     }
@@ -47,59 +52,35 @@ uint32_t jitc_coop_vec_new(const uint32_t *indices, uint32_t size) {
     jitc_var_set_callback(
         result,
         [](uint32_t, int free, void *p) {
-            CoopVecNewData *ld = (CoopVecNewData *) p;
+            CoopVecPackData *ld = (CoopVecPackData *) p;
             if (free)
-                delete (CoopVecNewData *) ld;
+                delete (CoopVecPackData *) ld;
         },
         cvid.release(), true);
 
     return result;
 }
 
-uint32_t jitc_coop_vec_get(uint32_t vec, uint32_t offset) {
-    Variable *vec_v = jitc_var(vec);
+void jitc_coop_vec_unpack(uint32_t index, uint32_t *out) {
+    Variable *vec_v = jitc_var(index);
     Variable v;
-    if (offset >= vec_v->array_length)
-        jitc_raise("jit_coop_vec_get(): element %u is beyond the end of the "
-                   "cooperative vector (of size %u)", offset, vec_v->array_length);
-    v.kind = (uint32_t) VarKind::CoopVecGet;
-    v.literal = offset;
+
+    if (!vec_v->coop_vec)
+        jitc_raise("jit_coop_vec_unpack(): source must be a cooperative vector!");
+
+    v.kind = (uint32_t) VarKind::CoopVecUnpack;
     v.type = vec_v->type;
     v.size = vec_v->size;
     v.backend = vec_v->backend;
-    v.dep[0] = vec;
-    jitc_var_inc_ref(vec, vec_v);
+    v.dep[0] = index;
 
-    return jitc_var_new(v);
-}
+    uint32_t length = vec_v->array_length;
 
-uint32_t jitc_coop_vec_set(uint32_t vec, uint32_t offset, uint32_t value) {
-    Variable *vec_v = jitc_var(vec);
-    if (!value)
-        jitc_raise("jit_coop_vec_set(): 'value' is unitialized!");
-
-    Variable *value_v = jitc_var(value);
-    if (!(value_v->size == vec_v->size || vec_v->size == 1 || value_v->size == 1) ||
-        value_v->type != vec_v->type)
-        jitc_raise("jit_coop_vec_set(): incompatible arguments!");
-    if (offset >= vec_v->array_length)
-        jitc_raise("jit_coop_vec_set(): element %u is beyond the end of the "
-                   "cooperative vector (of size %u)", offset, vec_v->array_length);
-    Variable v;
-    v.kind = (uint32_t) VarKind::CoopVecSet;
-    v.literal = offset;
-    v.type = vec_v->type;
-    v.size = std::max(vec_v->size, value_v->size);
-    v.backend = vec_v->backend;
-    v.array_length = vec_v->array_length;
-    v.coop_vec = true;
-
-    v.dep[0] = vec;
-    v.dep[1] = value;
-    jitc_var_inc_ref(vec, vec_v);
-    jitc_var_inc_ref(value, value_v);
-
-    return jitc_var_new(v);
+    for (uint32_t i = 0; i < length; ++i) {
+        jitc_var_inc_ref(index);
+        v.literal = i;
+        out[i] = jitc_var_new(v);
+    }
 }
 
 uint32_t jitc_coop_vec_unary_op(JitOp op, uint32_t a0) {
@@ -223,7 +204,7 @@ MatrixDescr jitc_coop_vec_compute_layout(uint32_t index,
         uint32_t offset_in_bytes = in.offset * tsize;
         if (offset_in_bytes % 64 != 0)
             jitc_raise(
-                "jit_coop_vec_pack(): OptiX requires input matrices "
+                "jit_coop_vec_compute_layout(): OptiX requires input matrices "
                 "to be 64-byte aligned. Encountered an input with "
                 "offset %u, which is not divisible by 64.", offset_in_bytes);
 
@@ -249,7 +230,7 @@ MatrixDescr jitc_coop_vec_compute_layout(uint32_t index,
         size_t size = 0;
 
         if (!optixCoopVecMatrixComputeSize)
-            jitc_raise("jit_coop_vec_pack(): Cooperative vectors are not "
+            jitc_raise("jit_coop_vec_compute_layout(): Cooperative vectors are not "
                        "supported by your NVIDIA GPU driver. Please install "
                        "driver version 570 or newer.");
 
@@ -263,8 +244,11 @@ MatrixDescr jitc_coop_vec_compute_layout(uint32_t index,
     return r;
 }
 
-void jitc_coop_vec_pack(uint32_t count, uint32_t in, const MatrixDescr *in_descr,
-                        uint32_t out, const MatrixDescr *out_descr) {
+void jitc_coop_vec_pack_matrices(uint32_t count,
+                                 uint32_t in,
+                                 const MatrixDescr *in_descr,
+                                 uint32_t out,
+                                 const MatrixDescr *out_descr) {
     void *in_p = nullptr, *out_p = nullptr;
     Ref in_data = steal(jitc_var_data(in, true, &in_p));
     Ref out_data = steal(jitc_var_data(out, true, &out_p));
@@ -386,49 +370,36 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
     return result;
 }
 
-uint32_t jitc_coop_vec_scatter_add(uint32_t index, uint32_t target_, uint32_t offset_) {
+uint32_t jitc_coop_vec_accum(uint32_t index, uint32_t target_, uint32_t offset_, uint32_t mask_) {
     JitBackend backend;
-    uint32_t length, size;
+    uint32_t size;
     {
         const Variable *v = jitc_var(index);
-        length = v->array_length;
         size = std::max(v->size, jitc_var(offset_)->size);
         backend = (JitBackend) v->backend;
     }
 
     Ref target = borrow(target_);
+    void *ptr = nullptr;
+    target = steal(jitc_var_data(target, true, &ptr));
+    Ref ptr_v = steal(jitc_var_pointer(backend, ptr, target, 0));
 
-    if (backend == JitBackend::LLVM) {
-        Ref mask   = steal(jitc_var_bool(backend, true)),
-            base   = steal(offset_);
+    Ref mask_v = steal(jitc_var_mask_apply(mask_, size));
 
-        for (uint32_t i = 0; i < length; ++i) {
-            Ref v0 = steal(jitc_coop_vec_get(index, i));
-            Ref offset_i = steal(jit_var_u32(backend, i)),
-                offset = steal(jit_var_add(base, offset_i));
 
-            target = steal(jitc_var_scatter(target, v0, offset, mask, ReduceOp::Add,
-                                            ReduceMode::Auto));
-        }
-    } else {
-        void *ptr = nullptr;
-        target = steal(jitc_var_data(target, true, &ptr));
-        Ref ptr_v = steal(jitc_var_pointer(backend, ptr, target, 0));
-
-        /// TODO masking
-
-        Variable v;
-        v.kind = (uint32_t) VarKind::CoopVecScatterAdd;
-        v.type = (uint32_t) VarType::Void;
-        v.size = size;
-        v.backend = (uint32_t) backend;
-        v.dep[0] = index;
-        v.dep[1] = offset_;
-        v.dep[2] = ptr_v;
-        jitc_var_inc_ref(index);
-        jitc_var_inc_ref(offset_);
-        jitc_var_inc_ref(ptr_v);
-    }
+    Variable v;
+    v.kind = (uint32_t) VarKind::CoopVecAccum;
+    v.type = (uint32_t) VarType::Void;
+    v.size = size;
+    v.backend = (uint32_t) backend;
+    v.dep[0] = index;
+    v.dep[1] = offset_;
+    v.dep[2] = ptr_v;
+    v.dep[3] = mask_v;
+    jitc_var_inc_ref(index);
+    jitc_var_inc_ref(offset_);
+    jitc_var_inc_ref(ptr_v);
+    jitc_var_inc_ref(mask_v);
 
     return target_;
 }

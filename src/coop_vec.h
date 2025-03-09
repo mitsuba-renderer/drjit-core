@@ -9,10 +9,10 @@
 
 #include <vector>
 
-struct CoopVecNewData {
+struct CoopVecPackData {
     std::vector<uint32_t> indices;
 
-    ~CoopVecNewData() {
+    ~CoopVecPackData() {
         for (uint32_t index: indices)
             jitc_var_dec_ref(index);
     }
@@ -24,16 +24,18 @@ struct CoopVecMatVecData {
     bool transpose;
 };
 
-extern uint32_t jitc_coop_vec_new(const uint32_t *indices, uint32_t size);
+extern uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in);
+extern void jitc_coop_vec_unpack(uint32_t index, uint32_t *out);
 extern uint32_t jitc_coop_vec_set(uint32_t vec, uint32_t index, uint32_t value);
-extern uint32_t jitc_coop_vec_get(uint32_t vec, uint32_t index);
+extern uint32_t jitc_coop_vec_unpack(uint32_t vec, uint32_t index);
 extern uint32_t jitc_coop_vec_unary_op(JitOp op, uint32_t a0);
 extern uint32_t jitc_coop_vec_binary_op(JitOp op, uint32_t a0, uint32_t a1);
 extern uint32_t jitc_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a2);
 
-extern void jitc_coop_vec_pack(uint32_t count, uint32_t in,
-                               const MatrixDescr *in_descr, uint32_t out,
-                               const MatrixDescr *out_descr);
+extern void jitc_coop_vec_pack_matrices(uint32_t count, uint32_t in,
+                                        const MatrixDescr *in_descr,
+                                        uint32_t out,
+                                        const MatrixDescr *out_descr);
 
 extern MatrixDescr jitc_coop_vec_compute_layout(uint32_t index,
                                                 const MatrixDescr *in,

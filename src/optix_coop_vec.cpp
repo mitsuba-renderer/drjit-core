@@ -48,10 +48,10 @@ uint32_t jitc_optix_coop_vec_layout_id(MatrixLayout ml) {
     }
 }
 
-void jitc_optix_render_coop_vec_get(const Variable *v, const Variable *a0) {
+void jitc_optix_render_coop_vec_unpack(const Variable *v, const Variable *a0) {
     uint32_t tsize = type_size[v->type];
 
-    put("    // coop_vec_get\n");
+    put("    // coop_vec_unpack\n");
     if (a0->array_length <= 64) {
         if (tsize == 4) {
             fmt("    mov.b32 $v, %cv$u_$u;\n", v, a0->reg_index, v->literal);
@@ -91,11 +91,11 @@ void jitc_optix_render_coop_vec(const Variable *v) {
     }
 
     switch ((VarKind) v->kind) {
-        case VarKind::CoopVecNew:
+        case VarKind::CoopVecPack:
             if (reg_count) {
                 if (tsize != 4)
                     fmt("    .reg.b$u %cv$u_temp;\n", tsize*8, v->reg_index);
-                const std::vector<uint32_t> &indices = ((const CoopVecNewData *) v->data)->indices;
+                const std::vector<uint32_t> &indices = ((const CoopVecPackData *) v->data)->indices;
                 for (uint32_t i =  0; i < (uint32_t) indices.size(); ++i) {
                     if (tsize != 4) {
                         fmt("    mov.b$u %cv$u_temp, $v;\n"
@@ -108,49 +108,12 @@ void jitc_optix_render_coop_vec(const Variable *v) {
                     }
                 }
             } else {
-                const std::vector<uint32_t> &indices = ((const CoopVecNewData *) v->data)->indices;
+                const std::vector<uint32_t> &indices = ((const CoopVecPackData *) v->data)->indices;
                 for (uint32_t i =  0; i < (uint32_t) indices.size(); ++i)
                     fmt("    st.local.$b [cv$u+$u], $v;\n",
                         v, v->reg_index,
                         tsize * i, jitc_var(indices[i]));
             }
-            break;
-
-        case VarKind::CoopVecSet:
-            if (tsize != 4 || !reg_count)
-                fmt("    .reg.$b %cv$u_temp;\n",
-                    v, v->reg_index);
-
-            // Assignment
-            if (reg_count) {
-                if (tsize != 4) {
-                    fmt("    mov.$b %cv$u_temp, $v;\n"
-                        "    cvt.u32.u$u %cv$u_$u, %cv$u_temp;\n",
-                        v, v->reg_index, a1,
-                        tsize*8, v->reg_index, v->literal, v->reg_index);
-                } else {
-                    fmt("    mov.b32 %cv$u_$u, $v;\n",
-                        v->reg_index, v->literal, a1);
-                }
-            } else {
-                fmt("    st.local.$b [cv$u+$u], $v;\n",
-                    v, v->reg_index, v->literal*tsize, a1);
-            }
-
-            // Copy remaining entries
-            for (uint32_t i = 0; i < v->array_length; ++i) {
-                if (i == v->literal)
-                    continue;
-                if (reg_count) {
-                    fmt("    mov.b32 %cv$u_$u, %cv$u_$u;\n", v->reg_index, i, a0->reg_index, i);
-                } else {
-                    fmt("    ld.local.$b %cv$u_temp, [cv$u+$u];\n"
-                        "    st.local.$b [cv$u+$u], %cv$u_temp;\n",
-                        v, v->reg_index, a0->reg_index, i*tsize,
-                        v, v->reg_index, i*tsize, v->reg_index);
-                }
-            }
-
             break;
 
         case VarKind::CoopVecUnaryOp:

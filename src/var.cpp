@@ -270,13 +270,14 @@ const char *var_kind_name[(int) VarKind::Count] {
     "array_write",
 
     // Cooperative vector API
-    "coop_vec_new",
-    "coop_vec_get",
-    "coop_vec_set",
+    "coop_vec_pack",
+    "coop_vec_unpack",
     "coop_vec_unary_op",
     "coop_vec_binary_op",
     "coop_vec_ternary_op",
-    "coop_vec_mat_vec"
+    "coop_vec_mat_vec",
+    "coop_vec_accum",
+    "coop_vec_outer_product_accum"
 };
 
 /// Temporary string buffer for miscellaneous variable-related tasks

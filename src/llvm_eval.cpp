@@ -1062,8 +1062,8 @@ static void jitc_llvm_render(Variable *v) {
                 (uint32_t) v->literal, v);
             break;
 
-        case VarKind::CoopVecGet:
-            jitc_llvm_render_coop_vec_get(v, a0);
+        case VarKind::CoopVecUnpack:
+            jitc_llvm_render_coop_vec_unpack(v, a0);
             break;
 
         case VarKind::ThreadIndex:

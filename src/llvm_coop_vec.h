@@ -10,4 +10,4 @@
 #pragma once
 
 extern void jitc_llvm_render_coop_vec(const Variable *);
-extern void jitc_llvm_render_coop_vec_get(const Variable *v, const Variable *a0);
+extern void jitc_llvm_render_coop_vec_unpack(const Variable *v, const Variable *a0);

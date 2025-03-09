@@ -13,8 +13,8 @@
 #include "coop_vec.h"
 #include "llvm_eval.h"
 
-void jitc_llvm_render_coop_vec_get(const Variable *v, const Variable *a0) {
-    put("    ; coop_vec_get\n");
+void jitc_llvm_render_coop_vec_unpack(const Variable *v, const Variable *a0) {
+    put("    ; coop_vec_unpack\n");
     fmt("    $v = bitcast $V_$u to $T\n", v, a0, v->literal, v);
 }
 
@@ -26,20 +26,10 @@ void jitc_llvm_render_coop_vec(const Variable *v) {
     fmt("    ; $s\n", var_kind_name[v->kind]);
 
     switch ((VarKind) v->kind) {
-        case VarKind::CoopVecNew: {
-                const std::vector<uint32_t> &indices = ((const CoopVecNewData *) v->data)->indices;
+        case VarKind::CoopVecPack: {
+                const std::vector<uint32_t> &indices = ((const CoopVecPackData *) v->data)->indices;
                 for (uint32_t i =  0; i < (uint32_t) indices.size(); ++i)
                     fmt("    $v_$u = bitcast $V to $T\n", v, i, jitc_var(indices[i]), v);
-            }
-            break;
-
-        case VarKind::CoopVecSet: {
-                for (uint32_t i =  0; i < v->array_length; ++i) {
-                    if (i == v->literal)
-                        fmt("    $v_$u = bitcast $V to $T\n", v, i, a1, v);
-                    else
-                        fmt("    $v_$u = bitcast $V_$u to $T\n", v, i, a0, i, v);
-                }
             }
             break;
 

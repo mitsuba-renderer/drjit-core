@@ -2671,16 +2671,11 @@ extern JIT_EXPORT void jit_freeze_destroy(Recording *recording);
 //                       Cooperative vector API
 // ====================================================================
 
-/// Create a cooperative vector from a given regular variable & size
-extern JIT_EXPORT uint32_t jit_coop_vec_new(const uint32_t *indices, uint32_t size);
+/// Pack a set of regular Dr.Jit variables to form a cooperative vector
+extern JIT_EXPORT uint32_t jit_coop_vec_pack(uint32_t n, const uint32_t *in);
 
-/// Assign an entry in a cooperative vector. Note that 'index' specifies
-/// compile-time index and not a variable ID
-extern JIT_EXPORT uint32_t jit_coop_vec_set(uint32_t vec, uint32_t index, uint32_t value);
-
-/// Extract an entry from a cooperative vector. Note that 'index' specifies a
-/// compile-time index and not a variable ID
-extern JIT_EXPORT uint32_t jit_coop_vec_get(uint32_t vec, uint32_t index);
+/// Unpack a cooperative vector into its components
+extern JIT_EXPORT void jit_coop_vec_unpack(uint32_t index, uint32_t *out);
 
 /// Perform a unary operation on a cooperative vector
 extern JIT_EXPORT uint32_t jit_coop_vec_unary_op(JitOp op, uint32_t a0);
@@ -2691,7 +2686,7 @@ extern JIT_EXPORT uint32_t jit_coop_vec_binary_op(JitOp op, uint32_t a0, uint32_
 /// Perform a ternary operation on a triplet of cooperative vectors
 extern JIT_EXPORT uint32_t jit_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a2);
 
-/// Encodes a type of request for jit_coop_vec_pack()
+/// Encodes a type of request for jit_coop_vec_pack_matrices()
 enum class MatrixLayout : uint32_t {
     RowMajor,
     InferencingOptimal,
@@ -2710,18 +2705,19 @@ struct MatrixDescr {
 
 /// Pack a sequence of matrices from row-major into a representation that is
 /// optimal for inference/training, or do the reverse.
-extern JIT_EXPORT void jit_coop_vec_pack(uint32_t count,
-                                         uint32_t in,
-                                         const MatrixDescr *in_descr,
-                                         uint32_t out,
-                                         const MatrixDescr *out_descr);
+extern JIT_EXPORT void jit_coop_vec_pack_matrices(uint32_t count,
+                                                  uint32_t in,
+                                                  const MatrixDescr *in_descr,
+                                                  uint32_t out,
+                                                  const MatrixDescr *out_descr);
 
+/// Query the backend to compute the size of an array/vector in a given layout
 extern JIT_EXPORT MatrixDescr jit_coop_vec_compute_layout(uint32_t index,
                                                           const MatrixDescr *in,
                                                           MatrixLayout layout,
                                                           uint32_t offset);
 
-/// Perform a matrix-vector multiplication + addition
+/// Perform a matrix-vector multiplication + bias addition
 extern JIT_EXPORT uint32_t jit_coop_vec_matvec(uint32_t A_index,
                                                const MatrixDescr *A_descr,
                                                uint32_t x_index,

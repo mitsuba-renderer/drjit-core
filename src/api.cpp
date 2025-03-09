@@ -1576,19 +1576,14 @@ void jit_profile_stop() {
         cuProfilerStop();
 }
 
-uint32_t jit_coop_vec_new(const uint32_t *indices, uint32_t size) {
+uint32_t jit_coop_vec_pack(uint32_t n, const uint32_t *in) {
     lock_guard guard(state.lock);
-    return jitc_coop_vec_new(indices, size);
+    return jitc_coop_vec_pack(n, in);
 }
 
-uint32_t jit_coop_vec_get(uint32_t vec, uint32_t index) {
+void jit_coop_vec_unpack(uint32_t index, uint32_t *out) {
     lock_guard guard(state.lock);
-    return jitc_coop_vec_get(vec, index);
-}
-
-uint32_t jit_coop_vec_set(uint32_t vec, uint32_t index, uint32_t value) {
-    lock_guard guard(state.lock);
-    return jitc_coop_vec_set(vec, index, value);
+    jitc_coop_vec_unpack(index, out);
 }
 
 uint32_t jit_coop_vec_unary_op(JitOp op, uint32_t a0) {
@@ -1606,11 +1601,11 @@ uint32_t jit_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a2
     return jitc_coop_vec_ternary_op(op, a0, a1, a2);
 }
 
-void jit_coop_vec_pack(uint32_t count,
+void jit_coop_vec_pack_matrices(uint32_t count,
                        uint32_t in, const MatrixDescr *in_descr,
                        uint32_t out, const MatrixDescr *out_descr) {
     lock_guard guard(state.lock);
-    jitc_coop_vec_pack(count, in, in_descr, out, out_descr);
+    jitc_coop_vec_pack_matrices(count, in, in_descr, out, out_descr);
 }
 
 MatrixDescr jit_coop_vec_compute_layout(uint32_t index,

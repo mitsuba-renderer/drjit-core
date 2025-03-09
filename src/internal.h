@@ -167,13 +167,14 @@ enum class VarKind : uint32_t {
     ArrayWrite,
 
     // Cooperative Vector API
-    CoopVecNew,
-    CoopVecGet,
-    CoopVecSet,
+    CoopVecPack,
+    CoopVecUnpack,
     CoopVecUnaryOp,
     CoopVecBinaryOp,
     CoopVecTernaryOp,
     CoopVecMatVec,
+    CoopVecAccum,
+    CoopVecOuterProductAccum,
 
     // Denotes the number of different node types
     Count

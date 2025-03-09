@@ -580,8 +580,8 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
 #if defined(DRJIT_ENABLE_OPTIX)
-        case VarKind::CoopVecGet:
-            jitc_optix_render_coop_vec_get(v, a0);
+        case VarKind::CoopVecUnpack:
+            jitc_optix_render_coop_vec_unpack(v, a0);
             break;
 #endif
 
