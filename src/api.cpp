@@ -1359,6 +1359,7 @@ VarInfo jit_set_backend(uint32_t index) noexcept {
     info.state = jitc_var_state(index);
     info.size = var->size;
     info.is_array = var->is_array();
+    info.is_coop_vec = var->coop_vec;
     info.unaligned = var->unaligned;
     if(info.state == VarState::Literal)
         info.literal = var->literal;
@@ -1586,6 +1587,15 @@ void jit_coop_vec_unpack(uint32_t index, uint32_t *out) {
     jitc_coop_vec_unpack(index, out);
 }
 
+uint32_t jit_coop_vec_literal(JitBackend backend,
+                              VarType type,
+                              const void *value,
+                              size_t size,
+                              uint32_t length) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_literal(backend, type, value, size, length);
+}
+
 uint32_t jit_coop_vec_unary_op(JitOp op, uint32_t a0) {
     lock_guard guard(state.lock);
     return jitc_coop_vec_unary_op(op, a0);
@@ -1619,7 +1629,15 @@ MatrixDescr jit_coop_vec_compute_layout(uint32_t index,
 uint32_t jit_coop_vec_matvec(uint32_t A_index, const MatrixDescr *A_descr,
                              uint32_t x_index, uint32_t b_index,
                              const MatrixDescr *b_descr, int transpose) {
-
+    lock_guard guard(state.lock);
     return jitc_coop_vec_matvec(A_index, A_descr, x_index, b_index, b_descr,
                                 transpose);
+}
+
+uint32_t jit_coop_vec_length(uint32_t index) {
+    lock_guard guard(state.lock);
+    const Variable *v = jitc_var(index);
+    if (!v->coop_vec)
+        jitc_raise("jit_coop_vec_length(): r%u is not a cooperative vector!", index);
+    return v->array_length;
 }

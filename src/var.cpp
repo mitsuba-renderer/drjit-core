@@ -270,6 +270,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "array_write",
 
     // Cooperative vector API
+    "coop_vec_literal",
     "coop_vec_pack",
     "coop_vec_unpack",
     "coop_vec_unary_op",
@@ -1706,6 +1707,8 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
         v2.symbolic = v->symbolic;
         v2.size = (uint32_t) size;
         v2.dep[0] = index;
+        v2.coop_vec = v->coop_vec;
+        v2.array_length = v->array_length;
         jitc_var_inc_ref(index, v);
         result = jitc_var_new(v2, true);
     }

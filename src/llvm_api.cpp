@@ -99,7 +99,6 @@ bool jitc_llvm_api_init() {
     jitc_llvm_version_patch = -1;
 
     void *handle = jitc_llvm_handle;
-    LOAD(core, LLVMLinkInMCJIT);
     LOAD(core, LLVMInitializeDrJitAsmPrinter);
     LOAD(core, LLVMInitializeDrJitDisassembler);
     LOAD(core, LLVMInitializeDrJitTarget);
@@ -139,6 +138,7 @@ bool jitc_llvm_api_init() {
     LOAD(pb_new, LLVMDisposePassBuilderOptions);
     LOAD(pb_new, LLVMRunPasses);
 
+    LOAD(mcjit, LLVMLinkInMCJIT);
     LOAD(mcjit, LLVMModuleCreateWithName);
     LOAD(mcjit, LLVMGetExecutionEngineTargetMachine);
     LOAD(mcjit, LLVMCreateMCJITCompilerForModule);
@@ -240,7 +240,6 @@ void jitc_llvm_api_shutdown() {
     if (!jitc_llvm_handle)
         return;
 
-    CLEAR(LLVMLinkInMCJIT);
     CLEAR(LLVMInitializeDrJitAsmPrinter);
     CLEAR(LLVMInitializeDrJitDisassembler);
     CLEAR(LLVMInitializeDrJitTarget);
@@ -284,6 +283,7 @@ void jitc_llvm_api_shutdown() {
     CLEAR(LLVMRunPasses);
 
     // MCJIT
+    CLEAR(LLVMLinkInMCJIT);
     CLEAR(LLVMModuleCreateWithName);
     CLEAR(LLVMGetExecutionEngineTargetMachine);
     CLEAR(LLVMCreateMCJITCompilerForModule);

@@ -7,6 +7,8 @@
     license that can be found in the LICENSE file.
 */
 
+#pragma once
+
 #include <vector>
 
 struct CoopVecPackData {
@@ -26,7 +28,9 @@ struct CoopVecMatVecData {
 
 extern uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in);
 extern void jitc_coop_vec_unpack(uint32_t index, uint32_t *out);
-extern uint32_t jitc_coop_vec_set(uint32_t vec, uint32_t index, uint32_t value);
+extern uint32_t jitc_coop_vec_literal(JitBackend backend, VarType type,
+                                      const void *value, size_t size,
+                                      uint32_t length);
 extern uint32_t jitc_coop_vec_unpack(uint32_t vec, uint32_t index);
 extern uint32_t jitc_coop_vec_unary_op(JitOp op, uint32_t a0);
 extern uint32_t jitc_coop_vec_binary_op(JitOp op, uint32_t a0, uint32_t a1);

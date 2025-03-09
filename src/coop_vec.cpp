@@ -17,12 +17,16 @@
 #include <drjit-core/nanostl.h>
 
 uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
+    if (n == 0)
+        jitc_raise("jit_coop_vec_pack(): vector cannot be empty!");
+
     for (uint32_t i = 0; i < n; ++i) {
         if (in[i] == 0)
             jitc_raise("jit_coop_vec_pack(): argument %u is uninitialized!", i);
     }
 
     const Variable *arg_v = jitc_var(in[0]);
+
     Variable v;
     v.kind = (uint32_t) VarKind::CoopVecPack;
     v.type = arg_v->type;
@@ -33,6 +37,8 @@ uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
     v.optix = v.backend == (uint32_t) JitBackend::CUDA;
 
     drjit::unique_ptr<CoopVecPackData> cvid = new CoopVecPackData();
+    bool is_literal = true;
+    uint64_t literal = arg_v->literal;
     cvid->indices.reserve(n);
 
     for (uint32_t i = 0; i < n; ++i) {
@@ -42,9 +48,16 @@ uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
         if (v2->backend != v.backend || v2->type != v.type)
             jitc_raise("jit_coop_vec_pack(): inputs must have compatible types and backends!");
 
+        if (!v2->is_literal() || v2->literal != literal)
+            is_literal = false;
+
         jitc_var_inc_ref(index);
         cvid->indices.push_back(index);
     }
+
+    if (is_literal)
+        return jitc_coop_vec_literal((JitBackend) v.backend, (VarType) v.type,
+                                     &literal, v.size, n);
 
     uint32_t result = jitc_var_new(v, true);
     jitc_var(result)->data = cvid.get();
@@ -68,19 +81,51 @@ void jitc_coop_vec_unpack(uint32_t index, uint32_t *out) {
     if (!vec_v->coop_vec)
         jitc_raise("jit_coop_vec_unpack(): source must be a cooperative vector!");
 
+    uint32_t length = vec_v->array_length;
+    if (vec_v->is_coop_vec_literal()) {
+        uint64_t literal = vec_v->literal;
+        Ref r = steal(jitc_var_literal((JitBackend) vec_v->backend,
+                                       (VarType) vec_v->type, &literal,
+                                       vec_v->size, 0));
+        for (uint32_t i = 0; i < length; ++i) {
+            jitc_var_inc_ref(r);
+            out[i] = r;
+        }
+        return;
+    }
+
     v.kind = (uint32_t) VarKind::CoopVecUnpack;
     v.type = vec_v->type;
     v.size = vec_v->size;
     v.backend = vec_v->backend;
     v.dep[0] = index;
 
-    uint32_t length = vec_v->array_length;
-
     for (uint32_t i = 0; i < length; ++i) {
         jitc_var_inc_ref(index);
         v.literal = i;
         out[i] = jitc_var_new(v);
     }
+}
+
+uint32_t jitc_coop_vec_literal(JitBackend backend,
+                               VarType type,
+                               const void *value,
+                               size_t size,
+                               uint32_t length) {
+    if (unlikely(size == 0))
+        return 0;
+
+    Variable v;
+    memcpy(&v.literal, value, type_size[(uint32_t) type]);
+    v.kind = (uint32_t) VarKind::CoopVecLiteral;
+    v.type = (uint32_t) type;
+    v.size = (uint32_t) size;
+    v.backend = (uint32_t) backend;
+    v.array_length = length;
+    v.coop_vec = true;
+    v.optix = v.backend == (uint32_t) JitBackend::CUDA;
+
+    return jitc_var_new(v);
 }
 
 uint32_t jitc_coop_vec_unary_op(JitOp op, uint32_t a0) {
@@ -110,7 +155,7 @@ uint32_t jitc_coop_vec_binary_op(JitOp op, uint32_t a0, uint32_t a1) {
 
     if (a0_v->array_length != a1_v->array_length)
         jitc_raise("jit_coop_vec_binary_op(): the cooperative vectors have "
-                   "incompatible sizes (%u and %u)!",
+                   "incompatible lengths (%u and %u)!",
                    a0_v->array_length, a1_v->array_length);
 
     if (a0_v->type != a1_v->type)
@@ -123,11 +168,29 @@ uint32_t jitc_coop_vec_binary_op(JitOp op, uint32_t a0, uint32_t a1) {
             "jit_coop_vec_binary_op(): incompatible thread count (%u and %u)!",
             a0_v->size, a1_v->size);
 
+    uint32_t max_size = std::max(a0_v->size, a1_v->size);
+
+    // Exploit some basic optimization opportunities (useful for AD)
+    switch (op) {
+        case JitOp::Add:
+            if (jitc_is_any_zero(a0_v)) { return jitc_var_resize(a1, max_size); }
+            if (jitc_is_any_zero(a1_v)) { return jitc_var_resize(a0, max_size); }
+            break;
+
+        case JitOp::Mul:
+            if (jitc_is_one(a0_v)) { return jitc_var_resize(a1, max_size); }
+            if (jitc_is_one(a1_v)) { return jitc_var_resize(a0, max_size); }
+            break;
+
+        default:
+            break;
+    }
+
     Variable v;
     v.kind = (uint32_t) VarKind::CoopVecBinaryOp;
     v.literal = (uint32_t) op;
     v.type = a0_v->type;
-    v.size = std::max(a0_v->size, a1_v->size);
+    v.size = max_size;
     v.backend = a0_v->backend;
     v.array_length = a0_v->array_length;
     v.coop_vec = true;
@@ -164,6 +227,22 @@ uint32_t jitc_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a
         jitc_raise(
             "jit_coop_vec_ternary_op(): incompatible thread count (%u, %u, and %u)!",
             a0_v->size, a1_v->size, a2_v->size);
+
+    // Exploit some basic optimization opportunities (useful for AD)
+    if (op == JitOp::Fma) {
+        if (jitc_is_one(a0_v)) {
+            Ref result = steal(jitc_coop_vec_binary_op(JitOp::Add, a1, a2));
+            return jitc_var_resize(result, max_size);
+        }
+        if (jitc_is_one(a1_v)) {
+            Ref result = steal(jitc_coop_vec_binary_op(JitOp::Add, a0, a2));
+            return jitc_var_resize(result, max_size);
+        }
+        if (jitc_is_any_zero(a1_v)) {
+            Ref result = steal(jitc_coop_vec_binary_op(JitOp::Mul, a0, a1));
+            return jitc_var_resize(result, max_size);
+        }
+    }
 
     Variable v;
     v.kind = (uint32_t) VarKind::CoopVecTernaryOp;
@@ -303,7 +382,7 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
         cvmvd->A_descr = *A_descr;
 
         if (backend == JitBackend::CUDA) {
-            uint32_t tsize = type_size[a_v->type],
+            uint32_t tsize = type_size[(int) a_vt],
                      offset_in_bytes = A_descr->offset * tsize,
                      stride_in_bytes = A_descr->stride * tsize;
             if (offset_in_bytes % 64)
@@ -315,8 +394,8 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
 
     if (b_index && b_descr) {
         Variable *b_v = jitc_var(b_index);
-        b_ptr = steal(jitc_var_pointer((JitBackend) b_v->backend, b_v->data, b_index, 0));
         b_vt = (VarType) b_v->type;
+        b_ptr = steal(jitc_var_pointer((JitBackend) b_v->backend, b_v->data, b_index, 0));
         cvmvd->b_descr = *b_descr;
 
         if (b_descr->rows != output_length || b_descr->cols != 1)

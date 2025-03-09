@@ -26,6 +26,15 @@ void jitc_llvm_render_coop_vec(const Variable *v) {
     fmt("    ; $s\n", var_kind_name[v->kind]);
 
     switch ((VarKind) v->kind) {
+        case VarKind::CoopVecLiteral:
+            fmt("    $v_p = insertelement $T undef, $t $l, i32 0\n"
+                "    $v_0 = shufflevector $T $v_p, $T undef, <$w x i32> $z\n",
+                v, v, v, v,
+                v, v, v, v);
+            for (uint32_t i = 1; i < v->array_length; ++i)
+                fmt("    $v_$u = bitcast $V_0 to $T\n", v, i, v, v);
+            break;
+
         case VarKind::CoopVecPack: {
                 const std::vector<uint32_t> &indices = ((const CoopVecPackData *) v->data)->indices;
                 for (uint32_t i =  0; i < (uint32_t) indices.size(); ++i)
@@ -68,9 +77,13 @@ void jitc_llvm_render_coop_vec(const Variable *v) {
             fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)", v, v,
                           a0, a1, a2);
             for (uint32_t i = 0; i < v->array_length; ++i)
-                fmt("    $v_$u = call $T @llvm.fma.v$w$h($V_$u, $V_$u, "
-                    "$V_$u)\n",
+                fmt("    $v_$u = call $T @llvm.fma.v$w$h($V_$u, $V_$u, $V_$u)\n",
                     v, i, v, v, a0, i, a1, i, a2, i);
+            break;
+
+        case VarKind::Bitcast:
+                for (uint32_t i =  0; i < v->array_length; ++i)
+                    fmt("    $v_$u = bitcast $V_u to $T\n", v, i, a0, i, v);
             break;
 
         case VarKind::CoopVecMatVec: {

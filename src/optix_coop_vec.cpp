@@ -91,6 +91,16 @@ void jitc_optix_render_coop_vec(const Variable *v) {
     }
 
     switch ((VarKind) v->kind) {
+        case VarKind::CoopVecLiteral:
+            for (uint32_t i = 0; i < v->array_length; ++i) {
+                if (reg_count)
+                    fmt("    mov.b32 %cv$u_$u, $l;\n", v->reg_index, i, v);
+                else
+                    fmt("    st.local.$b [cv$u+$u], $l;\n",
+                        v, v->reg_index, tsize * i, v);
+            }
+            break;
+
         case VarKind::CoopVecPack:
             if (reg_count) {
                 if (tsize != 4)
@@ -241,6 +251,23 @@ void jitc_optix_render_coop_vec(const Variable *v) {
                     v->reg_index, v->reg_index, v->reg_index, v->reg_index);
             }
             break;
+
+        case VarKind::Bitcast:
+                if (reg_count) {
+                    for (uint32_t i =  0; i < reg_count; ++i)
+                        fmt("    mov.b32 %cv$u_$u, %cv$u_$u;\n",
+                            v->reg_index, i, a0->reg_index, i);
+                } else {
+                    fmt("    .reg.$b %cv$u_tmp;\n", v, v->reg_index);
+                    for (uint32_t i =  0; i < v->array_length; ++i) {
+                        fmt("    ld.local.$b %cv$u_tmp, [cv$u+$u];\n"
+                            "    st.local.$b [cv$u+$u], %cv$u_tmp;\n",
+                            v, v->reg_index, a0->reg_index, v->literal * type_size[v->type],
+                            v, v->reg_index, tsize * i, v, v->reg_index);
+                    }
+                }
+            break;
+
 
         case VarKind::CoopVecMatVec: {
                 CoopVecMatVecData *d = (CoopVecMatVecData *) v->data;

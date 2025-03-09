@@ -2393,6 +2393,7 @@ struct VarInfo {
         void *data;
     };
     bool is_array;
+    bool is_coop_vec;
     bool unaligned;
 };
 
@@ -2676,6 +2677,16 @@ extern JIT_EXPORT uint32_t jit_coop_vec_pack(uint32_t n, const uint32_t *in);
 
 /// Unpack a cooperative vector into its components
 extern JIT_EXPORT void jit_coop_vec_unpack(uint32_t index, uint32_t *out);
+
+/// Create a cooperative vectors, whose components are a uniform literal constant
+extern JIT_EXPORT uint32_t jit_coop_vec_literal(JIT_ENUM JitBackend backend,
+                                                JIT_ENUM VarType type,
+                                                const void *value,
+                                                size_t size JIT_DEF(1),
+                                                uint32_t length JIT_DEF(1));
+
+/// Determine the length of a cooperative vector
+extern JIT_EXPORT uint32_t jit_coop_vec_length(uint32_t index);
 
 /// Perform a unary operation on a cooperative vector
 extern JIT_EXPORT uint32_t jit_coop_vec_unary_op(JitOp op, uint32_t a0);

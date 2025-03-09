@@ -96,7 +96,8 @@ bool jitc_llvm_init() {
     }
 
 
-    LLVMLinkInMCJIT();
+    if (LLVMLinkInMCJIT)
+        LLVMLinkInMCJIT();
     LLVMInitializeDrJitTargetInfo();
     LLVMInitializeDrJitTarget();
     LLVMInitializeDrJitTargetMC();

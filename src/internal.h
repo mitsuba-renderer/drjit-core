@@ -167,6 +167,7 @@ enum class VarKind : uint32_t {
     ArrayWrite,
 
     // Cooperative Vector API
+    CoopVecLiteral,
     CoopVecPack,
     CoopVecUnpack,
     CoopVecUnaryOp,
@@ -326,6 +327,7 @@ struct alignas(64) Variable {
     bool is_node()      const { return (uint32_t) kind > (uint32_t) VarKind::Literal; }
     bool is_dirty()     const { return ref_count_se > 0; }
     bool is_array()     const { return array_state != (uint32_t) ArrayState::Invalid; }
+    bool is_coop_vec_literal()   const { return kind == (uint32_t) VarKind::CoopVecLiteral; }
 };
 
 static_assert(sizeof(Variable) == 64);
@@ -1076,7 +1078,7 @@ inline bool jitc_is_bool(const Variable *v) { return jitc_is_bool((VarType) v->t
 
 inline bool jitc_is_zero(Variable *v) { return v->is_literal() && v->literal == 0; }
 inline bool jitc_is_any_zero(Variable *v) {
-    if (!v->is_literal())
+    if (!v->is_literal() && !v->is_coop_vec_literal())
         return false;
 
     switch ((VarType) v->type) {
@@ -1088,7 +1090,7 @@ inline bool jitc_is_any_zero(Variable *v) {
 }
 
 inline bool jitc_is_one(Variable *v) {
-    if (!v->is_literal())
+    if (!v->is_literal() && !v->is_coop_vec_literal())
         return false;
 
     uint64_t one;
