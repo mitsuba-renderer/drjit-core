@@ -2676,7 +2676,7 @@ extern JIT_EXPORT void jit_freeze_destroy(Recording *recording);
 extern JIT_EXPORT uint32_t jit_coop_vec_pack(uint32_t n, const uint32_t *in);
 
 /// Unpack a cooperative vector into its components
-extern JIT_EXPORT void jit_coop_vec_unpack(uint32_t index, uint32_t *out);
+extern JIT_EXPORT void jit_coop_vec_unpack(uint32_t index, uint32_t n, uint32_t *out);
 
 /// Create a cooperative vectors, whose components are a uniform literal constant
 extern JIT_EXPORT uint32_t jit_coop_vec_literal(JIT_ENUM JitBackend backend,
@@ -2684,6 +2684,9 @@ extern JIT_EXPORT uint32_t jit_coop_vec_literal(JIT_ENUM JitBackend backend,
                                                 const void *value,
                                                 size_t size JIT_DEF(1),
                                                 uint32_t length JIT_DEF(1));
+
+/// Load a cooperative vector from memory
+extern JIT_EXPORT uint32_t jit_coop_vec_load(uint32_t buffer, uint32_t offset, uint32_t length);
 
 /// Determine the length of a cooperative vector
 extern JIT_EXPORT uint32_t jit_coop_vec_length(uint32_t index);
@@ -2736,6 +2739,18 @@ extern JIT_EXPORT uint32_t jit_coop_vec_matvec(uint32_t A_index,
                                                const MatrixDescr *b_descr,
                                                int transpose);
 
+/// Accumulate the coop. vector 'index' into the buffer 'target' with offset.
+/// Potentially create a new buffer of size 'size' if target == 0.
+extern JIT_EXPORT uint32_t jit_coop_vec_accum(
+    uint32_t target, uint32_t size, uint32_t offset, uint32_t index);
+
+/// Accumulate the outer product of 'a' and 'b' into buffer 'target'. at a
+/// location described by 'descr'. Potentially create a new buffer of size
+/// 'size' if target == 0.
+extern JIT_EXPORT uint32_t jit_coop_vec_outer_product_accum(
+    uint32_t target, uint32_t size, const MatrixDescr *descr, uint32_t a,
+    uint32_t b);
+
 #if defined(__cplusplus)
 }
-#endif
+#endif 

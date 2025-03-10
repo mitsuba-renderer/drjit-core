@@ -273,6 +273,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "coop_vec_literal",
     "coop_vec_pack",
     "coop_vec_unpack",
+    "coop_vec_load",
     "coop_vec_unary_op",
     "coop_vec_binary_op",
     "coop_vec_ternary_op",

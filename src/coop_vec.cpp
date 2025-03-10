@@ -11,7 +11,6 @@
 #include "coop_vec.h"
 #include "internal.h"
 #include "log.h"
-#include "op.h"
 #include "optix_api.h"
 #include "optix.h"
 #include <drjit-core/nanostl.h>
@@ -74,12 +73,14 @@ uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
     return result;
 }
 
-void jitc_coop_vec_unpack(uint32_t index, uint32_t *out) {
+void jitc_coop_vec_unpack(uint32_t index, uint32_t n, uint32_t *out) {
     Variable *vec_v = jitc_var(index);
     Variable v;
 
     if (!vec_v->coop_vec)
         jitc_raise("jit_coop_vec_unpack(): source must be a cooperative vector!");
+    if (vec_v->array_length != n)
+        jitc_raise("jit_coop_vec_unpack(): internal error, array length did not match!");
 
     uint32_t length = vec_v->array_length;
     if (vec_v->is_coop_vec_literal()) {
@@ -126,6 +127,35 @@ uint32_t jitc_coop_vec_literal(JitBackend backend,
     v.optix = v.backend == (uint32_t) JitBackend::CUDA;
 
     return jitc_var_new(v);
+}
+
+uint32_t jitc_coop_vec_load(uint32_t buffer, uint32_t offset, uint32_t length) {
+    VarType vt;
+    JitBackend backend;
+    {
+        Variable *buffer_v = jitc_var(buffer);
+        vt = (VarType) buffer_v->type;
+        backend = (JitBackend) buffer_v->backend;
+    }
+
+    void *p = nullptr;
+    Ref tmp = steal(jitc_var_data(buffer, false, &p));
+    Ref buf_ptr = steal(jitc_var_pointer(backend, p, tmp, 0));
+
+    Variable v;
+    v.kind = (uint32_t) VarKind::CoopVecLoad;
+    v.type = (uint32_t) vt;
+    v.size = 1;
+    v.backend = (uint32_t) backend;
+    v.array_length = length;
+    v.literal = offset;
+    v.coop_vec = true;
+    v.optix = backend == JitBackend::CUDA;
+    v.dep[0] = buf_ptr;
+    jitc_var_inc_ref(buf_ptr);
+
+    return jitc_var_new(v);
+
 }
 
 uint32_t jitc_coop_vec_unary_op(JitOp op, uint32_t a0) {
@@ -308,6 +338,11 @@ MatrixDescr jitc_coop_vec_compute_layout(uint32_t index,
                  layout_id = jitc_optix_coop_vec_layout_id(layout);
         size_t size = 0;
 
+        if (vt != VarType::Float16)
+            jitc_raise(
+                "jit_coop_vec_compute_layout(): CUDA/OptiX conversion to "
+                "optimal layout is currently limited to half precision data.");
+
         if (!optixCoopVecMatrixComputeSize)
             jitc_raise("jit_coop_vec_compute_layout(): Cooperative vectors are not "
                        "supported by your NVIDIA GPU driver. Please install "
@@ -376,9 +411,11 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
 
     Ref a_ptr, b_ptr;
     {
-        Variable *a_v = jitc_var(A_index);
-        a_vt = (VarType) a_v->type;
-        a_ptr = steal(jitc_var_pointer((JitBackend) a_v->backend, a_v->data, A_index, 0));
+        void *p = nullptr;
+        Ref tmp = steal(jitc_var_data(A_index, false, &p));
+
+        a_vt = (VarType) jitc_var(tmp)->type;
+        a_ptr = steal(jitc_var_pointer(backend, p, tmp, 0));
         cvmvd->A_descr = *A_descr;
 
         if (backend == JitBackend::CUDA) {
@@ -393,9 +430,11 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
     }
 
     if (b_index && b_descr) {
-        Variable *b_v = jitc_var(b_index);
-        b_vt = (VarType) b_v->type;
-        b_ptr = steal(jitc_var_pointer((JitBackend) b_v->backend, b_v->data, b_index, 0));
+        void *p = nullptr;
+        Ref tmp = steal(jitc_var_data(b_index, false, &p));
+
+        b_vt = (VarType) jitc_var(tmp)->type;
+        b_ptr = steal(jitc_var_pointer(backend, p, tmp, 0));
         cvmvd->b_descr = *b_descr;
 
         if (b_descr->rows != output_length || b_descr->cols != 1)
@@ -462,7 +501,6 @@ uint32_t jitc_coop_vec_accum(uint32_t index, uint32_t target_, uint32_t offset_,
     void *ptr = nullptr;
     target = steal(jitc_var_data(target, true, &ptr));
     Ref ptr_v = steal(jitc_var_pointer(backend, ptr, target, 0));
-
     Ref mask_v = steal(jitc_var_mask_apply(mask_, size));
 
 
@@ -481,4 +519,53 @@ uint32_t jitc_coop_vec_accum(uint32_t index, uint32_t target_, uint32_t offset_,
     jitc_var_inc_ref(mask_v);
 
     return target_;
+}
+
+uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t size, uint32_t offset,
+                             uint32_t index) {
+    JitBackend backend;
+    VarType vt;
+    {
+        const Variable *v = jitc_var(index);
+        backend = (JitBackend) v->backend;
+        vt = (VarType) v->type;
+    }
+
+    Ref target = borrow(target_);
+    if (!target) {
+        uint64_t z = 0;
+        target = steal(jitc_var_literal(backend, vt, &z, size, true));
+    } else {
+        const Variable *target_v = jitc_var(target);
+        // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
+        if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
+            target = steal(jitc_var_copy(target));
+
+    }
+
+    return target.release();
+}
+
+uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_, uint32_t size,
+                                           const MatrixDescr *descr, uint32_t a,
+                                           uint32_t b) {
+    JitBackend backend;
+    VarType vt;
+    {
+        const Variable *v = jitc_var(a);
+        backend = (JitBackend) v->backend;
+        vt = (VarType) v->type;
+    }
+    Ref target = borrow(target_);
+    if (!target) {
+        uint64_t z = 0;
+        target = steal(jitc_var_literal(backend, vt, &z, size, true));
+    } else {
+        const Variable *target_v = jitc_var(target);
+        // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
+        if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
+            target = steal(jitc_var_copy(target));
+    }
+
+    return target.release();
 }

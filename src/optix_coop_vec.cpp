@@ -126,6 +126,31 @@ void jitc_optix_render_coop_vec(const Variable *v) {
             }
             break;
 
+        case VarKind::CoopVecLoad:
+            fmt("    .reg.b32 %cv$u_type, %cv$u_size;\n", v->reg_index, v->reg_index);
+            fmt("    .reg.b64 %cv$u_src;\n", v->reg_index);
+            fmt("    mov.b32 %cv$u_type, $u;\n", v->reg_index, jitc_optix_coop_vec_type_id((VarType) v->type));
+            fmt("    mov.b32 %cv$u_size, $u;\n", v->reg_index, v->array_length);
+            fmt("    add.u64 %cv$u_src, $v, $u;\n", v->reg_index, a0, v->literal * type_size[v->type]);
+
+            if (reg_count) {
+                put("    call (");
+                for (uint32_t i = 0; i < reg_count; ++i) {
+                    fmt("%cv$u_$u", v->reg_index, i);
+                    if (i + 1 < reg_count)
+                        put(", ");
+                }
+                fmt("), _optix_vector_load_$uxi32, (%cv$u_type, %cv$u_size, %cv$u_src);\n",
+                    reg_count, v->reg_index, v->reg_index, v->reg_index);
+            } else {
+                fmt("    .reg.b64 %cv$u_dst;\n", v->reg_index);
+                fmt("    cvta.local.u64 %cv$u_dst, cv$u;\n"
+                    "    call (), _optix_vector_load_ptr, (%cv$u_type, %cv$u_size, %cv$u_src, %cv$u_dst);\n",
+                    v->reg_index, v->reg_index,
+                    v->reg_index, v->reg_index, v->reg_index, v->reg_index);
+            }
+            break;
+
         case VarKind::CoopVecUnaryOp:
             fmt("    .reg.b32 %cv$u_op, %cv$u_type, %cv$u_size;\n", v->reg_index, v->reg_index, v->reg_index);
             if (!reg_count)

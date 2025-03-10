@@ -1582,18 +1582,20 @@ uint32_t jit_coop_vec_pack(uint32_t n, const uint32_t *in) {
     return jitc_coop_vec_pack(n, in);
 }
 
-void jit_coop_vec_unpack(uint32_t index, uint32_t *out) {
+void jit_coop_vec_unpack(uint32_t index, uint32_t n, uint32_t *out) {
     lock_guard guard(state.lock);
-    jitc_coop_vec_unpack(index, out);
+    jitc_coop_vec_unpack(index, n, out);
 }
 
-uint32_t jit_coop_vec_literal(JitBackend backend,
-                              VarType type,
-                              const void *value,
-                              size_t size,
-                              uint32_t length) {
+uint32_t jit_coop_vec_literal(JitBackend backend, VarType type,
+                              const void *value, size_t size, uint32_t length) {
     lock_guard guard(state.lock);
     return jitc_coop_vec_literal(backend, type, value, size, length);
+}
+
+uint32_t jit_coop_vec_load(uint32_t buffer, uint32_t offset, uint32_t length) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_load(buffer, offset, length);
 }
 
 uint32_t jit_coop_vec_unary_op(JitOp op, uint32_t a0) {
@@ -1640,4 +1642,17 @@ uint32_t jit_coop_vec_length(uint32_t index) {
     if (!v->coop_vec)
         jitc_raise("jit_coop_vec_length(): r%u is not a cooperative vector!", index);
     return v->array_length;
+}
+
+uint32_t jit_coop_vec_accum(uint32_t target, uint32_t size, uint32_t offset,
+                            uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_accum(target, size, offset, index);
+}
+
+uint32_t jit_coop_vec_outer_product_accum(uint32_t target, uint32_t size,
+                                          const MatrixDescr *descr, uint32_t a,
+                                          uint32_t b) {
+    lock_guard guard(state.lock);
+    return jitc_coop_vec_outer_product_accum(target, size, descr, a, b);
 }

@@ -170,6 +170,7 @@ enum class VarKind : uint32_t {
     CoopVecLiteral,
     CoopVecPack,
     CoopVecUnpack,
+    CoopVecLoad,
     CoopVecUnaryOp,
     CoopVecBinaryOp,
     CoopVecTernaryOp,
