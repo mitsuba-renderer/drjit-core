@@ -1585,7 +1585,7 @@ enum class JitFlag : uint32_t {
     FreezingScope = 1 << 21,
 
     /// Set to \c true when traversing inputs or outputs of a frozen function
-    FreezingTraverseScope = 1 << 22,
+    EnableObjectTraversal = 1 << 22,
 
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
