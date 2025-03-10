@@ -527,10 +527,10 @@ static void jitc_llvm_render(Variable *v) {
                 fmt("    $v_0 = bitcast $V to $B\n"
                     "    $v_1 = xor $B $v_0, $s\n"
                     "    $v = bitcast $B $v_1 to $T\n",
-                    v, a0, v, v, v, v, jitc_llvm_ones_str[(int) itype],
+                    v, a0, v, v, v, v, jitc_llvm_ones_bit_str[(int) itype],
                     v, v, v, v);
             } else {
-                fmt("    $v = xor $V, $s\n", v, a0, jitc_llvm_ones_str[v->type]);
+                fmt("    $v = xor $V, $s\n", v, a0, jitc_llvm_ones_bit_str[v->type]);
             }
             break;
 
@@ -1401,7 +1401,7 @@ static void jitc_llvm_render_trace(const Variable *v,
              "    store <$w x i32> $s, {<$w x i32>*} $v_in_geomid_1, align $u\n",
             v, (14 * float_size + 5 * 4) * width,
             v, v,
-            jitc_llvm_ones_str[(int) VarType::Int32], v, float_size * width);
+            jitc_llvm_ones_bit_str[(int) VarType::Int32], v, float_size * width);
     }
 
 	// Determine whether to mark the rays as coherent or incoherent

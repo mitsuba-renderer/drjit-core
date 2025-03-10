@@ -55,17 +55,27 @@ void jitc_llvm_render_coop_vec(const Variable *v) {
                     case JitOp::Sub: op = is_float ? "fsub" : "sub"; break;
                     case JitOp::Min: op = is_float ? "minnum" : (is_sint ? "smin" : "umin"); is_intrinsic = true; break;
                     case JitOp::Max: op = is_float ? "maxnum" : (is_sint ? "smax" : "umax"); is_intrinsic = true; break;
+                    case JitOp::Step: op = is_float ? "fcmp olt" : "icmp lt"; break;
                     default:
                         jitc_fail("CoopVecBinaryOp: unsupported operation!");
                 }
 
-                if (!is_intrinsic) {
-                    for (uint32_t i =  0; i < v->array_length; ++i)
-                        fmt("    $v_$u = $s $V_$u, $v_$u\n", v, i, op, a0, i, a1, i);
+                if ((JitOp) v->literal == JitOp::Step) {
+                    for (uint32_t i =  0; i < v->array_length; ++i) {
+                        fmt("    $v_$u_m = $s $V_$u, $v_$u\n", v, i, op, a0, i, a1, i);
+                        fmt("    $v_$u = select <$w x i1> $v_$u_m, $T zeroinitializer, $T $s\n",
+                            v, i, v, i, v, v, jitc_llvm_ones_str[v->type]);
+                    }
                 } else {
-                    fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, op, v, a0, a1);
-                    for (uint32_t i =  0; i < v->array_length; ++i)
-                        fmt("    $v_$u = call $T @llvm.$s.v$w$h($V_$u, $V_$u)\n", v, i, v, op, v, a0, i, a1, i);
+                    if (!is_intrinsic) {
+                        for (uint32_t i =  0; i < v->array_length; ++i)
+                            fmt("    $v_$u = $s $V_$u, $v_$u\n", v, i, op, a0, i, a1, i);
+                    } else {
+                        fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, op, v, a0, a1);
+                        for (uint32_t i =  0; i < v->array_length; ++i)
+                            fmt("    $v_$u = call $T @llvm.$s.v$w$h($V_$u, $V_$u)\n",
+                                v, i, v, op, v, a0, i, a1, i);
+                    }
                 }
             }
             break;
