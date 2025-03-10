@@ -1584,6 +1584,9 @@ enum class JitFlag : uint32_t {
     /// Set to \c true when Dr.Jit is recording a frozen function
     FreezingScope = 1 << 21,
 
+    /// Set to \c true when traversing inputs or outputs of a frozen function
+    FreezingTraverseScope = 1 << 22,
+
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
@@ -1625,6 +1628,7 @@ enum JitFlag {
     JitFlagSymbolic = 1 << 19
     KernelFreezing = 1 << 20,
     FreezingScope = 1 << 21,
+    FreezingTraverseScope = 1 << 22
 };
 #endif
 
