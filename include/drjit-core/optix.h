@@ -81,7 +81,7 @@ extern JIT_EXPORT void
 jit_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt);
 
 /**
-  * \brief Insert a function call to optixTrace into the program
+  * \brief Insert a ray tracing call into the program
   *
   * The \c args list should contain a list of variable indices corresponding to
   * the 15 required function arguments <tt>handle, ox, oy, oz, dx, dy, dz, tmin,
