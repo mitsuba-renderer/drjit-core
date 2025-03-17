@@ -528,15 +528,24 @@ extern JIT_EXPORT void jit_registry_clear();
  * exact ordering, so please don't change.
  */
 enum class VarType : uint32_t {
-    Void, Bool, Int8, UInt8, Int16, UInt16, Int32, UInt32,
-    Int64, UInt64, Pointer, Float16, Float32, Float64, Count
+    Void,
+    // Boolean/mask type
+    Bool,
+    // Signed and unsigned integer types
+    Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64,
+    // Pointer to another array
+    Pointer,
+    // Unspecified floating point type, used only for type promotion
+    BaseFloat,
+    // IEEE-754 formats
+    Float16, Float32, Float64, Count
 };
 #else
 enum VarType {
     VarTypeVoid, VarTypeBool, VarTypeInt8, VarTypeUInt8,
     VarTypeInt16, VarTypeUInt16, VarTypeInt32, VarTypeUInt32,
-    VarTypeInt64, VarTypeUInt64, VarTypePointer, VarTypeFloat16,
-    VarTypeFloat32, VarTypeFloat64, VarTypeCount
+    VarTypeInt64, VarTypeUInt64, VarTypePointer, VarTypeBaseFloat,
+    VarTypeFloat16, VarTypeFloat32, VarTypeFloat64, VarTypeCount
 };
 #endif
 
