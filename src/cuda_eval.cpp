@@ -1039,15 +1039,19 @@ static void jitc_cuda_render_trace(const Variable *v,
 
     put(");\n");
 
-    put("    call (");
-    for (uint32_t i = 0; i < 32; ++i)
-        fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
-    put("), _optix_hitobject_invoke, (");
-    fmt("$v_z, ", v);
-    fmt("$v_count, ", v);
-    for (uint32_t i = 0; i < 32; ++i)
-        fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
-    put(");\n");
+    if (!td->shadow_ray) {
+        put("    call (");
+        for (uint32_t i = 0; i < 32; ++i)
+            fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
+        put("), _optix_hitobject_invoke, (");
+        fmt("$v_z, ", v);
+        fmt("$v_count, ", v);
+        for (uint32_t i = 0; i < 32; ++i)
+            fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
+        put(");\n");
+    } else {
+        fmt("    call ($v_out_0), _optix_hitobject_is_hit, ();", v);
+    }
 
     if (some_masked)
         fmt("\nl_masked_$u:\n", v->reg_index);
