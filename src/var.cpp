@@ -20,7 +20,8 @@
 /// Descriptive names for the various variable types
 const char *type_name[(int) VarType::Count] {
     "void",   "bool",  "int8",   "uint8",   "int16",   "uint16",  "int32",
-    "uint32", "int64", "uint64", "pointer", "???", "float16", "float32", "float64"
+    "uint32", "int64", "uint64", "pointer", "base_float", "float16",
+    "float32", "float64"
 };
 
 /// Descriptive names for the various variable types (extra-short version)

@@ -505,7 +505,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
     };
     const char *type_names[(int) VarType::Count]{
         "Void",   "Bool",  "Int8",   "UInt8",   "Int16",   "UInt16",  "Int32",
-        "UInt32", "Int64", "UInt64", "Pointer", "", "Float16", "Float32", "Float64"
+        "UInt32", "Int64", "UInt64", "Pointer", "(BaseFloat)", "Float16", "Float32", "Float64"
     };
 
     size_t type_sizes[(int) VarType::Count]{
