@@ -490,8 +490,8 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
     }
 }
 
-void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
-                          uint32_t pipeline, uint32_t sbt) {
+void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, int shadow_ray,
+                          uint32_t mask, uint32_t pipeline, uint32_t sbt) {
     VarType types[]{ VarType::UInt64,  VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
@@ -559,6 +559,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, uint32_t mask,
         td->indices.push_back(id);
         jitc_var_inc_ref(id);
     }
+    td->shadow_ray = shadow_ray;
 
     Ref index = steal(jitc_var_new_node_3(
         JitBackend::CUDA, VarKind::TraceRay, VarType::Void, size,
