@@ -1015,12 +1015,12 @@ static void jitc_cuda_render_trace(const Variable *v,
     fmt("    .reg.u32 $v_z, $v_count;\n"
         "    mov.u32 $v_z, 0;\n"
         "    mov.u32 $v_count, $u;\n",
-            v, v, v, v, payload_count);
+        v, v, v, v, payload_count);
 
     put("    call (");
     for (uint32_t i = 0; i < 32; ++i)
         fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
-    put("), _optix_trace_typed_32, (");
+    put("), _optix_hitobject_traverse, (");
 
     fmt("$v_z, ", v);
 
@@ -1037,6 +1037,16 @@ static void jitc_cuda_render_trace(const Variable *v,
             put(", ");
     }
 
+    put(");\n");
+
+    put("    call (");
+    for (uint32_t i = 0; i < 32; ++i)
+        fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
+    put("), _optix_hitobject_invoke, (");
+    fmt("$v_z, ", v);
+    fmt("$v_count, ", v);
+    for (uint32_t i = 0; i < 32; ++i)
+        fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
     put(");\n");
 
     if (some_masked)
