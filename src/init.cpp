@@ -768,4 +768,4 @@ void ThreadState::reset_state() {
 }
 void ThreadState::notify_free(const void *) { }
 void ThreadState::notify_expand(uint32_t) { }
-void ThreadState::notify_symbolic_width(uint32_t, uint32_t) { }
+void ThreadState::notify_opaque_width(uint32_t, uint32_t) { }
