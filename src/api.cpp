@@ -626,7 +626,7 @@ uint32_t jit_var_opaque_width(uint32_t index) {
         (JitBackend) var->backend, VarType::UInt32, &var_size, 1, true);
 
     ThreadState *ts = thread_state(var->backend);
-    ts->notify_symbolic_width(index, width_index);
+    ts->notify_opaque_width(index, width_index);
 
     return width_index;
 }
