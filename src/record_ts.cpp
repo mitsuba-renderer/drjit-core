@@ -373,8 +373,8 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 if (!replay_aggregate(op))
                     return false;
                 break;
-            case OpType::SymbolicWidth:
-                if(!replay_symbolic_width(op))
+            case OpType::OpaqueWidth:
+                if(!replay_opaque_width(op))
                     return false;
                 break;
             case OpType::Free: {
@@ -475,7 +475,7 @@ void RecordThreadState::barrier() {
     return m_internal->barrier();
 }
 
-void RecordThreadState::notify_symbolic_width(uint32_t index,
+void RecordThreadState::notify_opaque_width(uint32_t index,
                                               uint32_t width_index) {
     if (!paused()) {
         uint32_t start = m_recording.dependencies.size();
@@ -486,13 +486,13 @@ void RecordThreadState::notify_symbolic_width(uint32_t index,
         uint32_t end = m_recording.dependencies.size();
 
         Operation op;
-        op.type             = OpType::SymbolicWidth;
+        op.type             = OpType::OpaqueWidth;
         op.dependency_range = std::pair(start, end);
         m_recording.operations.push_back(op);
     }
 }
 
-int Recording::replay_symbolic_width(Operation &op){
+int Recording::replay_opaque_width(Operation &op){
 
     uint32_t dependency_index = op.dependency_range.first;
     AccessInfo in_info = dependencies[dependency_index];
