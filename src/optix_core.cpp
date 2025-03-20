@@ -37,6 +37,13 @@ static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
     pco.numAttributeValues = 2;
     pco.pipelineLaunchParamsVariableName = "params";
 
+    // This flag configures various additional machinery that OptiX packages
+    // into the kernel. For the default compute-only pipeline options,
+    // it turns out that we have to request some things (even though we will
+    // not use them) to end up with the smallest possible configuration.
+    pco.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
+    pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
+
 #ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
     pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
 #else

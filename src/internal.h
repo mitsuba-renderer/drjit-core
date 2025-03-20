@@ -556,6 +556,8 @@ struct OptixPipelineCompileOptions {
     unsigned int exceptionFlags;
     const char* pipelineLaunchParamsVariableName;
     unsigned int usesPrimitiveTypeFlags;
+    int allowOpacityMicromaps;
+    int allowClusteredGeometry; // OptiX 9.0 ABI feature
 };
 
 struct OptixPipelineData {
