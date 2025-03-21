@@ -42,10 +42,21 @@ extern uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
 /// Overwrite existing OptiX Shader Binding Table given an index
 extern void jitc_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt);
 
+enum class OptixHitObjectField: uint32_t;
+
 /// Insert a function call to optixTrace into the program
-extern void jitc_optix_ray_trace(uint32_t nargs, uint32_t *args, int shadow_ray,
+extern void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
+                                 uint32_t n_hit_object_field,
+                                 OptixHitObjectField *hit_object_fields,
+                                 uint32_t *hit_object_out, int invoke,
                                  uint32_t mask, uint32_t pipeline,
                                  uint32_t sbt);
+
+// Read data from the SBT data buffer
+extern JIT_EXPORT uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr,
+                                                    VarType type,
+                                                    uint32_t offset,
+                                                    uint32_t mask);
 
 /// Compile an OptiX kernel
 extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,

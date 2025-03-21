@@ -52,6 +52,9 @@
 #include "cuda_array.h"
 #include "cuda_scatter.h"
 #include "cuda_packet.h"
+#if defined(DRJIT_ENABLE_OPTIX)
+#  include <drjit-core/optix.h>
+#endif
 
 // Forward declarations
 static void jitc_cuda_render(Variable *v);
@@ -838,6 +841,17 @@ static void jitc_cuda_render(Variable *v) {
             }
             break;
 
+        case VarKind::VectorLoad:
+            fmt("    mov.$b $v, 0;\n"
+                "    .reg.u64 $v_src;\n"
+                "    add.u64 $v_src, $v, $u;\n"
+                "    @$v ld.global.$b $v, [$v_src];\n",
+                v, v,
+                v,
+                v, a0, (uint32_t) v->literal,
+                a1, v, v, v);
+            break;
+
 #if defined(DRJIT_ENABLE_OPTIX)
         case VarKind::TraceRay:
             jitc_cuda_render_trace(v, a0, a1, a2);
@@ -1039,18 +1053,90 @@ static void jitc_cuda_render_trace(const Variable *v,
 
     put(");\n");
 
-    if (!td->shadow_ray) {
+    size_t n_fields = td->hit_object_fields.size();
+    for (uint32_t i = 0; i < n_fields; ++i) {
+        uint32_t field_i = td->hit_object_fields[i];
+        switch ((OptixHitObjectField) field_i) {
+            case OptixHitObjectField::IsHit:
+                fmt("    .reg.u32 $v_out_$u;\n"
+                    "    call ($v_out_$u), _optix_hitobject_is_hit, ();\n",
+                    v, 32 + i,
+                    v, 32 + i);
+                break;
+
+            case OptixHitObjectField::InstanceId:
+                fmt("    .reg.u32 $v_out_$u;\n"
+                    "    call ($v_out_$u), _optix_hitobject_get_instance_id, ();\n",
+                    v, 32 + i,
+                    v, 32 + i);
+                break;
+
+            case OptixHitObjectField::PrimitiveIndex:
+                fmt("    .reg.u32 $v_out_$u;\n"
+                    "    call ($v_out_$u), _optix_hitobject_get_primitive_idx, ();\n",
+                    v, 32 + i,
+                    v, 32 + i);
+                break;
+
+            case OptixHitObjectField::SBTDataPointer:
+                fmt("    .reg.b64 $v_out_$u;\n"
+                    "    call ($v_out_$u), _optix_hitobject_get_sbt_data_pointer, ();\n",
+                    v, 32 + i,
+                    v, 32 + i);
+                break;
+
+            case OptixHitObjectField::RayTMax:
+                fmt("    .reg.f32 $v_out_$u;\n"
+                    "    call ($v_out_$u), _optix_hitobject_get_ray_tmax, ();\n",
+                    v, 32 + i,
+                    v, 32 + i);
+                break;
+
+            case OptixHitObjectField::Attribute0:
+            case OptixHitObjectField::Attribute1:
+            case OptixHitObjectField::Attribute2:
+            case OptixHitObjectField::Attribute3:
+            case OptixHitObjectField::Attribute4:
+            case OptixHitObjectField::Attribute5:
+            case OptixHitObjectField::Attribute6:
+            case OptixHitObjectField::Attribute7: {
+                uint32_t idx = field_i - (uint32_t) OptixHitObjectField::Attribute0;
+                fmt("    .reg.u32 $v_out_$u;\n"
+                    "    .reg.u32 $v_attr_idx_$u;\n"
+                    "    mov.u32 $v_attr_idx_$u, $u;\n"
+                    "    call ($v_out_$u), _optix_hitobject_get_attribute, ($v_attr_idx_$u);\n",
+                    v, 32 + i,
+                    v, idx,
+                    v, idx, idx,
+                    v, 32 + i, v, idx);
+            }
+            break;
+
+            default:
+                jitc_fail("jitc_cuda_render_trace(): unhandled hit object "
+                          "field type (value %u)!", field_i);
+        }
+    }
+
+    if (td->invoke) {
         put("    call (");
         for (uint32_t i = 0; i < 32; ++i)
             fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
         put("), _optix_hitobject_invoke, (");
-        fmt("$v_z, ", v);
-        fmt("$v_count, ", v);
-        for (uint32_t i = 0; i < 32; ++i)
-            fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
+
+        fmt("$v_z, $v_count, ", v, v);
+
+        for (uint32_t i = 0; i < 32; ++i) {
+            if (i + 15 < td->indices.size())
+                fmt("$v", jitc_var(td->indices[i + 15]));
+            else
+                fmt("$v_z", v);
+
+            if (i + 1 < 32)
+                put(", ");
+        }
+
         put(");\n");
-    } else {
-        fmt("    call ($v_out_0), _optix_hitobject_is_hit, ();", v);
     }
 
     if (some_masked)

@@ -7,6 +7,8 @@
     license that can be found in the LICENSE file.
 */
 
+#pragma once
+
 #include "jit.h"
 
 #if defined(__cplusplus)
@@ -80,20 +82,95 @@ jit_optix_configure_sbt(const OptixShaderBindingTable *sbt, uint32_t pipeline);
 extern JIT_EXPORT void
 jit_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt);
 
+/* \brief Fields that can be queried from OptiX's generic ``HitObject``.
+ *
+ * The ``HitObject`` construct is the result of a AS traversal. See
+ * \c jit_optix_ray_trace for how to use these. The field type is documented in
+ * brackets for each member.
+ */
+#if defined(__cplusplus)
+enum class OptixHitObjectField: uint32_t {
+    /// Whether the HitObject is for a hit or not (miss or nop) [UInt32]
+    IsHit,
+
+    /// Instance ID of the hit object if it is an instanced object [UInt32]
+    InstanceId,
+
+    /// Index of the primitive that was hit, i.e triangle ID [UInt32]
+    PrimitiveIndex,
+
+    /// Pointer to the SBT data buffer of the hit object [Pointer]
+    SBTDataPointer,
+
+    /// Ray's distance to the object what was hit [Float32]
+    RayTMax,
+
+    /// The HitObject attribute at index 0 [UInt32]
+    Attribute0,
+
+    /// The HitObject attribute at index 1 [UInt32]
+    Attribute1,
+
+    /// The HitObject attribute at index 2 [UInt32]
+    Attribute2,
+
+    /// The HitObject attribute at index 3 [UInt32]
+    Attribute3,
+
+    /// The HitObject attribute at index 4 [UInt32]
+    Attribute4,
+
+    /// The HitObject attribute at index 5 [UInt32]
+    Attribute5,
+
+    /// The HitObject attribute at index 6 [UInt32]
+    Attribute6,
+
+    /// The HitObject attribute at index 7 [UInt32]
+    Attribute7,
+
+    /// Denotes the number of different field types
+    Count
+};
+#else
+enum OptixHitObjectField {
+    OptixHitObjectFieldIsHit,
+    OptixHitObjectFieldInstanceId,
+    OptixHitObjectFieldPrimitiveIndex,
+    OptixHitObjectFieldSBTDataPointer,
+    OptixHitObjectFieldRayTMax,
+    OptixHitObjectFieldAttribute0,
+    OptixHitObjectFieldAttribute1,
+    OptixHitObjectFieldAttribute2,
+    OptixHitObjectFieldAttribute3,
+    OptixHitObjectFieldAttribute4,
+    OptixHitObjectFieldAttribute5,
+    OptixHitObjectFieldAttribute6,
+    OptixHitObjectFieldAttribute7,
+    OptixHitObjectFieldCount
+};
+#endif
+
 /**
-  * \brief Insert a ray tracing call into the program
+  * \brief Insert an OptiX ray tracing call into the program
   *
   * The \c args list should contain a list of variable indices corresponding to
   * the 15 required function arguments <tt>handle, ox, oy, oz, dx, dy, dz, tmin,
-  * tmax, time, mask, flags, sbt_offset, sbt_stride, miss_sbt_index</tt>.
+  * tmax, time, mask, flags, sbt_offset, sbt_stride, miss_sbt_index</tt> of a
+  * ``optixTraverse`` call.
   *
   * Up to 32 payload values can optionally be provided by setting \c n_args to a
   * value greater than 15. In this case, the corresponding elements will be
   * overwritten with the new variable indices with external reference count 1
   * containing the final payload value.
   *
-  * The \c shadow_ray argument is a boolean indicating whether or not OptiX
-  * should only perform an occlusion test for the ray.
+  * The outgoing hit object produced by the ``optixTraverse`` call can be
+  * queried by specifying a list of requested fields with \c n_hit_object_field
+  * and \c hit_object_fields. The results will be stored in new variables whose
+  * indices are written to \c hit_object_out.
+  *
+  * The \c invoke flag determines whether the closest hit and miss programs are
+  * executed or not.
   *
   * The \c pipeline JIT variable index specifies the OptiX pipeline to be used
   * in the kernel executing this ray tracing operation. This index should be
@@ -114,16 +191,37 @@ jit_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt);
   *   OptixShaderBindingTable sbt = ...;
   *   uint32_t sbt_idx = jit_optix_configure_sbt(&sbt, pipeline_idx);
   *
-  *   bool shadow_ray = ...;
+  *   OptixHitObjectField fields[] {
+  *         OptixHitObjectField::IsHit,
+  *         OptixHitObjectField::RayTMax
+  *   };
+  *   uint32 hit_object_out[2];
+  *
   *   active_idx = ...;
   *   trace_args = ...;
   *   jit_optix_ray_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args,
-  *                       shadow_ray, active_idx, pipeline_idx, sbt_idx);
+  *                       2, hit_object_fields, hit_object_out,
+  *                       active_idx, pipeline_idx, sbt_idx);
   * </tt>
   */
-extern JIT_EXPORT void
-jit_optix_ray_trace(uint32_t n_args, uint32_t *args, int shadow_ray,
-                    uint32_t mask, uint32_t pipeline, uint32_t sbt);
+extern JIT_EXPORT void jit_optix_ray_trace(
+    uint32_t n_args, uint32_t *args, uint32_t n_hit_object_field,
+    OptixHitObjectField *hit_object_fields, uint32_t *hit_object_out,
+    int invoke, uint32_t mask, uint32_t pipeline, uint32_t sbt);
+
+/**
+ * \brief Read data from \c OptixHitObjectField::SBTDataPointer
+ *
+ * When querying the OptixHitObjectField::SBTDataPointer field during a
+ * \c jit_optix_ray_trace, a pointer is returned to each thread. This function
+ * can be used to read data in each lane from their respective pointer. The read
+ * can be offset by \c offset bytes and will return exactly one new variable of
+ * type \c type.
+ */
+extern JIT_EXPORT uint32_t jit_optix_sbt_data_load(uint32_t sbt_data_ptr,
+                                                   VarType type,
+                                                   uint32_t offset,
+                                                   uint32_t mask);
 
 #if defined(__cplusplus)
 }

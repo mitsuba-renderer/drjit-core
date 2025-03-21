@@ -490,17 +490,16 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
     }
 }
 
-void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, int shadow_ray,
-                          uint32_t mask, uint32_t pipeline, uint32_t sbt) {
+void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
+                          uint32_t n_hit_object_field,
+                          OptixHitObjectField *hit_object_fields,
+                          uint32_t *hit_object_out, int invoke, uint32_t mask,
+                          uint32_t pipeline, uint32_t sbt) {
     VarType types[]{ VarType::UInt64,  VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::UInt32,  VarType::UInt32,
-                     VarType::UInt32,  VarType::UInt32,  VarType::UInt32,
-                     VarType::UInt32,  VarType::UInt32,  VarType::UInt32,
-                     VarType::UInt32,  VarType::UInt32,  VarType::UInt32,
-                     VarType::UInt32,  VarType::UInt32 };
-
+                     VarType::UInt32,  VarType::UInt32,  VarType::UInt32 };
     if (n_args < 15)
         jitc_raise("jit_optix_ray_trace(): too few arguments (got %u < 15)", n_args);
 
@@ -516,7 +515,13 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, int shadow_ray,
     bool symbolic = false, dirty = false;
     for (uint32_t i = 0; i <= n_args; ++i) {
         uint32_t index = i < n_args ? args[i] : mask;
-        VarType ref = i < n_args ? types[i] : VarType::Bool;
+        VarType ref = VarType::Void;
+        if (i < 15)
+            ref = types[i];
+        else if (i - 15 < np)
+            ref = VarType::UInt32; // payloads are all UInt32
+        else
+            ref = VarType::Bool;
         const Variable *v = jitc_var(index);
         if ((VarType) v->type != ref)
             jitc_raise("jit_optix_ray_trace(): type mismatch for arg. %u (got %s, "
@@ -545,21 +550,32 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, int shadow_ray,
         }
     }
 
+    for (uint32_t i = 0; i < n_hit_object_field; ++i)
+        if (hit_object_fields[i] >= OptixHitObjectField::Count)
+            jitc_raise("jit_optix_ray_trace(): unknown hit object field!");
+
     // Potentially apply any masks on the mask stack
     Ref valid = steal(jitc_var_mask_apply(mask, size));
 
-    jitc_log(InfoSym, "jit_optix_ray_trace(): tracing %u ray%s, %u payload value%s%s.",
+    jitc_log(InfoSym,
+             "jit_optix_ray_trace(): "
+             "tracing %u ray%s, %u payload value%s, %u hitobject field%s%s.",
              size, size != 1 ? "s" : "", np, np == 1 ? "" : "s",
+             n_hit_object_field, n_hit_object_field == 1 ? "" : "s",
              symbolic ? " ([symbolic])" : "");
 
+    // Fill payload information for node
     TraceData *td = new TraceData();
+    td->invoke = invoke;
     td->indices.reserve(n_args);
     for (uint32_t i = 0; i < n_args; ++i) {
         uint32_t id = args[i];
         td->indices.push_back(id);
         jitc_var_inc_ref(id);
     }
-    td->shadow_ray = shadow_ray;
+    td->hit_object_fields.reserve(n_hit_object_field);
+    for (uint32_t i = 0; i < n_hit_object_field; ++i)
+        td->hit_object_fields.push_back((uint32_t) hit_object_fields[i]);
 
     Ref index = steal(jitc_var_new_node_3(
         JitBackend::CUDA, VarKind::TraceRay, VarType::Void, size,
@@ -569,10 +585,45 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, int shadow_ray,
     Variable *v = jitc_var(index);
     v->optix = 1;
 
+    // Extract payload values
     for (uint32_t i = 0; i < np; ++i)
         args[15 + i] = jitc_var_new_node_1(
             JitBackend::CUDA, VarKind::Extract, VarType::UInt32,
             size, symbolic, index, jitc_var(index), (uint64_t) i);
+
+    // Extract hit object queries
+    for (uint32_t i = 0; i < n_hit_object_field; ++i) {
+        VarType field_type = VarType::Void;
+        switch (hit_object_fields[i]) {
+            case OptixHitObjectField::IsHit:
+            case OptixHitObjectField::InstanceId:
+            case OptixHitObjectField::PrimitiveIndex:
+                field_type = VarType::UInt32;
+                break;
+            case OptixHitObjectField::SBTDataPointer:
+                field_type = VarType::Pointer;
+                break;
+            case OptixHitObjectField::RayTMax:
+                field_type = VarType::Float32;
+                break;
+            case OptixHitObjectField::Attribute0:
+            case OptixHitObjectField::Attribute1:
+            case OptixHitObjectField::Attribute2:
+            case OptixHitObjectField::Attribute3:
+            case OptixHitObjectField::Attribute4:
+            case OptixHitObjectField::Attribute5:
+            case OptixHitObjectField::Attribute6:
+            case OptixHitObjectField::Attribute7:
+                field_type = VarType::UInt32;
+                break;
+            default:
+                jitc_fail("jit_optix_ray_trace(): unhandled hit object "
+                          "field type (value %u)!", hit_object_fields[i]);
+        }
+        hit_object_out[i] = jitc_var_new_node_1(
+            JitBackend::CUDA, VarKind::Extract, field_type, size, symbolic,
+            index, jitc_var(index), (uint64_t) 32 + i);
+    }
 
     // Free resources when this variable is destroyed
     auto callback = [](uint32_t /*index*/, int free, void *ptr) {
@@ -581,6 +632,20 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args, int shadow_ray,
     };
 
     jitc_var_set_callback(index, callback, td, true);
+}
+
+uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
+                                  uint32_t offset, uint32_t mask_) {
+
+    Variable *v_sbt_data_ptr = jitc_var(sbt_data_ptr);
+    uint32_t size = v_sbt_data_ptr->size;
+    bool symbolic = v_sbt_data_ptr->symbolic;
+
+    Ref mask = steal(jitc_var_mask_apply(mask_, size));
+
+    return jitc_var_new_node_2(JitBackend::CUDA, VarKind::VectorLoad, type,
+                               size, symbolic, sbt_data_ptr, v_sbt_data_ptr,
+                               mask, jitc_var(mask), offset);
 }
 
 void jitc_optix_check_impl(OptixResult errval, const char *file,
