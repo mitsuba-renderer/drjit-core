@@ -115,6 +115,9 @@ enum class VarKind : uint32_t {
     // Load all texels used for bilinear interpolation (CUDA)
     TexFetchBilerp,
 
+    // Memory read starting at different base pointers per lane (CUDA)
+    VectorLoad,
+
     // Perform a ray tracing call
     TraceRay,
 
