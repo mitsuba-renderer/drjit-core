@@ -254,7 +254,7 @@ void demo() {
             miss_sbt_index.index(), payload_0.index()
         };
 
-        jit_optix_ray_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args,
+        jit_optix_ray_trace_new(sizeof(trace_args) / sizeof(uint32_t), trace_args,
                             false, mask.index(), pipeline_handle.index(),
                             sbt_handle.index());
 
