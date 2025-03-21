@@ -20,72 +20,73 @@
 /// Descriptive names for the various variable types
 const char *type_name[(int) VarType::Count] {
     "void",   "bool",  "int8",   "uint8",   "int16",   "uint16",  "int32",
-    "uint32", "int64", "uint64", "pointer", "float16", "float32", "float64"
+    "uint32", "int64", "uint64", "pointer", "base_float", "float16",
+    "float32", "float64"
 };
 
 /// Descriptive names for the various variable types (extra-short version)
 const char *type_name_short[(int) VarType::Count] {
     "void ", "bool", "i8", "u8",  "i16", "u16", "i32",
-    "u32", "i64", "u64", "ptr", "f16", "f32", "f64"
+    "u32", "i64", "u64", "ptr", "???", "f16", "f32", "f64"
 };
 
 /// CUDA PTX type names
 const char *type_name_ptx[(int) VarType::Count] {
     "???", "pred", "s8",  "u8",  "s16", "u16", "s32",
-    "u32", "s64",  "u64", "u64", "f16", "f32", "f64"
+    "u32", "s64",  "u64", "u64", "???", "f16", "f32", "f64"
 };
 
 /// CUDA PTX type names (binary view, even for masks)
 const char *type_name_ptx_bin2[(int) VarType::Count] {
     "???", "b8", "b8",  "b8",  "b16", "b16", "b32",
-    "b32", "b64",  "b64", "b64", "b16", "b32", "b64"
+    "b32", "b64",  "b64", "b64", "???", "b16", "b32", "b64"
 };
 
 /// CUDA PTX type names (binary view)
 const char *type_name_ptx_bin[(int) VarType::Count] {
     "???", "pred", "b8",  "b8",  "b16", "b16", "b32",
-    "b32", "b64",  "b64", "b64", "b16", "b32", "b64"
+    "b32", "b64",  "b64", "b64", "???", "b16", "b32", "b64"
 };
 
 /// LLVM IR type names (does not distinguish signed vs unsigned)
 const char *type_name_llvm[(int) VarType::Count] {
     "???", "i1",  "i8",  "i8",   "i16",   "i16",   "i32",
-    "i32", "i64", "i64", "i64", "half", "float", "double"
+    "i32", "i64", "i64", "i64", "???", "half", "float", "double"
 };
 
 /// Double size integer arrays for mulhi()
 const char *type_name_llvm_big[(int) VarType::Count] {
     "???", "???",  "i16",  "i16", "i32", "i32", "i64",
-    "i64", "i128", "i128", "???", "???", "???", "???"
+    "i64", "i128", "i128", "???", "???", "???", "???", "???"
 };
 
 /// Abbreviated LLVM IR type names
 const char *type_name_llvm_abbrev[(int) VarType::Count] {
     "???", "i1",  "i8",  "i8",  "i16", "i16", "i32",
-    "i32", "i64", "i64", "i64", "f16", "f32", "f64"
+    "i32", "i64", "i64", "i64", "???", "f16", "f32", "f64"
 };
 
 /// LLVM IR type names (binary view)
 const char *type_name_llvm_bin[(int) VarType::Count] {
     "???", "i1",  "i8",  "i8",  "i16", "i16", "i32",
-    "i32", "i64", "i64", "i64", "i16", "i32", "i64"
+    "i32", "i64", "i64", "i64", "???", "i16", "i32", "i64"
 };
 
 /// LLVM/CUDA register name prefixes
 const char *type_prefix[(int) VarType::Count] {
     "%u", "%p", "%b", "%b", "%w", "%w", "%r",
-    "%r", "%rd", "%rd", "%rd", "%h", "%f", "%d"
+    "%r", "%rd", "%rd", "%rd", "???", "%h", "%f", "%d"
 };
 
 /// Maps types to byte sizes
 const uint32_t type_size[(int) VarType::Count] {
-    0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 8, 2, 4, 8
+    0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 8, 0, 2, 4, 8
 };
 
 /// String version of the above
 const char *type_size_str[(int) VarType::Count] {
     "0", "1", "1", "1", "2", "2", "4",
-    "4", "8", "8", "8", "2", "4", "8"
+    "4", "8", "8", "8", "???", "2", "4", "8"
 };
 
 // Representation an all-1 bit vector
@@ -93,27 +94,27 @@ const uint64_t type_all_ones[(int) VarType::Count] {
     0, 1, 0xff, 0xff, 0xffff, 0xffff, 0xffffffffu,
     0xffffffffu, 0xffffffffffffffffull,
     0xffffffffffffffffull, 0xffffffffffffffffull,
-    0xffff, 0xffffffffu, 0xffffffffffffffffull
+    0, 0xffff, 0xffffffffu, 0xffffffffffffffffull
 };
 
 // Representation of the value 1
 const uint64_t type_one[(int) VarType::Count] {
     0, 1, 1, 1, 1,      1,          1,
-    1, 1, 1, 0, 0x3c00, 0x3f800000, 0x3ff0000000000000ull
+    1, 1, 1, 0, 0, 0x3c00, 0x3f800000, 0x3ff0000000000000ull
 };
 
 /// Smallest representable value (neg. infinity for FP values)
 const uint64_t type_min[(int) VarType::Count] {
     0, 0, 0x80, 0, 0x8000, 0, 0x80000000, 0,
     0x8000000000000000ull, 0, 0,
-    0xfc00, 0xff800000, 0xfff0000000000000
+    0, 0xfc00, 0xff800000, 0xfff0000000000000
 };
 
 /// Largest representable value (infinity for FP values)
 const uint64_t type_max[(int) VarType::Count] {
     0, 1, 0x7f, 0xff, 0x7fff, 0xffff, 0x7fffffff, 0xffffffff,
     0x7fffffffffffffffull, 0xffffffffffffffffull, 0xffffffffffffffffull,
-    0x7c00, 0x7f800000, 0x7ff0000000000000ull
+    0, 0x7c00, 0x7f800000, 0x7ff0000000000000ull
 };
 
 bool jitc_is_max(Variable *v) {

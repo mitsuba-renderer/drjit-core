@@ -505,11 +505,11 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
     };
     const char *type_names[(int) VarType::Count]{
         "Void",   "Bool",  "Int8",   "UInt8",   "Int16",   "UInt16",  "Int32",
-        "UInt32", "Int64", "UInt64", "Pointer", "Float16", "Float32", "Float64"
+        "UInt32", "Int64", "UInt64", "Pointer", "(BaseFloat)", "Float16", "Float32", "Float64"
     };
 
     size_t type_sizes[(int) VarType::Count]{
-        0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 8, 2, 4, 8
+        0, 1, 1, 1, 2, 2, 4, 4, 8, 8, 8, 0, 2, 4, 8
     };
 
     uint32_t source_value[20];
@@ -526,6 +526,10 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
                     target_type != VarType::UInt32 &&
                     target_type != VarType::UInt64 &&
                     target_type != VarType::Bool;
+
+                if (type_sizes[(int) source_type] == 0 ||
+                    type_sizes[(int) target_type] == 0)
+                    continue;
 
                 if (reinterpret && type_sizes[(int) source_type] !=
                                    type_sizes[(int) target_type])
