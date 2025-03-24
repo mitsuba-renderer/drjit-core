@@ -514,8 +514,8 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
 void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
                           uint32_t n_hit_object_field,
                           OptixHitObjectField *hit_object_fields,
-                          uint32_t *hit_object_out, int invoke, uint32_t mask,
-                          uint32_t pipeline, uint32_t sbt) {
+                          uint32_t *hit_object_out, int reorder, int invoke,
+                          uint32_t mask, uint32_t pipeline, uint32_t sbt) {
     VarType types[]{ VarType::UInt64,  VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
@@ -588,6 +588,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
     // Fill payload information for node
     TraceData *td = new TraceData();
     td->invoke = invoke;
+    td->reorder = reorder;
     td->indices.reserve(n_args);
     for (uint32_t i = 0; i < n_args; ++i) {
         uint32_t id = args[i];
