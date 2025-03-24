@@ -1110,6 +1110,9 @@ static void jitc_cuda_render_trace(const Variable *v,
         "    mov.u32 $v_count, $u;\n",
         v, v, v, v, payload_count);
 
+    // =====================================================
+    // 1. Traverse
+    // =====================================================
     put("    call (");
     for (uint32_t i = 0; i < 32; ++i)
         fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
@@ -1132,6 +1135,15 @@ static void jitc_cuda_render_trace(const Variable *v,
 
     put(");\n");
 
+    // =====================================================
+    // 2. Reorder
+    // =====================================================
+    if (td->reorder && jit_flag(JitFlag::ShaderExecutionReordering))
+        fmt("    call (), _optix_hitobject_reorder, ($v_z, $v_z);\n", v, v);
+
+    // =====================================================
+    // 3. Get HitObject fields
+    // =====================================================
     size_t n_fields = td->hit_object_fields.size();
     for (uint32_t i = 0; i < n_fields; ++i) {
         uint32_t field_i = td->hit_object_fields[i];
@@ -1197,6 +1209,9 @@ static void jitc_cuda_render_trace(const Variable *v,
         }
     }
 
+    // =====================================================
+    // 4. Invoke miss & closest hit programs
+    // =====================================================
     if (td->invoke) {
         put("    call (");
         for (uint32_t i = 0; i < 32; ++i)

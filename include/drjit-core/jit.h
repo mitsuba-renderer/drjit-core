@@ -1590,6 +1590,9 @@ enum class JitFlag : uint32_t {
     /// Set to \c true when traversing inputs or outputs of a frozen function
     EnableObjectTraversal = 1 << 22,
 
+    /// Reorder threads in OptiX after a ray-intersection
+    ShaderExecutionReordering = 1 << 23,
+
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
@@ -1597,7 +1600,7 @@ enum class JitFlag : uint32_t {
               (uint32_t) MergeFunctions | (uint32_t) OptimizeCalls |
               (uint32_t) SymbolicConditionals | (uint32_t) ReuseIndices |
               (uint32_t) ScatterReduceLocal | (uint32_t) PacketOps |
-              (uint32_t) KernelFreezing,
+              (uint32_t) KernelFreezing | (uint32_t) ShaderExecutionReordering,
 
     // Deprecated aliases, will be removed in a future version of Dr.Jit
     LoopRecord = SymbolicLoops,
@@ -1631,7 +1634,8 @@ enum JitFlag {
     JitFlagSymbolic = 1 << 19,
     KernelFreezing = 1 << 20,
     FreezingScope = 1 << 21,
-    EnableObjectTraversal = 1 << 22
+    EnableObjectTraversal = 1 << 22,
+    JitFlagShaderExecutionReordering = 1 << 23
 };
 #endif
 
