@@ -295,7 +295,7 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
             "        $s.$s %tmp, %tmp, $v;\n"
             "        st.global.$s [%rd3], %tmp;\n"
             "    }\n",
-            tp, tp, op_name, tp, value, tp);
+            tp, tp_b, op_name, tp, value, tp_b);
     } else if (mode == ReduceMode::Local && (reduce_bfly_32 || reduce_bfly_64)) {
         uint32_t shiftamt = log2i_ceil(type_size[(int) vt]);
         if (reduce_bfly_32)
