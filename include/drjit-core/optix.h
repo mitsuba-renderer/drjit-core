@@ -169,6 +169,10 @@ enum OptixHitObjectField {
   * and \c hit_object_fields. The results will be stored in new variables whose
   * indices are written to \c hit_object_out.
   *
+  * Shader execution reordering can be requested by using the \c reorder flag.
+  * Note that if \c JitFlag::ShaderExecutionReordering is not set, the
+  * \c reorder flag will be ignored.
+  *
   * The \c invoke flag determines whether the closest hit and miss programs are
   * executed or not.
   *
@@ -207,7 +211,7 @@ enum OptixHitObjectField {
 extern JIT_EXPORT void jit_optix_ray_trace(
     uint32_t n_args, uint32_t *args, uint32_t n_hit_object_field,
     OptixHitObjectField *hit_object_fields, uint32_t *hit_object_out,
-    int invoke, uint32_t mask, uint32_t pipeline, uint32_t sbt);
+    int reorder, int invoke, uint32_t mask, uint32_t pipeline, uint32_t sbt);
 
 /**
  * \brief Read data from \c OptixHitObjectField::SBTDataPointer

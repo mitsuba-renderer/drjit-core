@@ -1566,6 +1566,9 @@ enum class JitFlag : uint32_t {
     /// Set to \c true when Dr.Jit is recording a frozen function
     FreezingScope = 1 << 21,
 
+    /// Reorder threads in OptiX after a ray-intersection
+    ShaderExecutionReordering = 1 << 22,
+
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
@@ -1573,7 +1576,7 @@ enum class JitFlag : uint32_t {
               (uint32_t) MergeFunctions | (uint32_t) OptimizeCalls |
               (uint32_t) SymbolicConditionals | (uint32_t) ReuseIndices |
               (uint32_t) ScatterReduceLocal | (uint32_t) PacketOps |
-              (uint32_t) KernelFreezing,
+              (uint32_t) KernelFreezing | (uint32_t) ShaderExecutionReordering,
 
     // Deprecated aliases, will be removed in a future version of Dr.Jit
     LoopRecord = SymbolicLoops,
