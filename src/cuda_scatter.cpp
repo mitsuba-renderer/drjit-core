@@ -288,13 +288,14 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
                           (vt == VarType::UInt64 || vt == VarType::Int64 || vt == VarType::Float64);
 
     if (mode == ReduceMode::NoConflicts) {
+        const char *tp_b = type_name_ptx_bin[(int) vt];
         fmt("    {\n"
             "        .reg.$s %tmp;\n"
             "        ld.global.$s %tmp, [%rd3];\n"
-            "        $s.$s %tmp, %tmp, $v;"
+            "        $s.$s %tmp, %tmp, $v;\n"
             "        st.global.$s [%rd3], %tmp;\n"
             "    }\n",
-            tp, tp, op_name, tp, value);
+            tp, tp_b, op_name, tp, value, tp_b);
     } else if (mode == ReduceMode::Local && (reduce_bfly_32 || reduce_bfly_64)) {
         uint32_t shiftamt = log2i_ceil(type_size[(int) vt]);
         if (reduce_bfly_32)
