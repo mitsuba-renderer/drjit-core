@@ -1613,9 +1613,9 @@ enum JitFlag {
     JitFlagLaunchBlocking = 1 << 16,
     JitFlagForbidSynchronization = 1 << 17,
     JitFlagScatterReduceLocal = 1 << 18,
-    JitFlagSymbolic = 1 << 19
+    JitFlagSymbolic = 1 << 19,
     KernelFreezing = 1 << 20,
-    FreezingScope = 1 << 21,
+    FreezingScope = 1 << 21
 };
 #endif
 
