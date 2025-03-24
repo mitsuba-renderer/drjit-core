@@ -288,6 +288,7 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
                           (vt == VarType::UInt64 || vt == VarType::Int64 || vt == VarType::Float64);
 
     if (mode == ReduceMode::NoConflicts) {
+        const char *tp_b = type_name_ptx_bin[(int) vt];
         fmt("    {\n"
             "        .reg.$s %tmp;\n"
             "        ld.global.$s %tmp, [%rd3];\n"
