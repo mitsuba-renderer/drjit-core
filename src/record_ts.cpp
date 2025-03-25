@@ -2076,6 +2076,7 @@ void RecordThreadState::add_out_param(uint32_t slot, uint32_t vtype) {
 struct DisabledThreadState : ThreadState {
     ThreadState *m_internal;
     JitBackend m_recording_backend;
+    bool m_raised = false;
     DisabledThreadState(ThreadState *internal,
                               JitBackend recording_backend)
         : m_internal(internal), m_recording_backend(recording_backend){
@@ -2103,76 +2104,89 @@ struct DisabledThreadState : ThreadState {
         this->scope = internal->scope;
     }
 
-    void raise_exception() {
-        const char *backend =
-            m_internal->backend == JitBackend::CUDA ? "CUDA" : "LLVM";
-        const char *recording_backend =
-            m_recording_backend == JitBackend::CUDA ? "CUDA" : "LLVM";
-        jitc_raise(
-            "The frozen function is being recorded for the %s backend, but "
-            "you tried to execute an operation for the %s backend, this is "
-            "not permitted. It might indicate that you specified the wrong "
-            "backend or the wrong backend was inferred from the inputs.",
-            recording_backend, backend);
+    /**
+     * Record that an exception has been thrown, similar to the function in
+     * ``RecordThreadState``.
+     */
+    void record_exception() {
+        m_raised = true;
     };
 
-    void barrier() override { raise_exception(); };
+    /**
+     * Actually throws the exception, if any was thrown during recording.
+     */
+    void rethrow_exception() {
+        if (m_raised) {
+            const char *backend =
+                m_internal->backend == JitBackend::CUDA ? "CUDA" : "LLVM";
+            const char *recording_backend =
+                m_recording_backend == JitBackend::CUDA ? "CUDA" : "LLVM";
+            jitc_raise(
+                "The frozen function is being recorded for the %s backend, but "
+                "you tried to execute an operation for the %s backend, this is "
+                "not permitted. It might indicate that you specified the wrong "
+                "backend or the wrong backend was inferred from the inputs.",
+                recording_backend, backend);
+        }
+    }
+
+    void barrier() override { record_exception(); };
     Task *launch(Kernel /*kernel*/, KernelKey * /*key*/, XXH128_hash_t /*hash*/,
                  uint32_t /*size*/, std::vector<void *> * /*kernel_params*/,
                  const std::vector<uint32_t> * /*kernel_param_ids*/) override {
-        raise_exception();
+        record_exception();
         return nullptr;
     };
     void memset_async(void * /*ptr*/, uint32_t /*size*/, uint32_t /*isize*/,
                       const void * /*src*/) override {
-        raise_exception();
+        record_exception();
     };
     uint32_t compress(const uint8_t * /*in*/, uint32_t /*size*/,
                       uint32_t * /*out*/) override {
-        raise_exception();
+        record_exception();
         return 0;
     };
     uint32_t mkperm(const uint32_t * /*values*/, uint32_t /*size*/,
                     uint32_t /*bucket_count*/, uint32_t * /*perm*/,
                     uint32_t * /*offsets*/) override {
-        raise_exception();
+        record_exception();
         return 0;
     };
     void memcpy(void * /*dst*/, const void * /*src*/,
                 size_t /*size*/) override {
-        raise_exception();
+        record_exception();
     };
     void memcpy_async(void * /*dst*/, const void * /*src*/,
                       size_t /*size*/) override {
-        raise_exception();
+        record_exception();
     };
     void block_reduce(VarType /*vt*/, ReduceOp /*op*/, uint32_t /*size*/,
                       uint32_t /*block_size*/, const void * /*in*/,
                       void * /*out*/) override {
-        raise_exception();
+        record_exception();
     };
     void block_prefix_reduce(VarType /*vt*/, ReduceOp /*op*/, uint32_t /*size*/,
                              uint32_t /*block_size*/, bool /*exclusive*/,
                              bool /*reverse*/, const void * /*in*/,
                              void * /*out*/) override {
-        raise_exception();
+        record_exception();
     };
     void reduce_dot(VarType /*type*/, const void * /*ptr_1*/,
                     const void * /*ptr_2*/, uint32_t /*size*/,
                     void * /*out*/) override {
-        raise_exception();
+        record_exception();
     };
     void poke(void * /*dst*/, const void * /*src*/,
               uint32_t /*size*/) override {
-        raise_exception();
+        record_exception();
     };
     void aggregate(void * /*dst*/, AggregationEntry * /*agg*/,
                    uint32_t /*size*/) override {
-        raise_exception();
+        record_exception();
     };
     void enqueue_host_func(void (* /*callback*/)(void *),
                            void * /*payload*/) override {
-        raise_exception();
+        record_exception();
     };
     void notify_expand(uint32_t /*index*/) override {};
     void reduce_expanded(VarType /*vt*/, ReduceOp /*reduce_op*/,
@@ -2190,10 +2204,11 @@ void disable_thread_state(ThreadState **ts, JitBackend recording_backend) {
 void enable_thread_state(ThreadState **ts) {
     if (!*ts)
         return;
-    if (DisabledThreadState *dst = dynamic_cast<DisabledThreadState *>(*ts);
-        dst != nullptr) {
-        *ts = dst->m_internal;
-        delete dst;
+    if (DisabledThreadState *dts = dynamic_cast<DisabledThreadState *>(*ts);
+        dts != nullptr) {
+        *ts = dts->m_internal;
+        dts->rethrow_exception();
+        delete dts;
     }else{
         jitc_fail("Tried to enable a ThreadState that was not disabled.");
     }
