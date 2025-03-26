@@ -2227,6 +2227,11 @@ struct DisabledThreadState : ThreadState {
                            void * /*payload*/) override {
         record_exception();
     };
+    void coop_vec_pack(uint32_t count,const void *in,
+                       const MatrixDescr *in_d, void *out,
+                       const MatrixDescr *out_d) override{
+        record_exception();
+    }
     void notify_expand(uint32_t /*index*/) override {};
     void reduce_expanded(VarType /*vt*/, ReduceOp /*reduce_op*/,
                          void * /*data*/, uint32_t /*exp*/,
