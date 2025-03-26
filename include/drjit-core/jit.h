@@ -1628,7 +1628,7 @@ enum JitFlag {
     JitFlagSymbolic = 1 << 19
     KernelFreezing = 1 << 20,
     FreezingScope = 1 << 21,
-    FreezingTraverseScope = 1 << 22
+    EnableObjectTraversal = 1 << 22
 };
 #endif
 
