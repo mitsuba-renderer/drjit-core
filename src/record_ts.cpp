@@ -281,6 +281,7 @@ static ProfilerRegion pr_block_reduce("BlockReduce");
 static ProfilerRegion pr_block_prefix_reduce("BlockPrefixReduce");
 static ProfilerRegion pr_reduce_dot("ReduceDot");
 static ProfilerRegion pr_aggregate("Aggregate");
+static ProfilerRegion pr_coop_vec_pack("CoopVecPack");
 static ProfilerRegion pr_free("Free");
 static ProfilerRegion pr_output("Output");
 
@@ -371,6 +372,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 break;
             case OpType::Aggregate:
                 if (!replay_aggregate(op))
+                    return false;
+                break;
+            case OpType::CoopVecPack:
+                if (!replay_coop_vec_pack(op))
                     return false;
                 break;
             case OpType::OpaqueWidth:
@@ -1846,6 +1851,64 @@ int Recording::replay_aggregate(Operation &op) {
     return true;
 }
 
+void RecordThreadState::coop_vec_pack(uint32_t count, const void *in,
+                                      const MatrixDescr *in_d, void *out,
+                                      const MatrixDescr *out_d) {
+    (void) count; (void) in; (void) in_d; (void) out; (void) out_d;
+    if (!paused()) {
+        try {
+            record_coop_vec_pack(count, in, in_d, out, out_d);
+        } catch (...) {
+            record_exception();
+        }
+    }
+    pause_scope pause(this);
+    return m_internal->coop_vec_pack(count, in, in_d, out, out_d);
+}
+
+void RecordThreadState::record_coop_vec_pack(uint32_t count, const void *in,
+                                             const MatrixDescr *in_d, void *out,
+                                             const MatrixDescr *out_d) {
+
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
+    add_in_param(in, in_d->dtype);
+    add_out_param(out, in_d->dtype);
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
+
+    Operation op;
+    op.type = OpType::CoopVecPack;
+    op.dependency_range = std::pair(start, end);
+
+    op.coop_vec.count = count;
+    op.coop_vec.in_d = (MatrixDescr *)malloc_check(count * sizeof(MatrixDescr));
+    std::memcpy(op.coop_vec.in_d, in_d, count * sizeof(MatrixDescr));
+    op.coop_vec.out_d = (MatrixDescr *)malloc_check(count * sizeof(MatrixDescr));
+    std::memcpy(op.coop_vec.out_d, out_d, count * sizeof(MatrixDescr));
+
+    m_recording.operations.push_back(op);
+}
+
+int Recording::replay_coop_vec_pack(Operation &op) {
+    ProfilerPhase profiler(pr_coop_vec_pack);
+
+    uint32_t dependency_index = op.dependency_range.first;
+    AccessInfo in_info         = dependencies[dependency_index];
+    AccessInfo out_info        = dependencies[dependency_index + 1];
+
+    ReplayVariable &in_var  = replay_variables[in_info.slot];
+    ReplayVariable &out_var = replay_variables[out_info.slot];
+
+    uint32_t size = in_var.size(in_info.vtype);
+
+    out_var.alloc(backend, size);
+
+    if (!dry_run)
+        ts->coop_vec_pack(op.coop_vec.count, in_var.data, op.coop_vec.in_d,
+                          out_var.data, op.coop_vec.out_d);
+
+    return true;
+}
+
 /// Asynchronously update a single element in memory
 void RecordThreadState::poke(void *dst, const void *src, uint32_t size) {
     // At the time of writing, \c poke is only called from \c jit_var_write.
@@ -1948,13 +2011,6 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
     }
 
     return slot;
-}
-
-void RecordThreadState::coop_vec_pack(uint32_t count, const void *in,
-                                      const MatrixDescr *in_d, void *out,
-                                      const MatrixDescr *out_d) {
-    (void) count; (void) in; (void) in_d; (void) out; (void) out_d;
-    jitc_raise("drjit.[un]pack(): currently not supported within frozen functions.");
 }
 
 /**
@@ -2227,9 +2283,9 @@ struct DisabledThreadState : ThreadState {
                            void * /*payload*/) override {
         record_exception();
     };
-    void coop_vec_pack(uint32_t count,const void *in,
-                       const MatrixDescr *in_d, void *out,
-                       const MatrixDescr *out_d) override{
+    void coop_vec_pack(uint32_t /*count*/,const void */*in*/,
+                       const MatrixDescr */*in_d*/, void */*out*/,
+                       const MatrixDescr */*out_d*/) override{
         record_exception();
     }
     void notify_expand(uint32_t /*index*/) override {};

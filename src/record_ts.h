@@ -39,6 +39,7 @@ enum class OpType {
     ReduceDot,
     Aggregate,
     OpaqueWidth,
+    CoopVecPack,
     Free,
     Count,
 };
@@ -75,6 +76,12 @@ struct Operation {
             bool exclusive;
             bool reverse;
         } prefix_reduce;
+
+        struct {
+            uint32_t count;
+            MatrixDescr *in_d;
+            MatrixDescr *out_d;
+        } coop_vec;
 
         /// Bucket count for the mkperm operation. The function has to be
         /// re-recorded when the bucket count changes. Therefore this should not
@@ -298,6 +305,8 @@ struct Recording {
     int replay_aggregate(Operation &op);
 
     int replay_opaque_width(Operation &op);
+
+    int replay_coop_vec_pack(Operation &op);
 
     /// This function is called after recording and checks that the recording is
     /// valid i.e. that no variables where left uninitialized.
@@ -540,6 +549,9 @@ public:
     void record_aggregate(void *dst, AggregationEntry *agg, uint32_t size);
     void record_reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                                 uint32_t exp, uint32_t size);
+    void record_coop_vec_pack(uint32_t count, const void *in,
+                              const MatrixDescr *in_d, void *out,
+                              const MatrixDescr *out_d);
 
     // =============================================================
     //!                     Utility Functions
