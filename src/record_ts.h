@@ -22,6 +22,10 @@ void jitc_freeze_replay(Recording *recording, const uint32_t *inputs,
 
 int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs);
 
+void jitc_freeze_custom_fn(JitBackend backend, CustomFn fn, FreeCustomFn free,
+                           void *payload, uint32_t n_inputs, uint32_t *inputs,
+                           uint32_t n_outputs, uint32_t *outputs);
+
 /// HashMap, mapping an allocation to a recorded variable
 using PtrToSlot = tsl::robin_map<const void *, uint32_t, PointerHasher>;
 
@@ -40,6 +44,7 @@ enum class OpType {
     Aggregate,
     OpaqueWidth,
     Free,
+    CustomFn,
     Count,
 };
 
@@ -75,6 +80,14 @@ struct Operation {
             bool exclusive;
             bool reverse;
         } prefix_reduce;
+
+        struct {
+            void *payload;
+            CustomFn fn;
+            FreeCustomFn free;
+            uint32_t n_inputs;
+            uint32_t n_outputs;
+        } custom;
 
         /// Bucket count for the mkperm operation. The function has to be
         /// re-recorded when the bucket count changes. Therefore this should not
@@ -300,6 +313,8 @@ struct Recording {
 
     int replay_opaque_width(Operation &op);
 
+    int replay_custom_fn(Operation &op, const uint32_t *replay_inputs);
+
     /// This function is called after recording and checks that the recording is
     /// valid i.e. that no variables where left uninitialized.
     void validate();
@@ -413,6 +428,10 @@ public:
     void poke(void *dst, const void *src, uint32_t size) override;
 
     void aggregate(void *dst, AggregationEntry *agg, uint32_t size) override;
+
+    void custom_fn(CustomFn fn, FreeCustomFn free, void *payload,
+                   uint32_t n_inputs, uint32_t *inputs, uint32_t n_outputs,
+                   uint32_t *outputs) override;
 
     /// Enqueue a function to be run on the host once backend computation is
     /// done. Recording of this function is currently not supported, and the

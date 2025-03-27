@@ -178,7 +178,7 @@ struct ReplayVariable {
     void init_from_input(Variable *input_variable) {
         data       = input_variable->data;
         alloc_size = type_size[input_variable->type] * input_variable->size;
-        data_size = alloc_size;
+        data_size  = alloc_size;
     }
 
     /**
@@ -373,6 +373,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 if (!replay_aggregate(op))
                     return false;
                 break;
+            case OpType::CustomFn:
+                if (!replay_custom_fn(op, replay_inputs))
+                    return false;
+                break;
             case OpType::OpaqueWidth:
                 if(!replay_opaque_width(op))
                     return false;
@@ -406,7 +410,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
     // Create output variables
     jitc_log(LogLevel::Debug, "replay(): creating outputs");
     for (uint32_t i = 0; i < outputs.size(); ++i) {
-        AccessInfo info     = outputs[i];
+        AccessInfo info    = outputs[i];
         uint32_t slot      = info.slot;
         ReplayVariable &rv = replay_variables[slot];
 
@@ -1846,6 +1850,102 @@ int Recording::replay_aggregate(Operation &op) {
     return true;
 }
 
+void RecordThreadState::custom_fn(CustomFn fn, FreeCustomFn free, void *payload,
+                                  uint32_t n_inputs, uint32_t *inputs,
+                                  uint32_t n_outputs, uint32_t *outputs) {
+
+    try {
+        for (uint32_t i = 0; i < n_inputs; i++)
+            jitc_var_schedule(inputs[i]);
+
+        jitc_eval(m_internal);
+
+        pause_scope pause(this);
+        {
+            unlock_guard guard(state.lock);
+            fn(payload, inputs, outputs);
+        }
+
+        for (uint32_t i = 0; i < n_outputs; i++)
+            jitc_var_schedule(outputs[i]);
+
+        jitc_eval(m_internal);
+    } catch (...) {
+        record_exception();
+    }
+
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
+    for (uint32_t i = 0; i < n_inputs; i++) {
+        Variable *v = jitc_var(inputs[i]);
+        add_in_param(v->data, (VarType) v->type);
+    }
+    for (uint32_t i = 0; i < n_outputs; i++) {
+        Variable *v = jitc_var(outputs[i]);
+        add_out_param(v->data, (VarType) v->type);
+    }
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
+
+    Operation op;
+    op.type                = OpType::CustomFn;
+    op.dependency_range    = std::pair(start, end);
+    op.custom.n_inputs  = n_inputs;
+    op.custom.n_outputs = n_outputs;
+    op.custom.payload   = payload;
+    op.custom.fn        = fn;
+    op.custom.free      = free;
+    m_recording.operations.push_back(op);
+}
+
+int Recording::replay_custom_fn(Operation &op, const uint32_t *replay_inputs) {
+
+    // Construct variables for the inputs (similar to how outputs of the frozen
+    // function are constructed). The ``inputs`` array is filled with owning
+    // references, which are freed at the end of this function.
+    std::vector<uint32_t> inputs(op.custom.n_inputs, 0);
+    uint32_t dependency_index = op.dependency_range.first;
+    for (uint32_t i = 0; i < op.custom.n_inputs; i++) {
+        AccessInfo info    = dependencies[dependency_index + i];
+        ReplayVariable &rv = replay_variables[info.slot];
+
+        if (rv.init == RecordedVarInit::Input) {
+            uint32_t index = replay_inputs[rv.index];
+            jitc_var_inc_ref(index);
+            inputs[i] = index;
+        } else if (rv.init == RecordedVarInit::Captured) {
+            jitc_var_inc_ref(rv.index);
+            inputs[i] = rv.index;
+        } else {
+            inputs[i] = jitc_var_mem_map(backend, info.vtype, rv.data,
+                                         rv.size(info.vtype), false);
+        }
+    }
+
+    std::vector<uint32_t> outputs(op.custom.n_outputs, 0);
+
+    {
+        unlock_guard guard(state.lock);
+        op.custom.fn(op.custom.payload, inputs.data(), outputs.data());
+    }
+
+    for (uint32_t i = 0; i < outputs.size(); i++) {
+        AccessInfo info =
+            dependencies[dependency_index + op.custom.n_inputs + i];
+        ReplayVariable &rv = replay_variables[info.slot];
+        uint32_t index     = outputs[i];
+        Variable *v        = jitc_var(index);
+        v->retain_data     = false;
+        rv.init_from_input(v);
+        jitc_var_dec_ref(index);
+    }
+
+    // Release input variables
+    for (uint32_t index : inputs)
+        jitc_var_dec_ref(index);
+
+    return true;
+}
+
+
 /// Asynchronously update a single element in memory
 void RecordThreadState::poke(void *dst, const void *src, uint32_t size) {
     // At the time of writing, \c poke is only called from \c jit_var_write.
@@ -2440,4 +2540,11 @@ int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs) {
     }
 
     return result;
+}
+
+void jitc_freeze_custom_fn(JitBackend backend, CustomFn fn, FreeCustomFn free,
+                           void *payload, uint32_t n_inputs, uint32_t *inputs,
+                           uint32_t n_outputs, uint32_t *outputs){
+    thread_state(backend)->custom_fn(fn, free, payload, n_inputs, inputs,
+                                     n_outputs, outputs);
 }

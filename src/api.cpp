@@ -1552,6 +1552,14 @@ void jit_set_leak_warnings(int value) {
     state.leak_warnings = (bool) value;
 }
 
+void jit_freeze_custom_fn(JitBackend backend, CustomFn fn, FreeCustomFn free,
+                          void *payload, uint32_t n_inputs, uint32_t *inputs,
+                          uint32_t n_outputs, uint32_t *outputs) {
+    lock_guard guard(state.lock);
+    return jitc_freeze_custom_fn(backend, fn, free, payload, n_inputs, inputs,
+                                 n_outputs, outputs);
+}
+
 void jit_freeze_start(JitBackend backend, const uint32_t *inputs,
                       uint32_t n_inputs) {
     lock_guard guard(state.lock);

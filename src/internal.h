@@ -711,6 +711,10 @@ struct ThreadState : public ThreadStateBase {
 
     virtual void aggregate(void *dst, AggregationEntry *agg, uint32_t size) = 0;
 
+    virtual void custom_fn(CustomFn fn, FreeCustomFn free, void *payload,
+                           uint32_t n_inputs, uint32_t *inputs,
+                           uint32_t n_outputs, uint32_t *outputs);
+
     // Enqueue a function to be run on the host once backend computation is done
     virtual void enqueue_host_func(void (*callback)(void *), void *payload) = 0;
 

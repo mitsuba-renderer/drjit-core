@@ -2537,6 +2537,15 @@ extern JIT_EXPORT uint32_t jit_array_read(uint32_t source, uint32_t offset,
 /// using the API below.
 struct Recording;
 
+typedef void (*CustomFn)(void *payload, uint32_t *inputs, uint32_t *outputs);
+typedef void (*FreeCustomFn)(void *payload);
+
+extern JIT_EXPORT void jit_freeze_custom_fn(JitBackend backend, CustomFn fn,
+                                            FreeCustomFn free, void *payload,
+                                            uint32_t n_inputs, uint32_t *inputs,
+                                            uint32_t n_outputs,
+                                            uint32_t *outputs);
+
 /**
  * \brief Start a recording session. This causes Dr.Jit to track all backend
  * operations such as memory copies and kernel launches, storing them into a
