@@ -555,6 +555,9 @@ public:
     void record_aggregate(void *dst, AggregationEntry *agg, uint32_t size);
     void record_reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                                 uint32_t exp, uint32_t size);
+    void record_custom_fn(CustomFn fn, FreeCustomFn free, void *payload,
+                          uint32_t n_inputs, uint32_t *inputs,
+                          uint32_t n_outputs, uint32_t *outputs);
 
     // =============================================================
     //!                     Utility Functions

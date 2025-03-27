@@ -470,7 +470,7 @@ void jitc_var_dec_ref(uint32_t index, Variable *v) noexcept {
                 "jit_var_dec_ref(): reference count underflow in variable r%u!",
                 index);
 
-    jitc_trace("jit_var_dec_ref(r%u): %u", index, (uint32_t) v->ref_count - 1);
+    jitc_log(LogLevel::Debug, "jit_var_dec_ref(r%u): %u", index, (uint32_t) v->ref_count - 1);
     v->ref_count--;
 
     if (v->ref_count || v->ref_count_se)
