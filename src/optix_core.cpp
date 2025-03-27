@@ -599,6 +599,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
             case OptixHitObjectField::IsHit:
             case OptixHitObjectField::InstanceId:
             case OptixHitObjectField::PrimitiveIndex:
+            case OptixHitObjectField::SbtRecordIndex:
                 field_type = VarType::UInt32;
                 break;
             case OptixHitObjectField::SBTDataPointer:

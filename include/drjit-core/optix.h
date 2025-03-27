@@ -105,6 +105,8 @@ enum class OptixHitObjectField: uint32_t {
     /// Ray's distance to the object what was hit [Float32]
     RayTMax,
 
+    SbtRecordIndex,
+
     /// The HitObject attribute at index 0 [UInt32]
     Attribute0,
 

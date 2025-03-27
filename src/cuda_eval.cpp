@@ -1059,8 +1059,15 @@ static void jitc_cuda_render_trace(const Variable *v,
     // =====================================================
     // 2. Reorder
     // =====================================================
-    if (td->reorder && jit_flag(JitFlag::ShaderExecutionReordering))
-        fmt("    call (), _optix_hitobject_reorder, ($v_z, $v_z);\n", v, v);
+    if (td->reorder && jit_flag(JitFlag::ShaderExecutionReordering)) {
+        fmt("    .reg.u32 $v_hint;\n"
+            "    call ($v_hint), _optix_hitobject_get_sbt_record_index, ();\n",
+            v, v);
+        fmt("    .reg.u32 $v_hint_bits;\n"
+            "    mov.u32 $v_hint_bits, 8;\n",
+            v, v);
+        fmt("    call (), _optix_hitobject_reorder, ($v_hint, $v_hint_bits);\n", v, v);
+    }
 
     // =====================================================
     // 3. Get HitObject fields
@@ -1100,6 +1107,13 @@ static void jitc_cuda_render_trace(const Variable *v,
             case OptixHitObjectField::RayTMax:
                 fmt("    .reg.f32 $v_out_$u;\n"
                     "    call ($v_out_$u), _optix_hitobject_get_ray_tmax, ();\n",
+                    v, 32 + i,
+                    v, 32 + i);
+                break;
+
+            case OptixHitObjectField::SbtRecordIndex:
+                fmt("    .reg.u32 $v_out_$u;\n"
+                    "    call ($v_out_$u), _optix_hitobject_get_sbt_record_index, ();\n",
                     v, 32 + i,
                     v, 32 + i);
                 break;
