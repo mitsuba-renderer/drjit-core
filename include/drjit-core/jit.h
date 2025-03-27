@@ -2540,12 +2540,6 @@ struct Recording;
 typedef void (*CustomFn)(void *payload, uint32_t *inputs, uint32_t *outputs);
 typedef void (*FreeCustomFn)(void *payload);
 
-extern JIT_EXPORT void jit_freeze_custom_fn(JitBackend backend, CustomFn fn,
-                                            FreeCustomFn free, void *payload,
-                                            uint32_t n_inputs, uint32_t *inputs,
-                                            uint32_t n_outputs,
-                                            uint32_t *outputs);
-
 /**
  * \brief Start a recording session. This causes Dr.Jit to track all backend
  * operations such as memory copies and kernel launches, storing them into a
@@ -2587,6 +2581,59 @@ jit_freeze_start(JitBackend backend, const uint32_t *inputs, uint32_t n_inputs);
 extern JIT_EXPORT Recording *jit_freeze_stop(JitBackend backend,
                                              const uint32_t *outputs,
                                              uint32_t n_outputs);
+
+/**
+ * \brief Add a custom function to a recording. It will be called when the
+ *     recording is replayed. This can be used to replay functions that are not
+ *     recordable.
+ *
+ * Optionally, a \c payload parameter can be provided. When replaying the
+ * recording, the function will be called with this pointer as an argument,
+ * allowing the user to pass additional data to the function. In order to free
+ * this data, when the recording is destroyed, an additional \c free function
+ * can be provided.
+ *
+ * \param backend
+ *     The backend on which the thread state is recorded.
+ *
+ * \param fn
+ *     A function pointer, that should be called when replaying the recording.
+ *     When called it will receive the \c payload pointer, the \c inputs pointer
+ *     and the \c outputs pointer. This function should fill the \c outputs
+ *     array with owning references of the return variables. They will have to
+ *     be released by the caller of \c jit_freeze_custom_fn.
+ *
+ * \param free
+ *     An optional destructor, to free the payload when the recording is
+ *     destroyed.
+ *
+ * \param payload
+ *     An optional payload, that will be forwarded to the custom function when
+ *     it is called.
+ *
+ * \param n_inputs
+ *     The number of input variables provided to the function.
+ *
+ * \param inputs
+ *     A pointer to an array of input variable indices. These have to be
+ *     evaluated i.e. made opaque. The references should be non-owning.
+ *
+ * \param n_outputs
+ *     The number of output variables, the function can return.
+ *
+ * \param outputs
+ *     A pointer to an array of at least \c n_outputs elements. This pointer
+ *     will be forwarded to the custom function, which can fill it with owning
+ *     references of the output variables. They will have to be released by the
+ *     caller of this function.
+ *
+ */
+extern JIT_EXPORT void jit_freeze_custom_fn(JitBackend backend, CustomFn fn,
+                                            FreeCustomFn free, void *payload,
+                                            uint32_t n_inputs, uint32_t *inputs,
+                                            uint32_t n_outputs,
+                                            uint32_t *outputs);
+
 
 /**
  * \brief Replay a recording with different inputs.

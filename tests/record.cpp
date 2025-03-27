@@ -288,7 +288,7 @@ TEST_BOTH(12_custom_fn) {
         jit_freeze_custom_fn(Backend, fn, nullptr, nullptr, 1, inputs, 1,
                              outputs);
 
-        UInt32 output = UInt32::borrow(outputs[0]);
+        UInt32 output = UInt32::steal(outputs[0]);
         return output;
         // return output + 1;
     };
