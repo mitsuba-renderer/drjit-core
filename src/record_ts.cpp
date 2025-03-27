@@ -1890,6 +1890,7 @@ void RecordThreadState::record_custom_fn(CustomFn fn, FreeCustomFn free,
 
         add_out_param(v->data, (VarType) v->type);
     }
+
     uint32_t end = (uint32_t) m_recording.dependencies.size();
 
     Operation op;
@@ -1948,7 +1949,7 @@ int Recording::replay_custom_fn(Operation &op, const uint32_t *replay_inputs) {
                        "variables can be returned from a custom function.",
                        outputs[i]);
 
-        v->retain_data     = true;
+        v->retain_data = true;
         rv.init_from_input(v);
         jitc_var_dec_ref(index);
     }
