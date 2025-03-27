@@ -275,7 +275,8 @@ TEST_BOTH(12_custom_fn) {
     auto func = [](UInt32 input) {
         auto fn = [](void *payload, uint32_t *inputs, uint32_t *outputs) {
             UInt32 output = UInt32::borrow(inputs[0]) + 1;
-            outputs[0]    = output.release();
+            output.make_opaque();
+            outputs[0] = output.release();
         };
         input = input + 1;
 
@@ -288,8 +289,8 @@ TEST_BOTH(12_custom_fn) {
                              outputs);
 
         UInt32 output = UInt32::borrow(outputs[0]);
-        jit_log(LogLevel::Warn, "output.size=%u", output.size());
-        return output + 1;
+        return output;
+        // return output + 1;
     };
 
     FrozenFunction frozen(Backend, func);
@@ -297,12 +298,15 @@ TEST_BOTH(12_custom_fn) {
     for (uint32_t i = 0; i < 3; i++) {
         auto input = arange<UInt32>(10 + i);
 
-        jit_log(LogLevel::Warn, "frozen:");
-        auto result = frozen(input);
+        input.make_opaque();
 
-        jit_log(LogLevel::Warn, "normal:");
-        auto reference = func(input);
+        auto res = frozen(input);
+        jit_log(LogLevel::Debug, "res=r%u=%s", res.index(), res.str());
 
-        jit_assert(all(eq(result, reference)));
+        auto ref = func(input);
+        jit_log(LogLevel::Debug, "res=r%u=%s", res.index(), res.str());
+        jit_log(LogLevel::Debug, "ref=r%u=%s", ref.index(), ref.str());
+
+        jit_assert(all(eq(res, ref)));
     }
 }
