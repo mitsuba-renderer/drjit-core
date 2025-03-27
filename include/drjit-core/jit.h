@@ -2537,9 +2537,6 @@ extern JIT_EXPORT uint32_t jit_array_read(uint32_t source, uint32_t offset,
 /// using the API below.
 struct Recording;
 
-typedef void (*CustomFn)(void *payload, uint32_t *inputs, uint32_t *outputs);
-typedef void (*FreeCustomFn)(void *payload);
-
 /**
  * \brief Start a recording session. This causes Dr.Jit to track all backend
  * operations such as memory copies and kernel launches, storing them into a
@@ -2581,6 +2578,29 @@ jit_freeze_start(JitBackend backend, const uint32_t *inputs, uint32_t n_inputs);
 extern JIT_EXPORT Recording *jit_freeze_stop(JitBackend backend,
                                              const uint32_t *outputs,
                                              uint32_t n_outputs);
+
+/**
+ * \brief A function pointer, used in \c jit_freeze_custom_fn to record custom
+ *     non-recordable functions.
+ *
+ * \param payload
+ *     The payload pointer, provided to \c jit_freeze_custom_fn, containing
+ *     additional data.
+ *
+ * \param inputs
+ *     A pointer to an array of \c n_input input variables.
+ *
+ * \param outputs
+ *     A pointer to an array of size \c n_outputs, that can be filled with
+ *     owning references by this function, to return resulting variables.
+ */
+typedef void (*CustomFn)(void *payload, uint32_t *inputs, uint32_t *outputs);
+
+/**
+ * \brief A function pointer, used to free the payload when the recording is
+ *     destroyed.
+ */
+typedef void (*FreeCustomFn)(void *payload);
 
 /**
  * \brief Add a custom function to a recording. It will be called when the
