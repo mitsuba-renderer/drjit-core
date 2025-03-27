@@ -766,6 +766,12 @@ void ThreadState::reset_state() {
     optix_sbt = nullptr;
 #endif
 }
+void ThreadState::custom_fn(CustomFn fn, FreeCustomFn free, void *payload,
+                            uint32_t n_inputs, uint32_t *inputs,
+                            uint32_t n_outputs, uint32_t *outputs) {
+    unlock_guard guard(state.lock);
+    fn(payload, inputs, outputs);
+}
 void ThreadState::notify_free(const void *) { }
 void ThreadState::notify_expand(uint32_t) { }
 void ThreadState::notify_opaque_width(uint32_t, uint32_t) { }

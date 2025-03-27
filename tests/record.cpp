@@ -270,3 +270,39 @@ TEST_BOTH(11_opaque_width) {
         jit_assert(all(eq(res, ref)));
     }
 }
+
+TEST_BOTH(12_custom_fn) {
+    auto func = [](UInt32 input) {
+        auto fn = [](void *payload, uint32_t *inputs, uint32_t *outputs) {
+            UInt32 output = UInt32::borrow(inputs[0]) + 1;
+            outputs[0]    = output.release();
+        };
+        input = input + 1;
+
+        input.make_opaque();
+
+        uint32_t inputs[]  = { input.index() };
+        uint32_t outputs[] = { 0 };
+
+        jit_freeze_custom_fn(Backend, fn, nullptr, nullptr, 1, inputs, 1,
+                             outputs);
+
+        UInt32 output = UInt32::borrow(outputs[0]);
+        jit_log(LogLevel::Warn, "output.size=%u", output.size());
+        return output + 1;
+    };
+
+    FrozenFunction frozen(Backend, func);
+
+    for (uint32_t i = 0; i < 3; i++) {
+        auto input = arange<UInt32>(10 + i);
+
+        jit_log(LogLevel::Warn, "frozen:");
+        auto result = frozen(input);
+
+        jit_log(LogLevel::Warn, "normal:");
+        auto reference = func(input);
+
+        jit_assert(all(eq(result, reference)));
+    }
+}
