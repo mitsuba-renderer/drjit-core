@@ -476,11 +476,11 @@ void RecordThreadState::barrier() {
 }
 
 void RecordThreadState::notify_opaque_width(uint32_t index,
-                                              uint32_t width_index) {
+                                            uint32_t width_index) {
     if (!paused()) {
         uint32_t start = m_recording.dependencies.size();
-        Variable *v1 = jitc_var(index);
-        Variable *v2 = jitc_var(width_index);
+        Variable *v1   = jitc_var(index);
+        Variable *v2   = jitc_var(width_index);
         add_in_param(v1->data, (VarType) v1->type);
         add_out_param(v2->data, VarType::UInt32);
         uint32_t end = m_recording.dependencies.size();
@@ -492,13 +492,13 @@ void RecordThreadState::notify_opaque_width(uint32_t index,
     }
 }
 
-int Recording::replay_opaque_width(Operation &op){
+int Recording::replay_opaque_width(Operation &op) {
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo in_info = dependencies[dependency_index];
-    AccessInfo out_info = dependencies[dependency_index + 1];
+    AccessInfo in_info        = dependencies[dependency_index];
+    AccessInfo out_info       = dependencies[dependency_index + 1];
 
-    ReplayVariable &in_var = replay_variables[in_info.slot];
+    ReplayVariable &in_var  = replay_variables[in_info.slot];
     ReplayVariable &out_var = replay_variables[out_info.slot];
 
     out_var.alloc(backend, 1, out_info.vtype);
