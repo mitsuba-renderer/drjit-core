@@ -289,8 +289,7 @@ TEST_BOTH(12_custom_fn) {
                              outputs);
 
         UInt32 output = UInt32::steal(outputs[0]);
-        return output;
-        // return output + 1;
+        return output + 1;
     };
 
     FrozenFunction frozen(Backend, func);
@@ -301,11 +300,8 @@ TEST_BOTH(12_custom_fn) {
         input.make_opaque();
 
         auto res = frozen(input);
-        jit_log(LogLevel::Debug, "res=r%u=%s", res.index(), res.str());
 
         auto ref = func(input);
-        jit_log(LogLevel::Debug, "res=r%u=%s", res.index(), res.str());
-        jit_log(LogLevel::Debug, "ref=r%u=%s", ref.index(), ref.str());
 
         jit_assert(all(eq(res, ref)));
     }
