@@ -78,12 +78,13 @@ struct DrJitCudaTexture {
     }
 
     /**
-     * \brief Returns a JIT pointer to the ith texture object.
+     * \brief Returns the ID of a JIT variable, which encodes the address of the
+     * i-th texture object.
      *
-     * We map the texture to a JIT variable, which can then be revered to by a
-     * pointer. This allows us to traverse the texture for frozen functions.
-     *
-     * This function returns an owning reference, which has to be released.
+     * This function returns a JIT variable ID of a literal representing the
+     * texture address. This feature is internally used to make textures
+     * compatible with frozen function recording. This function returns an
+     * owning reference, which the caller must release eventually.
      */
     uint32_t get_jit_pointer(uint32_t i) {
         return jitc_var_pointer(JitBackend::CUDA, jitc_var(indices[i])->data,
@@ -195,7 +196,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         texture->arrays[tex] = array;
 
         if (tex_channels == 1)
-            view_desc.format = format == 0 ? 
+            view_desc.format = format == 0 ?
                 CU_RES_VIEW_FORMAT_FLOAT_1X32 : CU_RES_VIEW_FORMAT_FLOAT_1X16;
         else if (tex_channels == 2)
             view_desc.format = format == 0 ?
@@ -207,8 +208,6 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         cuda_check(cuTexObjectCreate(&(texture->textures[tex]), &res_desc,
                                      &tex_desc, &view_desc));
 
-        // texture->indices[tex] = jitc_var_pointer(
-        //     JitBackend::CUDA, (void *) texture->textures[tex], 0, 0);
         texture->indices[tex] =
             jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,
                              (void *) texture->textures[tex], 1, false);
@@ -271,9 +270,8 @@ void jitc_cuda_tex_get_indices(const void *texture_handle, uint32_t *indices) {
 
     DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
 
-    for (uint32_t i = 0; i < texture.n_textures; i++) {
+    for (uint32_t i = 0; i < texture.n_textures; i++)
         indices[i] = texture.indices[i];
-    }
 }
 
 static std::unique_ptr<void, StagingAreaDeleter>

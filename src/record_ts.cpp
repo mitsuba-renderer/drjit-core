@@ -2188,13 +2188,13 @@ struct DisabledThreadState : ThreadState {
     void notify_free(const void * /*ptr*/) override {};
 };
 
-void disable_thread_state(ThreadState **ts, JitBackend recording_backend) {
+void set_disabled_thread_state(ThreadState **ts, JitBackend recording_backend) {
     if (!*ts)
         return;
     *ts = new DisabledThreadState(*ts, recording_backend);
 }
 
-void enable_thread_state(ThreadState **ts) {
+void unset_disabled_thread_state(ThreadState **ts) {
     if (!*ts)
         return;
     if (DisabledThreadState *dts = dynamic_cast<DisabledThreadState *>(*ts);
@@ -2222,10 +2222,10 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
 
     if (backend == JitBackend::CUDA) {
         thread_state_cuda = record_ts;
-        disable_thread_state(&thread_state_llvm, backend);
+        set_disabled_thread_state(&thread_state_llvm, backend);
     } else {
         thread_state_llvm = record_ts;
-        disable_thread_state(&thread_state_cuda, backend);
+        set_disabled_thread_state(&thread_state_cuda, backend);
     }
 
     for (uint32_t i = 0; i < n_inputs; ++i)
@@ -2258,10 +2258,10 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
 
         if (backend == JitBackend::CUDA) {
             thread_state_cuda = internal;
-            enable_thread_state(&thread_state_llvm);
+            unset_disabled_thread_state(&thread_state_llvm);
         } else {
             thread_state_llvm = internal;
-            enable_thread_state(&thread_state_cuda);
+            unset_disabled_thread_state(&thread_state_cuda);
         }
         Recording *recording = new Recording(std::move(rts->m_recording));
         recording->validate();
@@ -2290,10 +2290,10 @@ void jitc_freeze_abort(JitBackend backend) {
 
         if (backend == JitBackend::CUDA) {
             thread_state_cuda = internal;
-            enable_thread_state(&thread_state_llvm);
+            unset_disabled_thread_state(&thread_state_llvm);
         } else {
             thread_state_llvm = internal;
-            enable_thread_state(&thread_state_cuda);
+            unset_disabled_thread_state(&thread_state_cuda);
         }
 
         delete rts;
