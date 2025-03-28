@@ -723,6 +723,11 @@ struct ThreadState : public ThreadStateBase {
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
                                  uint32_t exp, uint32_t size) = 0;
 
+    /// Some kernels use the width of an array in a computation. When using the
+    /// kernel freezing feature, this requires special precautions to ensure
+    /// that the resulting capture remains usable with different array sizes.
+    /// This notification function exists so that this special-case handling can
+    /// be realized.
     virtual void notify_opaque_width(uint32_t index, uint32_t width_index);
 
     /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.

@@ -616,16 +616,17 @@ uint32_t jit_var_opaque_width(uint32_t index) {
 
     lock_guard guard(state.lock);
 
-    Variable *var = jitc_var(index);
-    uint32_t var_size = var->size;
+    Variable *var      = jitc_var(index);
+    JitBackend backend = (JitBackend) var->backend;
+    uint32_t var_size  = var->size;
 
     // The variable has to be evaluated, to notify the ThreadState
     jitc_var_eval(index);
 
-    uint32_t width_index = jitc_var_literal(
-        (JitBackend) var->backend, VarType::UInt32, &var_size, 1, true);
+    uint32_t width_index =
+        jitc_var_literal(backend, VarType::UInt32, &var_size, 1, true);
 
-    ThreadState *ts = thread_state(var->backend);
+    ThreadState *ts = thread_state(backend);
     ts->notify_opaque_width(index, width_index);
 
     return width_index;
