@@ -273,22 +273,11 @@ TEST_BOTH(11_opaque_width) {
 
 TEST_BOTH(12_custom_fn) {
     auto func = [](UInt32 input) {
-        auto fn = [](void *payload, uint32_t *inputs, uint32_t *outputs) {
-            UInt32 output = UInt32::borrow(inputs[0]) + 1;
-            output.make_opaque();
-            outputs[0] = output.release();
-        };
         input = input + 1;
 
-        input.make_opaque();
+        auto output =
+            custom_fn(Backend, [](UInt32 input) { return input + 1; }, input);
 
-        uint32_t inputs[]  = { input.index() };
-        uint32_t outputs[] = { 0 };
-
-        jit_freeze_custom_fn(Backend, fn, nullptr, nullptr, 1, inputs, 1,
-                             outputs);
-
-        UInt32 output = UInt32::steal(outputs[0]);
         return output + 1;
     };
 

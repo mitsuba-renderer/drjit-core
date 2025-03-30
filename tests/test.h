@@ -399,3 +399,100 @@ public:
         return output;
     }
 };
+
+template <typename Func, typename... Args>
+auto custom_fn(JitBackend backend, Func func, Args &&...args) {
+    using Output = typename std::invoke_result<Func, Args...>::type;
+
+    make_opaque(args...);
+
+    // Add input to \c input_vector, borrowing it
+    std::vector<uint32_t> input_vector;
+    auto op = [&input_vector](uint32_t index) {
+        // Borrow from the index and add it to the input_vector
+        jit_var_inc_ref(index);
+        input_vector.push_back(index);
+
+        // Transfer ownership back to the \c JitArray
+        jit_var_inc_ref(index);
+        return index;
+    };
+    apply_arguments(op, args...);
+
+    bool recording = jit_flag(JitFlag::FreezingScope);
+
+    if (recording)
+        jit_freeze_pause(backend);
+    auto output = func(args...);
+    make_opaque(output);
+    if (recording)
+        jit_freeze_resume(backend);
+
+    std::vector<uint32_t> output_vector;
+    {
+        auto op = [&output_vector](uint32_t index) {
+            // Take non borrowing reference to the index
+            output_vector.push_back(index);
+
+            // Transfer ownership back to the \c JitArray
+            jit_var_inc_ref(index);
+            return index;
+        };
+
+        traversable<Output>::apply(op, output);
+    }
+
+    struct Payload {
+        Func func;
+        uint32_t n_inputs;
+        uint32_t n_outputs;
+    };
+    Payload payload = { func, (uint32_t) input_vector.size(),
+                        (uint32_t) output_vector.size() };
+
+    auto wrapper = [](void *payload, uint32_t *inputs, uint32_t *outputs) {
+        Payload *p = (Payload *) payload;
+
+        using InputTuple = std::tuple<typename std::decay<Args>::type...>;
+
+        uint32_t counter = 0;
+        auto input       = constructable<InputTuple>::construct([&p, &counter,
+                                                           &inputs] {
+            if (counter >= p->n_inputs)
+                jit_fail("Could not fill the inputs to the custom function.");
+            return inputs[counter++];
+        });
+        auto output = std::apply(p->func, input);
+
+        make_opaque(output);
+
+        {
+            uint32_t counter = 0;
+            auto op          = [&p, &counter, &outputs](uint32_t index) {
+                if(counter >= p->n_outputs)
+                    jit_fail("Tried to return more values from a custom "
+                             "function than where recorded.");
+                // Borrow from index and add it to \c outputs
+                jit_var_inc_ref(index);
+                outputs[counter] = index;
+                counter++;
+
+                // Transfer ownership back to the \c JitArray
+                jit_var_inc_ref(index);
+                return index;
+            };
+
+            traversable<Output>::apply(op, output);
+        }
+    };
+
+    jit_freeze_custom_fn(backend, wrapper, nullptr, &payload,
+                         input_vector.size(), input_vector.data(),
+                         output_vector.size(), output_vector.data());
+
+    // Release the borrowed indices
+    for (uint32_t i = 0; i < input_vector.size(); i++)
+        jit_var_dec_ref(input_vector[i]);
+
+    return output;
+}
