@@ -2603,7 +2603,7 @@ typedef void (*CustomFn)(void *payload, uint32_t *inputs, uint32_t *outputs);
 typedef void (*FreeCustomFn)(void *payload);
 
 /**
- * \brief Add a custom function to a recording. It will be called when the
+ * \brief Add a custom function to a recording. It will only be called when the
  *     recording is replayed. This can be used to replay functions that are not
  *     recordable.
  *

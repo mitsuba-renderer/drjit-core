@@ -429,9 +429,11 @@ public:
 
     void aggregate(void *dst, AggregationEntry *agg, uint32_t size) override;
 
-    void custom_fn(CustomFn fn, FreeCustomFn free, void *payload,
-                   uint32_t n_inputs, uint32_t *inputs, uint32_t n_outputs,
-                   uint32_t *outputs) override;
+    /// Adds a custom function to a \c RecordThreadState. The function is not
+    /// executed when recording, only when replaying.
+    void record_custom_fn(CustomFn fn, FreeCustomFn free, void *payload,
+                          uint32_t n_inputs, uint32_t *inputs,
+                          uint32_t n_outputs, uint32_t *outputs) override;
 
     /// Enqueue a function to be run on the host once backend computation is
     /// done. Recording of this function is currently not supported, and the
@@ -555,9 +557,6 @@ public:
     void record_aggregate(void *dst, AggregationEntry *agg, uint32_t size);
     void record_reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                                 uint32_t exp, uint32_t size);
-    void record_custom_fn(CustomFn fn, FreeCustomFn free, void *payload,
-                          uint32_t n_inputs, uint32_t *inputs,
-                          uint32_t n_outputs, uint32_t *outputs);
 
     // =============================================================
     //!                     Utility Functions

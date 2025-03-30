@@ -1848,60 +1848,47 @@ int Recording::replay_aggregate(Operation &op) {
     return true;
 }
 
-void RecordThreadState::custom_fn(CustomFn fn, FreeCustomFn free, void *payload,
-                                  uint32_t n_inputs, uint32_t *inputs,
-                                  uint32_t n_outputs, uint32_t *outputs) {
-
-    try {
-        record_custom_fn(fn, free, payload, n_inputs, inputs, n_outputs,
-                         outputs);
-    } catch (...) {
-        record_exception();
-    }
-}
-
 void RecordThreadState::record_custom_fn(CustomFn fn, FreeCustomFn free,
                                          void *payload, uint32_t n_inputs,
                                          uint32_t *inputs, uint32_t n_outputs,
                                          uint32_t *outputs) {
-    jitc_log(LogLevel::Debug, "record(): custom_fn");
-    {
-        pause_scope pause(this);
-        unlock_guard guard(state.lock);
-        fn(payload, inputs, outputs);
+    try {
+        jitc_log(LogLevel::Debug, "record(): custom_fn");
+
+        uint32_t start = (uint32_t) m_recording.dependencies.size();
+        for (uint32_t i = 0; i < n_inputs; i++) {
+            Variable *v = jitc_var(inputs[i]);
+            if ((VarKind) v->kind != VarKind::Evaluated)
+                jitc_raise("The variable r%u is not evaluated. Only opaque "
+                           "variables can be passed to a custom function.",
+                           inputs[i]);
+
+            add_in_param(v->data, (VarType) v->type);
+        }
+        for (uint32_t i = 0; i < n_outputs; i++) {
+            Variable *v = jitc_var(outputs[i]);
+            if ((VarKind) v->kind != VarKind::Evaluated)
+                jitc_raise("The variable r%u is not evaluated. Only opaque "
+                           "variables can be returned from a custom function.",
+                           outputs[i]);
+
+            add_out_param(v->data, (VarType) v->type);
+        }
+
+        uint32_t end = (uint32_t) m_recording.dependencies.size();
+
+        Operation op;
+        op.type             = OpType::CustomFn;
+        op.dependency_range = std::pair(start, end);
+        op.custom.n_inputs  = n_inputs;
+        op.custom.n_outputs = n_outputs;
+        op.custom.payload   = payload;
+        op.custom.fn        = fn;
+        op.custom.free      = free;
+        m_recording.operations.push_back(op);
+    } catch (...) {
+        record_exception();
     }
-
-    uint32_t start = (uint32_t) m_recording.dependencies.size();
-    for (uint32_t i = 0; i < n_inputs; i++) {
-        Variable *v = jitc_var(inputs[i]);
-        if ((VarKind) v->kind != VarKind::Evaluated)
-            jitc_raise("The variable r%u is not evaluated. Only opaque "
-                       "variables can be passed to a custom function.",
-                       inputs[i]);
-
-        add_in_param(v->data, (VarType) v->type);
-    }
-    for (uint32_t i = 0; i < n_outputs; i++) {
-        Variable *v = jitc_var(outputs[i]);
-        if ((VarKind) v->kind != VarKind::Evaluated)
-            jitc_raise("The variable r%u is not evaluated. Only opaque "
-                       "variables can be returned from a custom function.",
-                       outputs[i]);
-
-        add_out_param(v->data, (VarType) v->type);
-    }
-
-    uint32_t end = (uint32_t) m_recording.dependencies.size();
-
-    Operation op;
-    op.type             = OpType::CustomFn;
-    op.dependency_range = std::pair(start, end);
-    op.custom.n_inputs  = n_inputs;
-    op.custom.n_outputs = n_outputs;
-    op.custom.payload   = payload;
-    op.custom.fn        = fn;
-    op.custom.free      = free;
-    m_recording.operations.push_back(op);
 }
 
 int Recording::replay_custom_fn(Operation &op, const uint32_t *replay_inputs) {
@@ -2563,6 +2550,6 @@ int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs) {
 void jitc_freeze_custom_fn(JitBackend backend, CustomFn fn, FreeCustomFn free,
                            void *payload, uint32_t n_inputs, uint32_t *inputs,
                            uint32_t n_outputs, uint32_t *outputs){
-    thread_state(backend)->custom_fn(fn, free, payload, n_inputs, inputs,
+    thread_state(backend)->record_custom_fn(fn, free, payload, n_inputs, inputs,
                                      n_outputs, outputs);
 }
