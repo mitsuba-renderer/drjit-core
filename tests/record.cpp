@@ -253,7 +253,7 @@ TEST_BOTH(11_opaque_width) {
     auto func = [](UInt32 x) {
         auto y = block_prefix_sum(x+1, x.size());
         if (jit_flag(JitFlag::FreezingScope))
-            y = y / x.opaque_width();
+            y = y / x.opaque_width_();
         else
             y = y / x.size();
         return y;
