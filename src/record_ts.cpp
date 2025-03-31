@@ -1858,71 +1858,6 @@ bool Recording::check_kernel_cache() {
     return true;
 }
 
-void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
-                       uint32_t n_inputs) {
-
-    if (jitc_flags() & (uint32_t) JitFlag::FreezingScope)
-        jitc_fail("Tried to record a thread_state while inside another "
-                  "FreezingScope!");
-
-    // Increment scope, can be used to track missing inputs
-    jitc_new_scope(backend);
-
-    ThreadState *ts_             = thread_state(backend);
-    RecordThreadState *record_ts = new RecordThreadState(ts_);
-
-    if (backend == JitBackend::CUDA)
-        thread_state_cuda = record_ts;
-    else
-        thread_state_llvm = record_ts;
-
-    for (uint32_t i = 0; i < n_inputs; ++i)
-        record_ts->add_input(inputs[i]);
-
-    jitc_set_flag(JitFlag::FreezingScope, true);
-}
-Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
-                            uint32_t n_outputs) {
-    if (RecordThreadState *rts =
-            dynamic_cast<RecordThreadState *>(thread_state(backend));
-        rts != nullptr) {
-        ThreadState *internal = rts->m_internal;
-
-        // Perform reassignments to internal thread-state of possibly changed
-        // variables
-        internal->scope = rts->scope;
-
-        jitc_assert(rts->record_stack.empty(),
-                    "Kernel recording ended while still recording loop!");
-
-        jitc_set_flag(JitFlag::FreezingScope, false);
-        if (rts->m_exception) {
-            std::rethrow_exception(rts->m_exception);
-        }
-
-        for (uint32_t i = 0; i < n_outputs; ++i) {
-            rts->add_output(outputs[i]);
-        }
-
-        if (backend == JitBackend::CUDA) {
-            thread_state_cuda = internal;
-        } else {
-            thread_state_llvm = internal;
-        }
-        Recording *recording = new Recording(std::move(rts->m_recording));
-        recording->validate();
-        delete rts;
-
-        return recording;
-    } else {
-        jitc_fail(
-            "jit_record_stop(): Tried to stop recording a thread state "
-            "for backend %u, while no recording was started for this backend. "
-            "Try to start the recording with jit_record_start.",
-            (uint32_t) backend);
-    }
-}
-
 /**
  * \brief
  *     This captures the offset buffer of a vcall in a kernel.
@@ -2126,6 +2061,222 @@ void RecordThreadState::add_out_param(uint32_t slot, uint32_t vtype) {
     add_out_param(slot, (VarType) vtype);
 }
 
+/**
+ * \brief A simple wrapper around a ThreadState, that disables all its
+ *     operations. This is used to prevent operations to one ThreadState being
+ *     executed while a different thread state is recorded.
+ */
+struct DisabledThreadState : ThreadState {
+    ThreadState *m_internal;
+    JitBackend m_recording_backend;
+    bool m_raised = false;
+    DisabledThreadState(ThreadState *internal,
+                              JitBackend recording_backend)
+        : m_internal(internal), m_recording_backend(recording_backend){
+        this->context            = internal->context;
+        this->stream             = internal->stream;
+        this->event              = internal->event;
+        this->sync_stream_event  = internal->sync_stream_event;
+        this->device             = internal->device;
+        this->compute_capability = internal->compute_capability;
+        this->ptx_version        = internal->ptx_version;
+        this->memory_pool        = internal->memory_pool;
+
+        this->backend         = internal->backend;
+        this->scope           = internal->scope;
+        this->call_self_value = internal->call_self_value;
+        this->call_self_index = internal->call_self_index;
+
+#if defined(DRJIT_ENABLE_OPTIX)
+        this->optix_pipeline = internal->optix_pipeline;
+        this->optix_sbt      = internal->optix_sbt;
+#endif
+
+        this->m_internal = internal;
+
+        this->scope = internal->scope;
+    }
+
+    /**
+     * Record that an exception has been thrown, similar to the function in
+     * ``RecordThreadState``.
+     */
+    void record_exception() {
+        m_raised = true;
+    };
+
+    /**
+     * Actually throws the exception, if any was thrown during recording.
+     */
+    void rethrow_exception() {
+        if (m_raised) {
+            const char *backend =
+                m_internal->backend == JitBackend::CUDA ? "CUDA" : "LLVM";
+            const char *recording_backend =
+                m_recording_backend == JitBackend::CUDA ? "CUDA" : "LLVM";
+            jitc_raise(
+                "The frozen function is being recorded for the %s backend, but "
+                "you tried to execute an operation for the %s backend, this is "
+                "not permitted. It might indicate that you specified the wrong "
+                "backend or the wrong backend was inferred from the inputs.",
+                recording_backend, backend);
+        }
+    }
+
+    void barrier() override { record_exception(); };
+    Task *launch(Kernel /*kernel*/, KernelKey * /*key*/, XXH128_hash_t /*hash*/,
+                 uint32_t /*size*/, std::vector<void *> * /*kernel_params*/,
+                 const std::vector<uint32_t> * /*kernel_param_ids*/) override {
+        record_exception();
+        return nullptr;
+    };
+    void memset_async(void * /*ptr*/, uint32_t /*size*/, uint32_t /*isize*/,
+                      const void * /*src*/) override {
+        record_exception();
+    };
+    uint32_t compress(const uint8_t * /*in*/, uint32_t /*size*/,
+                      uint32_t * /*out*/) override {
+        record_exception();
+        return 0;
+    };
+    uint32_t mkperm(const uint32_t * /*values*/, uint32_t /*size*/,
+                    uint32_t /*bucket_count*/, uint32_t * /*perm*/,
+                    uint32_t * /*offsets*/) override {
+        record_exception();
+        return 0;
+    };
+    void memcpy(void * /*dst*/, const void * /*src*/,
+                size_t /*size*/) override {
+        record_exception();
+    };
+    void memcpy_async(void * /*dst*/, const void * /*src*/,
+                      size_t /*size*/) override {
+        record_exception();
+    };
+    void block_reduce(VarType /*vt*/, ReduceOp /*op*/, uint32_t /*size*/,
+                      uint32_t /*block_size*/, const void * /*in*/,
+                      void * /*out*/) override {
+        record_exception();
+    };
+    void block_prefix_reduce(VarType /*vt*/, ReduceOp /*op*/, uint32_t /*size*/,
+                             uint32_t /*block_size*/, bool /*exclusive*/,
+                             bool /*reverse*/, const void * /*in*/,
+                             void * /*out*/) override {
+        record_exception();
+    };
+    void reduce_dot(VarType /*type*/, const void * /*ptr_1*/,
+                    const void * /*ptr_2*/, uint32_t /*size*/,
+                    void * /*out*/) override {
+        record_exception();
+    };
+    void poke(void * /*dst*/, const void * /*src*/,
+              uint32_t /*size*/) override {
+        record_exception();
+    };
+    void aggregate(void * /*dst*/, AggregationEntry * /*agg*/,
+                   uint32_t /*size*/) override {
+        record_exception();
+    };
+    void enqueue_host_func(void (* /*callback*/)(void *),
+                           void * /*payload*/) override {
+        record_exception();
+    };
+    void notify_expand(uint32_t /*index*/) override {};
+    void reduce_expanded(VarType /*vt*/, ReduceOp /*reduce_op*/,
+                         void * /*data*/, uint32_t /*exp*/,
+                         uint32_t /*size*/) override {};
+    void notify_free(const void * /*ptr*/) override {};
+};
+
+void set_disabled_thread_state(ThreadState **ts, JitBackend recording_backend) {
+    if (!*ts)
+        return;
+    *ts = new DisabledThreadState(*ts, recording_backend);
+}
+
+void unset_disabled_thread_state(ThreadState **ts) {
+    if (!*ts)
+        return;
+    if (DisabledThreadState *dts = dynamic_cast<DisabledThreadState *>(*ts);
+        dts != nullptr) {
+        *ts = dts->m_internal;
+        dts->rethrow_exception();
+        delete dts;
+    }else{
+        jitc_fail("Tried to enable a ThreadState that was not disabled.");
+    }
+}
+
+void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
+                       uint32_t n_inputs) {
+
+    if (jitc_flags() & (uint32_t) JitFlag::FreezingScope)
+        jitc_fail("Tried to record a thread_state while inside another "
+                  "FreezingScope!");
+
+    // Increment scope, can be used to track missing inputs
+    jitc_new_scope(backend);
+
+    ThreadState *ts_             = thread_state(backend);
+    RecordThreadState *record_ts = new RecordThreadState(ts_);
+
+    if (backend == JitBackend::CUDA) {
+        thread_state_cuda = record_ts;
+        set_disabled_thread_state(&thread_state_llvm, backend);
+    } else {
+        thread_state_llvm = record_ts;
+        set_disabled_thread_state(&thread_state_cuda, backend);
+    }
+
+    for (uint32_t i = 0; i < n_inputs; ++i)
+        record_ts->add_input(inputs[i]);
+
+    jitc_set_flag(JitFlag::FreezingScope, true);
+}
+Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
+                            uint32_t n_outputs) {
+    if (RecordThreadState *rts =
+            dynamic_cast<RecordThreadState *>(thread_state(backend));
+        rts != nullptr) {
+        ThreadState *internal = rts->m_internal;
+
+        // Perform reassignments to internal thread-state of possibly changed
+        // variables
+        internal->scope = rts->scope;
+
+        jitc_assert(rts->record_stack.empty(),
+                    "Kernel recording ended while still recording loop!");
+
+        jitc_set_flag(JitFlag::FreezingScope, false);
+        if (rts->m_exception) {
+            std::rethrow_exception(rts->m_exception);
+        }
+
+        for (uint32_t i = 0; i < n_outputs; ++i) {
+            rts->add_output(outputs[i]);
+        }
+
+        if (backend == JitBackend::CUDA) {
+            thread_state_cuda = internal;
+            unset_disabled_thread_state(&thread_state_llvm);
+        } else {
+            thread_state_llvm = internal;
+            unset_disabled_thread_state(&thread_state_cuda);
+        }
+        Recording *recording = new Recording(std::move(rts->m_recording));
+        recording->validate();
+        delete rts;
+
+        return recording;
+    } else {
+        jitc_fail(
+            "jit_record_stop(): Tried to stop recording a thread state "
+            "for backend %u, while no recording was started for this backend. "
+            "Try to start the recording with jit_record_start.",
+            (uint32_t) backend);
+    }
+}
+
 void jitc_freeze_abort(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
@@ -2139,8 +2290,10 @@ void jitc_freeze_abort(JitBackend backend) {
 
         if (backend == JitBackend::CUDA) {
             thread_state_cuda = internal;
+            unset_disabled_thread_state(&thread_state_llvm);
         } else {
             thread_state_llvm = internal;
+            unset_disabled_thread_state(&thread_state_cuda);
         }
 
         delete rts;
