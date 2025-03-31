@@ -76,6 +76,20 @@ struct DrJitCudaTexture {
 
         return --n_referenced_textures > 0;
     }
+
+    /**
+     * \brief Returns the ID of a JIT variable, which encodes the address of the
+     * i-th texture object.
+     *
+     * This function returns a JIT variable ID of a literal representing the
+     * texture address. This feature is internally used to make textures
+     * compatible with frozen function recording. This function returns an
+     * owning reference, which the caller must release eventually.
+     */
+    uint32_t get_jit_pointer(uint32_t i) {
+        return jitc_var_pointer(JitBackend::CUDA, jitc_var(indices[i])->data,
+                                indices[i], false);
+    }
 };
 
 struct TextureReleasePayload {
@@ -182,7 +196,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         texture->arrays[tex] = array;
 
         if (tex_channels == 1)
-            view_desc.format = format == 0 ? 
+            view_desc.format = format == 0 ?
                 CU_RES_VIEW_FORMAT_FLOAT_1X32 : CU_RES_VIEW_FORMAT_FLOAT_1X16;
         else if (tex_channels == 2)
             view_desc.format = format == 0 ?
@@ -194,8 +208,9 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         cuda_check(cuTexObjectCreate(&(texture->textures[tex]), &res_desc,
                                      &tex_desc, &view_desc));
 
-        texture->indices[tex] = jitc_var_pointer(
-            JitBackend::CUDA, (void *) texture->textures[tex], 0, 0);
+        texture->indices[tex] =
+            jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,
+                             (void *) texture->textures[tex], 1, false);
 
         TextureReleasePayload *payload_ptr =
             new TextureReleasePayload({ texture, tex });
@@ -247,6 +262,16 @@ void jitc_cuda_tex_get_shape(size_t ndim, const void *texture_handle,
     if (ndim == 3)
         shape[2] = array_desc.Depth;
     shape[ndim] = texture.n_channels;
+}
+
+void jitc_cuda_tex_get_indices(const void *texture_handle, uint32_t *indices) {
+    if (!texture_handle)
+        return;
+
+    DrJitCudaTexture &texture = *((DrJitCudaTexture *) texture_handle);
+
+    for (uint32_t i = 0; i < texture.n_textures; i++)
+        indices[i] = texture.indices[i];
 }
 
 static std::unique_ptr<void, StagingAreaDeleter>
@@ -544,14 +569,15 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
         memset(v.dep, 0, sizeof(v.dep));
         const Variable *active_v = jitc_var(active);
         if (active_v->is_literal() && active_v->literal == 1) {
-            v.dep[0] = tex.indices[ti];
-            jitc_var_inc_ref(tex.indices[ti]);
+            v.dep[0] = tex.get_jit_pointer(ti);
             v.literal = 0;
         } else {
             v.literal = 1; // encode a masked operation
             uint64_t zero_i = 0;
             Ref zero = steal(jitc_var_literal((JitBackend) v.backend, VarType::Pointer, &zero_i, 1, 0));
-            v.dep[0] = jitc_var_select(active, tex.indices[ti], zero);
+            uint32_t pointer = tex.get_jit_pointer(ti);
+            v.dep[0]         = jitc_var_select(active, pointer, zero);
+            jitc_var_dec_ref(pointer);
         }
         for (size_t j = 0; j < ndim; ++j) {
             v.dep[j + 1] = pos[j];
@@ -587,9 +613,8 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
             v.kind = (uint32_t) VarKind::TexFetchBilerp;
             v.literal = ch;
             memset(v.dep, 0, sizeof(v.dep));
-            v.dep[0] = tex.indices[ti];
+            v.dep[0] = tex.get_jit_pointer(ti);
             v.dep[1] = active;
-            jitc_var_inc_ref(tex.indices[ti]);
             jitc_var_inc_ref(active);
             for (size_t j = 0; j < ndim; ++j) {
                 v.dep[j + 2] = pos[j];
