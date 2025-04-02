@@ -1853,8 +1853,6 @@ void RecordThreadState::poke(void *dst, const void *src, uint32_t size) {
     // and we cannot track it.
     jitc_raise("RecordThreadState::poke(): this function cannot be recorded!");
     (void) dst; (void) src; (void) size;
-    // pause_scope pause(this);
-    // return m_internal->poke(dst, src, size);
 }
 
 // Enqueue a function to be run on the host once backend computation is done
@@ -1863,22 +1861,54 @@ void RecordThreadState::enqueue_host_func(void (*callback)(void *),
     jitc_raise("RecordThreadState::enqueue_host_func(): this function cannot "
                "be recorded!");
     (void) callback; (void) payload;
-    // pause_scope pause(this);
-    // return m_internal->enqueue_host_func(callback, payload);
 }
 
 void Recording::validate() {
     for (uint32_t i = 0; i < recorded_variables.size(); i++) {
         RecordedVariable &rv = recorded_variables[i];
         if (rv.state == RecordedVarState::Uninitialized) {
+            Operation &last_op = operations[rv.last_op];
 #ifndef NDEBUG
-            jitc_raise("record(): Variable at slot s%u %p was left in an "
-                       "uninitialized state!",
-                       i, rv.ptr);
+            if (last_op.type == OpType::Aggregate) {
+                jitc_raise(
+                    "validate(): The frozen function included a virtual "
+                    "function call involving variable s%u <%p>, last used by "
+                    "operation o%u. Dr.Jit would normally traverse a registry "
+                    "of all relevant object instances in order to collect "
+                    "their member variables. However, when recording this "
+                    "frozen function, this traversal was skipped because no "
+                    "such object instance was found in the function's inputs. "
+                    "You can trigger traversal by including the relevant "
+                    "objects in the function input, or by specifying them "
+                    "using the state_fn argument.",
+                    i, rv.ptr, rv.last_op);
+            } else
+                jitc_raise(
+                    "validate(): Variable at slot s%u <%p> was used by %s operation "
+                    "o%u but left in an uninitialized state! This indicates "
+                    "that the associated variable was used, but not traversed "
+                    "as part of the frozen function input.",
+                    i, rv.ptr, op_type_name[(uint32_t) last_op.type], rv.last_op);
 #else
-            jitc_raise("record(): Variable at slot s%u was left in an "
-                       "uninitialized state!",
-                       i);
+            if (last_op.type == OpType::Aggregate) {
+                jitc_raise(
+                    "validate(): The frozen function included a virtual "
+                    "function call involving variable s%u. Dr.Jit would "
+                    "normally traverse a registry of all relevant object "
+                    "instances in order to collect their member variables. "
+                    "However, when recording this frozen function, this "
+                    "traversal was skipped because no such object instance was "
+                    "found in the function's inputs. You can trigger traversal "
+                    "by including the relevant objects in the function input, "
+                    "or by specifying them using the state_fn argument.",
+                    i);
+            } else
+                jitc_raise(
+                    "validate(): Variable at slot s%u was used by %s operation "
+                    "o%u but left in an uninitialized state! This indicates "
+                    "that the associated variable was used, but not traversed "
+                    "as part of the frozen function input.",
+                    i, op_type_name[(uint32_t) last_op.type], rv.last_op);
 #endif
         }
     }
@@ -1990,8 +2020,9 @@ uint32_t RecordThreadState::capture_variable(uint32_t index,
 uint32_t RecordThreadState::add_variable(const void *ptr) {
     auto it = ptr_to_slot.find(ptr);
 
+    uint32_t slot;
     if (it == ptr_to_slot.end()) {
-        uint32_t slot = (uint32_t) m_recording.recorded_variables.size();
+        slot = (uint32_t) m_recording.recorded_variables.size();
 
         RecordedVariable rv;
 #ifndef NDEBUG
@@ -2001,12 +2032,13 @@ uint32_t RecordThreadState::add_variable(const void *ptr) {
 
         ptr_to_slot.insert({ ptr, slot });
 
-        return slot;
-    } else {
-        uint32_t slot = it.value();
+    } else
+        slot = it.value();
 
-        return slot;
-    }
+    m_recording.recorded_variables[slot].last_op =
+        (uint32_t) m_recording.operations.size();
+
+    return slot;
 }
 
 /// Return the slot index given the data pointer of a variable.
