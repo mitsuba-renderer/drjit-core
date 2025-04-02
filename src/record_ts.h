@@ -163,6 +163,7 @@ struct RecordedVariable {
     /// \c operations vector, necessary for recording the expand operation.
     uint32_t last_memset = 0;
     uint32_t last_memcpy = 0;
+    uint32_t last_op = 0;
 
     /// Tracks the current state of a variable
     RecordedVarState state = RecordedVarState::Uninitialized;
