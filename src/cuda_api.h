@@ -25,6 +25,7 @@ extern void jitc_cuda_sync_stream(uintptr_t stream);
 
 #if !defined(DRJIT_DYNAMIC_CUDA)
 #  include <cuda.h>
+#  include <cudaProfiler.h>
 #else
 #  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR 75
 #  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR 76
