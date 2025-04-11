@@ -219,6 +219,9 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Load all texels used for bilinear interpolation (CUDA)
     "tex_fetch_bilerp",
 
+    // Memory read starting at different base pointers per lane (CUDA)
+    "vector_load",
+
     // Perform a ray tracing call
     "trace_ray",
 
