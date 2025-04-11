@@ -54,7 +54,8 @@ void demo() {
     // =====================================================
 
     const uint32_t triangle_input_flags[1] = { OPTIX_GEOMETRY_FLAG_DISABLE_ANYHIT };
-    OptixBuildInput triangle_input {};
+    OptixBuildInput triangle_input;
+    memset(&triangle_input, 0, sizeof(triangle_input)); // Use memset due to union member.
     triangle_input.type                        = OPTIX_BUILD_INPUT_TYPE_TRIANGLES;
     triangle_input.triangleArray.vertexFormat  = OPTIX_VERTEX_FORMAT_FLOAT3;
     triangle_input.triangleArray.numVertices   = 3;
@@ -162,7 +163,8 @@ void demo() {
     // =====================================================
 
     OptixProgramGroupOptions pgo { };
-    OptixProgramGroupDesc pgd[2] { };
+    OptixProgramGroupDesc pgd[2];
+    memset(pgd, 0, sizeof(pgd)); // Use memset due to union member.
     OptixProgramGroup pg[2];
 
     pgd[0].kind                         = OPTIX_PROGRAM_GROUP_KIND_MISS;
