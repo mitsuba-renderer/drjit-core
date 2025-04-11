@@ -442,33 +442,50 @@ auto custom_fn(JitBackend backend, Func func, Args &&...args) {
         traversable<Output>::apply(op, output);
     }
 
+    using InputTuple = std::tuple<typename std::decay<Args>::type...>;
     struct Payload {
         Func func;
         uint32_t n_inputs;
         uint32_t n_outputs;
+        InputTuple input;
     };
     Payload payload = { func, (uint32_t) input_vector.size(),
-                        (uint32_t) output_vector.size() };
+                        (uint32_t) output_vector.size(),
+                        std::move(std::tuple(args...)) };
 
     auto wrapper = [](void *payload, uint32_t *inputs, uint32_t *outputs) {
         Payload *p = (Payload *) payload;
 
-        using InputTuple = std::tuple<typename std::decay<Args>::type...>;
+        std::vector<uint32_t> input_backup(p->n_inputs, 0);
 
-        uint32_t counter = 0;
-        auto input       = constructable<InputTuple>::construct([&p, &counter,
-                                                           &inputs] {
-            if (counter >= p->n_inputs)
-                jit_fail("Could not fill the inputs to the custom function.");
-            return inputs[counter++];
-        });
-        auto output = std::apply(p->func, input);
+        {
+            uint32_t i = 0;
+            traversable<InputTuple>::apply(
+                [&input_backup, &inputs, &i](uint32_t index) {
+                    input_backup[i] = index;
+                    return jit_var_inc_ref(inputs[i++]);
+                },
+                p->input);
+        }
+
+        auto output = std::apply(p->func, p->input);
 
         make_opaque(output);
+
+        // Reset Input
+        {
+            uint32_t i = 0;
+            traversable<InputTuple>::apply(
+                [&input_backup, &i](uint32_t index) {
+                    return jit_var_inc_ref(input_backup[i++]);
+                },
+                p->input);
+        }
 
         {
             uint32_t counter = 0;
             auto op          = [&p, &counter, &outputs](uint32_t index) {
+                jit_log(LogLevel::Debug, "counter=%u, n_outputs=%u", counter, p->n_outputs);
                 if(counter >= p->n_outputs)
                     jit_fail("Tried to return more values from a custom "
                              "function than where recorded.");
