@@ -40,6 +40,12 @@ static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
     pco.numAttributeValues = 2;
     pco.pipelineLaunchParamsVariableName = "params";
 
+    // The kernels generated via the default options actually don't do any ray
+    // tracing, so the following declarations may seem unnecessary. However,
+    // this combination produces the leanest kernels.
+    pco.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
+    pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
+
 #ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
     pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
 #else
@@ -618,7 +624,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
                 break;
             default:
                 jitc_fail("jit_optix_ray_trace(): unhandled hit object "
-                          "field type (value %u)!", hit_object_fields[i]);
+                          "field type (value %u)!", (uint32_t) hit_object_fields[i]);
         }
         hit_object_out[i] = jitc_var_new_node_1(
             JitBackend::CUDA, VarKind::Extract, field_type, size, symbolic,

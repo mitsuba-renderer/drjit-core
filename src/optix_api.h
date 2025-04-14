@@ -51,7 +51,10 @@ using OptixPipeline = void*;
 #define OPTIX_PROGRAM_GROUP_KIND_CALLABLES            0x2425
 #define OPTIX_PROGRAM_GROUP_KIND_MISS                 0x2422
 #define OPTIX_SBT_RECORD_HEADER_SIZE                  32
+#define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_ANY        0
 #define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS 1
+#define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING (1u << 1)
+#define OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE           (1 << 31)
 
 struct OptixDeviceContextOptions {
     OptixLogCallback logCallbackFunction;
