@@ -81,7 +81,7 @@ endif()
 
 add_subdirectory(ext/nanothread)
 add_subdirectory(resources)
-mark_as_advanced(NANOTHREAD_ENABLE_TESTS)
+mark_as_advanced(NANOTHREAD_ENABLE_TESTS NANOTHREAD_STATIC)
 
 
 # ----------------------------------------------------------

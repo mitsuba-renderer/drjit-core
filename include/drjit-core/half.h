@@ -16,7 +16,7 @@
 NAMESPACE_BEGIN(drjit)
 
 struct half {
-    uint16_t value = 0;
+    uint16_t value;
 
     half() = default;
     half(const half &) = default;
@@ -52,8 +52,11 @@ struct half {
 
     operator float() const { return float16_to_float32(value); }
 
-    static constexpr half from_binary(uint16_t value) { half h; h.value = value; return h; }
+    struct init_tag {};
+    static constexpr half from_binary(uint16_t value) { return { value, init_tag{} }; }
 private:
+    constexpr half(uint16_t value, init_tag) : value(value) { }
+
     template <typename Dst, typename Src>
     static Dst bitcast(const Src &src) {
         static_assert(sizeof(Src) == sizeof(Dst),
