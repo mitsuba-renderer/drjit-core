@@ -18,6 +18,9 @@ extern int jitc_cuda_version_major;
 /// Minor version of the detected CUDA version
 extern int jitc_cuda_version_minor;
 
+/// Maximum number of pointer arguments that can be directly passed to a CUDA kernel
+extern uint32_t jitc_cuda_arg_limit;
+
 /// Return value of the call to cuInit()
 extern CUresult jitc_cuda_cuinit_result;
 

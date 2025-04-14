@@ -68,7 +68,7 @@ static void jitc_cuda_render_trace(const Variable *v,
 
 void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
-    bool params_global = !uses_optix && n_params > DRJIT_CUDA_ARG_LIMIT;
+    bool params_global = !uses_optix && n_params > jitc_cuda_arg_limit;
     bool print_labels  = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
@@ -96,11 +96,16 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
          %b3, %w3, %r3, %rd3, %f3, %d3, %p3: reserved for use in compound
          statements that must write a temporary result to a register.
     */
+    uint32_t ptx_version = ts->ptx_version;
+
+    // Using extended kernel parameter passing requires PTX ISA v8.1
+    if (n_params > 512)
+        ptx_version = std::max(ptx_version, 81u);
 
     fmt(".version $u.$u\n"
         ".target sm_$u\n"
         ".address_size 64\n\n",
-        ts->ptx_version / 10, ts->ptx_version % 10,
+        ptx_version / 10, ptx_version % 10,
         ts->compute_capability);
 
     if (!uses_optix) {

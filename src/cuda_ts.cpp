@@ -51,7 +51,7 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
     uint32_t kernel_param_count = (uint32_t) kernel_params->size();
 
     // Pass parameters through global memory if too large or using OptiX
-    if (uses_optix || kernel_param_count > DRJIT_CUDA_ARG_LIMIT) {
+    if (uses_optix || kernel_param_count > jitc_cuda_arg_limit) {
         size_t param_size = kernel_param_count * sizeof(void *);
         uint8_t *tmp =
             (uint8_t *) jitc_malloc(AllocType::HostPinned, param_size);

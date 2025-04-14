@@ -12,6 +12,7 @@ CUresult jitc_cuda_cuinit_result = CUDA_ERROR_NOT_INITIALIZED;
 
 int jitc_cuda_version_major = 0;
 int jitc_cuda_version_minor = 0;
+uint32_t jitc_cuda_arg_limit = 0;
 
 // Dr.Jit kernel functions
 static CUmodule *jitc_cuda_module = nullptr;
@@ -158,6 +159,13 @@ bool jitc_cuda_init() {
                 jitc_cuda_version_major, jitc_cuda_version_minor);
         return false;
     }
+
+    // Maximal amount of data (measured in # of 8-byte pointers) that can be
+    // passed to a CUDA kernel depends on the CUDA version
+    bool cuda_12_1_or_newer =
+        (jitc_cuda_version_major > 12 ||
+         (jitc_cuda_version_major == 12 && jitc_cuda_version_minor >= 1));
+    jitc_cuda_arg_limit = cuda_12_1_or_newer ? 4096 : 512;
 
     jitc_log(Info, "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
              jitc_cuda_version_major, jitc_cuda_version_minor);

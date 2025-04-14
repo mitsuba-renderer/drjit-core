@@ -24,9 +24,6 @@
 #  define dlsym(ptr, name) GetProcAddress((HMODULE) ptr, name)
 #endif
 
-/// Can't pass more than 4096 bytes of parameter data to a CUDA kernel
-#define DRJIT_CUDA_ARG_LIMIT 512
-
 #define DRJIT_PTR "<0x%" PRIxPTR ">"
 
 /// Helper function for intense internal sanitation instrumentation
