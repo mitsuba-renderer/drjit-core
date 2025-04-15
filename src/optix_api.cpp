@@ -90,7 +90,7 @@ bool jitc_optix_api_init() {
             Warn,
             "jit_optix_api_init(): DrJit considers the driver of your graphics "
             "card buggy and prone to miscompilation (we explicitly do not "
-            "support OptiX with CUDA version 11.7, which corresponds to driver "
+            "support OptiX with CUDA version 12.7, which corresponds to driver "
             "versions 565 to 559). Please install an older (< 565) or newer driver (>= 570).");
         return false;
     }
