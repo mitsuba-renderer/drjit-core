@@ -18,6 +18,13 @@ using OptixTransformFormat   = int;
 using OptixAccelPropertyType = int;
 using OptixProgramGroupKind  = int;
 
+using OptixDisplacementMicromapArrayIndexingMode  = int;
+using OptixDisplacementMicromapDirectionFormat    = int;
+using OptixDisplacementMicromapBiasAndScaleFormat = int;
+using OptixDisplacementMicromapFormat             = int;
+using OptixOpacityMicromapFormat                  = int;
+using OptixOpacityMicromapArrayIndexingMode       = int;
+
 // =====================================================
 //            Commonly used OptiX constants
 // =====================================================
@@ -72,6 +79,48 @@ struct OptixAccelBufferSizes {
     size_t tempUpdateSizeInBytes;
 };
 
+struct OptixOpacityMicromapUsageCount {
+    unsigned int count;
+    unsigned int subdivisionLevel;
+    OptixOpacityMicromapFormat format;
+};
+
+struct OptixBuildInputOpacityMicromap {
+    OptixOpacityMicromapArrayIndexingMode indexingMode;
+    CUdeviceptr opacityMicromapArray;
+    CUdeviceptr indexBuffer;
+    unsigned int indexSizeInBytes;
+    unsigned int indexStrideInBytes;
+    unsigned int indexOffset;
+    unsigned int numMicromapUsageCounts;
+    const OptixOpacityMicromapUsageCount* micromapUsageCounts;
+};
+
+struct OptixDisplacementMicromapUsageCount {
+    unsigned int count;
+    unsigned int subdivisionLevel;
+    OptixDisplacementMicromapFormat format;
+};
+
+struct OptixBuildInputDisplacementMicromap {
+    OptixDisplacementMicromapArrayIndexingMode indexingMode;
+    CUdeviceptr displacementMicromapArray;
+    CUdeviceptr displacementMicromapIndexBuffer;
+    CUdeviceptr vertexDirectionsBuffer;
+    CUdeviceptr vertexBiasAndScaleBuffer;
+    CUdeviceptr triangleFlagsBuffer;
+    unsigned int displacementMicromapIndexOffset;
+    unsigned int displacementMicromapIndexStrideInBytes;
+    unsigned int displacementMicromapIndexSizeInBytes;
+    OptixDisplacementMicromapDirectionFormat vertexDirectionFormat;
+    unsigned int vertexDirectionStrideInBytes;
+    OptixDisplacementMicromapBiasAndScaleFormat vertexBiasAndScaleFormat;
+    unsigned int vertexBiasAndScaleStrideInBytes;
+    unsigned int triangleFlagsStrideInBytes;
+    unsigned int numDisplacementMicromapUsageCounts;
+    const OptixDisplacementMicromapUsageCount* displacementMicromapUsageCounts;
+};
+
 struct OptixBuildInputTriangleArray {
     const CUdeviceptr* vertexBuffers;
     unsigned int numVertices;
@@ -89,6 +138,8 @@ struct OptixBuildInputTriangleArray {
     unsigned int sbtIndexOffsetStrideInBytes;
     unsigned int primitiveIndexOffset;
     OptixTransformFormat transformFormat;
+    OptixBuildInputOpacityMicromap opacityMicromap;
+    OptixBuildInputDisplacementMicromap displacementMicromap;
 };
 
 struct OptixBuildInput {
