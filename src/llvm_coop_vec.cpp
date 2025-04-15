@@ -74,7 +74,7 @@ void jitc_llvm_render_coop_vec_outer_product_accum(const Variable *v, const Vari
         "    $v_p1 = getelementptr inbounds $T, {$T*} $v_p0, i32 $u\n"
         "    $v_mask = bitcast $V to i$w\n",
         v, target, d->offset * tsize,
-        v, v, d->stride, v,
+        v, v, d->stride, v0,
         v, v0,
         v, v0, v0, v, m,
         v, mask);
@@ -84,13 +84,13 @@ void jitc_llvm_render_coop_vec_outer_product_accum(const Variable *v, const Vari
         fmt("    $v_p0_$u = getelementptr inbounds $T, {$T*} $v_p0, i32 $u\n"
             "    store $V_$u, {$T*} $v_p0_$u, align $A\n",
             v, i, v0, v0, v, i,
-            v0, i, v, v, i, v0);
+            v0, i, v0, v, i, v0);
     }
     for (uint32_t i = 0; i < n; ++i) {
         fmt("    $v_p1_$u = getelementptr inbounds $T, {$T*} $v_p1, i32 $u\n"
             "    store $V_$u, {$T*} $v_p1_$u, align $A\n",
             v, i, v1, v1, v, i,
-            v1, i, v, v, i, v1);
+            v1, i, v1, v, i, v1);
     }
     fmt("    br label %l$u_before\n"
         "\n"
@@ -307,15 +307,16 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                 alloca_size  = std::max(alloca_size, (int32_t) (vec_size * (n + m)));
                 alloca_align = std::max(alloca_align, (int32_t) (vec_size));
 
-                fmt("    $v_pi = bitcast {i8*} %buffer to {$T*}\n"
-                    "    $v_po = getelementptr inbounds $T, {$T*} $v_pi, i32 $u\n"
-                    "    $v_pa_0 = bitcast $<{i8*}$> $v to $<{$t*}$>\n"
-                    "    $v_pa = getelementptr inbounds $t, $<{$t*}$> $v_pa_0, i32 $u\n",
+                fmt( "    $v_pi = bitcast {i8*} %buffer to {$T*}\n"
+                     "    $v_po = getelementptr inbounds $T, {$T*} $v_pi, i32 $u\n"
+                     "    $v_pa_0 = bitcast $<{i8*}$> $v to $<{$t*}$>\n"
+                     "    $v_pa{_1|} = getelementptr inbounds $t, $<{$t*}$> $v_pa_0, i32 $u\n"
+                    "{    $v_pa = bitcast $<$t*$> $v_pa_1 to $<[$u x $t]*$>\n|}",
                     v, v,
                     v, v, v, v, n,
                     v, a0, v,
-                    v, v, v, v, d->A_descr.offset);
-
+                    v, v, v, v, d->A_descr.offset,
+                    v, v, v, transpose ? m : n, v);
                 if (bias) {
                     fmt("    $v_pb_0 = bitcast $<{i8*}$> $v to $<{$t*}$>\n"
                         "    $v_pb = getelementptr inbounds $t, $<{$t*}$> $v_pb_0, i32 $u\n",
