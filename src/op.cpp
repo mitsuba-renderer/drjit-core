@@ -1724,6 +1724,10 @@ static void unwrap(Ref &index, Variable *&v) {
 uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
     if (index == 0)
         return 0;
+    else if (src_ == 0)
+        jitc_raise("jit_var_gather(): attempted to gather from an empty array!");
+    else if (mask == 0)
+        jitc_raise("jit_var_gather(): mask is uninitialized!");
 
     Ref src = borrow(src_);
 
@@ -1854,6 +1858,11 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
             out[i] = 0;
         return;
     }
+    if (src_ == 0)
+        jitc_raise("jit_var_gather_packet(): attempted to gather from an empty array!");
+    else if (mask == 0)
+        jitc_raise("jit_var_gather_packet(): mask is uninitialized!");
+
     Ref scale = steal(jitc_var_u32((JitBackend) jitc_var(src_)->backend, (uint32_t) n));
 
     Ref src = borrow(src_);
