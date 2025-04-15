@@ -96,16 +96,11 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
          %b3, %w3, %r3, %rd3, %f3, %d3, %p3: reserved for use in compound
          statements that must write a temporary result to a register.
     */
-    uint32_t ptx_version = ts->ptx_version;
-
-    // Using extended kernel parameter passing requires PTX ISA v8.1
-    if (n_params > 512)
-        ptx_version = std::max(ptx_version, 81u);
 
     fmt(".version $u.$u\n"
         ".target sm_$u\n"
         ".address_size 64\n\n",
-        ptx_version / 10, ptx_version % 10,
+        ts->ptx_version / 10, ts->ptx_version % 10,
         ts->compute_capability);
 
     if (!uses_optix) {
