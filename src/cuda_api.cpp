@@ -123,6 +123,7 @@ bool jitc_cuda_api_init() {
         LOAD(cuStreamDestroy, "v2");
         LOAD(cuStreamSynchronize);
         LOAD(cuStreamWaitEvent);
+        LOAD(cuStreamWaitEvent_ptsz);
         LOAD(cuPointerGetAttribute);
         LOAD(cuArrayCreate, "v2");
         LOAD(cuArray3DCreate, "v2");
@@ -174,7 +175,7 @@ void jitc_cuda_api_shutdown() {
     Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleLoadDataEx); Z(cuModuleUnload);
     Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxPushCurrent);
     Z(cuCtxPopCurrent); Z(cuStreamCreate); Z(cuStreamDestroy);
-    Z(cuStreamSynchronize); Z(cuStreamWaitEvent); Z(cuPointerGetAttribute);
+    Z(cuStreamSynchronize); Z(cuStreamWaitEvent); Z(cuStreamWaitEvent_ptsz); Z(cuPointerGetAttribute);
     Z(cuArrayCreate); Z(cuArray3DCreate); Z(cuArray3DGetDescriptor);
     Z(cuArrayDestroy); Z(cuTexObjectCreate); Z(cuTexObjectGetResourceDesc);
     Z(cuTexObjectDestroy); Z(cuMemcpy2DAsync); Z(cuMemcpy3DAsync);
