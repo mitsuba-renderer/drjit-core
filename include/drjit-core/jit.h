@@ -199,8 +199,11 @@ extern JIT_EXPORT void *jit_cuda_lookup(const char *name);
  * \brief Add CUDA event synchronization between thread state's and external
  * CUDA stream.
  *
- * An event will be recorded into the thread's states stream and the external stream
- * will wait on the event before performing any subsequent work.
+ * An event will be recorded into the thread's states stream and the external
+ * stream will wait on the event before performing any subsequent work. The
+ * special value stream==2 denotes the caller's per-thread default stream.
+ * There is no need to ever synchronize with the global NULL stream, since
+ * Dr.Jit implicitly synchronizes with respect to it.
  *
  * \param stream The CUstream handle of the external stream
  */

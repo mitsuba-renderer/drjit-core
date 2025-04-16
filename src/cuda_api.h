@@ -260,6 +260,7 @@ DR_CUDA_SYM(CUresult (*cuStreamCreate)(CUstream *, unsigned int));
 DR_CUDA_SYM(CUresult (*cuStreamDestroy)(CUstream));
 DR_CUDA_SYM(CUresult (*cuStreamSynchronize)(CUstream));
 DR_CUDA_SYM(CUresult (*cuStreamWaitEvent)(CUstream, CUevent, unsigned int));
+DR_CUDA_SYM(CUresult (*cuStreamWaitEvent_ptsz)(CUstream, CUevent, unsigned int));
 DR_CUDA_SYM(CUresult (*cuMemAllocAsync)(CUdeviceptr *, size_t, CUstream));
 DR_CUDA_SYM(CUresult (*cuMemFreeAsync)(CUdeviceptr, CUstream));
 

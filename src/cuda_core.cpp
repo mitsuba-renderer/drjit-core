@@ -109,8 +109,12 @@ std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf, bool release_state_
 void jitc_cuda_sync_stream(uintptr_t stream) {
     ThreadState* ts = thread_state(JitBackend::CUDA);
     CUevent sync_event = ts->sync_stream_event;
-    cuda_check(cuEventRecord(sync_event, (CUstream)ts->stream));
-    cuda_check(cuStreamWaitEvent((CUstream)stream, sync_event, CU_EVENT_DEFAULT));
+    scoped_set_context guard(ts->context);
+    cuda_check(cuEventRecord(sync_event, (CUstream) ts->stream));
+    if (stream != 2)
+        cuda_check(cuStreamWaitEvent((CUstream)stream, sync_event, CU_EVENT_DEFAULT));
+    else
+        cuda_check(cuStreamWaitEvent_ptsz(nullptr, sync_event, CU_EVENT_DEFAULT));
 }
 
 void cuda_check_impl(CUresult errval, const char *file, const int line) {
