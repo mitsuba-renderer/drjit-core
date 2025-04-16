@@ -162,7 +162,7 @@ uint32_t jitc_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
                                        uint32_t pg_count) {
     jitc_log(InfoSym, "jitc_optix_configure_pipeline(pg_count=%u)", pg_count);
 
-    if (!pco || !module || !pg || pg_count == 0)
+    if (!pco || !pg || pg_count == 0)
         jitc_raise("jitc_optix_configure_pipeline(): invalid input arguments!");
 
     OptixPipelineData *p = new OptixPipelineData();
@@ -184,7 +184,8 @@ uint32_t jitc_optix_configure_pipeline(const OptixPipelineCompileOptions *pco,
         OptixPipelineData *p = (OptixPipelineData*) ptr;
         for (size_t i = 0; i < p->program_groups.size(); i++)
             jitc_optix_check(optixProgramGroupDestroy(p->program_groups[i]));
-        jitc_optix_check(optixModuleDestroy(p->module));
+        if (p->module)
+            jitc_optix_check(optixModuleDestroy(p->module));
         delete p;
     };
 
