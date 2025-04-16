@@ -54,17 +54,6 @@ struct half {
 
     struct init_tag {};
     static constexpr half from_binary(uint16_t value) { return { value, init_tag{} }; }
-private:
-    constexpr half(uint16_t value, init_tag) : value(value) { }
-
-    template <typename Dst, typename Src>
-    static Dst bitcast(const Src &src) {
-        static_assert(sizeof(Src) == sizeof(Dst),
-                      "bitcast: size mismatch!");
-        Dst dst;
-        memcpy((void *) &dst, &src, sizeof(Dst));
-        return dst;
-    }
 
     static uint16_t float32_to_float16(float value) {
         #if defined(__F16C__)
@@ -85,6 +74,18 @@ private:
         #else
             return float16_to_float32_fallback(value);
         #endif
+    }
+
+private:
+    constexpr half(uint16_t value, init_tag) : value(value) { }
+
+    template <typename Dst, typename Src>
+    static Dst bitcast(const Src &src) {
+        static_assert(sizeof(Src) == sizeof(Dst),
+                      "bitcast: size mismatch!");
+        Dst dst;
+        memcpy((void *) &dst, &src, sizeof(Dst));
+        return dst;
     }
 
     static half sqrt(half h) {
