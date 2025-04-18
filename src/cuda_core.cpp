@@ -169,6 +169,7 @@ bool jitc_cuda_init() {
     bool cuda_12_1_or_newer =
         (jitc_cuda_version_major > 12 ||
          (jitc_cuda_version_major == 12 && jitc_cuda_version_minor >= 1));
+
     jitc_cuda_arg_limit = cuda_12_1_or_newer ? 4096 : 512;
 
     jitc_log(Info, "jit_cuda_init(): enabling CUDA backend (version %i.%i)",
@@ -355,24 +356,38 @@ bool jitc_cuda_init() {
         device.sm_count = (uint32_t) sm_count;
         device.memory_pool = memory_pool != 0;
         device.preemptable = preemptable;
-        device.compute_capability = 50;
-        device.ptx_version = 65;
         device.context = context;
 
         cuda_check(cuStreamCreate(&device.stream, CU_STREAM_DEFAULT));
         cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
         cuda_check(cuEventCreate(&device.sync_stream_event, CU_EVENT_DISABLE_TIMING));
 
-        const uint32_t sm_table[][2] = { { 70, 65 }, { 71, 65 }, { 75, 65 }, { 80, 70 },
-                                         { 86, 71 }, { 89, 78 }, { 90, 78 } };
-        uint32_t cc_combined = cc_major * 10 + cc_minor;
-        for (int j = 0; j < 7; ++j) {
-            if (cc_combined >= sm_table[j][0]) {
-                device.compute_capability = sm_table[j][0];
-                device.ptx_version = sm_table[j][1];
-            }
+        uint32_t driver_to_ptx_isa_mappling[43][2] = {
+            { 10, 10 },  { 11, 11 },  { 20, 12 },  { 21, 13 },  { 22, 14 },
+            { 23, 14 },  { 30, 20 },  { 31, 21 },  { 32, 22 },  { 40, 23 },
+            { 41, 23 },  { 42, 30 },  { 50, 31 },  { 55, 32 },  { 60, 40 },
+            { 65, 42 },  { 70, 43 },  { 75, 50 },  { 80, 51 },  { 90, 60 },
+            { 91, 61 },  { 92, 62 },  { 100, 63 }, { 101, 64 }, { 102, 65 },
+            { 110, 70 }, { 111, 71 }, { 112, 72 }, { 113, 73 }, { 114, 74 },
+            { 115, 75 }, { 116, 76 }, { 117, 77 }, { 118, 78 }, { 120, 80 },
+            { 121, 81 }, { 122, 82 }, { 123, 83 }, { 124, 84 }, { 125, 85 },
+            { 126, 85 }, { 127, 86 }, { 128, 87 }
+        };
+
+        uint32_t driver_version = jitc_cuda_version_major*10+jitc_cuda_version_minor;
+        uint32_t ptx_version = 0;
+
+        for (uint32_t i = 0; i < 43; ++i) {
+            uint32_t driver_version_i = driver_to_ptx_isa_mappling[i][0],
+                     ptx_version_i    = driver_to_ptx_isa_mappling[i][1];
+
+            if (driver_version >= driver_version_i)
+                ptx_version = ptx_version_i;
+            else
+                break;
         }
 
+        device.ptx_version = ptx_version;
         state.devices.push_back(device);
     }
 

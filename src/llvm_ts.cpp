@@ -836,3 +836,57 @@ void LLVMThreadState::reduce_expanded(VarType vt, ReduceOp op, void *ptr,
 
         size, std::max(1u, blocks));
 }
+
+void LLVMThreadState::coop_vec_pack(uint32_t count, const void *in,
+                                    const MatrixDescr *in_d, void *out,
+                                    const MatrixDescr *out_d) {
+    struct PackTask {
+        drjit::unique_ptr<MatrixDescr[]> in_d, out_d;
+        const uint8_t *in;
+        uint8_t *out;
+
+        void run(uint32_t index) {
+            const MatrixDescr &id = in_d[index], &od = out_d[index];
+            uint32_t tsize = type_size[(int) id.dtype];
+
+            if (id.stride == id.cols && od.stride == od.cols) {
+                std::memcpy(
+                    out + od.offset*tsize,
+                    in + id.offset*tsize,
+                    id.size * tsize
+                );
+            } else {
+                for (uint32_t j = 0; j < id.rows; ++j) {
+                    std::memcpy(
+                           out + (od.offset + j * od.stride)*tsize,
+                           in + (id.offset + j * id.stride)*tsize,
+                           id.cols * tsize);
+                }
+            }
+        }
+    };
+
+    drjit::unique_ptr<PackTask> task = new PackTask();
+    task->in_d = new MatrixDescr[count];
+    task->out_d = new MatrixDescr[count];
+    task->in = (const uint8_t *) in;
+    task->out = (uint8_t *) out;
+    std::memcpy(task->in_d.get(), in_d, count * sizeof(MatrixDescr));
+    std::memcpy(task->out_d.get(), out_d, count * sizeof(MatrixDescr));
+
+    Task *new_task = task_submit_dep(
+        nullptr, &jitc_task, 1, count,
+        [](uint32_t index, void *p) {
+            ((PackTask *) p)->run(index);
+        },
+        task.release(),
+        sizeof(void *),
+        [](void *p) {
+            delete (PackTask *) p;
+        },
+        0
+    );
+
+    task_release(jitc_task);
+    jitc_task = new_task;
+}
