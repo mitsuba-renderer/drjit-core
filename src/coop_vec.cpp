@@ -14,6 +14,7 @@
 #include "op.h"
 #include "optix_api.h"
 #include "optix.h"
+#include "cuda.h"
 #include <drjit-core/nanostl.h>
 
 uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
@@ -28,6 +29,15 @@ uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
     }
 
     const Variable *arg_v = jitc_var(in[0]);
+    if (arg_v->backend == (uint32_t) JitBackend::CUDA) {
+        bool coop_vec_supported =
+            (jitc_cuda_version_major == 12 && jitc_cuda_version_minor >= 8) ||
+            jitc_cuda_version_major > 12;
+        if (!coop_vec_supported)
+            jitc_raise("jit_coop_vec_pack(): The use of cooperative vectors on "
+                       "the CUDA/OptiX backend requires CUDA 12.8 or newer "
+                       "(driver R570+).");
+    }
 
     Variable v;
     v.kind = (uint32_t) VarKind::CoopVecPack;
