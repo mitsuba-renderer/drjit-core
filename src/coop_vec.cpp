@@ -17,6 +17,15 @@
 #include "cuda.h"
 #include <drjit-core/nanostl.h>
 
+static uint32_t unwrap(uint32_t index) {
+    while (true) {
+        const Variable *v = jitc_var(index);
+        if (v->kind != (uint32_t) VarKind::LoopPhi)
+            return index;
+        index = borrow(v->dep[3]);
+    }
+}
+
 uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
     if (n == 0)
         jitc_raise("jit_coop_vec_pack(): vector cannot be empty!");
@@ -473,6 +482,10 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
                 output_length, input_length, x_v->array_length);
     }
 
+    A_index = unwrap(A_index);
+    if (b_index)
+        b_index = unwrap(b_index);
+
     Ref a_ptr, b_ptr;
     {
         void *p = nullptr;
@@ -578,6 +591,9 @@ uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
                 "float16 precision on the CUDA/OptiX backend.");
     }
 
+    if (target_)
+        target_ = unwrap(target_);
+
     Ref target = borrow(target_);
     if (!target) {
         uint64_t z = 0;
@@ -626,6 +642,10 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
     JitBackend backend;
     VarType vt;
     uint32_t size;
+
+    if (target_)
+        target_ = unwrap(target_);
+
     {
         const Variable *v_a = jitc_var(a),
                        *v_b = jitc_var(b);
