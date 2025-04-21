@@ -441,8 +441,8 @@ void jitc_coop_vec_pack_matrices(uint32_t count,
     JitBackend backend;
     {
         const Variable *out_v = jitc_var(out);
-        jitc_log(Debug, "jit_coop_vec_pack(): packing %u matrixes (%u bytes)",
-                 count, out_v->size * type_size[out_v->type]);
+        jitc_log(Debug, "jit_coop_vec_pack(): packing %u %s, %u bytes, r%u -> r%u",
+                 count, count == 1 ? "matrix" : "matrices", out_v->size * type_size[out_v->type], in, out);
         backend = (JitBackend) out_v->backend;
     }
 

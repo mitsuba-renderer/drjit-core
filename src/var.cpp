@@ -854,6 +854,10 @@ uint32_t jitc_var_pointer(JitBackend backend, const void *value,
     std::swap(scope_backup, ts->scope);
     uint32_t result = jitc_var_new(v);
     std::swap(scope_backup, ts->scope);
+
+    jitc_log(Debug, "jit_var_pointer(): pointer r%u = " DRJIT_PTR " (r%u, write=%i)",
+             result, (uintptr_t) value, dep, write);
+
     return result;
 }
 
