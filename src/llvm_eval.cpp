@@ -957,6 +957,7 @@ static void jitc_llvm_render(Variable *v) {
                 }
             }
             break;
+
         case VarKind::Scatter:
             if (v->literal)
                 jitc_llvm_render_scatter_reduce(v, a0, a1, a2, a3);
