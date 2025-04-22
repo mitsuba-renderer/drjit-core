@@ -64,7 +64,7 @@ extern uint32_t jitc_mkperm(JitBackend backend, const uint32_t *values, uint32_t
 /// Perform a synchronous copy operation
 extern void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size);
 
-/// Perform an assynchronous copy operation
+/// Perform an asynchronous copy operation
 extern void jitc_memcpy_async(JitBackend backend, void *dst, const void *src, size_t size);
 
 /// Asynchronously update a single element in memory

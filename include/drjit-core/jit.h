@@ -1073,11 +1073,11 @@ extern JIT_EXPORT uint32_t jit_var_mem_map(JIT_ENUM JitBackend backend,
  * Copy a memory region onto the device and return its variable index. Its
  * reference count is initialized to \c 1.
  *
+ * \param backend
+ *    The JIT backend in which the variable should be created
+ *
  * \param atype
  *    Enumeration characterizing the "flavor" of the source memory.
- *
- * \param cuda
- *    Is this a CUDA variable?
  *
  * \param vtype
  *    Type of the variable to be created, see \ref VarType for details.
