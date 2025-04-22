@@ -547,7 +547,7 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
     Variable v;
     v.kind = (uint32_t) VarKind::CoopVecMatVec;
     v.type = (uint32_t) x_vt;
-    v.size = size;
+    v.size = std::max(size, jitc_var(mask)->size);
     v.backend = (uint32_t) backend;
     v.array_length = output_length;
     v.coop_vec = true;
@@ -619,7 +619,7 @@ uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
     Variable v;
     v.kind = (uint32_t) VarKind::CoopVecAccum;
     v.type = (uint32_t) VarType::Void;
-    v.size = size;
+    v.size = std::max(size, jitc_var(mask)->size);
     v.backend = (uint32_t) backend;
     v.literal = offset;
     v.symbolic = jitc_flag(JitFlag::SymbolicScope);
@@ -694,7 +694,7 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
     Variable v;
     v.kind = (uint32_t) VarKind::CoopVecOuterProductAccum;
     v.type = (uint32_t) VarType::Void;
-    v.size = size;
+    v.size = std::max(size, jitc_var(mask)->size);
     v.backend = (uint32_t) backend;
     v.symbolic = jitc_flag(JitFlag::SymbolicScope);
     v.dep[0] = target_ptr;

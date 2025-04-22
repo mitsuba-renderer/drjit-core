@@ -279,8 +279,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         if (unlikely(v->ref_count == 0))
             jitc_fail("jit_assemble(): schedule contains unreferenced variable r%u!", index);
         if (unlikely(v->size != 1 && v->size != group.size))
-            jitc_fail("jit_assemble(): schedule contains variable r%u with incompatible size "
-                     "(%u and %u)!", index, v->size, group.size);
+            jitc_fail("jit_assemble(): schedule contains variable r%u of kind \"%s\" with incompatible size "
+                     "(var=%u and kernel=%u)!", index, var_kind_name[v->kind], v->size, group.size);
         if (unlikely(v->is_dirty()))
             jitc_fail("jit_assemble(): dirty variable r%u encountered!", index);
 
