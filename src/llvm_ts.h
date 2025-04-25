@@ -50,4 +50,8 @@ struct LLVMThreadState : ThreadState {
     /// dr.ReduceOp.Expand
     void reduce_expanded(VarType vt, ReduceOp op, void *data, uint32_t exp,
                          uint32_t size) override;
+
+    /// Pack a set of matrices/vectors for use with the cooperative vector API
+    void coop_vec_pack(uint32_t count, const void *in, const MatrixDescr *in_d,
+                       void *out, const MatrixDescr *out_d) override;
 };

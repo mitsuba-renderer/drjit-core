@@ -54,6 +54,7 @@
 #include "cuda_packet.h"
 #if defined(DRJIT_ENABLE_OPTIX)
 #  include <drjit-core/optix.h>
+#  include "optix_coop_vec.h"
 #endif
 
 // Forward declarations
@@ -96,16 +97,11 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
          %b3, %w3, %r3, %rd3, %f3, %d3, %p3: reserved for use in compound
          statements that must write a temporary result to a register.
     */
-    uint32_t ptx_version = ts->ptx_version;
-
-    // Using extended kernel parameter passing requires PTX ISA v8.1
-    if (n_params > 512)
-        ptx_version = std::max(ptx_version, 81u);
 
     fmt(".version $u.$u\n"
         ".target sm_$u\n"
         ".address_size 64\n\n",
-        ptx_version / 10, ptx_version % 10,
+        ts->ptx_version / 10, ts->ptx_version % 10,
         ts->compute_capability);
 
     if (!uses_optix) {
@@ -385,6 +381,11 @@ static void jitc_cuda_render(Variable *v) {
              *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
              *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
 
+#if defined(DRJIT_ENABLE_OPTIX)
+    if (v->coop_vec)
+        return jitc_optix_render_coop_vec(v, a0, a1, a2, a3);
+#endif
+
     const ThreadState *ts = thread_state_cuda;
 
     bool f32_upcast = jitc_is_half(v) &&
@@ -581,6 +582,20 @@ static void jitc_cuda_render(Variable *v) {
             jitc_cuda_render_array_select(v, a0, a1, a2);
             break;
 
+#if defined(DRJIT_ENABLE_OPTIX)
+        case VarKind::CoopVecUnpack:
+            jitc_optix_render_coop_vec_unpack(v, a0);
+            break;
+
+        case VarKind::CoopVecAccum:
+            jitc_optix_render_coop_vec_accum(v, a0, a1, a2);
+            break;
+
+        case VarKind::CoopVecOuterProductAccum:
+            jitc_optix_render_coop_vec_outer_product_accum(v, a0, a1, a2, a3);
+            break;
+#endif
+
         case VarKind::Select:
             if (!jitc_is_bool(a1)) {
                 fmt("    selp.$b $v, $v, $v, $v;\n", v, v, a1, a2, a0);
@@ -682,6 +697,10 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::Log2:
             fmt("    lg2.approx.ftz.$t $v, $v;\n", v, v, a0);
+            break;
+
+        case VarKind::Tanh:
+            fmt("    tanh.approx.$t $v, $v;\n", v, v, a0);
             break;
 
 

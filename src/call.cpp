@@ -21,6 +21,7 @@
 #include "trace.h"
 #include "util.h"
 #include "var.h"
+#include "coop_vec.h"
 
 std::vector<CallData *> calls_assembled;
 
@@ -90,7 +91,12 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
         } else if (!v->is_literal()) {
             jitc_raise("jit_var_call(): input variable r%u must either be a "
                        "literal or symbolic wrapper around another variable!", in[i]);
+        } else {
+            // Literal field, read temporarily stashed size (see
+            // jitc_var_call_input in var.cpp)
+            size = std::max(size, v->unused);
         }
+
         if (v->size != 1)
             jitc_raise(
                 "jit_var_call(): size of input variable r%u is %u (must be 1)!",
@@ -619,6 +625,10 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
     } else if (kind == VarKind::PacketScatter) {
         PacketScatterData *psd = (PacketScatterData *) v->data;
         for (uint32_t i : psd->values)
+            jitc_var_call_analyze(call, inst_id, i, data_offset);
+    } else if (kind == VarKind::CoopVecPack) {
+        CoopVecPackData *cvid = (CoopVecPackData *) v->data;
+        for (uint32_t i : cvid->indices)
             jitc_var_call_analyze(call, inst_id, i, data_offset);
     } else if (kind == VarKind::TraceRay) {
         TraceData *td = (TraceData *) v->data;
