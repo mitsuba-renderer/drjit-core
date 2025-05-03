@@ -293,9 +293,9 @@ extern JIT_EXPORT JIT_ENUM LogLevel jit_log_level_stderr();
  * invoked with the contents of library log messages, whose severity matches or
  * exceeds the specified \c level.
  */
-typedef void (*LogCallback)(JIT_ENUM LogLevel, const char *);
+typedef void (*JitLogCallback)(JIT_ENUM LogLevel, const char *);
 extern JIT_EXPORT void jit_set_log_level_callback(JIT_ENUM LogLevel level,
-                                                  LogCallback callback);
+                                                  JitLogCallback callback);
 
 /// Return the currently set minimum log level for output to a callback
 extern JIT_EXPORT JIT_ENUM LogLevel jit_log_level_callback();

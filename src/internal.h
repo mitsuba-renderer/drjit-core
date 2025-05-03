@@ -834,7 +834,7 @@ struct State {
     LogLevel log_level_callback = LogLevel::Disable;
 
     /// Callback for log messages
-    LogCallback log_callback = nullptr;
+    JitLogCallback log_callback = nullptr;
 
     /// Bit-mask of successfully initialized backends
     uint32_t backends = 0;
