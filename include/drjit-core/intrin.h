@@ -12,7 +12,7 @@
 #if defined(_MSC_VER)
 #  include <intrin.h>
 #else
-#  if defined(__aarch64__)
+#  if defined(__arm__) || defined(__aarch64__)
 #    include <arm_neon.h>
 #    include <arm_fp16.h>
 #  elif !defined(DRJIT_DISABLE_AVX512) || !defined(__AVX512F__)
