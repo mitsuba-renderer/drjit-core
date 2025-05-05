@@ -2,7 +2,9 @@
 #include "util.h"
 #include "var.h"
 #include "log.h"
-#include "optix.h"
+#if defined(DRJIT_ENABLE_OPTIX)
+#  include "optix.h"
+#endif
 #include "eval.h"
 #include "util.h"
 

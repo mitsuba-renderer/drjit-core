@@ -28,8 +28,8 @@
 #include <drjit-core/texture.h>
 
 #if defined(DRJIT_ENABLE_OPTIX)
-#include <drjit-core/optix.h>
-#include "optix.h"
+#  include <drjit-core/optix.h>
+#  include "optix.h"
 #endif
 
 #include <nanothread/nanothread.h>

@@ -14,7 +14,9 @@
 #include "eval.h"
 #include "profile.h"
 #include "util.h"
-#include "optix.h"
+#if defined(DRJIT_ENABLE_OPTIX)
+#  include "optix.h"
+#endif
 #include "loop.h"
 #include "call.h"
 #include "trace.h"
