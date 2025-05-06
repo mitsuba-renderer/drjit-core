@@ -46,7 +46,9 @@
 #include "call.h"
 #include "cond.h"
 #include "loop.h"
-#include "optix.h"
+#if defined(DRJIT_ENABLE_OPTIX)
+#  include "optix.h"
+#endif
 #include "trace.h"
 #include "cuda_eval.h"
 #include "cuda_array.h"
@@ -1345,4 +1347,3 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
 
     fmt("\nl_done_$u:\n", call_reg);
 }
-

@@ -4,7 +4,9 @@
 #include "util.h"
 #include "internal.h"
 #include "io.h"
-#include "optix.h"
+#if defined(DRJIT_ENABLE_OPTIX)
+#  include "optix.h"
+#endif
 #include "resources/kernels.h"
 #include <lz4.h>
 

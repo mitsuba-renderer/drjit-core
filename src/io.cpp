@@ -12,7 +12,9 @@
 #include "internal.h"
 #include "profile.h"
 #include "cuda.h"
-#include "optix.h"
+#if defined(DRJIT_ENABLE_OPTIX)
+#  include "optix.h"
+#endif
 #include "resources/kernels.h"
 #include <stdexcept>
 #include <stdio.h>

@@ -1,7 +1,9 @@
 #include <drjit-core/optix.h>
 #include <tsl/robin_map.h>
-#include "optix.h"
-#include "optix_api.h"
+#if defined(DRJIT_ENABLE_OPTIX)
+#  include "optix.h"
+#  include "optix_api.h"
+#endif
 #include "internal.h"
 #include "log.h"
 #include "eval.h"
@@ -671,4 +673,3 @@ void jit_optix_check_impl(int errval, const char *file, const int line) {
         jitc_optix_check_impl(errval, file, line);
     }
 }
-

@@ -11,8 +11,10 @@
 #define DR_OPTIX_ABI_VERSION 87
 #define DR_OPTIX_FUNCTION_TABLE_SIZE 48
 
-#include "optix.h"
-#include "optix_api.h"
+#if defined(DRJIT_ENABLE_OPTIX)
+#  include "optix.h"
+#  include "optix_api.h"
+#endif
 #include "internal.h"
 #include "log.h"
 
