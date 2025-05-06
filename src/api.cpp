@@ -1383,24 +1383,17 @@ const char *jit_type_name(VarType type) noexcept {
 }
 
 VarInfo jit_set_backend(uint32_t index) noexcept {
-    VarInfo info;
-
     lock_guard guard(state.lock);
-    Variable *var = jitc_var(index);
-    default_backend = (JitBackend) var->backend;
 
-    info.backend = (JitBackend)var->backend;
-    info.type = (VarType)var->type;
-    info.state = jitc_var_state(index);
-    info.size = var->size;
-    info.is_array = var->is_array();
-    info.unaligned = var->unaligned;
-    if(info.state == VarState::Literal)
-        info.literal = var->literal;
-    else if (info.state == VarState::Evaluated)
-        info.data = var->data;
-
+    VarInfo info = jitc_var_info(index);
+    default_backend = info.backend;
     return info;
+}
+
+VarInfo jit_var_info(uint32_t index) noexcept {
+    lock_guard guard(state.lock);
+
+    return jitc_var_info(index);
 }
 
 uint32_t jit_var_loop_start(const char *name, bool symbolic, size_t n_indices, uint32_t *indices) {

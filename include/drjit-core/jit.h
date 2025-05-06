@@ -2436,6 +2436,10 @@ struct VarInfo {
  */
 extern JIT_EXPORT VarInfo jit_set_backend(uint32_t index) JIT_NOEXCEPT;
 
+/// Same as \c jit_set_backend without setting the backend.
+/// This improves performance, as no tls access is performed.
+extern JIT_EXPORT VarInfo jit_var_info(uint32_t index) JIT_NOEXCEPT;
+
 /**
  * \brief Inform Dr.Jit about the current source code location
  *
