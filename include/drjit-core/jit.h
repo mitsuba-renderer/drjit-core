@@ -1121,6 +1121,16 @@ JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
 #define jit_var_inc_ref jit_var_inc_ref_impl
 #endif
 
+/**
+ * \brief Lock the recursive state mutex.
+ */
+extern JIT_EXPORT void jit_state_lock();
+/**
+ * \brief Unlock the recursive state mutex.
+ *     This should never be called from a thread that has not locked the mutex.
+ */
+extern JIT_EXPORT void jit_state_unlock();
+
 /// Query the a variable's reference count (used by the test suite)
 extern JIT_EXPORT uint32_t jit_var_ref(uint32_t index);
 

@@ -167,6 +167,10 @@ int jit_flag(JitFlag flag) {
     return jitc_flag(flag);
 }
 
+void jit_state_lock() { lock_acquire(state.lock); }
+
+void jit_state_unlock() { lock_release(state.lock); }
+
 uint32_t jit_record_checkpoint(JitBackend backend) {
     uint32_t result = (uint32_t) thread_state(backend)->side_effects_symbolic.size();
     if (jit_flag(JitFlag::SymbolicScope))
