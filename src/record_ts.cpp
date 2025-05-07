@@ -377,6 +377,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 if(!replay_opaque_width(op))
                     return false;
                 break;
+            case OpType::InitUndefined:
+                if(!replay_init_undefined(op))
+                    return false;
+                break;
             case OpType::Free: {
                 ProfilerPhase profiler2(pr_free);
 
@@ -506,6 +510,33 @@ int Recording::replay_opaque_width(Operation &op) {
 
     if (!dry_run)
         jitc_memcpy(backend, out_var.data, &size, sizeof(uint32_t));
+
+    return true;
+}
+
+void RecordThreadState::notify_init_undefined(uint32_t index) {
+    if (!paused()) {
+        uint32_t start = m_recording.dependencies.size();
+        Variable *v   = jitc_var(index);
+        add_out_param(v->data, (VarType) v->type);
+        uint32_t end = m_recording.dependencies.size();
+
+        Operation op;
+        op.type             = OpType::InitUndefined;
+        op.dependency_range = std::pair(start, end);
+        op.size = v->size;
+        m_recording.operations.push_back(op);
+    }
+}
+
+int Recording::replay_init_undefined(Operation &op) {
+
+    uint32_t dependency_index = op.dependency_range.first;
+    AccessInfo out_info        = dependencies[dependency_index];
+
+    ReplayVariable &out_var = replay_variables[out_info.slot];
+
+    out_var.alloc(backend, op.size, out_info.vtype);
 
     return true;
 }

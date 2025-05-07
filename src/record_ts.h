@@ -39,6 +39,7 @@ enum class OpType {
     ReduceDot,
     Aggregate,
     OpaqueWidth,
+    InitUndefined,
     Free,
     Count,
 };
@@ -300,6 +301,8 @@ struct Recording {
 
     int replay_opaque_width(Operation &op);
 
+    int replay_init_undefined(Operation &op);
+
     /// This function is called after recording and checks that the recording is
     /// valid i.e. that no variables where left uninitialized.
     void validate();
@@ -432,7 +435,17 @@ public:
     void reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                          uint32_t exp, uint32_t size) override;
 
+    /// Some kernels use the width of an array in a computation. When using the
+    /// kernel freezing feature, this requires special precautions to ensure
+    /// that the resulting capture remains usable with different array sizes.
+    /// This notification function exists so that this special-case handling can
+    /// be realized.
     void notify_opaque_width(uint32_t index, uint32_t width_index) override;
+
+    /// Notifies the thread state that an allocation should not be initialized
+    /// as part of the evaluation of an undefined variable. This is required for
+    /// frozen functions to handle undefined variables.
+    void notify_init_undefined(uint32_t index) override;
 
     /**
      * This function is called every time a pointer is freed using \ref

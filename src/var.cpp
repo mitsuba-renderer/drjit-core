@@ -1307,6 +1307,15 @@ uint32_t jitc_var_eval_force(uint32_t index, Variable &v_, void **ptr_out) {
     uint32_t result = jitc_var_mem_map((JitBackend) v.backend, (VarType) v.type,
                                        ptr, v.size, 1);
 
+    if (v.is_undefined()) {
+        // Notify the thread_state that this allocation should not be
+        // initialized for recording.
+        if (thread_state_llvm)
+            thread_state_llvm->notify_init_undefined(result);
+        if (thread_state_cuda)
+            thread_state_cuda->notify_init_undefined(result);
+    }
+
     jitc_log(Debug,
              "jit_var_eval(): %s r%u[%u] = data(" DRJIT_PTR ") [copy of r%u]",
              type_name[v.type], result, v.size, (uintptr_t) ptr, index);

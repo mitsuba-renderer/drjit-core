@@ -730,6 +730,11 @@ struct ThreadState : public ThreadStateBase {
     /// be realized.
     virtual void notify_opaque_width(uint32_t index, uint32_t width_index);
 
+    /// Notifies the thread state that an allocation should not be initialized
+    /// as part of the evaluation of an undefined variable. This is required for
+    /// frozen functions to handle undefined variables.
+    virtual void notify_init_undefined(uint32_t index);
+
     /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
     /// This is required for kernel freezing.
     virtual void notify_free(const void *ptr);
