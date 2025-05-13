@@ -169,6 +169,9 @@ enum class VarKind : uint32_t {
     // Write an element to a variable array
     ArrayWrite,
 
+    // Shader execution reordering (OptiX)
+    ReorderThread,
+
     // Denotes the number of different node types
     Count
 };
