@@ -656,6 +656,29 @@ uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
                                mask, jitc_var(mask), offset);
 }
 
+uint32_t jitc_optix_reorder(uint32_t key, uint32_t num_bits, uint32_t hook) {
+    Variable* v_key = jitc_var(key);
+    Variable* v_hook = jitc_var(hook);
+
+    if ((JitBackend) v_key->backend != JitBackend::CUDA) {
+        jitc_var_inc_ref(hook);
+        return hook;
+    }
+
+    if (num_bits > 16)
+        jitc_fail("jit_optix_reorder(): a maximum of 16 bits can be used for "
+                  "the key!");
+
+    uint32_t new_hook = jitc_var_new_node_2(
+        JitBackend::CUDA, VarKind::ReorderThread, (VarType) v_hook->type,
+        v_hook->size, v_key->symbolic | v_hook->symbolic, key, v_key, hook,
+        v_hook, num_bits);
+
+    jitc_var(new_hook)->optix = 1;
+
+    return new_hook;
+}
+
 void jitc_optix_check_impl(OptixResult errval, const char *file,
                            const int line) {
     if (unlikely(errval != 0)) {

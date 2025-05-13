@@ -58,6 +58,11 @@ extern JIT_EXPORT uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr,
                                                     uint32_t offset,
                                                     uint32_t mask);
 
+// Trigger a reordering of the GPU threads
+extern JIT_EXPORT uint32_t jitc_optix_reorder(uint32_t key,
+                                              uint32_t num_bits,
+                                              uint32_t hook);
+
 /// Compile an OptiX kernel
 extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
                                size_t buffer_size, const char *kernel_name,

@@ -1087,6 +1087,11 @@ uint32_t jit_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
     return jitc_optix_sbt_data_load(sbt_data_ptr, type, offset, mask);
 }
 
+
+uint32_t jit_optix_reorder(uint32_t key, uint32_t num_bits, uint32_t hook) {
+    lock_guard guard(state.lock);
+    return jitc_optix_reorder(key, num_bits, hook);
+}
 #endif
 
 void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,

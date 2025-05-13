@@ -271,7 +271,10 @@ const char *var_kind_name[(int) VarKind::Count] {
     "array_read",
 
     // Write an element to a variable array
-    "array_write"
+    "array_write",
+
+    // Shader execution reordering (OptiX)
+    "reorder_thread"
 };
 
 /// Temporary string buffer for miscellaneous variable-related tasks

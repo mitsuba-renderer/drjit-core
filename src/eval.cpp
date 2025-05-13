@@ -311,6 +311,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             jitc_process_array_op(kind, v);
         }
 
+        #if defined(DRJIT_ENABLE_OPTIX)
+            uses_optix |= v->optix;
+        #endif
+
         if (v->is_evaluated()) {
             n_params_in++;
             v->param_type = ParamType::Input;
@@ -349,10 +353,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             n_side_effects += (uint32_t) v->side_effect;
             v->param_type = ParamType::Register;
             v->param_offset = 0xFFFF;
-
-            #if defined(DRJIT_ENABLE_OPTIX)
-                uses_optix |= v->optix;
-            #endif
         }
     }
 
