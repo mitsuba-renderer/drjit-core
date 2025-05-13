@@ -59,6 +59,11 @@ extern JIT_EXPORT uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr,
                                                     uint32_t offset,
                                                     uint32_t mask);
 
+// Trigger a reordering of the GPU threads
+extern JIT_EXPORT void jitc_optix_reorder(uint32_t key, uint32_t num_bits,
+                                          uint32_t n_values, uint32_t *values,
+                                          uint32_t *out);
+
 /// Compile an OptiX kernel
 extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
                                size_t buffer_size, const char *kernel_name,
@@ -72,7 +77,8 @@ extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
                               uint32_t size, const void *args, uint32_t n_args);
 
 /// Optional: set the desired launch size
-extern void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples);
+extern void jitc_optix_set_launch_size(uint32_t width, uint32_t height,
+                                       uint32_t samples);
 
 /// Convert a Dr.Jit variable type into an OptiX CoopVec variable type
 extern uint32_t jitc_optix_coop_vec_type_id(VarType vt);

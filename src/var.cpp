@@ -285,7 +285,10 @@ const char *var_kind_name[(int) VarKind::Count] {
     "coop_vec_ternary_op",
     "coop_vec_mat_vec",
     "coop_vec_accum",
-    "coop_vec_outer_product_accum"
+    "coop_vec_outer_product_accum",
+
+    // Shader execution reordering (OptiX)
+    "reorder_thread"
 };
 
 /// Temporary string buffer for miscellaneous variable-related tasks

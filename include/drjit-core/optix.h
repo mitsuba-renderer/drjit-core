@@ -226,6 +226,32 @@ extern JIT_EXPORT uint32_t jit_optix_sbt_data_load(uint32_t sbt_data_ptr,
                                                    VarType type,
                                                    uint32_t offset,
                                                    uint32_t mask);
+/**
+ * \brief Trigger a reordering of the GPU threads
+ *
+ * This operation triggers a call to the Shader Execution Reordering feature of
+ * the GPU. Its main goal is to perform a hardware-level shuffle of the threads
+ * such that the per-warp divergence can be reduced. To the user, the shuffle
+ * is invisible - the order within an array is still preserved.
+ *
+ * The \c key argument is the JIT index of a 32-bit unsigned integer array that
+ * defines a hint that is used during the shuffle, similarly to a sorting key.
+ * However, only \c num_bits of the hint are considered (starting from the least
+ * signifcant bit). A maximum of 16 bits can be used.
+ *
+ * The \c values argument is an array of JIT indices of size \c n_values. Its
+ * purpose is to define a set of JIT indices to which the reordering can attach
+ * itself. These \c values are returned in the \c out argument, but as new JIT
+ * indices that also encode the reordering operation. Effectively, this provides
+ * the following guarantee: the reordering will take place if any of the \c out
+ * indices are used in a kernel.
+ *
+ * Note that if \c JitFlag::ShaderExecutionReordering is not set, this function
+ * is a no-op.
+ */
+extern JIT_EXPORT void jit_optix_reorder(uint32_t key, uint32_t num_bits,
+                                         uint32_t n_values, uint32_t *values,
+                                         uint32_t *out);
 
 #if defined(__cplusplus)
 }
