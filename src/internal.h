@@ -182,6 +182,9 @@ enum class VarKind : uint32_t {
     CoopVecAccum,
     CoopVecOuterProductAccum,
 
+    // Shader execution reordering (OptiX)
+    ReorderThread,
+
     // Denotes the number of different node types
     Count
 };
