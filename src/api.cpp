@@ -1087,10 +1087,10 @@ uint32_t jit_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
     return jitc_optix_sbt_data_load(sbt_data_ptr, type, offset, mask);
 }
 
-
-uint32_t jit_optix_reorder(uint32_t key, uint32_t num_bits, uint32_t hook) {
+void jit_optix_reorder(uint32_t key, uint32_t num_bits, uint32_t n_hooks,
+                       uint32_t *hooks, uint32_t *out) {
     lock_guard guard(state.lock);
-    return jitc_optix_reorder(key, num_bits, hook);
+    return jitc_optix_reorder(key, num_bits, n_hooks, hooks, out);
 }
 #endif
 

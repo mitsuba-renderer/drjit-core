@@ -656,27 +656,51 @@ uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
                                mask, jitc_var(mask), offset);
 }
 
-uint32_t jitc_optix_reorder(uint32_t key, uint32_t num_bits, uint32_t hook) {
-    Variable* v_key = jitc_var(key);
-    Variable* v_hook = jitc_var(hook);
+void jitc_optix_reorder(uint32_t key, uint32_t num_bits, uint32_t n_hooks,
+                            uint32_t *hooks, uint32_t *out) {
+    Variable *v_key  = jitc_var(key);
 
     if ((JitBackend) v_key->backend != JitBackend::CUDA) {
-        jitc_var_inc_ref(hook);
-        return hook;
+        for (uint32_t i = 0; i < n_hooks; ++i) {
+            jitc_var_inc_ref(hooks[i]);
+            out[i] = hooks[i];
+        }
+        return;
     }
+
+    // TODO sanity check size ?
+
+    bool symbolic = v_key->symbolic;
+    for (uint32_t i = 0; i < n_hooks; ++i)
+        symbolic |= jitc_var(hooks[i])->symbolic;
 
     if (num_bits > 16)
         jitc_fail("jit_optix_reorder(): a maximum of 16 bits can be used for "
                   "the key!");
 
-    uint32_t new_hook = jitc_var_new_node_2(
-        JitBackend::CUDA, VarKind::ReorderThread, (VarType) v_hook->type,
-        v_hook->size, v_key->symbolic | v_hook->symbolic, key, v_key, hook,
-        v_hook, num_bits);
+    uint32_t reorder = jitc_var_new_node_1(
+        JitBackend::CUDA, VarKind::ReorderThread, VarType::Void, v_key->size,
+        symbolic, key, v_key, num_bits);
+    Variable *v_reorder = jitc_var(reorder);
+    v_reorder->optix = 1;
 
-    jitc_var(new_hook)->optix = 1;
+    // Guarantee that the reordering is assembled before anything that follows
+    jitc_new_scope(JitBackend::CUDA);
 
-    return new_hook;
+    for (uint32_t i = 0; i < n_hooks; ++i) {
+        // Hooks are just a `Bitcast` of their original value (no-op). We
+        // additionally add the reodering node as the second dependency. This
+        // guarantees that it will be detected during `jitc_var_traverse` and
+        // that it will only be assembled once, despite it not being directly
+        // used when assembling a `Bitcast` node.
+        Variable *v_hook = jitc_var(hooks[i]);
+        out[i] = jitc_var_new_node_2(JitBackend::CUDA, VarKind::Bitcast,
+                                     (VarType) v_hook->type, v_hook->size,
+                                     v_hook->symbolic, hooks[i], v_hook,
+                                     reorder, v_reorder);
+    }
+
+    jitc_var_dec_ref(reorder, v_reorder);
 }
 
 void jitc_optix_check_impl(OptixResult errval, const char *file,

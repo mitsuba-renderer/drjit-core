@@ -65,8 +65,7 @@ static void jitc_cuda_render_trace(const Variable *v,
                                    const Variable *pipeline,
                                    const Variable *sbt);
 
-static void jitc_cuda_render_reorder(const Variable *, const Variable *,
-                                     const Variable *);
+static void jitc_cuda_render_reorder(const Variable *, const Variable *);
 #endif
 
 void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
@@ -963,7 +962,7 @@ static void jitc_cuda_render(Variable *v) {
 
 #if defined(DRJIT_ENABLE_OPTIX)
         case VarKind::ReorderThread:
-            jitc_cuda_render_reorder(v, a0, a1);
+            jitc_cuda_render_reorder(v, a0);
             break;
 #endif
 
@@ -1171,8 +1170,7 @@ static void jitc_cuda_render_trace(const Variable *v,
         fmt("\nl_masked_$u:\n", v->reg_index);
 }
 
-static void jitc_cuda_render_reorder(const Variable *v, const Variable *key,
-                                     const Variable *hook) {
+static void jitc_cuda_render_reorder(const Variable *v, const Variable *key) {
     if (jit_flag(JitFlag::ShaderExecutionReordering)) {
         // Create an outgoing Nop hit object on all lanes, to overwrite any existing
         // hit object which could influence the reordering.
@@ -1187,8 +1185,6 @@ static void jitc_cuda_render_reorder(const Variable *v, const Variable *key,
             v, (uint32_t) v->literal,
             v, v);
     }
-
-    fmt("    mov.$b $v, $v;\n", v, v, hook);
 }
 #endif
 

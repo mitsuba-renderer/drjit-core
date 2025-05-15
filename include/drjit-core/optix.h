@@ -239,18 +239,19 @@ extern JIT_EXPORT uint32_t jit_optix_sbt_data_load(uint32_t sbt_data_ptr,
  * However, only \c num_bits of the hint are considered (starting from the least
  * signifcant bit). A maximum of 16 bits can be used.
  *
- * The \c hook argument is another JIT index. It's sole purpose is to define an
- * ordering within the JIT graph of where the reordering operation should occur.
- * It it is also returned by this function, which effectively places this
- * reordering operation between the definition of the \c hook array and its
- * next usage.
+ * The \c hooks argument is an array of JIT indices of size \c n_hooks. Its
+ * purpose is to define a set of JIT indices to which the reordering can attach
+ * itself. These hooks are returned in the \c out argument, but are now new
+ * indices that encode the reordering operation too. Effectively, this provides
+ * the following guarantee: the reordering will take place between the
+ * definition of the hooks and their next usage.
  *
  * Note that if \c JitFlag::ShaderExecutionReordering is not set, this function
  * is a no-op.
  */
-extern JIT_EXPORT uint32_t jit_optix_reorder(uint32_t key,
-                                             uint32_t num_bits,
-                                             uint32_t hook);
+extern JIT_EXPORT void jit_optix_reorder(uint32_t key, uint32_t num_bits,
+                                         uint32_t n_hooks, uint32_t *hooks,
+                                         uint32_t *out);
 
 #if defined(__cplusplus)
 }
