@@ -1999,12 +1999,19 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
 
         ptr_to_slot.insert({ ptr, slot });
     } else {
-        slot                  = it.value();
         RecordedVariable &old = m_recording.recorded_variables[slot];
-        if (old.init != RecordedVarInit::None)
-            jitc_fail("record(): Tried to overwrite an initialized variable "
-                      "with an offset buffer!");
+        if (old.init != RecordedVarInit::None) {
+            // The offset buffer allocation can be reused. If this happens, we
+            // have to capture the new version, while leaving the old one
+            // intact. We therefore evict the old entry in the ``ptr_to_slot``
+            // mapping and insert the new value.
+            uint32_t slot = m_recording.recorded_variables.size();
+            m_recording.recorded_variables.push_back(rv);
+            ptr_to_slot[ptr] = slot;
+            return slot;
+        }
 
+        slot                  = it.value();
         m_recording.recorded_variables[slot] = rv;
     }
 
