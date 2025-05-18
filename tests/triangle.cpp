@@ -254,7 +254,7 @@ void demo() {
         };
 
         jit_optix_ray_trace(sizeof(trace_args) / sizeof(uint32_t), trace_args,
-                            0, nullptr, nullptr, false, true, mask.index(),
+                            0, nullptr, nullptr, false, 0, 0, true, mask.index(),
                             pipeline_handle.index(), sbt_handle.index());
 
         payload_0 = UInt32::steal(trace_args[15]);

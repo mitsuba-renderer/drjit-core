@@ -514,8 +514,10 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
 void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
                           uint32_t n_hit_object_field,
                           OptixHitObjectField *hit_object_fields,
-                          uint32_t *hit_object_out, int reorder, int invoke,
-                          uint32_t mask, uint32_t pipeline, uint32_t sbt) {
+                          uint32_t *hit_object_out, int reorder,
+                          uint32_t reorder_hint, uint32_t reorder_hint_num_bits,
+                          int invoke, uint32_t mask, uint32_t pipeline,
+                          uint32_t sbt) {
     VarType types[]{ VarType::UInt64,  VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
                      VarType::Float32, VarType::Float32, VarType::Float32,
@@ -575,6 +577,16 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
         if (hit_object_fields[i] >= OptixHitObjectField::Count)
             jitc_raise("jit_optix_ray_trace(): unknown hit object field!");
 
+
+    if (reorder) {
+        if (reorder_hint_num_bits > 16)
+            jitc_fail("jit_optix_ray_trace(): a maximum of 16 bits can be used for "
+                      "the reordering key!");
+        if ((VarType) jitc_var(reorder_hint)->type != VarType::UInt32)
+            jitc_raise("jit_optix_ray_trace(): 'reorder_hint' must be an "
+                       "unsigned 32-bit array.");
+    }
+
     // Potentially apply any masks on the mask stack
     Ref valid = steal(jitc_var_mask_apply(mask, size));
 
@@ -589,6 +601,8 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
     TraceData *td = new TraceData();
     td->invoke = invoke;
     td->reorder = reorder;
+    td->reorder_hint = reorder_hint;
+    td->reorder_hint_num_bits = reorder_hint_num_bits;
     td->indices.reserve(n_args);
     for (uint32_t i = 0; i < n_args; ++i) {
         uint32_t id = args[i];
@@ -606,6 +620,11 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
 
     Variable *v = jitc_var(index);
     v->optix = 1;
+
+    if (reorder && reorder_hint_num_bits > 0) {
+        v->dep[3] = reorder_hint;
+        jitc_var_inc_ref(reorder_hint);
+    }
 
     // Extract payload values
     for (uint32_t i = 0; i < np; ++i)
