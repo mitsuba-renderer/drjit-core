@@ -170,8 +170,16 @@ enum OptixHitObjectField {
   * indices are written to \c hit_object_out.
   *
   * Shader execution reordering can be requested by using the \c reorder flag.
-  * Note that if \c JitFlag::ShaderExecutionReordering is not set, the
-  * \c reorder flag will be ignored.
+  * When the flag is set, the reordering will use the interesected shape's ID
+  * as a sorting key. In addtion, an extra reordering hint can be passed in the
+  * \c reorder_hit argument of which only the the last \c reorder_hint_num_bits
+  * will be used (starting from the lowest signifcant bit). The hint will serve
+  * as an extra sorting level for threads that intersected the same shape. The
+  * hint is optional, it can be discared by setting \c reorder_hint_num_bits to
+  * 0. If you wish to completely ignore the intersected shape's ID for the
+  * reodering, \ref jit_optix_reorder is more appropriate. Note that if
+  * \c JitFlag::ShaderExecutionReordering is not set, the \c reorder flag will
+  * be ignored.
   *
   * The \c invoke flag determines whether the closest hit and miss programs are
   * executed or not.
@@ -211,7 +219,8 @@ enum OptixHitObjectField {
 extern JIT_EXPORT void jit_optix_ray_trace(
     uint32_t n_args, uint32_t *args, uint32_t n_hit_object_field,
     OptixHitObjectField *hit_object_fields, uint32_t *hit_object_out,
-    int reorder, int invoke, uint32_t mask, uint32_t pipeline, uint32_t sbt);
+    int reorder, uint32_t reorder_hint, uint32_t reorder_hint_num_bits,
+    int invoke, uint32_t mask, uint32_t pipeline, uint32_t sbt);
 
 /**
  * \brief Read data from \c OptixHitObjectField::SBTDataPointer

@@ -1145,8 +1145,18 @@ static void jitc_cuda_render_trace(const Variable *v,
     // =====================================================
     // 2. Reorder
     // =====================================================
-    if (td->reorder && jit_flag(JitFlag::ShaderExecutionReordering))
-        fmt("    call (), _optix_hitobject_reorder, ($v_z, $v_z);\n", v, v);
+    if (td->reorder && jit_flag(JitFlag::ShaderExecutionReordering)) {
+        if (td->reorder_hint_num_bits == 0) {
+            fmt("    call (), _optix_hitobject_reorder, ($v_z, $v_z);\n", v, v);
+        } else {
+            fmt("    .reg .u32 $v_hint_bits;\n"
+                "    mov.u32 $v_hint_bits, $u;\n"
+                "    call (), _optix_hitobject_reorder, ($v, $v_hint_bits);\n",
+                v,
+                v, td->reorder_hint_num_bits,
+                jitc_var(td->reorder_hint), v);
+        }
+    }
 
     // =====================================================
     // 3. Get HitObject fields
