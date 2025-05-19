@@ -1999,6 +1999,7 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
 
         ptr_to_slot.insert({ ptr, slot });
     } else {
+        slot                  = it.value();
         RecordedVariable &old = m_recording.recorded_variables[slot];
         if (old.init != RecordedVarInit::None) {
             // The offset buffer allocation can be reused. If this happens, we
@@ -2011,7 +2012,6 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
             return slot;
         }
 
-        slot                  = it.value();
         m_recording.recorded_variables[slot] = rv;
     }
 
