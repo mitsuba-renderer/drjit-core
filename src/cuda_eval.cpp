@@ -64,6 +64,8 @@ static void jitc_cuda_render_trace(const Variable *v,
                                    const Variable *valid,
                                    const Variable *pipeline,
                                    const Variable *sbt);
+
+static void jitc_cuda_render_reorder(const Variable *, const Variable *);
 #endif
 
 void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
@@ -958,6 +960,11 @@ static void jitc_cuda_render(Variable *v) {
         case VarKind::CondOutput: // No output
             break;
 
+#if defined(DRJIT_ENABLE_OPTIX)
+        case VarKind::ReorderThread:
+            jitc_cuda_render_reorder(v, a0);
+            break;
+#endif
 
         default:
             jitc_fail("jitc_cuda_render(): unhandled variable kind \"%s\"!",
@@ -1036,6 +1043,9 @@ static void jitc_cuda_render_trace(const Variable *v,
         "    mov.u32 $v_count, $u;\n",
         v, v, v, v, payload_count);
 
+    // =====================================================
+    // 1. Traverse
+    // =====================================================
     put("    call (");
     for (uint32_t i = 0; i < 32; ++i)
         fmt("$v_out_$u$s", v, i, i + 1 < 32 ? ", " : "");
@@ -1058,6 +1068,25 @@ static void jitc_cuda_render_trace(const Variable *v,
 
     put(");\n");
 
+    // =====================================================
+    // 2. Reorder
+    // =====================================================
+    if (td->reorder && jit_flag(JitFlag::ShaderExecutionReordering)) {
+        if (td->reorder_hint_num_bits == 0) {
+            fmt("    call (), _optix_hitobject_reorder, ($v_z, $v_z);\n", v, v);
+        } else {
+            fmt("    .reg .u32 $v_hint_bits;\n"
+                "    mov.u32 $v_hint_bits, $u;\n"
+                "    call (), _optix_hitobject_reorder, ($v, $v_hint_bits);\n",
+                v,
+                v, td->reorder_hint_num_bits,
+                jitc_var(td->reorder_hint), v);
+        }
+    }
+
+    // =====================================================
+    // 3. Get HitObject fields
+    // =====================================================
     size_t n_fields = td->hit_object_fields.size();
     for (uint32_t i = 0; i < n_fields; ++i) {
         uint32_t field_i = td->hit_object_fields[i];
@@ -1123,6 +1152,9 @@ static void jitc_cuda_render_trace(const Variable *v,
         }
     }
 
+    // =====================================================
+    // 4. Invoke miss & closest hit programs
+    // =====================================================
     if (td->invoke) {
         put("    call (");
         for (uint32_t i = 0; i < 32; ++i)
@@ -1146,6 +1178,21 @@ static void jitc_cuda_render_trace(const Variable *v,
 
     if (some_masked)
         fmt("\nl_masked_$u:\n", v->reg_index);
+}
+
+static void jitc_cuda_render_reorder(const Variable *v, const Variable *key) {
+    if (jit_flag(JitFlag::ShaderExecutionReordering)) {
+        // Create an outgoing Nop hit object on all lanes, to overwrite any existing
+        // hit object which could influence the reordering.
+        put("    call (), _optix_hitobject_make_nop, ();\n");
+
+        fmt("     .reg .u32 $v_hint_bits;\n"
+            "    mov.u32 $v_hint_bits, $u;\n"
+            "    call (), _optix_hitobject_reorder, ($v, $v_hint_bits);\n",
+            v,
+            v, v->literal,
+            key, v);
+    }
 }
 #endif
 

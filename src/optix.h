@@ -45,18 +45,22 @@ extern void jitc_optix_update_sbt(uint32_t index, const OptixShaderBindingTable 
 enum class OptixHitObjectField: uint32_t;
 
 /// Insert a function call to optixTrace into the program
-extern void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
-                                 uint32_t n_hit_object_field,
-                                 OptixHitObjectField *hit_object_fields,
-                                 uint32_t *hit_object_out, int invoke,
-                                 uint32_t mask, uint32_t pipeline,
-                                 uint32_t sbt);
+extern void jitc_optix_ray_trace(
+    uint32_t n_args, uint32_t *args, uint32_t n_hit_object_field,
+    OptixHitObjectField *hit_object_fields, uint32_t *hit_object_out,
+    int reorder, uint32_t reorder_hint, uint32_t reorder_hint_num_bits,
+    int invoke, uint32_t mask, uint32_t pipeline, uint32_t sbt);
 
 // Read data from the SBT data buffer
 extern JIT_EXPORT uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr,
                                                     VarType type,
                                                     uint32_t offset,
                                                     uint32_t mask);
+
+// Trigger a reordering of the GPU threads
+extern JIT_EXPORT void jitc_optix_reorder(uint32_t key, uint32_t num_bits,
+                                          uint32_t n_values, uint32_t *values,
+                                          uint32_t *out);
 
 /// Compile an OptiX kernel
 extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
@@ -71,4 +75,5 @@ extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
                               uint32_t size, const void *args, uint32_t n_args);
 
 /// Optional: set the desired launch size
-extern void jitc_optix_set_launch_size(uint32_t width, uint32_t height, uint32_t samples);
+extern void jitc_optix_set_launch_size(uint32_t width, uint32_t height,
+                                       uint32_t samples);

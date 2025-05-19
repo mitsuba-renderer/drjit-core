@@ -1074,11 +1074,14 @@ void jit_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt) {
 void jit_optix_ray_trace(uint32_t n_args, uint32_t *args,
                          uint32_t n_hit_object_field,
                          OptixHitObjectField *hit_object_fields,
-                         uint32_t *hit_object_out, int invoke,
+                         uint32_t *hit_object_out,
+                         int reorder, uint32_t reorder_hint,
+                         uint32_t reorder_hint_num_bits, int invoke,
                          uint32_t mask, uint32_t pipeline, uint32_t sbt) {
     lock_guard guard(state.lock);
     jitc_optix_ray_trace(n_args, args, n_hit_object_field, hit_object_fields,
-                         hit_object_out, invoke, mask, pipeline, sbt);
+                         hit_object_out, reorder, reorder_hint,
+                         reorder_hint_num_bits, invoke, mask, pipeline, sbt);
 }
 
 uint32_t jit_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
@@ -1087,6 +1090,11 @@ uint32_t jit_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
     return jitc_optix_sbt_data_load(sbt_data_ptr, type, offset, mask);
 }
 
+void jit_optix_reorder(uint32_t key, uint32_t num_bits, uint32_t n_values,
+                       uint32_t *values, uint32_t *out) {
+    lock_guard guard(state.lock);
+    return jitc_optix_reorder(key, num_bits, n_values, values, out);
+}
 #endif
 
 void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,

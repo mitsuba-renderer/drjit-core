@@ -6,6 +6,9 @@ struct TraceData {
 #if defined(DRJIT_ENABLE_OPTIX)
     std::vector<uint32_t> hit_object_fields;
     bool invoke;
+    bool reorder;
+    uint32_t reorder_hint;
+    uint32_t reorder_hint_num_bits;
 #endif
 
     ~TraceData() {
