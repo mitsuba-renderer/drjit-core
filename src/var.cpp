@@ -1488,8 +1488,11 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
         memcpy(dst, &v->literal, isize);
     } else if (v->is_evaluated()) {
         if (jitc_flags() & (uint32_t) JitFlag::FreezingScope)
-            jitc_raise("jit_var_read(): reading from evaluated variables while "
-                       "recording a frozen function is not supported!");
+            jitc_raise(
+                "jit_var_read(): reading from evaluated variables while "
+                "recording a frozen function is not supported! This could also "
+                "be caused by non-symbolic loops. In that case, setting "
+                "``JitFlag::SymbolicLoops`` to true might solve the issue.");
 
         jitc_memcpy((JitBackend) v->backend, dst,
                     (const uint8_t *) v->data + offset * isize, isize);

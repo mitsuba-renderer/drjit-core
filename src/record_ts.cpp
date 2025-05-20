@@ -200,12 +200,19 @@ struct ReplayVariable {
         size_t size = (data_size / (size_t) tsize);
 
         if (size == 0)
-            jitc_raise("replay(): Error, determining size of variable! init "
-                       "%u, dsize=%zu",
-                       (uint32_t) init, data_size);
+            jitc_raise(
+                "replay(): Error, determining size of variable! init "
+                "%u, dsize=%zu. This can occur if the size of a kernel could "
+                "not be inferred correctly during replay, or if a memcopy "
+                "operation referenced a pointer not allocated with jit_alloc.",
+                (uint32_t) init, data_size);
 
         if (size * (size_t) tsize != data_size)
-            jitc_raise("replay(): Error, determining size of variable!");
+            jitc_raise("replay(): Error, determining size of variable! init "
+                "%u, dsize=%zu. This can occur if the size of a kernel could "
+                "not be inferred correctly during replay, or if a memcopy "
+                "operation referenced a pointer not allocated with jit_alloc.",
+                (uint32_t) init, data_size);
 
         return (uint32_t) size;
     }
@@ -293,7 +300,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
 #endif
 
     if (dynamic_cast<RecordThreadState *>(ts) != nullptr)
-        jitc_raise("replay(): Tried to replay while recording!");
+        jitc_raise("replay(): Tried to replay while recording! This should not "
+                   "occur, as calling frozen functions while recording one "
+                   "will not replay the inner function. This indicates a bug "
+                   "in the Dr.Jit's freeze.cpp file.");
 
 #if defined(DRJIT_ENABLE_OPTIX)
     OptixShaderBindingTable *tmp_sbt = ts->optix_sbt;
@@ -1290,7 +1300,10 @@ void RecordThreadState::memcpy_async(void *dst, const void *src, size_t size) {
             } else {
                 jitc_raise(
                     "record(): Tried to record a memcpy_async operation, "
-                    "but the source pointer %p was not known.",
+                    "but the source pointer %p is unknown. This can occur if "
+                    "the source of the memcopy was not found during traversal "
+                    "of the function inputs, or did not refer to the start of "
+                    "a variables memory region.",
                     src);
             }
         }
@@ -1944,8 +1957,11 @@ void RecordThreadState::poke(void *dst, const void *src, uint32_t size) {
     // At the time of writing, \c poke is only called from \c jit_var_write.
     // \c src will therefore not be a pointer, allocated with \c jitc_malloc,
     // and we cannot track it.
-    jitc_raise("RecordThreadState::poke(): this function cannot be recorded!");
-    (void) dst; (void) src; (void) size;
+    jitc_raise("RecordThreadState::poke(): this function cannot be recorded! "
+               "This function might be called when writing into a JIT array.");
+    (void) dst;
+    (void) src;
+    (void) size;
 }
 
 // Enqueue a function to be run on the host once backend computation is done
@@ -1973,7 +1989,9 @@ void Recording::validate() {
                     "such object instance was found in the function's inputs. "
                     "You can trigger traversal by including the relevant "
                     "objects in the function input, or by specifying them "
-                    "using the state_fn argument.",
+                    "using the state_fn argument. Alternatively, this error "
+                    "might be caused by a nested "
+                    "virtual function call.",
                     i, rv.ptr, rv.last_op);
             } else
                 jitc_raise(
@@ -1993,7 +2011,9 @@ void Recording::validate() {
                     "traversal was skipped because no such object instance was "
                     "found in the function's inputs. You can trigger traversal "
                     "by including the relevant objects in the function input, "
-                    "or by specifying them using the state_fn argument.",
+                    "or by specifying them using the state_fn argument. "
+                    "Alternatively, this error might be caused by a nested "
+                    "virtual function call.",
                     i);
             } else
                 jitc_raise(
@@ -2148,7 +2168,8 @@ uint32_t RecordThreadState::get_variable(const void *ptr) {
 
     if (it == ptr_to_slot.end())
         jitc_raise("Failed to find the slot corresponding to the variable "
-                   "with data at %p",
+                   "with data at %p! This can occur if the pointer does not "
+                   "point to the start of an allocated memory region.",
                    ptr);
 
     return it.value();
