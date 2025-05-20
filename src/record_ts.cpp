@@ -381,6 +381,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 if(!replay_init_undefined(op))
                     return false;
                 break;
+            case OpType::BoolReduceBoolAsync4:
+                if (!replay_reduce_bool_async_4(op))
+                    return false;
+                break;
             case OpType::Free: {
                 ProfilerPhase profiler2(pr_free);
 
@@ -1162,6 +1166,64 @@ int Recording::replay_reduce_expanded(Operation &op) {
     if (!dry_run)
         ts->reduce_expanded(vt, rop, data_var.data,
                             replication_per_worker * workers, size);
+
+    return true;
+}
+
+void RecordThreadState::reduce_bool_async_4(uint8_t *values, uint32_t size,
+                                            uint8_t *out, ReduceOp op) {
+    if (!paused()) {
+        try {
+            record_reduce_bool_async_4(values, size, out, op);
+        } catch (...) {
+            record_exception();
+        }
+    }
+    pause_scope pause(this);
+    return m_internal->reduce_bool_async_4(values, size, out, op);
+}
+
+void RecordThreadState::record_reduce_bool_async_4(uint8_t *values,
+                                                   uint32_t size, uint8_t *out,
+                                                   ReduceOp rop) {
+    jitc_log(LogLevel::Debug,
+             "record(): %s_async_4(values=%p, size=%u, out=%p)",
+             rop == ReduceOp::Or ? "any" : "all", values, size, out);
+
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
+    add_in_param(values, VarType::Bool);
+    add_out_param(out, VarType::Bool);
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
+
+    Operation op;
+    op.type = OpType::BoolReduceBoolAsync4;
+    op.dependency_range = std::pair(start, end);
+    op.rtype = rop;
+    op.size = size;
+    m_recording.operations.push_back(op);
+}
+
+int Recording::replay_reduce_bool_async_4(Operation &op) {
+
+    uint32_t dependency_index = op.dependency_range.first;
+
+    AccessInfo in_info        = dependencies[dependency_index];
+    AccessInfo out_info       = dependencies[dependency_index + 1];
+
+    ReplayVariable &in_var = replay_variables[in_info.slot];
+    ReplayVariable &out_var = replay_variables[out_info.slot];
+
+    out_var.alloc(backend, 1, VarType::Bool);
+
+    uint32_t size = in_var.size(VarType::Bool);
+
+    jitc_log(LogLevel::Debug,
+             "record(): %s_async_4(values=%p, size=%u, out=%p)",
+             op.rtype == ReduceOp::Or ? "any" : "all", in_var.data, size, out_var.data);
+
+    if (!dry_run)
+        ts->reduce_bool_async_4((uint8_t *) in_var.data, size,
+                          (uint8_t *) out_var.data, op.rtype);
 
     return true;
 }
@@ -2290,6 +2352,10 @@ struct DisabledThreadState : ThreadState {
                            void * /*payload*/) override {
         record_exception();
     };
+    void reduce_bool_async_4(uint8_t * /*values*/, uint32_t /*size*/,
+                             uint8_t * /*out*/, ReduceOp /*op*/) override {
+        record_exception();
+    }
     void notify_expand(uint32_t /*index*/) override {};
     void reduce_expanded(VarType /*vt*/, ReduceOp /*reduce_op*/,
                          void * /*data*/, uint32_t /*exp*/,

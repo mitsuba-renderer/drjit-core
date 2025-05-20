@@ -40,6 +40,7 @@ enum class OpType {
     Aggregate,
     OpaqueWidth,
     InitUndefined,
+    BoolReduceBoolAsync4,
     Free,
     Count,
 };
@@ -299,6 +300,8 @@ struct Recording {
 
     int replay_aggregate(Operation &op);
 
+    int replay_reduce_bool_async_4(Operation &op);
+
     int replay_opaque_width(Operation &op);
 
     int replay_init_undefined(Operation &op);
@@ -435,6 +438,11 @@ public:
     void reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                          uint32_t exp, uint32_t size) override;
 
+    /// Reduces an array of booleans by filling trailing elements and applying a
+    /// UInt32 reduction.
+    void reduce_bool_async_4(uint8_t *values, uint32_t size,
+                                     uint8_t *out, ReduceOp op) override;
+
     /// Some kernels use the width of an array in a computation. When using the
     /// kernel freezing feature, this requires special precautions to ensure
     /// that the resulting capture remains usable with different array sizes.
@@ -549,6 +557,9 @@ public:
     void record_aggregate(void *dst, AggregationEntry *agg, uint32_t size);
     void record_reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                                 uint32_t exp, uint32_t size);
+
+    void record_reduce_bool_async_4(uint8_t *values, uint32_t size,
+                                    uint8_t *out, ReduceOp op);
 
     // =============================================================
     //!                     Utility Functions
