@@ -137,10 +137,10 @@
 #include "var.h"
 
 const char *op_type_name[(int) OpType::Count]{
-    "Barrier",        "KernelLaunch",      "MemsetAsync", "Expand",
-    "ReduceExpanded", "Compress",          "MemcpyAsync", "Mkperm",
-    "BlockReduce",    "BlockPrefixReduce", "ReduceDot",   "Aggregate",
-    "Free",
+    "Barrier",        "KernelLaunch",      "MemsetAsync",          "Expand",
+    "ReduceExpanded", "Compress",          "MemcpyAsync",          "Mkperm",
+    "BlockReduce",    "BlockPrefixReduce", "ReduceDot",            "Aggregate",
+    "OpaqueWidth",    "InitUndefined",     "BoolReduceBoolAsync4", "Free"
 };
 
 static bool dry_run = false;
@@ -2023,6 +2023,17 @@ void Recording::validate() {
                     "as part of the frozen function input.",
                     i, op_type_name[(uint32_t) last_op.type], rv.last_op);
 #endif
+        }
+    }
+    for (uint32_t i = 0; i < operations.size(); i++) {
+        Operation &op = operations[i];
+        if (op.type == OpType::Compress && requires_dry_run) {
+            jitc_log(
+                LogLevel::Warn,
+                "You tried to record a frozen function that calls "
+                "drjit.compress and also requires the frozen function to be "
+                "dry run. This will result in the frozen function being "
+                "re-traced for every call, and impact performance.");
         }
     }
 }
