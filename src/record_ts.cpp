@@ -2033,7 +2033,8 @@ void Recording::validate() {
                 "You tried to record a frozen function that calls "
                 "drjit.compress and also requires the frozen function to be "
                 "dry run. This will result in the frozen function being "
-                "re-traced for every call, and impact performance.");
+                "re-traced for every call. If possible try to split up your "
+                "function.");
         }
     }
 }
