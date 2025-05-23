@@ -928,7 +928,7 @@ int Recording::replay_launch(Operation &op) {
     }
     if (launch_size == 0) {
         jitc_log(LogLevel::Debug, "replay(): Could not infer launch "
-                                  "size, using recorded size");
+                                  "size, using recorded size %zu.", op.size);
         launch_size = (uint32_t) op.size;
     }
 

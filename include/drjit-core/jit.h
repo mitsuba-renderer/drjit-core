@@ -1633,9 +1633,9 @@ enum JitFlag {
     JitFlagForbidSynchronization = 1 << 17,
     JitFlagScatterReduceLocal = 1 << 18,
     JitFlagSymbolic = 1 << 19,
-    KernelFreezing = 1 << 20,
-    FreezingScope = 1 << 21,
-    EnableObjectTraversal = 1 << 22
+    JitFlagKernelFreezing = 1 << 20,
+    JitFlagFreezingScope = 1 << 21,
+    JitFlagEnableObjectTraversal = 1 << 22
 };
 #endif
 
