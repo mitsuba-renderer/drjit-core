@@ -94,7 +94,7 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
         } else {
             // Literal field, read temporarily stashed size (see
             // jitc_var_call_input in var.cpp)
-            size = std::max(size, v->unused);
+            size = std::max(size, v->scratch);
         }
 
         if (v->size != 1)

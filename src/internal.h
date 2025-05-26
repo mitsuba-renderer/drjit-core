@@ -237,8 +237,8 @@ struct alignas(64) Variable {
     /// How many times has this variable entry been (re-) used?
     uint32_t counter;
 
-    /// Unused
-    uint32_t unused;
+    /// Free-use field temporarily used by various parts of Dr.Jit
+    uint32_t scratch;
 
     // ================  Essential flags used in the LVN key  =================
     // (+15 bits)

@@ -910,9 +910,9 @@ uint32_t jitc_var_call_input(uint32_t index) {
         v2.kind = (uint32_t) VarKind::Literal;
         v2.literal = v->literal;
         // Temporarily stash the size here (subsequently read in call.cpp)
-        // Will have to be redesigned if the 'unused' field is ever used
+        // Will have to be redesigned if the 'scratch' field is ever used
         // for another purpose.
-        v2.unused = v->size;
+        v2.scratch = v->size;
         disable_lvn = true;
         return jitc_var_new(v2);
     } else {
