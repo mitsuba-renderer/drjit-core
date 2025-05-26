@@ -55,6 +55,9 @@
 #if defined(DRJIT_ENABLE_OPTIX)
 #  include <drjit-core/optix.h>
 #endif
+#include <tsl/robin_set.h>
+
+using drjit::vector;
 
 // Forward declarations
 static void jitc_cuda_render(Variable *v);
@@ -899,12 +902,51 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::LoopEnd: {
                 const LoopData *ld = (LoopData *) a0->data;
+
+                vector<Variable*> inner_in;
+                vector<Variable*> inner_out;
+                tsl::robin_set<Variable*> inner_in_set;
+
+                inner_in.reserve(ld->size);
+                inner_out.reserve(ld->size);
+                inner_in_set.reserve(ld->size);
+
                 for (uint32_t i = 0; i < ld->size; ++i) {
-                    const Variable *inner_out = jitc_var(ld->inner_out[i]),
-                                   *inner_in = jitc_var(ld->inner_in[i]);
-                    if (inner_out != inner_in && inner_in->reg_index && inner_out->reg_index)
-                        fmt("    mov.$b $v, $v;\n", inner_in, inner_in, inner_out);
+                    uint32_t in_idx = ld->inner_in[i];
+                    Variable* in = jitc_var(in_idx);
+                    uint32_t out_idx = ld->inner_out[i];
+                    Variable* out = jitc_var(out_idx);
+
+                    // Which state variables are actually necessary ?
+                    if (in != out && in->reg_index && out->reg_index) {
+                        inner_in_set.insert(in);
+                        inner_in.emplace_back(in);
+                        inner_out.emplace_back(out);
+                    }
                 }
+
+                /* If inner_out[i] == inner_in[j] (with i != j), we need to copy
+                   `inner_in[j]` to a temporary to ensure that we can store its
+                   original value to `inner_out[i]`, rather than its updated
+                   value (i.e after the `inner_in[j] = inner_out[j]` assignment). */
+                vector<uint32_t> requires_copy;
+                requires_copy.reserve(ld->size);
+                for (uint32_t i = 0; i < inner_out.size(); ++i) {
+                    if (inner_in_set.find(inner_out[i]) != inner_in_set.end())
+                        fmt("    .reg.$b $v_tmp;\n"
+                            "    mov.$b $v_tmp, $v;\n",
+                            inner_in[i], inner_in[i],
+                            inner_in[i], inner_in[i], inner_out[i]);
+                }
+                for (uint32_t i = 0; i < inner_out.size(); ++i) {
+                    if (inner_in_set.find(inner_out[i]) != inner_in_set.end())
+                        fmt("    mov.$b $v, $v_tmp;\n",
+                            inner_in[i], inner_in[i], inner_in[i]);
+                    else
+                        fmt("    mov.$b $v, $v;\n",
+                            inner_in[i], inner_in[i], inner_out[i]);
+                }
+
                 fmt("    bra l_$u_cond;\n\n"
                     "l_$u_done:\n",
                     a0->reg_index, a0->reg_index);

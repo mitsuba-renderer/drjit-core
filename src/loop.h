@@ -1,13 +1,14 @@
 #include <stdint.h>
+#include <drjit-core/nanostl.h>
 
 struct LoopData {
     std::string name;
     size_t size;
     uint32_t loop_start;
-    std::vector<uint32_t> outer_in;
-    std::vector<uint32_t> inner_in;
-    std::vector<uint32_t> inner_out;
-    std::vector<WeakRef> outer_out;
+    drjit::vector<uint32_t> outer_in;
+    drjit::vector<uint32_t> inner_in;
+    drjit::vector<uint32_t> inner_out;
+    drjit::vector<WeakRef> outer_out;
     bool symbolic;
     bool retry;
 
