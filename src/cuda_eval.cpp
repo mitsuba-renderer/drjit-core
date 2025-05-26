@@ -55,6 +55,9 @@
 #if defined(DRJIT_ENABLE_OPTIX)
 #  include <drjit-core/optix.h>
 #endif
+#include <tsl/robin_set.h>
+
+using drjit::vector;
 
 // Forward declarations
 static void jitc_cuda_render(Variable *v);
@@ -377,6 +380,66 @@ static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
             return 53;
     }
 }
+
+void jitc_cuda_render_loop_end(Variable *a0) {
+    const LoopData *ld = (LoopData *) a0->data;
+    uint32_t size = ld->size;
+
+    // Initialize scratch space
+    for (uint32_t i = 0; i < size; ++i) {
+        Variable *in  = jitc_var(ld->inner_in[i]),
+                 *out = jitc_var(ld->inner_out[i]);
+        in->scratch = out->scratch = 0;
+    }
+
+    // Mark inputs that will be read
+    for (uint32_t i = 0; i < size; ++i) {
+        Variable *in  = jitc_var(ld->inner_in[i]),
+                 *out = jitc_var(ld->inner_out[i]);
+        if (in == out || !in->reg_index || !out->reg_index)
+            continue;
+
+        in->scratch = 1;
+    }
+
+    /* If inner_out[i] == inner_in[j] (with i != j), we need to copy
+       `inner_in[j]` to a temporary to ensure that we can store its
+       original value to `inner_out[i]`, rather than its updated
+       value (i.e after the `inner_in[j] = inner_out[j]` assignment). */
+    for (uint32_t i = 0; i < size; ++i) {
+        Variable *in  = jitc_var(ld->inner_in[i]),
+                 *out = jitc_var(ld->inner_out[i]);
+
+        // If `out->scratch != 1` then we're certain that `out` is an input
+        if (in == out || !in->reg_index || !out->reg_index || out->scratch != 1)
+            continue;
+
+        fmt("    .reg.$b $v_tmp;\n"
+            "    mov.$b $v_tmp, $v;\n",
+            in, in, in, in, out);
+
+        // Mark that we have created a temporary
+        out->scratch = 2;
+    }
+
+    for (uint32_t i = 0; i < size; ++i) {
+        Variable *in  = jitc_var(ld->inner_in[i]),
+                 *out = jitc_var(ld->inner_out[i]);
+
+        if (in == out || !in->reg_index || !out->reg_index)
+            continue;
+
+        if (out->scratch == 2)
+            fmt("    mov.$b $v, $v_tmp;\n", in, in, in);
+        else
+            fmt("    mov.$b $v, $v;\n", in, in, out);
+    }
+
+    fmt("    bra l_$u_cond;\n\n"
+        "l_$u_done:\n",
+        a0->reg_index, a0->reg_index);
+}
+
 
 static void jitc_cuda_render(Variable *v) {
     const char *stmt = nullptr;
@@ -895,19 +958,10 @@ static void jitc_cuda_render(Variable *v) {
                 "l_$u_body:\n", a1, a0->reg_index, a0->reg_index);
             break;
 
-        case VarKind::LoopEnd: {
-                const LoopData *ld = (LoopData *) a0->data;
-                for (uint32_t i = 0; i < ld->size; ++i) {
-                    const Variable *inner_out = jitc_var(ld->inner_out[i]),
-                                   *inner_in = jitc_var(ld->inner_in[i]);
-                    if (inner_out != inner_in && inner_in->reg_index && inner_out->reg_index)
-                        fmt("    mov.$b $v, $v;\n", inner_in, inner_in, inner_out);
-                }
-                fmt("    bra l_$u_cond;\n\n"
-                    "l_$u_done:\n",
-                    a0->reg_index, a0->reg_index);
-            }
+        case VarKind::LoopEnd:
+            jitc_cuda_render_loop_end(a0);
             break;
+
 
         case VarKind::LoopPhi:
             if (v->is_array())

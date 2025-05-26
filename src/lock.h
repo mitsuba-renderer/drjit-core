@@ -33,6 +33,8 @@ inline void lock_acquire(Lock &lock) { lock.lock(); }
 inline void lock_release(Lock &lock) { lock.unlock(); }
 #endif
 
+extern void jitc_sanitation_checkpoint();
+
 /// RAII helper for scoped lock acquisition
 class lock_guard {
 public:
