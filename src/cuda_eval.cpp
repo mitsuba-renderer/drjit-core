@@ -1067,6 +1067,7 @@ static void jitc_cuda_render_trace(const Variable *v,
     OptixPipelineData *pipeline_p = (OptixPipelineData *) pipeline->literal;
     OptixShaderBindingTable *sbt_p = (OptixShaderBindingTable*) sbt->literal;
     bool disabled = false, some_masked = false;
+    TraceData *td = (TraceData *) v->data;
 
     if (ts->optix_pipeline == state.optix_default_pipeline) {
         ts->optix_pipeline = pipeline_p;
@@ -1098,8 +1099,11 @@ static void jitc_cuda_render_trace(const Variable *v,
         if (valid->literal == 0)
             disabled = true;
     } else if (!disabled) {
-        fmt("    @!$v bra l_masked_$u;\n", valid, v->reg_index);
         some_masked = true;
+        if (td->reorder)
+            fmt("    @!$v bra l_reorder_$u;\n", valid, v->reg_index);
+        else
+            fmt("    @!$v bra l_masked_$u;\n", valid, v->reg_index);
     }
 
     if (disabled) {
@@ -1107,8 +1111,6 @@ static void jitc_cuda_render_trace(const Variable *v,
             fmt("    mov.b32 $v_out_$u, 0;\n", v, i);
         return;
     }
-
-    TraceData *td = (TraceData *) v->data;
 
     uint32_t payload_count = (uint32_t) td->indices.size() - 15;
 
@@ -1146,6 +1148,12 @@ static void jitc_cuda_render_trace(const Variable *v,
     // 2. Reorder
     // =====================================================
     if (td->reorder && jit_flag(JitFlag::ShaderExecutionReordering)) {
+        if (some_masked)
+            fmt("\nl_reorder_$u:\n"
+                "    @!$v call (), _optix_hitobject_make_nop, ();\n",
+                v->reg_index,
+                valid);
+
         if (td->reorder_hint_num_bits == 0) {
             fmt("    call (), _optix_hitobject_reorder, ($v_z, $v_z);\n", v, v);
         } else {
@@ -1156,6 +1164,9 @@ static void jitc_cuda_render_trace(const Variable *v,
                 v, td->reorder_hint_num_bits,
                 jitc_var(td->reorder_hint), v);
         }
+
+        if (some_masked)
+            fmt("    @!$v bra l_masked_$u;\n", valid, v->reg_index);
     }
 
     // =====================================================
