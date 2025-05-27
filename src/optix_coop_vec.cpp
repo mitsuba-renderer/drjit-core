@@ -94,7 +94,7 @@ static void copy_from_buffer(const char *name, const Variable *v) {
         fmt("        ld.local.$b %cv$u_$u, [$s+$u];\n", v, v->reg_index, i, name, tsize * i);
 }
 
-static void put_elem(const Variable *v, uint32_t reg_count, bool trailing_comma, bool is_return_value = false) {
+static void put_elems(const Variable *v, uint32_t reg_count, bool trailing_comma, bool is_return_value = false) {
     for (uint32_t i = 0; i < reg_count; ++i) {
         if (i < v->array_length || is_return_value)
             fmt("%cv$u_$u, ", v->reg_index, i);
@@ -105,6 +105,10 @@ static void put_elem(const Variable *v, uint32_t reg_count, bool trailing_comma,
         buffer.rewind(2);
 }
 
+// Packed cooperative vectors are stored in `u32` variables. For float16 values,
+// the upper half is unused as opposed to, say, packing two of them into a
+// 32-bit integer. The backend compiler is free to perform such optimizations
+// later on, but they are not part of the OptiX PTX intrinsic interface.
 void jitc_optix_render_coop_vec_unpack(const Variable *v, const Variable *a0) {
     uint32_t tsize = type_size[v->type];
 
@@ -129,6 +133,8 @@ void jitc_optix_render_coop_vec_accum(const Variable *v, const Variable *target,
     uint32_t length = value->array_length,
              reg_count = get_reg_count(length);
 
+    // Apply any potential mask from the mask stack, see
+    // jitc_coop_vec_accum()
     if (use_mask)
         fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
 
@@ -148,7 +154,7 @@ void jitc_optix_render_coop_vec_accum(const Variable *v, const Variable *target,
     if (reg_count) {
         fmt("        call (), _optix_reduce_sum_accumulate_$uxi32, (%type, %size, %dst, %offset, ",
             reg_count);
-        put_elem(value, reg_count, false);
+        put_elems(value, reg_count, false);
         put(");\n");
     } else {
         declare_buffer("src", value);
@@ -169,6 +175,8 @@ void jitc_optix_render_coop_vec_outer_product_accum(const Variable *v, const Var
 
     const MatrixDescr *d = (const MatrixDescr *) v->data;
 
+    // Apply any potential mask from the mask stack, see
+    // jitc_coop_vec_outer_product_accum()
     bool use_mask = !mask->is_literal() || mask->literal != 1;
     if (use_mask)
         fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
@@ -197,8 +205,8 @@ void jitc_optix_render_coop_vec_outer_product_accum(const Variable *v, const Var
         fmt("        call (), _optix_outer_product_accumulate_$uxi32, (%type_0, "
             "%size_0, %type_1, %size_1, %dst, %offset, %layout, %stride, ",
             reg_count);
-        put_elem(v0, reg_count, true);
-        put_elem(v1, reg_count, false);
+        put_elems(v0, reg_count, true);
+        put_elems(v1, reg_count, false);
         put(");\n");
     } else {
         declare_buffer("src_0", v0);
@@ -221,6 +229,9 @@ void jitc_optix_render_coop_vec(const Variable *v, const Variable *a0,
              length = v->array_length,
              op_length = length;
 
+    // For matrix multiplications, the size of the required intrinsic (e.g., 16
+    // vs 64 vs N) is related to the maximum cooperative vector size of the
+    // input and output.
     if ((VarKind) v->kind == VarKind::CoopVecMatVec)
         op_length = std::max(op_length, (uint32_t) a1->array_length);
 
@@ -267,7 +278,7 @@ void jitc_optix_render_coop_vec(const Variable *v, const Variable *a0,
 
             if (reg_count) {
                 put("        call (");
-                put_elem(v, reg_count, false, true);
+                put_elems(v, reg_count, false, true);
                 fmt("), _optix_vector_load_$uxi32, (%type, %size, %src);\n",
                     reg_count);
             } else {
@@ -290,9 +301,9 @@ void jitc_optix_render_coop_vec(const Variable *v, const Variable *a0,
 
             if (reg_count) {
                 put("        call (");
-                put_elem(v, reg_count, false, true);
+                put_elems(v, reg_count, false, true);
                 fmt("), _optix_vector_op1_$uxi32, (%op, %type, %size, %type, %size, ", reg_count);
-                put_elem(a0, reg_count, false);
+                put_elems(a0, reg_count, false);
                 put(");\n");
             } else {
                 declare_buffer("src", a0);
@@ -315,10 +326,10 @@ void jitc_optix_render_coop_vec(const Variable *v, const Variable *a0,
 
             if (reg_count) {
                 put("        call (");
-                put_elem(v, reg_count, false, true);
+                put_elems(v, reg_count, false, true);
                 fmt("), _optix_vector_op2_$uxi32, (%op, %type, %size, %type, %size, ", reg_count);
-                put_elem(a0, reg_count, true);
-                put_elem(a1, reg_count, false);
+                put_elems(a0, reg_count, true);
+                put_elems(a1, reg_count, false);
                 put(");\n");
             } else {
                 declare_buffer("src_0", a0);
@@ -343,11 +354,11 @@ void jitc_optix_render_coop_vec(const Variable *v, const Variable *a0,
 
             if (reg_count) {
                 put("        call (");
-                put_elem(v, reg_count, false, true);
+                put_elems(v, reg_count, false, true);
                 fmt("), _optix_vector_op3_$uxi32, (%op, %type, %size, %type, %size, ", reg_count);
-                put_elem(a0, reg_count, true);
-                put_elem(a1, reg_count, true);
-                put_elem(a2, reg_count, false);
+                put_elems(a0, reg_count, true);
+                put_elems(a1, reg_count, true);
+                put_elems(a2, reg_count, false);
                 put(");\n");
             } else {
                 declare_buffer("src_0", a0);
@@ -382,9 +393,9 @@ void jitc_optix_render_coop_vec(const Variable *v, const Variable *a0,
 
             if (reg_count) {
                 put("        call (");
-                put_elem(v, reg_count, false, true);
+                put_elems(v, reg_count, false, true);
                 fmt("), _optix_vector_op1_$uxi32, (%op, %in_type, %size, %out_type, %size, ", reg_count);
-                put_elem(a0, reg_count, false);
+                put_elems(a0, reg_count, false);
                 put(");\n");
             } else {
                 declare_buffer("src", a0);
@@ -454,7 +465,7 @@ void jitc_optix_render_coop_vec(const Variable *v, const Variable *a0,
 
                 if (reg_count) {
                     put("        call (");
-                    put_elem(v, reg_count, false, true);
+                    put_elems(v, reg_count, false, true);
                     fmt("), _optix_matvecmul_$uxi32, (%out_type, %out_size, "
                         "%in_type, %in_size, %in_interp, %mat_n, "
                         "%mat_k, %mat_ptr, %mat_offset, "
@@ -462,7 +473,7 @@ void jitc_optix_render_coop_vec(const Variable *v, const Variable *a0,
                         "%mat_type, %bias_ptr, %bias_offset, "
                         "%bias_type, ",
                         reg_count);
-                    put_elem(a1, reg_count, false);
+                    put_elems(a1, reg_count, false);
                     put(");\n");
                 } else {
                     declare_buffer("src", a1);

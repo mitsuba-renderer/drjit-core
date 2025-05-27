@@ -16,6 +16,7 @@
 
 static bool jitc_optix_cache_hit = false;
 static bool jitc_optix_cache_global_disable = false;
+uint32_t jitc_optix_max_coopvec_size = 0;
 
 void jitc_optix_log(unsigned int level, const char *tag, const char *message, void *) {
     // Note: cannot use jitc_var_log here. Parallel OptiX compilation may enter this
@@ -249,6 +250,12 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
 #endif
 
+    if (jitc_optix_max_coopvec_size > 64) {
+        // In large neural networks, spilling-related costs dominate.
+        // In this case, prefer a larger register count over occupancy.
+        mco.maxRegisterCount = 255;
+    }
+
     jitc_optix_cache_hit = !jitc_optix_cache_global_disable;
     size_t log_size = sizeof(error_log);
     OptixDeviceContext &optix_context = state.devices[ts->device].optix_context;
@@ -322,19 +329,30 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     pgd[0].raygen.module = kernel.optix.mod;
     pgd[0].raygen.entryFunctionName = strdup(kern_name);
 
+    // Prefer continuation over direct callables when compiling programs that
+    // make use of cooperative vectors.
+    bool continuation_callables = jitc_optix_max_coopvec_size != 0;
+
     for (auto const &it : globals_map) {
         if (!it.first.callable)
             continue;
 
-        char *name = (char *) malloc_check(52);
-        snprintf(name, 52, "__direct_callable__%016llx%016llx",
+        char *name = (char *) malloc_check(58);
+        snprintf(name, 58, "__%s_callable__%016llx%016llx",
+                 continuation_callables ? "continuation" : "direct",
                  (unsigned long long) it.first.hash.high64,
                  (unsigned long long) it.first.hash.low64);
 
         uint32_t index = 1 + it.second.callable_index;
         pgd[index].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
-        pgd[index].callables.moduleDC = kernel.optix.mod;
-        pgd[index].callables.entryFunctionNameDC = name;
+
+        if (continuation_callables) {
+            pgd[index].callables.moduleCC = kernel.optix.mod;
+            pgd[index].callables.entryFunctionNameCC = name;
+        } else {
+            pgd[index].callables.moduleDC = kernel.optix.mod;
+            pgd[index].callables.entryFunctionNameDC = name;
+        }
     }
 
     kernel.optix.pg = new OptixProgramGroup[n_programs];
@@ -377,6 +395,8 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     for (uint32_t i = 0; i < n_programs; ++i) {
         if (i == 0)
             free((char *) pgd[0].raygen.entryFunctionName);
+        else if (continuation_callables)
+            free((char *) pgd[i].callables.entryFunctionNameCC);
         else
             free((char *) pgd[i].callables.entryFunctionNameDC);
         pipeline.program_groups.push_back(kernel.optix.pg[i]);
