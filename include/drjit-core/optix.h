@@ -177,9 +177,11 @@ enum OptixHitObjectField {
   * as an extra sorting level for threads that intersected the same shape. The
   * hint is optional, it can be discared by setting \c reorder_hint_num_bits to
   * 0. If you wish to completely ignore the intersected shape's ID for the
-  * reodering, \ref jit_optix_reorder is more appropriate. Note that if
-  * \c JitFlag::ShaderExecutionReordering is not set, the \c reorder flag will
-  * be ignored.
+  * reordering, \ref jit_optix_reorder is more appropriate. Finally, if some
+  * threads are masked with \c mask, they will still take part in the reordering
+  * and will be grouped together.
+  * Note that if \c JitFlag::ShaderExecutionReordering is not set, the
+  * \c reorder flag will be ignored.
   *
   * The \c invoke flag determines whether the closest hit and miss programs are
   * executed or not.
