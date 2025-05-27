@@ -254,15 +254,19 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                              uint32_t in_size, uint32_t in_align,
                              uint32_t out_size, uint32_t out_align,
                              uint32_t n_regs) {
+    uint32_t flags = jitc_flags();
+
     bool print_labels = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
-                        (jitc_flags() & (uint32_t) JitFlag::PrintIR);
+                        (flags & (uint32_t) JitFlag::PrintIR);
 
     put(".visible .func");
     if (out_size)
         fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
     fmt(" $s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
-        uses_optix ? "__direct_callable__" : "func_");
+        uses_optix ? (jitc_optix_use_continuation_callables()
+                          ? "__continuation_callable__"
+                          : "__direct_callable__") : "func_");
 
     if (call->use_index)
         put(".reg .u32 index, ");
@@ -1197,10 +1201,13 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     // 3. Turn callable ID into a function pointer
     // =====================================================
 
-    if (!uses_optix)
+    if (!uses_optix) {
         put("        ld.global.u64 %rd2, callables[%r3];\n");
-    else
-        put("        call (%rd2), _optix_call_direct_callable, (%r3);\n");
+    } else {
+        fmt("        call (%rd2), _optix_call_$s_callable, (%r3);\n",
+            jitc_optix_use_continuation_callables() ? "continuation"
+                                                    : "direct");
+    }
 
     // =====================================================
     // 4. Obtain pointer to supplemental call data

@@ -15,15 +15,6 @@
 #include "optix_api.h"
 #include "optix.h"
 #include "cuda.h"
-#include <drjit-core/nanostl.h>
-
-bool jitc_coop_vec_supported(JitBackend backend) {
-    if (backend == JitBackend::CUDA)
-        return (jitc_cuda_version_major == 12 &&
-                jitc_cuda_version_minor >= 8) ||
-               jitc_cuda_version_major > 12;
-    return true;
-}
 
 // Strip away loop phi nodes to recover the nested memory buffer. This is needed
 // when cooperative vectors in symbolic loops/conditionals reference the buffer
@@ -35,6 +26,15 @@ static uint32_t unwrap(uint32_t index) {
             return index;
         index = borrow(v->dep[3]);
     }
+}
+
+bool jitc_coop_vec_supported(JitBackend backend) {
+    if (backend == JitBackend::CUDA)
+        return (jitc_cuda_version_major == 12 &&
+                jitc_cuda_version_minor >= 8) ||
+               jitc_cuda_version_major > 12;
+    else
+        return true;
 }
 
 uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
@@ -88,18 +88,7 @@ uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
         return jitc_coop_vec_literal((JitBackend) v.backend, (VarType) v.type,
                                      &literal, v.size, n);
 
-    uint32_t result = jitc_var_new(v, true);
-    jitc_var(result)->data = cvid.get();
-
-    jitc_var_set_callback(
-        result,
-        [](uint32_t, int free, void *p) {
-            if (free)
-                delete (CoopVecPackData *) p;
-        },
-        cvid.release(), true);
-
-    return result;
+    return jitc_var_new_take_ownership(v, std::move(cvid), true);
 }
 
 void jitc_coop_vec_unpack(uint32_t index, uint32_t n, uint32_t *out) {
@@ -269,7 +258,7 @@ uint32_t jitc_coop_vec_binary_op(JitOp op, uint32_t a0, uint32_t a1) {
 
     if (!(a0_v->size == a1_v->size || a1_v->size == 1 || a0_v->size == 1))
         jitc_raise(
-            "jit_coop_vec_binary_op(): incompatible thread count (%u and %u)!",
+            "jit_coop_vec_binary_op(): incompatible width (%u and %u)!",
             a0_v->size, a1_v->size);
 
     uint32_t max_size = std::max(a0_v->size, a1_v->size);
@@ -329,7 +318,7 @@ uint32_t jitc_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a
         !(a1_v->size == max_size || a1_v->size == 1) ||
         !(a2_v->size == max_size || a2_v->size == 1))
         jitc_raise(
-            "jit_coop_vec_ternary_op(): incompatible thread count (%u, %u, and %u)!",
+            "jit_coop_vec_ternary_op(): incompatible width (%u, %u, and %u)!",
             a0_v->size, a1_v->size, a2_v->size);
 
     // Exploit some basic optimization opportunities (useful for AD)
@@ -544,8 +533,10 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
                             (b_vt == VarType::Void || b_vt == VarType::Float32));
 
     if (!supported)
-        jitc_raise("jit_coop_vec_matvec(): incompatible input types "
-                   "(currently, only float16 is supported on the CUDA/OptiX)!");
+        jitc_raise(
+            "jit_coop_vec_matvec(): incompatible input types (currently, only "
+            "float16 is supported on the CUDA/OptiX backend. The LLVM backend"
+            "supports float16 and float32).");
 
     Ref mask = steal(jitc_var_bool(backend, true));
     mask = steal(jitc_var_mask_apply(mask, size));
@@ -566,17 +557,7 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
     jitc_var_inc_ref(b_ptr);
     jitc_var_inc_ref(mask);
 
-    uint32_t result = jitc_var_new(v, true);
-    jitc_var(result)->data = cvmvd.get();
-    jitc_var_set_callback(
-        result,
-        [](uint32_t, int free, void *p) {
-            if (free)
-                delete (CoopVecMatVecData *) p;
-        },
-        cvmvd.release(), true);
-
-    return result;
+    return jitc_var_new_take_ownership(v, std::move(cvmvd), true);
 }
 
 uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
@@ -712,19 +693,9 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
     jitc_var_inc_ref(b);
     jitc_var_inc_ref(mask);
 
-    uint32_t result = jitc_var_new(v, true);
-    jitc_var_mark_side_effect(result);
-
     drjit::unique_ptr<MatrixDescr> md = new MatrixDescr(*descr);
 
-    jitc_var(result)->data = md.get();
-    jitc_var_set_callback(
-        result,
-        [](uint32_t, int free, void *p) {
-            if (free)
-                delete (MatrixDescr *) p;
-        },
-        md.release(), true);
-
-    return target.release();
+    uint32_t result = jitc_var_new_take_ownership(v, std::move(md), true);
+    jitc_var_mark_side_effect(result);
+    return result;
 }

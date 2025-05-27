@@ -197,6 +197,18 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
             }
             break;
 
+#if defined(DRJIT_ENABLE_OPTIX)
+        case VarKind::CoopVecMatVec:
+            jitc_optix_max_coopvec_size = std::max(
+                std::max(
+                    jitc_optix_max_coopvec_size,
+                    (uint32_t) jitc_var(v->dep[1])->array_length
+                ),
+                (uint32_t) v->array_length
+            );
+            break;
+#endif
+
         case VarKind::TraceRay: {
                 TraceData *call = (TraceData *) v->data;
                 for (uint32_t i: call->indices)
@@ -675,6 +687,10 @@ void jitc_eval_impl(ThreadState *ts) {
     visited.clear();
     visit_later.clear();
     schedule.clear();
+
+#if defined(DRJIT_ENABLE_OPTIX)
+    jitc_optix_max_coopvec_size = 0;
+#endif
 
     for (WeakRef wr: ts->scheduled) {
         // Skip variables that expired, or which we already evaluated

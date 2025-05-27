@@ -12,6 +12,8 @@
 #include <vector>
 
 struct CoopVecPackData {
+    // This data structure is constructed by `jitc_coop_vec_pack()`, which initializes
+    // 'indices' and increases the reference counts of the stored varaibles.
     std::vector<uint32_t> indices;
 
     ~CoopVecPackData() {

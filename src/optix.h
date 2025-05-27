@@ -20,9 +20,6 @@ struct OptixShaderBindingTable;
 struct ThreadState;
 struct OptixPipelineData;
 
-// Is the cooperative vector ABI available?
-extern bool jitc_optix_has_abi_105;
-
 /// Create an OptiX device context on the current ThreadState
 extern OptixDeviceContext jitc_optix_context();
 
@@ -85,3 +82,20 @@ extern uint32_t jitc_optix_coop_vec_layout_id(MatrixLayout ml);
 
 #define jitc_optix_check(err) jitc_optix_check_impl((err), __FILE__, __LINE__)
 extern void jitc_optix_check_impl(OptixResult errval, const char *file, const int line);
+
+// Is the cooperative vector ABI available?
+extern bool jitc_optix_has_abi_105;
+
+#if defined(DRJIT_ENABLE_OPTIX)
+/// Maximum cooperative vector size in a program
+extern uint32_t jitc_optix_max_coopvec_size;
+
+/// Should OptiX use continuation callables (vs. direct callables?)
+inline bool jitc_optix_use_continuation_callables() {
+    // Prefer continuation callables when compiling programs that use coperative vectors
+    // (This gives slightly better performance)
+    return jitc_optix_max_coopvec_size > 0;
+}
+#else
+inline bool jitc_optix_use_continuation_callables() { return false; }
+#endif
