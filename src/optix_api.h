@@ -38,7 +38,6 @@ struct OptixShaderBindingTable;
 #define OPTIX_EXCEPTION_FLAG_NONE                        0
 #define OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW              1
 #define OPTIX_EXCEPTION_FLAG_TRACE_DEPTH                 2
-#define OPTIX_EXCEPTION_FLAG_DEBUG                       8
 #define OPTIX_ERROR_VALIDATION_FAILURE                   7053
 #define OPTIX_COMPILE_DEBUG_LEVEL_NONE                   0x2350
 #define OPTIX_COMPILE_DEBUG_LEVEL_MINIMAL                0x2351

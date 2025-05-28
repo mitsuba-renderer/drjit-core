@@ -10,10 +10,6 @@
 #include "util.h"
 #include "trace.h"
 
-#if !defined(NDEBUG) || defined(DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION)
-#define DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
-#endif
-
 static bool jitc_optix_cache_hit = false;
 static bool jitc_optix_cache_global_disable = false;
 uint32_t jitc_optix_max_coopvec_size = 0;
@@ -44,12 +40,11 @@ static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
     pco.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
     pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
 
-#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
-    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
-#else
-    pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
-                         OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
-#endif
+    if (jit_flag(JitFlag::Debug))
+        pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+                             OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
+    else
+        pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_NONE;
 
     return pco;
 }
@@ -64,11 +59,8 @@ OptixDeviceContext jitc_optix_context() {
 
         OptixDeviceContextOptions ctx_opts {
             jitc_optix_log, nullptr, 4,
-#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
-            OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF
-#else
-            OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL
-#endif
+            jit_flag(JitFlag::Debug) ? OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_ALL
+                                     : OPTIX_DEVICE_CONTEXT_VALIDATION_MODE_OFF
         };
 
         jitc_optix_check(optixDeviceContextCreate(ts->context, &ctx_opts, &ctx));
@@ -91,13 +83,13 @@ OptixDeviceContext jitc_optix_context() {
     if (!state.optix_default_sbt_index) {
         OptixPipelineCompileOptions pco = jitc_optix_default_compile_options();
         OptixModuleCompileOptions mco { };
-#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
-        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
-        mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
-#else
-        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
-        mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
-#endif
+        if (jit_flag(JitFlag::Debug)) {
+            mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+            mco.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+        } else {
+            mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+            mco.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
+        }
 
         const char *minimal = ".version 6.0 .target sm_50 .address_size 64 "
                               ".entry __miss__dr() { ret; }";
@@ -242,13 +234,13 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     // =====================================================
 
     OptixModuleCompileOptions mco { };
-#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
-    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
-    mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
-#else
-    mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
-    mco.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
-#endif
+    if (jit_flag(JitFlag::Debug)) {
+        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+        mco.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+    } else {
+        mco.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+        mco.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
+    }
 
     if (jitc_optix_max_coopvec_size > 64) {
         // In large neural networks, spilling-related costs dominate.

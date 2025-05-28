@@ -32,10 +32,6 @@ using UInt32 = dr::CUDAArray<uint32_t>;
 using UInt64 = dr::CUDAArray<uint64_t>;
 using Mask = dr::CUDAArray<bool>;
 
-#if !defined(NDEBUG) || defined(DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION)
-#define DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
-#endif
-
 void demo() {
     OptixDeviceContext context = jit_optix_context();
     jit_cuda_push_context(jit_cuda_context());
@@ -115,13 +111,13 @@ void demo() {
     // =====================================================
 
     OptixModuleCompileOptions module_compile_options { };
-#ifndef DRJIT_ENABLE_OPTIX_DEBUG_VALIDATION_ON
-    module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
-    module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
-#else
-    module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
-    module_compile_options.optLevel = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
-#endif
+    if (jit_flag(JitFlag::Debug)) {
+        module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_FULL;
+        module_compile_options.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_0;
+    } else {
+        module_compile_options.debugLevel = OPTIX_COMPILE_DEBUG_LEVEL_NONE;
+        module_compile_options.optLevel   = OPTIX_COMPILE_OPTIMIZATION_LEVEL_3;
+    }
 
     OptixPipelineCompileOptions pipeline_compile_options { };
     pipeline_compile_options.usesMotionBlur = false;
@@ -129,14 +125,15 @@ void demo() {
         OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS; // <-- Use this when possible
     pipeline_compile_options.numPayloadValues = 1;
     pipeline_compile_options.numAttributeValues = 0;
-#if defined(NDEBUG)
-    pipeline_compile_options.exceptionFlags =
-        OPTIX_EXCEPTION_FLAG_NONE;
-#else
-    pipeline_compile_options.exceptionFlags =
-        OPTIX_EXCEPTION_FLAG_DEBUG | OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
-        OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
-#endif
+    if (jit_flag(JitFlag::Debug)) {
+        pipeline_compile_options.exceptionFlags =
+            OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |
+            OPTIX_EXCEPTION_FLAG_STACK_OVERFLOW;
+    } else {
+        pipeline_compile_options.exceptionFlags =
+            OPTIX_EXCEPTION_FLAG_NONE;
+    }
+
     pipeline_compile_options.pipelineLaunchParamsVariableName = "params";
     pipeline_compile_options.usesPrimitiveTypeFlags =
         (unsigned) OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE; // <-- Use this when possible
