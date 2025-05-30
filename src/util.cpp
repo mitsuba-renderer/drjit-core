@@ -72,12 +72,12 @@ void jitc_reduce_dot(JitBackend backend, VarType type,
 
 /// 'All' reduction for boolean arrays (internal)
 void jitc_all_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
-    thread_state(backend)->reduce_bool_async_4(values, size, out, ReduceOp::And);
+    thread_state(backend)->block_reduce_bool(values, size, out, ReduceOp::And);
 }
 
 /// 'Any' reduction for boolean arrays (asynchronous)
 void jitc_any_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
-    thread_state(backend)->reduce_bool_async_4(values, size, out, ReduceOp::Or);
+    thread_state(backend)->block_reduce_bool(values, size, out, ReduceOp::Or);
 }
 
 void jitc_any_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {

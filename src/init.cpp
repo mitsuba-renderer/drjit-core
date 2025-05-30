@@ -771,8 +771,9 @@ void ThreadState::notify_free(const void *) { }
 void ThreadState::notify_expand(uint32_t) { }
 void ThreadState::notify_opaque_width(uint32_t, uint32_t) {}
 void ThreadState::notify_init_undefined(uint32_t) {}
-void ThreadState::reduce_bool_async_4(uint8_t *values, uint32_t size,
-                                      uint8_t *out, ReduceOp op) {
+// TODO: rename to block_reduce_bool
+void ThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
+                                    uint8_t *out, ReduceOp op) {
     /* When \c size is not a multiple of 4, the implementation will initialize
        up to 3 bytes beyond the end of the supplied range so that an efficient
        32 bit reduction algorithm can be used. This is fine for allocations made

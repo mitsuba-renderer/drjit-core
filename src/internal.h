@@ -725,8 +725,8 @@ struct ThreadState : public ThreadStateBase {
 
     /// Reduces an array of booleans by filling trailing elements and applying a
     /// UInt32 reduction.
-    virtual void reduce_bool_async_4(uint8_t *values, uint32_t size,
-                                     uint8_t *out, ReduceOp op);
+    virtual void block_reduce_bool(uint8_t *values, uint32_t size, uint8_t *out,
+                                   ReduceOp op);
 
     /// Some kernels use the width of an array in a computation. When using the
     /// kernel freezing feature, this requires special precautions to ensure
