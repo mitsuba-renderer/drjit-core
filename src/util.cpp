@@ -72,44 +72,12 @@ void jitc_reduce_dot(JitBackend backend, VarType type,
 
 /// 'All' reduction for boolean arrays (internal)
 void jitc_all_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
-    /* When \c size is not a multiple of 4, the implementation will initialize up
-       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
-       reduction algorithm can be used. This is fine for allocations made using
-       \ref jit_malloc(), which allow for this. */
-
-    uint32_t size_4    = ceil_div(size, 4),
-             trailing  = size_4 * 4 - size;
-
-    jitc_log(Debug, "jit_all(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
-
-    if (trailing) {
-        bool filler = true;
-        jitc_memset_async(backend, values + size, trailing, sizeof(bool), &filler);
-    }
-
-    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::And, size_4,
-                      size_4, values, out);
+    thread_state(backend)->block_reduce_bool(values, size, out, ReduceOp::And);
 }
 
 /// 'Any' reduction for boolean arrays (asynchronous)
 void jitc_any_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
-    /* When \c size is not a multiple of 4, the implementation will initialize up
-       to 3 bytes beyond the end of the supplied range so that an efficient 32 bit
-       reduction algorithm can be used. This is fine for allocations made using
-       \ref jit_malloc(), which allow for this. */
-
-    uint32_t size_4   = ceil_div(size, 4),
-             trailing = size_4 * 4 - size;
-
-    jitc_log(Debug, "jit_any(" DRJIT_PTR ", size=%u)", (uintptr_t) values, size);
-
-    if (trailing) {
-        bool filler = false;
-        jitc_memset_async(backend, values + size, trailing, sizeof(bool), &filler);
-    }
-
-    jitc_block_reduce(backend, VarType::UInt32, ReduceOp::Or, size_4,
-                      size_4, values, out);
+    thread_state(backend)->block_reduce_bool(values, size, out, ReduceOp::Or);
 }
 
 void jitc_any_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
