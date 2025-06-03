@@ -203,6 +203,11 @@ struct AccessInfo {
     /// Was this allocation accessed through a pointer?
     bool pointer_access = false;
 
+    /// If this variable is a pointer, should it be used for kernel size
+    /// inference? This will be set, if the size of the pointer is either a
+    /// whole multiple or fraction of the kernel launch size.
+    bool pointer_input_size = false;
+
     /// Should the next input operation fail, if the variable is still
     /// uninitialized?
     bool test_uninit = true;
