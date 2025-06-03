@@ -685,6 +685,7 @@ void RecordThreadState::record_launch(
          param_index++) {
 
         bool pointer_access = false;
+        bool pointer_input_size = false;
         uint32_t index      = kernel_param_ids->at(param_index);
         Variable *v         = jitc_var(index);
 
@@ -720,7 +721,12 @@ void RecordThreadState::record_launch(
                           ptr_index, index, ptr, v->data);
 
             pointer_access = true;
-            ptr_size       = std::max(ptr_size, (size_t) v->size);
+            // Only consider pointers who's size is either a fraction or
+            // multiple of the launch size.
+            if (v->size % size == 0 || size % v->size == 0) {
+                ptr_size = std::max(ptr_size, (size_t) v->size);
+                pointer_input_size = true;
+            }
         }
 
         uint32_t slot;
@@ -758,6 +764,7 @@ void RecordThreadState::record_launch(
         info.slot           = slot;
         info.type           = param_type;
         info.pointer_access = pointer_access;
+        info.pointer_input_size = pointer_input_size;
         info.vtype          = (VarType) v->type;
         add_param(info);
     }
@@ -893,7 +900,7 @@ int Recording::replay_launch(Operation &op) {
 
             if (!info.pointer_access)
                 input_size = std::max(input_size, size);
-            else
+            else if (info.pointer_input_size)
                 ptr_size = std::max(ptr_size, size);
         }
     }
