@@ -588,8 +588,10 @@ uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
     } else {
         const Variable *target_v = jitc_var(target);
         // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
-        if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
+        if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1) {
             target = steal(jitc_var_copy(target));
+            target_v = jitc_var(target);
+        }
 
         if ((VarType) target_v->type != vt)
             jitc_raise("jit_coop_vec_accum(): source/target "
@@ -664,8 +666,10 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
     } else {
         const Variable *target_v = jitc_var(target);
         // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
-        if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
+        if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1) {
             target = steal(jitc_var_copy(target));
+            target_v = jitc_var(target);
+        }
 
         if ((VarType) target_v->type != vt)
             jitc_raise("jit_coop_vec_outer_product_accum(): source/target "
@@ -699,5 +703,5 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
 
     uint32_t result = jitc_var_new_take_ownership(v, std::move(md), true);
     jitc_var_mark_side_effect(result);
-    return result;
+    return target.release();
 }
