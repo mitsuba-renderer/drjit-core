@@ -669,8 +669,11 @@ void RecordThreadState::record_launch(
     const std::vector<uint32_t> *kernel_param_ids) {
     uint32_t kernel_param_offset = backend == JitBackend::CUDA ? 1 : 3;
 
+    // The size of the largest variable used by the kernel directly.
     size_t input_size = 0;
-    size_t ptr_size   = 0;
+    // The size of the largest variable which is a multiple or fraction of the
+    // launch size, that is used indirectly (through a pointer).
+    size_t ptr_size = 0;
 
 #ifndef NDEBUG
     jitc_log(LogLevel::Debug, "record(): recording kernel %u %016llx",
@@ -685,7 +688,6 @@ void RecordThreadState::record_launch(
          param_index++) {
 
         bool pointer_access = false;
-        bool pointer_input_size = false;
         uint32_t index      = kernel_param_ids->at(param_index);
         Variable *v         = jitc_var(index);
 
@@ -725,7 +727,6 @@ void RecordThreadState::record_launch(
             // multiple of the launch size.
             if (v->size % size == 0 || size % v->size == 0) {
                 ptr_size = std::max(ptr_size, (size_t) v->size);
-                pointer_input_size = true;
             }
         }
 
@@ -764,7 +765,6 @@ void RecordThreadState::record_launch(
         info.slot           = slot;
         info.type           = param_type;
         info.pointer_access = pointer_access;
-        info.pointer_input_size = pointer_input_size;
         info.vtype          = (VarType) v->type;
         add_param(info);
     }
@@ -813,6 +813,26 @@ void RecordThreadState::record_launch(
                     miss_group_size);
     }
 #endif
+
+    // Find out which pointer variables, if any contributed to the final size of
+    // the kernel. We only use those when inferring the launch size.
+    if (input_size == 0)
+        for (uint32_t i = 0; i < kernel_param_ids->size(); i++) {
+
+            uint32_t index = kernel_param_ids->at(i);
+            Variable *v    = jitc_var(index);
+
+            if ((VarType) v->type == VarType::Pointer) {
+
+                // Follow pointer
+                index              = v->dep[3];
+                v                  = jitc_var(index);
+
+                if (ptr_size == v->size)
+                    m_recording.dependencies[start + i].pointer_input_size =
+                        true;
+            }
+        }
 
     // Record max_input_size if we have only pointer inputs.
     // Therefore, if max_input_size > 0 we know this at replay.
