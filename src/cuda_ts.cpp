@@ -881,8 +881,8 @@ void CUDAThreadState::coop_vec_pack(uint32_t count, const void *in_,
         uint32_t tsize = type_size[(int) id.dtype];
 
         if (id.cols == 1) {
-            cuda_check(cuMemcpyAsync(out + od.offset * tsize,
-                                     in + id.offset * tsize,
+            cuda_check(cuMemcpyAsync((CUdeviceptr) (out + od.offset * tsize),
+                                     (CUdeviceptr) (in + id.offset * tsize),
                                      id.size * tsize,
                                      stream));
         } else {
@@ -923,7 +923,8 @@ void CUDAThreadState::coop_vec_pack(uint32_t count, const void *in_,
 
     if (in_net.numLayers)
         jitc_optix_check(optixCoopVecMatrixConvert(
-            ctx, stream, 1, &in_net, (CUdeviceptr) in_, 0, &out_net, out_, 0));
+            ctx, stream, 1, &in_net, (CUdeviceptr) in_, 0, &out_net,
+            (CUdeviceptr) out_, 0));
 #else
     (void) count; (void) in_; (void) in_d; (void) out_; (void) out_d;
     jitc_raise("CUDAThreadState::coop_vec_pack(): requires OptiX support!");
