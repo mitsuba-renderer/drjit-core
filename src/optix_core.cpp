@@ -627,10 +627,11 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
     }
 
     // Extract payload values
-    for (uint32_t i = 0; i < np; ++i)
-        args[15 + i] = jitc_var_new_node_1(
-            JitBackend::CUDA, VarKind::Extract, VarType::UInt32,
-            size, symbolic, index, jitc_var(index), (uint64_t) i);
+    if (invoke)
+        for (uint32_t i = 0; i < np; ++i)
+            args[15 + i] = jitc_var_new_node_1(
+                JitBackend::CUDA, VarKind::Extract, VarType::UInt32,
+                size, symbolic, index, jitc_var(index), (uint64_t) i);
 
     // Extract hit object queries
     for (uint32_t i = 0; i < n_hit_object_field; ++i) {
@@ -683,6 +684,12 @@ uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
     bool symbolic = v_sbt_data_ptr->symbolic;
 
     Ref mask = steal(jitc_var_mask_apply(mask_, size));
+
+    Variable *v_mask = jitc_var(mask);
+    if (v_mask->is_literal() && v_mask->literal == 0) {
+        uint64_t value = 0;
+        return jitc_var_literal(JitBackend::CUDA, type, &value, v_mask->size, 0);
+    }
 
     return jitc_var_new_node_2(JitBackend::CUDA, VarKind::VectorLoad, type,
                                size, symbolic, sbt_data_ptr, v_sbt_data_ptr,

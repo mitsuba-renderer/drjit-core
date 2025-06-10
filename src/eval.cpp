@@ -213,6 +213,8 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
                 TraceData *call = (TraceData *) v->data;
                 for (uint32_t i: call->indices)
                     jitc_var_traverse(size, i, depth);
+                if (call->reorder && call->reorder_hint)
+                    jitc_var_traverse(size, call->reorder_hint, depth);
             }
             break;
 
