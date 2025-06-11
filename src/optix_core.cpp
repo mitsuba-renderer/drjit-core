@@ -432,10 +432,6 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
         ssp.dssDC = std::max(ssp.dssDC, ss.dssDC);
     }
 
-    if (ssp.cssCC > 0)
-        jitc_log(Error, "jit_optix_compile(): an OptiX program is using "
-                        "continuous callables which is not supported by Dr.Jit!");
-
     unsigned int max_dc_depth = 2; // Support nested calls
     unsigned int dc_stack_size_from_traversal = 0; // DC is not invoked from IS or AH.
     unsigned int dc_stack_size_from_state = max_dc_depth * ssp.dssDC; // DC is invoked from RG, MS, or CH.
