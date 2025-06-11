@@ -101,7 +101,7 @@ struct Lock {
 #else
 #include <mutex>
 struct Lock {
-    std::mutex lock; // Based on the faster Win7 SRWLOCK
+    std::mutex lock;
     std::thread::id owner;
     int recursion_count;
 };

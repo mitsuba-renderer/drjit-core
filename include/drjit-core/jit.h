@@ -1132,11 +1132,13 @@ JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
 
 /**
  * \brief Lock the recursive state mutex.
+ * This can improve performance when a single thread performs a large number of
+ * Dr.Jit operations in sequence.
  */
 extern JIT_EXPORT void jit_state_lock();
 /**
  * \brief Unlock the recursive state mutex.
- *     This should never be called from a thread that has not locked the mutex.
+ * This should never be called from a thread that has not locked the mutex.
  */
 extern JIT_EXPORT void jit_state_unlock();
 

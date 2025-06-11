@@ -1403,7 +1403,7 @@ VarState jitc_var_state(uint32_t index) {
 }
 
 VarInfo jitc_var_info(uint32_t index) {
-    VarInfo info;
+    VarInfo info{};
 
     Variable *var = jitc_var(index);
 
@@ -1414,7 +1414,7 @@ VarInfo jitc_var_info(uint32_t index) {
     info.is_array = var->is_array();
     info.is_coop_vec = var->coop_vec;
     info.unaligned = var->unaligned;
-    if(info.state == VarState::Literal)
+    if (info.state == VarState::Literal)
         info.literal = var->literal;
     else if (info.state == VarState::Evaluated)
         info.data = var->data;
