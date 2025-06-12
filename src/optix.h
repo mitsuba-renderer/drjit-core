@@ -53,15 +53,8 @@ extern void jitc_optix_ray_trace(
     int invoke, uint32_t mask, uint32_t pipeline, uint32_t sbt);
 
 // Read data from the SBT data buffer
-extern JIT_EXPORT uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr,
-                                                    VarType type,
-                                                    uint32_t offset,
-                                                    uint32_t mask);
-
-// Trigger a reordering of the GPU threads
-extern JIT_EXPORT void jitc_optix_reorder(uint32_t key, uint32_t num_bits,
-                                          uint32_t n_values, uint32_t *values,
-                                          uint32_t *out);
+extern uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
+                                         uint32_t offset, uint32_t mask);
 
 /// Compile an OptiX kernel
 extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,

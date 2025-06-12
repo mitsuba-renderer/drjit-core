@@ -115,6 +115,7 @@ add_library(
   src/util.h          src/util.cpp
   src/record_ts.h     src/record_ts.cpp
   src/coop_vec.h      src/coop_vec.cpp
+  src/reorder.h       src/reorder.cpp
 
   # CUDA backend
   src/cuda_api.h

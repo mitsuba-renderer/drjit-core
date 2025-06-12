@@ -23,6 +23,7 @@
 #include "array.h"
 #include "record_ts.h"
 #include "coop_vec.h"
+#include "reorder.h"
 #include <thread>
 #include <condition_variable>
 #include <drjit-core/half.h>
@@ -1098,12 +1099,6 @@ uint32_t jit_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
     lock_guard guard(state.lock);
     return jitc_optix_sbt_data_load(sbt_data_ptr, type, offset, mask);
 }
-
-void jit_optix_reorder(uint32_t key, uint32_t num_bits, uint32_t n_values,
-                       uint32_t *values, uint32_t *out) {
-    lock_guard guard(state.lock);
-    return jitc_optix_reorder(key, num_bits, n_values, values, out);
-}
 #endif
 
 void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
@@ -1551,6 +1546,12 @@ int jit_leak_warnings() {
 
 void jit_set_leak_warnings(int value) {
     state.leak_warnings = (bool) value;
+}
+
+void jit_reorder(uint32_t key, uint32_t num_bits, uint32_t n_values,
+                 uint32_t *values, uint32_t *out) {
+    lock_guard guard(state.lock);
+    return jitc_reorder(key, num_bits, n_values, values, out);
 }
 
 void jit_freeze_start(JitBackend backend, const uint32_t *inputs,
