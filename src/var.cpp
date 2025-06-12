@@ -1334,6 +1334,15 @@ uint32_t jitc_var_eval_force(uint32_t index, Variable &v_, void **ptr_out) {
     uint32_t result = jitc_var_mem_map((JitBackend) v.backend, (VarType) v.type,
                                        ptr, v.size, 1);
 
+    if (v.is_undefined()) {
+        // Notify the thread_state that this allocation should not be
+        // initialized for recording.
+        if (thread_state_llvm)
+            thread_state_llvm->notify_init_undefined(result);
+        if (thread_state_cuda)
+            thread_state_cuda->notify_init_undefined(result);
+    }
+
     jitc_log(Debug,
              "jit_var_eval(): %s r%u[%u] = data(" DRJIT_PTR ") [copy of r%u]",
              type_name[v.type], result, v.size, (uintptr_t) ptr, index);
@@ -1391,6 +1400,26 @@ VarState jitc_var_state(uint32_t index) {
         return VarState::Undefined;
     else
         return VarState::Unevaluated;
+}
+
+VarInfo jitc_var_info(uint32_t index) {
+    VarInfo info{};
+
+    Variable *var = jitc_var(index);
+
+    info.backend = (JitBackend)var->backend;
+    info.type = (VarType)var->type;
+    info.state = jitc_var_state(index);
+    info.size = var->size;
+    info.is_array = var->is_array();
+    info.is_coop_vec = var->coop_vec;
+    info.unaligned = var->unaligned;
+    if (info.state == VarState::Literal)
+        info.literal = var->literal;
+    else if (info.state == VarState::Evaluated)
+        info.data = var->data;
+
+    return info;
 }
 
 /// Schedule a variable \c index for future evaluation via \ref jit_eval()
@@ -1487,8 +1516,11 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
         memcpy(dst, &v->literal, isize);
     } else if (v->is_evaluated()) {
         if (jitc_flags() & (uint32_t) JitFlag::FreezingScope)
-            jitc_raise("jit_var_read(): reading from evaluated variables while "
-                       "recording a frozen function is not supported!");
+            jitc_raise(
+                "jit_var_read(): reading from evaluated variables while "
+                "recording a frozen function is not supported! This could also "
+                "be caused by non-symbolic loops. In that case, setting "
+                "``JitFlag::SymbolicLoops`` to true might solve the issue.");
 
         jitc_memcpy((JitBackend) v->backend, dst,
                     (const uint8_t *) v->data + offset * isize, isize);

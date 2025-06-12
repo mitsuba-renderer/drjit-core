@@ -1130,6 +1130,18 @@ JIT_INLINE void jit_var_dec_ref(uint32_t index) JIT_NOEXCEPT {
 #define jit_var_inc_ref jit_var_inc_ref_impl
 #endif
 
+/**
+ * \brief Lock the recursive state mutex.
+ * This can improve performance when a single thread performs a large number of
+ * Dr.Jit operations in sequence.
+ */
+extern JIT_EXPORT void jit_state_lock();
+/**
+ * \brief Unlock the recursive state mutex.
+ * This should never be called from a thread that has not locked the mutex.
+ */
+extern JIT_EXPORT void jit_state_unlock();
+
 /// Query the a variable's reference count (used by the test suite)
 extern JIT_EXPORT uint32_t jit_var_ref(uint32_t index);
 
@@ -1187,6 +1199,9 @@ extern JIT_EXPORT uint32_t jit_var_data(uint32_t index, void **ptr_out);
 
 /// Query the size of a given variable
 extern JIT_EXPORT size_t jit_var_size(uint32_t index);
+
+/// Query the size of a given variable, as an opaque variable.
+extern JIT_EXPORT uint32_t jit_var_opaque_width(uint32_t index);
 
 /// Query the type of a given variable
 extern JIT_EXPORT JIT_ENUM VarType jit_var_type(uint32_t index);
@@ -1632,9 +1647,9 @@ enum JitFlag {
     JitFlagForbidSynchronization = 1 << 17,
     JitFlagScatterReduceLocal = 1 << 18,
     JitFlagSymbolic = 1 << 19,
-    KernelFreezing = 1 << 20,
-    FreezingScope = 1 << 21,
-    EnableObjectTraversal = 1 << 22,
+    JitFlagKernelFreezing = 1 << 20,
+    JitFlagFreezingScope = 1 << 21,
+    JitFlagEnableObjectTraversal = 1 << 22,
     JitFlagShaderExecutionReordering = 1 << 23
 };
 #endif
@@ -2436,6 +2451,10 @@ struct VarInfo {
  * generic code that works on various different backends.
  */
 extern JIT_EXPORT VarInfo jit_set_backend(uint32_t index) JIT_NOEXCEPT;
+
+/// Same as \c jit_set_backend without setting the backend.
+/// This improves performance, as no tls access is performed.
+extern JIT_EXPORT VarInfo jit_var_info(uint32_t index) JIT_NOEXCEPT;
 
 /**
  * \brief Inform Dr.Jit about the current source code location
