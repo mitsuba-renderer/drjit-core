@@ -107,6 +107,9 @@ KERNEL void compress_large(const uint8_t *in, uint32_t *out, uint64_t *scratch, 
        Based on "Single-pass Parallel Prefix Scan with Decoupled Look-back"
        by Duane Merrill and Michael Garland */
     while (true) {
+        // Avoid re-ordering of loads and stores under the relaxed memory model.
+        __threadfence_block();
+
         uint64_t temp = load_cg(scratch + shift);
         uint32_t flag = (uint32_t) temp;
 
@@ -154,4 +157,3 @@ KERNEL void compress_large_init(uint64_t *scratch, uint32_t size) {
          i += blockDim.x * gridDim.x)
         scratch[i] = (i < 32) ? 2 : 0;
 }
-
