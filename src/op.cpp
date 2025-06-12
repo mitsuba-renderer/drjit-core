@@ -2231,9 +2231,8 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
             if (op == ReduceOp::Add && compute_capability < 60)
                 return false;
 
-            // Half-precision min/max reductions require sm_90
-            if ((op == ReduceOp::Min || op == ReduceOp::Max) &&
-                compute_capability < 90)
+            // Half-precision reductions other than `add` are not supported on CUDA
+            if (is_cuda && op != ReduceOp::Add)
                 return false;
 
             // Half precision atomics too spotty on LLVM before v16.0.0

@@ -158,6 +158,9 @@ __device__ void block_prefix_reduce(block_prefix_reduce_params params) {
 
         // Decoupled look-back iteration
         while (true) {
+            // Avoid re-ordering of loads and stores under the relaxed memory model.
+            __threadfence_block();
+
             uint32_t status;
             Value pred;
             UInt pred_u;
