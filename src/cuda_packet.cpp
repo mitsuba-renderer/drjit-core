@@ -140,8 +140,8 @@ void jitc_cuda_render_scatter_reduce_packet(const ThreadState *ts,
 
     bool can_reduce_vec = ts->compute_capability >= 90;
 
-    uint32_t count = (uint32_t) values.size(), tsize = type_size[v0->type],
-             total_bytes = count * tsize;
+    uint32_t count = (uint32_t) values.size(),
+             tsize = type_size[v0->type];
 
     if (count % 2 != 0)
         jitc_fail("jitc_cuda_render_scatter_reduce_packet(): Number of "
@@ -183,19 +183,21 @@ void jitc_cuda_render_scatter_reduce_packet(const ThreadState *ts,
             put("};\n");
         }
     } else {
-        fmt("    .reg.f16x2 $v_tmp;\n"
-            "    mad.wide.$t %rd3, $v, $u, $v;\n",
-            v, index, index, tsize, ptr);
 
         if (v0->type != (uint32_t) VarType::Float16)
             jitc_fail("Packeted scatter reductions are only supported with f16 "
-                      "variables on sm_%u.",
-                      ts->compute_capability);
+                      "variables on sm_%u. You tried to reduce %s.",
+                      ts->compute_capability, type_name[v0->type]);
 
         if (psd->op != ReduceOp::Add)
-            jitc_fail(
-                "Only packed addition operations can be supported on sm_%u.",
-                ts->compute_capability);
+            jitc_fail("Packeted scatter reductions only support addition on "
+                      "sm_%u. You tried to reduce with %s.",
+                      ts->compute_capability,
+                      reduce_op_name[(uint32_t) psd->op]);
+
+        fmt("    .reg.f16x2 $v_tmp;\n"
+            "    mad.wide.$t %rd3, $v, $u, $v;\n",
+            v, index, index, tsize, ptr);
 
         if (count % 2 == 0) {
             for (uint32_t i = 0; i < count; i += 2) {
