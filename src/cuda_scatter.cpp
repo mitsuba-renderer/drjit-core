@@ -12,6 +12,7 @@
 
 
 #include "eval.h"
+#include "src/log.h"
 #include "var.h"
 #include "cuda_eval.h"
 #include "cuda_scatter.h"
@@ -332,7 +333,7 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
                 "        and.b64 %rd3, %rd3, ~0x2;\n"
                 "        red.global.add.noftz.f16x2 [%rd3], %packed;\n"
                 "    }\n", (uint32_t) identity, value);
-        } else if (ts->compute_capability > 90) {
+        } else if (ts->compute_capability > 90 && !uses_optix) {
             // Use the new `.v2.f16` instructions to enable min & max.
             switch (op) {
                 case ReduceOp::Add: op_name = "red.global.v2.f16.add.noftz"; break;
