@@ -2639,6 +2639,11 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
                              mode == ReduceMode::NoConflicts ||
                              (mode == ReduceMode::Auto &&
                               target_info.size <= llvm_expand_threshold));
+        } else if (op == ReduceOp::Add && backend == JitBackend::CUDA) {
+            use_packet_op = (mode == ReduceMode::Expand ||
+                             mode == ReduceMode::Permute ||
+                             mode == ReduceMode::NoConflicts ||
+                             mode == ReduceMode::Auto);
         }
     }
 
