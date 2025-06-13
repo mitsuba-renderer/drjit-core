@@ -128,7 +128,8 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
 /**
  * Render the code required to scatter reduce a packet of variables.
  */
-void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
+void jitc_cuda_render_scatter_reduce_packet(const ThreadState *ts,
+                                            const Variable *v,
                                             const Variable *ptr,
                                             const Variable *index,
                                             const Variable *mask) {
@@ -137,43 +138,86 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
     const std::vector<uint32_t> &values = psd->values;
     const Variable *v0                  = jitc_var(values[0]);
 
-    uint32_t count = (uint32_t) values.size(), tsize = type_size[v0->type];
+    bool can_reduce_vec = ts->compute_capability >= 90;
 
-    put("    {\n");
+    uint32_t count = (uint32_t) values.size(), tsize = type_size[v0->type],
+             total_bytes = count * tsize;
 
-    fmt("        .reg.f16x2 %tmp;\n");
-
-    fmt("        mad.wide.$t %rd3, $v, $u, $v;\n", index, index, tsize, ptr);
-
-    if (v0->type != (uint32_t) VarType::Float16)
-        jitc_fail("Packeted scatter reductions are only supported with f16 "
-                  "variables.");
-
-    const char *op = reduce_op_name[(uint32_t) psd->op];
-
-    if (count % 2 == 0) {
-        for (uint32_t i = 0; i < count; i += 2) {
-            uint32_t byte_offset = i * 2;
-
-            fmt("        mov.b32 %tmp, {$v, $v};\n", jitc_var(values[i]),
-                jitc_var(values[i + 1]));
-
-            if (is_masked)
-                fmt("        @$v ", mask);
-            else
-                put("        ");
-            fmt("red.global.$s.noftz.f16x2 [%rd3+$u], %tmp;\n", op,
-                byte_offset);
-        }
-    } else {
+    if (count % 2 != 0)
         jitc_fail("jitc_cuda_render_scatter_reduce_packet(): Number of "
                   "elements not supported for reduction.");
+
+    if (can_reduce_vec) {
+        const uint32_t MAX_VARS_PER_IT = 16 / tsize;
+
+        // Find largest power of two dividing the number of variables, smaller
+        // than
+        // \c max_vars_per_it
+        uint32_t vars_per_it = count & -count;
+        while (vars_per_it > MAX_VARS_PER_IT && vars_per_it > 1)
+            vars_per_it >>= 1;
+
+        fmt("    mad.wide.$t %rd3, $v, $u, $v;\n", index, index, tsize,
+            ptr);
+
+        if (v0->type != (uint32_t) VarType::Float16)
+            jitc_fail("Packeted scatter reductions are only supported with f16 "
+                      "variables.");
+
+        const char *op = reduce_op_name[(uint32_t) psd->op];
+
+        for (uint32_t i = 0; i < count; i += vars_per_it) {
+            uint32_t byte_offset = i * 2;
+
+            if (is_masked)
+                fmt("    @$v ", mask);
+            else
+                put("    ");
+            fmt("red.global.v$u.$t.$s.noftz [%rd3+$u], {",
+                vars_per_it, v0, op, byte_offset);
+
+            for (uint32_t j = 0; j < vars_per_it; j++) {
+                fmt("$v, ", jitc_var(values[i + j]));
+            }
+            buffer.delete_trailing_commas();
+            put("};\n");
+        }
+    } else {
+        fmt("    .reg.f16x2 $v_tmp;\n"
+            "    mad.wide.$t %rd3, $v, $u, $v;\n",
+            v, index, index, tsize, ptr);
+
+        if (v0->type != (uint32_t) VarType::Float16)
+            jitc_fail("Packeted scatter reductions are only supported with f16 "
+                      "variables on sm_%u.",
+                      ts->compute_capability);
+
+        if (psd->op != ReduceOp::Add)
+            jitc_fail(
+                "Only packed addition operations can be supported on sm_%u.",
+                ts->compute_capability);
+
+        if (count % 2 == 0) {
+            for (uint32_t i = 0; i < count; i += 2) {
+                uint32_t byte_offset = i * 2;
+
+                fmt("    mov.b32 $v_tmp, {$v, $v};\n", v, jitc_var(values[i]),
+                    jitc_var(values[i + 1]));
+
+                if (is_masked)
+                    fmt("    @$v ", mask);
+                else
+                    put("        ");
+                fmt("red.global.add.noftz.f16x2 [%rd3+$u], $v_tmp;\n",
+                    byte_offset, v);
+            }
+        }
     }
-    put("    }\n");
 }
 
-void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
-                                     const Variable *index, const Variable *mask) {
+void jitc_cuda_render_scatter_packet(const ThreadState *ts, const Variable *v,
+                                     const Variable *ptr, const Variable *index,
+                                     const Variable *mask) {
     bool is_masked = !mask->is_literal() || mask->literal != 1;
     PacketScatterData *psd = (PacketScatterData *) v->data;
     const std::vector<uint32_t> &values = psd->values;
@@ -181,7 +225,7 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
 
     // Handle non-Identitiy reduction case
     if (psd->op != ReduceOp::Identity) {
-        jitc_cuda_render_scatter_reduce_packet(v, ptr, index, mask);
+        jitc_cuda_render_scatter_reduce_packet(ts, v, ptr, index, mask);
         return;
     }
 

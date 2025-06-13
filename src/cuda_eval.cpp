@@ -844,7 +844,7 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::PacketScatter:
-            jitc_cuda_render_scatter_packet(v, a0, a1, a2);
+            jitc_cuda_render_scatter_packet(ts, v, a0, a1, a2);
             break;
 
         case VarKind::ScatterInc:
