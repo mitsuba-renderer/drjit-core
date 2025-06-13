@@ -15,7 +15,13 @@ extern void jitc_cuda_render_gather_packet(const Variable *v,
                                            const Variable *index,
                                            const Variable *mask);
 
-extern void jitc_cuda_render_scatter_packet(const Variable *v,
+extern void jitc_cuda_render_scatter_reduce_packet(const ThreadState *ts,
+                                                   const Variable *v,
+                                                   const Variable *ptr,
+                                                   const Variable *index,
+                                                   const Variable *mask);
+extern void jitc_cuda_render_scatter_packet(const ThreadState *ts,
+                                            const Variable *v,
                                             const Variable *ptr,
                                             const Variable *index,
                                             const Variable *mask);
