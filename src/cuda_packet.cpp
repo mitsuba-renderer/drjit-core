@@ -10,7 +10,6 @@
 
 #include "eval.h"
 #include "cuda_eval.h"
-#include "llvm_packet.h"
 #include "var.h"
 #include "op.h"
 #include "log.h"
