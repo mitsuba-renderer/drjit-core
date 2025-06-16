@@ -263,11 +263,13 @@ bool jitc_cuda_init() {
         memcpy(uncompressed, jitc_lz4_dict, jitc_lz4_dict_size);
         char *uncompressed_ptx = uncompressed + jitc_lz4_dict_size;
 
-        if (LZ4_decompress_safe_usingDict(
-                kernels, uncompressed_ptx, kernels_size_compressed,
-                kernels_size_uncompressed, uncompressed,
-                jitc_lz4_dict_size) != kernels_size_uncompressed)
-            jitc_fail("jit_cuda_init(): decompression of builtin kernels failed!");
+        int uncompressed_size_actual = LZ4_decompress_safe_usingDict(
+            kernels, uncompressed_ptx, kernels_size_compressed,
+            kernels_size_uncompressed, uncompressed, jitc_lz4_dict_size);
+        if (uncompressed_size_actual != kernels_size_uncompressed)
+            jitc_fail("jit_cuda_init(): decompression of builtin kernels failed!"
+                      " Expected %d bytes (negative value indicates an error), got %d.",
+                      kernels_size_uncompressed, uncompressed_size_actual);
 
         uncompressed_ptx[kernels_size_uncompressed] = '\0';
 

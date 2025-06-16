@@ -10,13 +10,13 @@
 
 #include "common.h"
 
-DEVICE FINLINE void store_cg(uint64_t *ptr, uint64_t val) {
-    asm volatile("st.cg.u64 [%0], %1;" : : "l"(ptr), "l"(val));
+DEVICE FINLINE void store_cg(volatile uint64_t *ptr, uint64_t val) {
+    asm volatile("st.volatile.global.u64 [%0], %1;" : : "l"(ptr), "l"(val) : "memory");
 }
 
-DEVICE FINLINE uint64_t load_cg(uint64_t *ptr) {
+DEVICE FINLINE uint64_t load_cg(volatile uint64_t *ptr) {
     uint64_t retval;
-    asm volatile("ld.cg.u64 %0, [%1];" : "=l"(retval) : "l"(ptr));
+    asm volatile("ld.volatile.global.u64 %0, [%1];" : "=l"(retval) : "l"(ptr) : "memory");
     return retval;
 }
 
@@ -63,7 +63,7 @@ KERNEL void compress_small(const uint8_t *in, uint32_t *out, uint32_t size, uint
     }
 }
 
-KERNEL void compress_large(const uint8_t *in, uint32_t *out, uint64_t *scratch, uint32_t *count_out) {
+KERNEL void compress_large(const uint8_t *in, uint32_t *out, volatile uint64_t *scratch, uint32_t *count_out) {
     uint32_t *shared = SharedMemory<uint32_t>::get();
     uint32_t thread_count = 128;
 
@@ -154,4 +154,3 @@ KERNEL void compress_large_init(uint64_t *scratch, uint32_t size) {
          i += blockDim.x * gridDim.x)
         scratch[i] = (i < 32) ? 2 : 0;
 }
-
