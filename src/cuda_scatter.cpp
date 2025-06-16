@@ -309,13 +309,29 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
             "    }\n",
             op_name, tp, tp, op_name, tp, value);
     } else if ((VarType) value->type == VarType::Float16) {
-        // FTZ f16 add does not exist, must generate .noftz variant
-        switch (op) {
-            case ReduceOp::Add: op_name = "add.noftz"; break;
-            case ReduceOp::Min: op_name = "min.noftz"; break;
-            case ReduceOp::Max: op_name = "max.noftz"; break;
-            default: break;
+        op_name = nullptr;
+
+        if (ts->compute_capability > 90) {
+            switch (op) {
+                case ReduceOp::Add: op_name = "red.global.v2.add.noftz"; break;
+                case ReduceOp::Min: op_name = "red.global.v2.min.noftz"; break;
+                case ReduceOp::Max: op_name = "red.global.v2.max.noftz"; break;
+                default: break;
+            }
+        } else {
+            switch (op) {
+                case ReduceOp::Add: op_name = "red.global.add.noftz.f16x2"; break;
+                default: break;
+            }
         }
+
+        if (!op_name)
+            jitc_fail("jitc_cuda_render_scatter_reduce(): internal error. The "
+                      "requested operation (\"%s\") is not supported on the "
+                      "backend and should not have been generated.",
+                      reduce_op_name[(int) op]);
+
+        uint64_t identity = jitc_reduce_identity((VarType) value->type, op);
 
         // NVIDIA hardware apparently provides f16x2 (double bandwidth) half
         // precision atomics but no 1x version. Attempting to use the 1x-wide
@@ -324,19 +340,18 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
         // issues/miscompilations with OptiX). The solution is to emulate the
         // 1x scatter *ourselves* by reducing it to the 2x version.
         fmt("    {\n"
+            "        .reg .f16 %identity;\n"
             "        .reg .f16x2 %packed;\n"
-            "        .reg .b64 %align, %offset;\n"
-            "        .reg .b32 %offset_32;\n"
-            "        .reg .f16 %initial;\n"
-            "        mov.b16 %initial, 0;\n"
-            "        and.b64 %align, %rd3, ~0x3;\n"
-            "        and.b64 %offset, %rd3, 0x2;\n"
-            "        cvt.u32.s64 %offset_32, %offset;\n"
-            "        shl.b32 %offset_32, %offset_32, 3;\n"
-            "        mov.b32 %packed, {$v, %initial};\n"
-            "        shl.b32 %packed, %packed, %offset_32;\n"
-            "        red.global.$s.f16x2 [%align], %packed;\n"
-            "    }\n", value, op_name);
+            "        cvt.u32.u64 %r3, %rd3;\n"
+            "        and.b32 %r3, %r3, 2;\n"
+            "        setp.eq.b32 %p3, %r3, 0;\n"
+            "        mov.b16 %identity, $u;\n"
+            "        mov.b32 %r3, {%identity, $v};\n"
+            "        @%p3 prmt.b32 %r3, %r3, 0, 0x1032;\n"
+            "        mov.b32 %packed, %r3;\n"
+            "        and.b64 %rd3, %rd3, ~0x2;\n"
+            "        $s [%rd3], %packed;\n"
+            "    }\n", (uint32_t) identity, value, op_name);
     } else {
         fmt("    red.global.$s.$s [%rd3], $v;\n",
             op_name, tp, value);
