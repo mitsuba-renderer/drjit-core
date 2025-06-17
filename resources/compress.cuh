@@ -11,7 +11,7 @@
 #include "common.h"
 
 DEVICE FINLINE void store_cg(volatile uint64_t *ptr, uint64_t val) {
-    asm volatile("st.volatile.global.u64 [%0], %1;" : : "l"(ptr), "l"(val) : "memory");
+    asm volatile("st.cg.u64 [%0], %1;" : : "l"(ptr), "l"(val));
 }
 
 DEVICE FINLINE uint64_t load_cg(volatile uint64_t *ptr) {
