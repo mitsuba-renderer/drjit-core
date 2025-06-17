@@ -214,7 +214,7 @@ __device__ void store_with_status(uint64_t *p, uint64_t value, uint32_t status) 
 __device__ void load_with_status(volatile uint16_t *p, uint16_t &value, uint32_t &status) {
     uint32_t v;
 
-    asm("ld.global.cg.u32 %0, [%1];"
+    asm("ld.volatile.global.u32 %0, [%1];"
         : "=r"(v)
         : "l"(p)
         : "memory");
@@ -226,7 +226,7 @@ __device__ void load_with_status(volatile uint16_t *p, uint16_t &value, uint32_t
 __device__ void load_with_status(volatile uint32_t *p, uint32_t &value, uint32_t &status) {
     uint64_t v;
 
-    asm("ld.global.cg.u64 %0, [%1];"
+    asm("ld.volatile.global.u64 %0, [%1];"
         : "=l"(v)
         : "l"(p)
         : "memory");
@@ -238,8 +238,8 @@ __device__ void load_with_status(volatile uint32_t *p, uint32_t &value, uint32_t
 __device__ void load_with_status(volatile uint64_t *p, uint64_t &value, uint32_t &status) {
     uint64_t v0, v1;
 
-    asm("ld.global.cg.u64 %0, [%2];\n"
-        "ld.global.cg.u64 %1, [%2 + 8];"
+    asm("ld.volatile.global.u64 %0, [%2];\n"
+        "ld.volatile.global.u64 %1, [%2 + 8];"
         : "=l"(v0)
           "=l"(v1)
         : "l"(p)

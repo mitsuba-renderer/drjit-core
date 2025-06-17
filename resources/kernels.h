@@ -18,12 +18,12 @@ static const size_t kernels_dict_size_uncompressed = 65536;
 static const size_t kernels_dict_size_compressed = 19638;
 
 extern const char kernels_50[];
-static const size_t kernels_50_size_uncompressed = 1825462;
-static const size_t kernels_50_size_compressed = 192528;
+static const size_t kernels_50_size_uncompressed = 1825664;
+static const size_t kernels_50_size_compressed = 192540;
 
 extern const char kernels_70[];
-static const size_t kernels_70_size_uncompressed = 1821555;
-static const size_t kernels_70_size_compressed = 191679;
+static const size_t kernels_70_size_uncompressed = 1821757;
+static const size_t kernels_70_size_compressed = 191691;
 
 static const char *kernels_list =
     "compress_small,"
