@@ -309,49 +309,63 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
             "    }\n",
             op_name, tp, tp, op_name, tp, value);
     } else if ((VarType) value->type == VarType::Float16) {
-        op_name = nullptr;
-
-        if (ts->compute_capability > 90) {
-            switch (op) {
-                case ReduceOp::Add: op_name = "red.global.v2.add.noftz"; break;
-                case ReduceOp::Min: op_name = "red.global.v2.min.noftz"; break;
-                case ReduceOp::Max: op_name = "red.global.v2.max.noftz"; break;
-                default: break;
-            }
-        } else {
-            switch (op) {
-                case ReduceOp::Add: op_name = "red.global.add.noftz.f16x2"; break;
-                default: break;
-            }
-        }
-
-        if (!op_name)
-            jitc_fail("jitc_cuda_render_scatter_reduce(): internal error. The "
-                      "requested operation (\"%s\") is not supported on the "
-                      "backend and should not have been generated.",
-                      reduce_op_name[(int) op]);
-
-        uint64_t identity = jitc_reduce_identity((VarType) value->type, op);
-
         // NVIDIA hardware apparently provides f16x2 (double bandwidth) half
         // precision atomics but no 1x version. Attempting to use the 1x-wide
         // instructions requires software emulation, and this seems poorly
         // implemented on some driver versions. (we ran into
         // issues/miscompilations with OptiX). The solution is to emulate the
         // 1x scatter *ourselves* by reducing it to the 2x version.
-        fmt("    {\n"
-            "        .reg .f16 %identity;\n"
-            "        .reg .f16x2 %packed;\n"
-            "        cvt.u32.u64 %r3, %rd3;\n"
-            "        and.b32 %r3, %r3, 2;\n"
-            "        setp.eq.b32 %p3, %r3, 0;\n"
-            "        mov.b16 %identity, $u;\n"
-            "        mov.b32 %r3, {%identity, $v};\n"
-            "        @%p3 prmt.b32 %r3, %r3, 0, 0x1032;\n"
-            "        mov.b32 %packed, %r3;\n"
-            "        and.b64 %rd3, %rd3, ~0x2;\n"
-            "        $s [%rd3], %packed;\n"
-            "    }\n", (uint32_t) identity, value, op_name);
+        uint64_t identity = jitc_reduce_identity((VarType) value->type, op);
+
+        if (op == ReduceOp::Add) {
+            // Use the more broadly supported `.f16x2` instructions, only available for addition.
+            fmt("    {\n"
+                "        .reg .f16 %identity;\n"
+                "        .reg .f16x2 %packed;\n"
+                "        cvt.u32.u64 %r3, %rd3;\n"
+                "        and.b32 %r3, %r3, 2;\n"
+                "        setp.eq.b32 %p3, %r3, 0;\n"
+                "        mov.b16 %identity, $u;\n"
+                "        mov.b32 %r3, {%identity, $v};\n"
+                "        @%p3 prmt.b32 %r3, %r3, 0, 0x1032;\n"
+                "        mov.b32 %packed, %r3;\n"
+                "        and.b64 %rd3, %rd3, ~0x2;\n"
+                "        red.global.add.noftz.f16x2 [%rd3], %packed;\n"
+                "    }\n", (uint32_t) identity, value);
+        } else if (ts->compute_capability > 90) {
+            // Use the new `.v2.f16` instructions to enable min & max.
+            switch (op) {
+                case ReduceOp::Add: op_name = "red.global.v2.f16.add.noftz"; break;
+                case ReduceOp::Min: op_name = "red.global.v2.f16.min.noftz"; break;
+                case ReduceOp::Max: op_name = "red.global.v2.f16.max.noftz"; break;
+                default: break;
+            }
+            fmt("    {\n"
+                "        .reg .f16 %op1, %op2;\n"
+                // Determine whether we are trying to scatter to the
+                // first or the second f16 value.
+                "        cvt.u32.u64 %r3, %rd3;\n"
+                "        and.b32 %r3, %r3, 2;\n"
+                "        setp.eq.b32 %p3, %r3, 0;\n"
+                // Set operands based on the above:
+                //     op1 = select(is_even, $v, identity)
+                //     op2 = select(is_even, identity, $v)
+                "        selp.b16 %op1, $v, $u, %p3;\n"
+                "        selp.b16 %op2, $u, $v, %p3;\n"
+                "        and.b64 %rd3, %rd3, ~0x2;\n"
+                "        $s [%rd3], {%op1, %op2};\n"
+                "    }\n",
+                value, (uint32_t) identity,
+                (uint32_t) identity, value,
+                op_name);
+
+        } else {
+            jitc_fail("jitc_cuda_render_scatter_reduce(): internal error. The "
+                      "requested operation (\"%s\") is not supported on the "
+                      "backend and should not have been generated.",
+                      reduce_op_name[(int) op]);
+        }
+
     } else {
         fmt("    red.global.$s.$s [%rd3], $v;\n",
             op_name, tp, value);
@@ -464,4 +478,3 @@ void jitc_cuda_render_scatter_add_kahan(const Variable *v,
 
     fmt("\nl_$u_done:\n", v->reg_index);
 }
-
