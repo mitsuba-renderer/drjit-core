@@ -779,6 +779,7 @@ void RecordThreadState::record_launch(
     size_t str_size    = buffer.size() + 1;
     op.kernel.key->str = (char *) malloc_check(str_size);
     std::memcpy(op.kernel.key->str, key->str, str_size);
+    op.kernel.hash = hash;
     op.kernel.str_size = str_size;
     op.kernel.key->device = key->device;
     op.kernel.key->flags  = key->flags;
