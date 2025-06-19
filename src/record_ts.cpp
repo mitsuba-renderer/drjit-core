@@ -779,6 +779,7 @@ void RecordThreadState::record_launch(
     size_t str_size    = buffer.size() + 1;
     op.kernel.key->str = (char *) malloc_check(str_size);
     std::memcpy(op.kernel.key->str, key->str, str_size);
+    op.kernel.str_size = str_size;
     op.kernel.key->device = key->device;
     op.kernel.key->flags  = key->flags;
     op.kernel.key->high64 = key->high64;
@@ -1008,8 +1009,46 @@ int Recording::replay_launch(Operation &op) {
             ts->optix_sbt = op.sbt;
         }
 #endif
-        ts->launch(kernel, op.kernel.key, op.kernel.hash, launch_size,
-                   &kernel_params, nullptr);
+
+        // Add a kernel history entry, when replaying a kernel.
+        KernelHistoryEntry kernel_history_entry = {};
+        if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+            kernel_history_entry.backend = backend;
+            kernel_history_entry.type    = KernelType::JIT;
+            kernel_history_entry.hash[0] = op.kernel.hash.low64;
+            kernel_history_entry.hash[1] = op.kernel.hash.high64;
+            kernel_history_entry.ir = (char *) malloc_check(op.kernel.str_size);
+            memcpy(kernel_history_entry.ir, op.kernel.key->str,
+                   op.kernel.str_size);
+            kernel_history_entry.uses_optix = uses_optix;
+            kernel_history_entry.size = launch_size;
+            kernel_history_entry.cache_hit = true;
+        }
+        if (unlikely(jit_flag(JitFlag::KernelHistory) &&
+                     backend == JitBackend::CUDA)) {
+            auto &e = kernel_history_entry;
+            cuda_check(
+                cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));
+            cuda_check(
+                cuEventCreate((CUevent *) &e.event_end, CU_EVENT_DEFAULT));
+            cuda_check(cuEventRecord((CUevent) e.event_start, ts->stream));
+        }
+
+        Task *ret_task = ts->launch(kernel, op.kernel.key, op.kernel.hash,
+                                    launch_size, &kernel_params, nullptr);
+
+        if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+            if (backend == JitBackend::CUDA) {
+                cuda_check(cuEventRecord(
+                    (CUevent) kernel_history_entry.event_end, ts->stream));
+            } else {
+                task_retain(ret_task);
+                kernel_history_entry.task = ret_task;
+            }
+
+            state.kernel_history.append(kernel_history_entry);
+        }
+
 #if defined(DRJIT_ENABLE_OPTIX)
         if (op.uses_optix)
             uses_optix = false;
