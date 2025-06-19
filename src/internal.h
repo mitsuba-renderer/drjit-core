@@ -626,6 +626,10 @@ struct ThreadStateBase {
     /// .. and the JIT variable that it will be mapped to
     uint32_t call_self_index = 0;
 
+    /// Indicates, if the thread state is used to record or replay frozen
+    /// functions.
+    KernelRecordingMode recording_mode = KernelRecordingMode::None;
+
     /// ---------------------------- CUDA-specific ----------------------------
 
     /// Redundant copy of the device context
