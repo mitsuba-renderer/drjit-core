@@ -2250,11 +2250,11 @@ bool RecordThreadState::has_variable(const void *ptr) {
  * accessed.
  */
 void RecordThreadState::add_param(AccessInfo info) {
-    RecordedVariable &rv = m_recording.recorded_variables[info.slot];
     if (info.type == ParamType::Output) {
 
         jitc_log(LogLevel::Debug, " <- param s%u", info.slot);
 
+        RecordedVariable &rv = m_recording.recorded_variables[info.slot];
         if (info.vtype != VarType::Void)
             rv.type = info.vtype;
 
@@ -2264,6 +2264,7 @@ void RecordThreadState::add_param(AccessInfo info) {
 
         jitc_log(LogLevel::Debug, " -> param s%u", info.slot);
 
+        RecordedVariable &rv = m_recording.recorded_variables[info.slot];
         if (info.test_uninit && rv.state == RecordedVarState::Uninitialized)
             jitc_raise("record(): Variable at slot s%u was read by "
                        "operation o%u, but it had not yet been initialized! "
