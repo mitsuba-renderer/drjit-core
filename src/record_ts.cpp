@@ -964,6 +964,8 @@ int Recording::replay_launch(Operation &op) {
     // Allocate output variables for kernel launch. The assumption here is that
     // for every kernel launch, the inputs are already allocated. Therefore we
     // only allocate output variables, which have the same size as the kernel.
+    uint32_t input_count = 0;
+    uint32_t output_count = 0;
     for (uint32_t j = op.dependency_range.first; j < op.dependency_range.second;
          ++j) {
         AccessInfo info     = dependencies[j];
@@ -973,6 +975,7 @@ int Recording::replay_launch(Operation &op) {
             uint32_t size = rv.size(info.vtype);
             jitc_log(LogLevel::Debug, " -> param s%u is_pointer=%u size=%u",
                      info.slot, info.pointer_access, size);
+            input_count++;
         } else {
             jitc_log(LogLevel::Debug, " <- param s%u is_pointer=%u", info.slot,
                      info.pointer_access);
@@ -980,6 +983,7 @@ int Recording::replay_launch(Operation &op) {
 
         if (info.type == ParamType::Output) {
             rv.alloc(backend, launch_size, info.vtype);
+            output_count++;
         }
         jitc_assert(rv.data != nullptr || dry_run,
                     "replay(): Encountered nullptr in kernel parameters.");
@@ -1024,6 +1028,8 @@ int Recording::replay_launch(Operation &op) {
             kernel_history_entry.uses_optix = uses_optix;
             kernel_history_entry.size = launch_size;
             kernel_history_entry.cache_hit = true;
+            kernel_history_entry.input_count = input_count;
+            kernel_history_entry.output_count = output_count;
         }
         if (unlikely(jit_flag(JitFlag::KernelHistory) &&
                      backend == JitBackend::CUDA)) {
