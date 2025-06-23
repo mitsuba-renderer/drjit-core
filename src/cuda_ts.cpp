@@ -912,9 +912,9 @@ void CUDAThreadState::coop_vec_pack(uint32_t count, const void *in_,
 
     OptixNetworkDescription in_net, out_net;
     in_net.layers = in_o.data();
-    in_net.numLayers = in_o.size();
+    in_net.numLayers = (unsigned int) in_o.size();
     out_net.layers = out_o.data();
-    out_net.numLayers = out_o.size();
+    out_net.numLayers = (unsigned int) out_o.size();
 
     if (!optixCoopVecMatrixConvert)
         jitc_raise("jit_coop_vec_pack(): Cooperative vectors are not "

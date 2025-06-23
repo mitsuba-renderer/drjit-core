@@ -496,12 +496,12 @@ void RecordThreadState::barrier() {
 void RecordThreadState::notify_opaque_width(uint32_t index,
                                             uint32_t width_index) {
     if (!paused()) {
-        uint32_t start = m_recording.dependencies.size();
+        uint32_t start = (uint32_t) m_recording.dependencies.size();
         Variable *v1   = jitc_var(index);
         Variable *v2   = jitc_var(width_index);
         add_in_param(v1->data, (VarType) v1->type);
         add_out_param(v2->data, VarType::UInt32);
-        uint32_t end = m_recording.dependencies.size();
+        uint32_t end = (uint32_t) m_recording.dependencies.size();
 
         Operation op;
         op.type             = OpType::OpaqueWidth;
@@ -530,10 +530,10 @@ int Recording::replay_opaque_width(Operation &op) {
 
 void RecordThreadState::notify_init_undefined(uint32_t index) {
     if (!paused()) {
-        uint32_t start = m_recording.dependencies.size();
+        uint32_t start = (uint32_t) m_recording.dependencies.size();
         Variable *v   = jitc_var(index);
         add_out_param(v->data, (VarType) v->type);
-        uint32_t end = m_recording.dependencies.size();
+        uint32_t end = (uint32_t) m_recording.dependencies.size();
 
         Operation op;
         op.type             = OpType::InitUndefined;
@@ -550,7 +550,7 @@ int Recording::replay_init_undefined(Operation &op) {
 
     ReplayVariable &out_var = replay_variables[out_info.slot];
 
-    out_var.alloc(backend, op.size, out_info.vtype);
+    out_var.alloc(backend, (uint32_t) op.size, out_info.vtype);
 
     return true;
 }
@@ -1126,14 +1126,14 @@ int Recording::replay_expand(Operation &op) {
 
 /// LLVM: Notify the thread state, that a variable has been expanded using
 /// \c jitc_var_expand. This is required to record the ThreadState.
-void RecordThreadState::notify_expand(uint32_t index){
+void RecordThreadState::notify_expand(uint32_t index) {
     // Reductions in LLVM might be split into three operations. First the
     // variable is expanded by its size times the number of workers + 1 Then the
     // kernel writes into the expanded variable with some offset, and finally
     // the variable is reduced. The expand operation allocates a new memory
     // region and copies the old content into it. We catch this case if the
     // input variable of a kernel has a reduce_op associated with it.
-    if (!paused()){
+    if (!paused()) {
         try {
             record_expand(index);
         } catch (...) {
@@ -2143,7 +2143,7 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
             // have to capture the new version, while leaving the old one
             // intact. We therefore evict the old entry in the ``ptr_to_slot``
             // mapping and insert the new value.
-            uint32_t slot = m_recording.recorded_variables.size();
+            uint32_t slot = (uint32_t) m_recording.recorded_variables.size();
             m_recording.recorded_variables.push_back(rv);
             ptr_to_slot[ptr] = slot;
             return slot;
@@ -2279,6 +2279,7 @@ void RecordThreadState::add_param(AccessInfo info) {
 
     m_recording.dependencies.push_back(info);
 }
+
 /// Helper function for recording input parameters given the slot.
 void RecordThreadState::add_in_param(uint32_t slot, VarType vtype,
                                      bool test_uninit) {
@@ -2289,12 +2290,14 @@ void RecordThreadState::add_in_param(uint32_t slot, VarType vtype,
     info.vtype       = vtype;
     add_param(info);
 }
+
 /// Helper function recording input access given the pointer.
 void RecordThreadState::add_in_param(const void *ptr, VarType vtype,
                                      bool test_uninit) {
     uint32_t slot = get_variable(ptr);
     add_in_param(slot, vtype, test_uninit);
 }
+
 /// Helper function recording an output access, given the slot and \ref VarType
 void RecordThreadState::add_out_param(uint32_t slot, VarType vtype) {
     AccessInfo info;
@@ -2303,12 +2306,14 @@ void RecordThreadState::add_out_param(uint32_t slot, VarType vtype) {
     info.vtype = vtype;
     add_param(info);
 }
+
 /// Helper function recording an output access, given the pointer and \ref
 /// VarType
 void RecordThreadState::add_out_param(const void *ptr, VarType vtype) {
     uint32_t slot = add_variable(ptr);
     add_out_param(slot, vtype);
 }
+
 /// Helper function recording an output access, given the pointer and the
 /// uint32_t representation of a \ref VarType
 void RecordThreadState::add_out_param(uint32_t slot, uint32_t vtype) {
@@ -2325,8 +2330,8 @@ struct DisabledThreadState : ThreadState {
     JitBackend m_recording_backend;
     bool m_raised = false;
     DisabledThreadState(ThreadState *internal,
-                              JitBackend recording_backend)
-        : m_internal(internal), m_recording_backend(recording_backend){
+                        JitBackend recording_backend)
+        : m_internal(internal), m_recording_backend(recording_backend) {
         this->context            = internal->context;
         this->stream             = internal->stream;
         this->event              = internal->event;
@@ -2364,7 +2369,7 @@ struct DisabledThreadState : ThreadState {
      */
     void rethrow_exception() {
         if (m_raised) {
-            const char *backend =
+            const char *backend_name =
                 m_internal->backend == JitBackend::CUDA ? "CUDA" : "LLVM";
             const char *recording_backend =
                 m_recording_backend == JitBackend::CUDA ? "CUDA" : "LLVM";
@@ -2373,7 +2378,7 @@ struct DisabledThreadState : ThreadState {
                 "you tried to execute an operation for the %s backend, this is "
                 "not permitted. It might indicate that you specified the wrong "
                 "backend or the wrong backend was inferred from the inputs.",
-                recording_backend, backend);
+                recording_backend, backend_name);
         }
     }
 
@@ -2449,21 +2454,21 @@ struct DisabledThreadState : ThreadState {
                        const MatrixDescr * /* out_d */) override { }
 };
 
-void set_disabled_thread_state(ThreadState **ts, JitBackend recording_backend) {
-    if (!*ts)
+void set_disabled_thread_state(ThreadState **tsp, JitBackend recording_backend) {
+    if (!*tsp)
         return;
-    *ts = new DisabledThreadState(*ts, recording_backend);
+    *tsp = new DisabledThreadState(*tsp, recording_backend);
 }
 
-void unset_disabled_thread_state(ThreadState **ts) {
-    if (!*ts)
+void unset_disabled_thread_state(ThreadState **tsp) {
+    if (!*tsp)
         return;
-    if (DisabledThreadState *dts = dynamic_cast<DisabledThreadState *>(*ts);
+    if (DisabledThreadState *dts = dynamic_cast<DisabledThreadState *>(*tsp);
         dts != nullptr) {
-        *ts = dts->m_internal;
+        *tsp = dts->m_internal;
         dts->rethrow_exception();
         delete dts;
-    }else{
+    } else {
         jitc_fail("Tried to enable a ThreadState that was not disabled.");
     }
 }
@@ -2527,7 +2532,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         Recording *recording = new Recording(std::move(rts->m_recording));
         try{
             recording->validate();
-        } catch (const std::exception &e) {
+        } catch (const std::exception &) {
             recording->destroy();
             throw;
         }

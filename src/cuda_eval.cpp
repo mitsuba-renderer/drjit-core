@@ -382,7 +382,7 @@ static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
 
 void jitc_cuda_render_loop_end(Variable *a0) {
     const LoopData *ld = (LoopData *) a0->data;
-    uint32_t size = ld->size;
+    uint32_t size = (uint32_t) ld->size;
 
     // Initialize scratch space
     for (uint32_t i = 0; i < size; ++i) {

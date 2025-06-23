@@ -211,9 +211,9 @@ bool jitc_optix_api_init() {
         memset(jitc_optix_table_105, 0, sizeof(jitc_optix_table_105));
 
         // Next, try ABI 87
-        int rv = optixQueryFunctionTable(DR_OPTIX_ABI_VERSION_87, 0, 0, 0,
-                                         &jitc_optix_table_87,
-                                         sizeof(jitc_optix_table_87));
+        rv = optixQueryFunctionTable(DR_OPTIX_ABI_VERSION_87, 0, 0, 0,
+                                     &jitc_optix_table_87,
+                                     sizeof(jitc_optix_table_87));
         if (rv) {
             jitc_log(Warn,
                     "jit_optix_api_init(): Failed to load OptiX library! Very likely, "

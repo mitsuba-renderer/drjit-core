@@ -382,12 +382,12 @@ bool jitc_cuda_init() {
         uint32_t driver_version = jitc_cuda_version_major*10+jitc_cuda_version_minor;
         uint32_t ptx_version = 0;
 
-        for (uint32_t i = 0; i < table_size; ++i) {
-            uint32_t driver_version_i = driver_to_ptx_isa_mappling[i][0],
-                     ptx_version_i    = driver_to_ptx_isa_mappling[i][1];
+        for (uint32_t j = 0; j < table_size; ++j) {
+            uint32_t driver_version_j = driver_to_ptx_isa_mappling[j][0],
+                     ptx_version_j    = driver_to_ptx_isa_mappling[j][1];
 
-            if (driver_version >= driver_version_i)
-                ptx_version = ptx_version_i;
+            if (driver_version >= driver_version_j)
+                ptx_version = ptx_version_j;
             else
                 break;
         }

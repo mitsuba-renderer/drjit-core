@@ -569,13 +569,13 @@ void jitc_cuda_tex_lookup(size_t ndim, const void *texture_handle,
         memset(v.dep, 0, sizeof(v.dep));
         const Variable *active_v = jitc_var(active);
         if (active_v->is_literal() && active_v->literal == 1) {
-            v.dep[0] = tex.get_jit_pointer(ti);
+            v.dep[0] = tex.get_jit_pointer((uint32_t) ti);
             v.literal = 0;
         } else {
             v.literal = 1; // encode a masked operation
             uint64_t zero_i = 0;
             Ref zero = steal(jitc_var_literal((JitBackend) v.backend, VarType::Pointer, &zero_i, 1, 0));
-            uint32_t pointer = tex.get_jit_pointer(ti);
+            uint32_t pointer = tex.get_jit_pointer((uint32_t) ti);
             v.dep[0]         = jitc_var_select(active, pointer, zero);
             jitc_var_dec_ref(pointer);
         }
@@ -613,7 +613,7 @@ void jitc_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
             v.kind = (uint32_t) VarKind::TexFetchBilerp;
             v.literal = ch;
             memset(v.dep, 0, sizeof(v.dep));
-            v.dep[0] = tex.get_jit_pointer(ti);
+            v.dep[0] = tex.get_jit_pointer((uint32_t) ti);
             v.dep[1] = active;
             jitc_var_inc_ref(active);
             for (size_t j = 0; j < ndim; ++j) {

@@ -38,7 +38,7 @@ static OptixPipelineCompileOptions jitc_optix_default_compile_options() {
     // tracing, so the following declarations may seem unnecessary. However,
     // this combination produces the leanest kernels.
     pco.traversableGraphFlags = OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_LEVEL_INSTANCING;
-    pco.usesPrimitiveTypeFlags = OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
+    pco.usesPrimitiveTypeFlags = (unsigned int) OPTIX_PRIMITIVE_TYPE_FLAGS_TRIANGLE;
 
     if (jit_flag(JitFlag::Debug))
         pco.exceptionFlags = OPTIX_EXCEPTION_FLAG_TRACE_DEPTH |

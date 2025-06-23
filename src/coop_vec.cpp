@@ -59,7 +59,7 @@ uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
     v.type = arg_v->type;
     v.size = arg_v->size;
     v.backend = arg_v->backend;
-    v.array_length = n;
+    v.array_length = (uint16_t) n;
     v.coop_vec = true;
     v.optix = v.backend == (uint32_t) JitBackend::CUDA;
 
@@ -140,7 +140,7 @@ uint32_t jitc_coop_vec_literal(JitBackend backend,
     v.type = (uint32_t) type;
     v.size = (uint32_t) size;
     v.backend = (uint32_t) backend;
-    v.array_length = length;
+    v.array_length = (uint16_t) length;
     v.coop_vec = true;
     v.optix = v.backend == (uint32_t) JitBackend::CUDA;
 
@@ -168,7 +168,7 @@ uint32_t jitc_coop_vec_load(uint32_t buffer, uint32_t offset, uint32_t length) {
     v.type = (uint32_t) vt;
     v.size = 1;
     v.backend = (uint32_t) backend;
-    v.array_length = length;
+    v.array_length = (uint16_t) length;
     v.literal = offset;
     v.coop_vec = true;
     v.optix = backend == JitBackend::CUDA;
@@ -546,7 +546,7 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
     v.type = (uint32_t) x_vt;
     v.size = std::max(size, jitc_var(mask)->size);
     v.backend = (uint32_t) backend;
-    v.array_length = output_length;
+    v.array_length = (uint16_t) output_length;
     v.coop_vec = true;
     v.dep[0] = a_ptr;
     v.dep[1] = x_index;

@@ -753,16 +753,16 @@ uint32_t jit_var_set_label(uint32_t index, size_t argc, ...) {
             bool isnum = s[0] >= '0' || s[1] <= '9';
 
             if (isnum) {
-                buffer.put('[');
-                buffer.put(s, strlen(s));
-                buffer.put(']');
+                buf.put('[');
+                buf.put(s, strlen(s));
+                buf.put(']');
             } else {
                 if (i > 0)
-                    buffer.put('.');
-                buffer.put(s, strlen(s));
+                    buf.put('.');
+                buf.put(s, strlen(s));
             }
         }
-        label = buffer.get();
+        label = buf.get();
     }
     va_end(ap);
 
@@ -1643,9 +1643,9 @@ uint32_t jit_coop_vec_literal(JitBackend backend, VarType type,
     return jitc_coop_vec_literal(backend, type, value, size, length);
 }
 
-uint32_t jit_coop_vec_load(uint32_t buffer, uint32_t offset, uint32_t length) {
+uint32_t jit_coop_vec_load(uint32_t buffer_index, uint32_t offset, uint32_t length) {
     lock_guard guard(state.lock);
-    return jitc_coop_vec_load(buffer, offset, length);
+    return jitc_coop_vec_load(buffer_index, offset, length);
 }
 
 uint32_t jit_coop_vec_unary_op(JitOp op, uint32_t a0) {
