@@ -2582,9 +2582,9 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         return recording;
     } else {
         jitc_fail(
-            "jit_record_stop(): Tried to stop recording a thread state "
+            "jit_freeze_stop(): Tried to stop recording a thread state "
             "for backend %u, while no recording was started for this backend. "
-            "Try to start the recording with jit_record_start.",
+            "Try to start the recording with jit_freeze_start.",
             (uint32_t) backend);
     }
 }
