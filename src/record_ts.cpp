@@ -779,8 +779,7 @@ void RecordThreadState::record_launch(
     size_t str_size    = buffer.size() + 1;
     op.kernel.key->str = (char *) malloc_check(str_size);
     std::memcpy(op.kernel.key->str, key->str, str_size);
-    op.kernel.hash = hash;
-    op.kernel.str_size = str_size;
+    op.kernel.hash        = hash;
     op.kernel.key->device = key->device;
     op.kernel.key->flags  = key->flags;
     op.kernel.key->high64 = key->high64;
@@ -1022,10 +1021,11 @@ int Recording::replay_launch(Operation &op) {
             kernel_history_entry.type    = KernelType::JIT;
             kernel_history_entry.hash[0] = op.kernel.hash.low64;
             kernel_history_entry.hash[1] = op.kernel.hash.high64;
-            kernel_history_entry.ir = (char *) malloc_check(op.kernel.str_size);
-            memcpy(kernel_history_entry.ir, op.kernel.key->str,
-                   op.kernel.str_size);
-            kernel_history_entry.uses_optix = uses_optix;
+            uint32_t str_size = std::strlen(op.kernel.key->str);
+            kernel_history_entry.ir      = (char *) malloc_check(str_size + 1);
+            std::memcpy(kernel_history_entry.ir, op.kernel.key->str,
+                        str_size + 1);
+            kernel_history_entry.uses_optix   = uses_optix;
             kernel_history_entry.size = launch_size;
             kernel_history_entry.cache_hit = true;
             kernel_history_entry.input_count = input_count;

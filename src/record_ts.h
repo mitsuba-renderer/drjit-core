@@ -70,7 +70,6 @@ struct Operation {
         /// Additional information of a kernel launch
         struct {
             KernelKey *key;
-            uint32_t str_size;
             Kernel kernel;
             XXH128_hash_t hash;
         } kernel;
