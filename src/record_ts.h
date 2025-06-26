@@ -1,3 +1,11 @@
+/*
+    src/record_ts.h -- Backend for function freezing
+
+    Copyright (c) 2024 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
 #include "drjit-core/hash.h"
 #include "drjit-core/jit.h"
 #include "internal.h"
@@ -380,6 +388,8 @@ public:
         this->m_recording.backend = internal->backend;
 
         this->scope = internal->scope;
+
+        this->recording_mode = KernelRecordingMode::Recorded;
     };
 
     void barrier() override;
