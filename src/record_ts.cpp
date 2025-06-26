@@ -143,7 +143,14 @@ const char *op_type_name[(int) OpType::Count]{
     "OpaqueWidth",    "InitUndefined",     "BoolReduceBoolAsync4", "Free"
 };
 
+/// Indicating, that we are replaying in dry-run mode. In this mode,
+/// replaying a recording will not execute kernels, and only calculate the
+/// output size. This variable will be set by ``jitc_freeze_dry_run()``
 static bool dry_run = false;
+
+/// Indicates, that replaying a frozen function will generate kernel history
+/// entries. This function will be set by ``jitc_freeze_replay()``.
+static bool record_kernel_history = false;
 
 /**
  * Represents a variable during replay.
@@ -1016,7 +1023,7 @@ int Recording::replay_launch(Operation &op) {
 
         // Add a kernel history entry, when replaying a kernel.
         KernelHistoryEntry kernel_history_entry = {};
-        if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+        if (unlikely(record_kernel_history)) {
             kernel_history_entry.backend = backend;
             kernel_history_entry.type    = KernelType::JIT;
             kernel_history_entry.hash[0] = op.kernel.hash.low64;
@@ -1031,8 +1038,7 @@ int Recording::replay_launch(Operation &op) {
             kernel_history_entry.input_count = input_count;
             kernel_history_entry.output_count = output_count;
         }
-        if (unlikely(jit_flag(JitFlag::KernelHistory) &&
-                     backend == JitBackend::CUDA)) {
+        if (unlikely(record_kernel_history && backend == JitBackend::CUDA)) {
             auto &e = kernel_history_entry;
             cuda_check(
                 cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));
@@ -1044,7 +1050,7 @@ int Recording::replay_launch(Operation &op) {
         Task *ret_task = ts->launch(kernel, op.kernel.key, op.kernel.hash,
                                     launch_size, &kernel_params, nullptr);
 
-        if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+        if (unlikely(record_kernel_history)) {
             if (backend == JitBackend::CUDA) {
                 cuda_check(cuEventRecord(
                     (CUevent) kernel_history_entry.event_end, ts->stream));
@@ -2654,7 +2660,14 @@ int jitc_freeze_resume(JitBackend backend) {
 void jitc_freeze_replay(Recording *recording, const uint32_t *inputs,
                         uint32_t *outputs) {
     dry_run = false;
-    recording->replay(inputs, outputs);
+    record_kernel_history = jit_flag(JitFlag::KernelHistory);
+    try {
+        recording->replay(inputs, outputs);
+    } catch (std::exception &e) {
+        record_kernel_history = false;
+        throw;
+    }
+    record_kernel_history = false;
 }
 
 int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs) {
