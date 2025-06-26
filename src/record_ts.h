@@ -388,6 +388,8 @@ public:
         this->m_recording.backend = internal->backend;
 
         this->scope = internal->scope;
+
+        this->recording_mode = KernelRecordingMode::Recorded;
     };
 
     void barrier() override;

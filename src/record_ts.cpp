@@ -1026,6 +1026,7 @@ int Recording::replay_launch(Operation &op) {
         if (unlikely(record_kernel_history)) {
             kernel_history_entry.backend = backend;
             kernel_history_entry.type    = KernelType::JIT;
+            kernel_history_entry.recording_mode = KernelRecordingMode::Replayed;
             kernel_history_entry.hash[0] = op.kernel.hash.low64;
             kernel_history_entry.hash[1] = op.kernel.hash.high64;
             uint32_t str_size = std::strlen(op.kernel.key->str);
@@ -2544,6 +2545,7 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
     for (uint32_t i = 0; i < n_inputs; ++i)
         record_ts->add_input(inputs[i]);
 
+    ts_->recording_mode = KernelRecordingMode::Recorded;
     jitc_set_flag(JitFlag::FreezingScope, true);
 }
 Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
@@ -2560,6 +2562,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         jitc_assert(rts->record_stack.empty(),
                     "Kernel recording ended while still recording loop!");
 
+        internal->recording_mode = KernelRecordingMode::None;
         jitc_set_flag(JitFlag::FreezingScope, false);
         if (rts->m_exception) {
             std::rethrow_exception(rts->m_exception);
@@ -2618,6 +2621,7 @@ void jitc_freeze_abort(JitBackend backend) {
 
         delete rts;
 
+        internal->recording_mode = KernelRecordingMode::None;
         jitc_set_flag(JitFlag::FreezingScope, false);
     }
 }
@@ -2632,6 +2636,7 @@ int jitc_freeze_pause(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
+        rts->m_internal->recording_mode = KernelRecordingMode::None;
         jitc_set_flag(JitFlag::FreezingScope, false);
         return rts->pause();
     } else {
@@ -2646,6 +2651,7 @@ int jitc_freeze_resume(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
+        rts->m_internal->recording_mode = KernelRecordingMode::Recorded;
         jitc_set_flag(JitFlag::FreezingScope, true);
         return rts->resume();
     } else {
@@ -2661,13 +2667,22 @@ void jitc_freeze_replay(Recording *recording, const uint32_t *inputs,
                         uint32_t *outputs) {
     dry_run = false;
     record_kernel_history = jit_flag(JitFlag::KernelHistory);
+    ThreadState *ts = nullptr;
+    if (record_kernel_history) {
+        ts                 = thread_state(recording->backend);
+        ts->recording_mode = KernelRecordingMode::Replayed;
+    }
     try {
         recording->replay(inputs, outputs);
     } catch (std::exception &e) {
         record_kernel_history = false;
+        if(record_kernel_history)
+            ts->recording_mode = KernelRecordingMode::None;
         throw;
     }
     record_kernel_history = false;
+    if (record_kernel_history)
+        ts->recording_mode = KernelRecordingMode::None;
 }
 
 int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs) {
