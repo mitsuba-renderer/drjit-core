@@ -1252,6 +1252,7 @@ static void jitc_llvm_render(Variable *v) {
 
         fmt("    %h$u = fptrunc <$w x float> %f$u to <$w x half>\n",
             v->reg_index, v->reg_index);
+        b->ssa_f32_cast = 1;
     }
 }
 
