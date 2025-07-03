@@ -2639,6 +2639,16 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
                              mode == ReduceMode::NoConflicts ||
                              (mode == ReduceMode::Auto &&
                               target_info.size <= llvm_expand_threshold));
+        } else if (backend == JitBackend::CUDA) {
+            use_packet_op = (mode == ReduceMode::Expand ||
+                             mode == ReduceMode::Permute ||
+                             mode == ReduceMode::NoConflicts ||
+                             mode == ReduceMode::Auto);
+            if (thread_state(backend)->compute_capability < 90) {
+                use_packet_op =
+                    use_packet_op && op == ReduceOp::Add &&
+                    jitc_var(target)->type == (uint32_t) VarType::Float16;
+            }
         }
     }
 
