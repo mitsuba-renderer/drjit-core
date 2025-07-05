@@ -407,6 +407,11 @@ void *jit_malloc_migrate(void *ptr, AllocType type, int move) {
     return jitc_malloc_migrate(ptr, type, move);
 }
 
+size_t jit_malloc_watermark(AllocType type) {
+    lock_guard guard(state.lock);
+    return state.alloc_watermark[(int) type];
+}
+
 enum AllocType jit_var_alloc_type(uint32_t index) {
     lock_guard guard(state.lock);
     return jitc_var_alloc_type(index);

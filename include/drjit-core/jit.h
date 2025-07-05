@@ -459,6 +459,9 @@ extern JIT_EXPORT int jit_malloc_device(void *ptr);
 extern JIT_EXPORT void *jit_malloc_migrate(void *ptr, JIT_ENUM AllocType type,
                                            int move JIT_DEF(1));
 
+/// Return the peak memory usage (watermark) for a given allocation type
+extern JIT_EXPORT size_t jit_malloc_watermark(JIT_ENUM AllocType type);
+
 // ====================================================================
 //                          Pointer registry
 // ====================================================================
