@@ -2390,6 +2390,9 @@ extern JIT_EXPORT void jit_kernel_history_clear();
  */
 extern JIT_EXPORT struct KernelHistoryEntry *jit_kernel_history();
 
+/// Get kernel launch statistics (launches, soft misses, hard misses)
+extern JIT_EXPORT void jit_launch_stats(size_t *launches, size_t *soft_misses, size_t *hard_misses);
+
 // ====================================================================
 //                        Profiling (NVTX, etc.)
 // ====================================================================

@@ -1083,6 +1083,16 @@ struct KernelHistoryEntry *jit_kernel_history() {
     return state.kernel_history.get();
 }
 
+void jit_launch_stats(size_t *launches, size_t *soft_misses, size_t *hard_misses) {
+    lock_guard guard(state.lock);
+    if (launches)
+        *launches = state.kernel_launches;
+    if (soft_misses)
+        *soft_misses = state.kernel_soft_misses;
+    if (hard_misses)
+        *hard_misses = state.kernel_hard_misses;
+}
+
 #if defined(DRJIT_ENABLE_OPTIX)
 OptixDeviceContext jit_optix_context() {
     lock_guard guard(state.lock);
