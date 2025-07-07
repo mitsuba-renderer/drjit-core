@@ -13,6 +13,11 @@
 #include <cstdint>
 #include <cstring>
 
+#if defined(_MSC_VER)
+#  pragma warning(push)
+#  pragma warning(disable: 4756) // overflow in constant arithmetic
+#endif
+
 NAMESPACE_BEGIN(drjit)
 
 struct half {
@@ -211,3 +216,7 @@ template <> struct debug_init<half> {
 
 NAMESPACE_END(detail)
 NAMESPACE_END(drjit)
+
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#endif

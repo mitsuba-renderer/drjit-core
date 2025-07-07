@@ -2143,10 +2143,10 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
             // have to capture the new version, while leaving the old one
             // intact. We therefore evict the old entry in the ``ptr_to_slot``
             // mapping and insert the new value.
-            uint32_t slot = (uint32_t) m_recording.recorded_variables.size();
+            uint32_t new_slot = (uint32_t) m_recording.recorded_variables.size();
             m_recording.recorded_variables.push_back(rv);
-            ptr_to_slot[ptr] = slot;
-            return slot;
+            ptr_to_slot[ptr] = new_slot;
+            return new_slot;
         }
 
         m_recording.recorded_variables[slot] = rv;
