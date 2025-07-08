@@ -33,10 +33,6 @@
 #include <stdint.h>
 #include "macros.h"
 
-#if defined(__cplusplus)
-extern "C" {
-#endif
-
 // ====================================================================
 //         Initialization, device enumeration, and management
 // ====================================================================
@@ -2889,6 +2885,3 @@ extern JIT_EXPORT uint32_t jit_coop_vec_outer_product_accum(
     uint32_t a,
     uint32_t b);
 
-#if defined(__cplusplus)
-}
-#endif
