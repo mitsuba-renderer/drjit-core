@@ -264,5 +264,6 @@ void jitc_registry_shutdown() {
         }
     }
 
+    r.domain_ids.clear();
     r.domains.clear();
 }
