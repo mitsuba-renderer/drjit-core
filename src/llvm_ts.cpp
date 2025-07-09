@@ -9,8 +9,8 @@
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
-static void submit_cpu(KernelType type, Func &&func, uint32_t width,
-                       uint32_t size = 1) {
+static void submit_cpu(KernelType type, KernelRecordingMode recording_mode,
+                       Func &&func, uint32_t width, uint32_t size = 1) {
 
     struct Payload { Func f; };
     Payload payload{ std::forward<Func>(func) };
@@ -32,6 +32,7 @@ static void submit_cpu(KernelType type, Func &&func, uint32_t width,
         KernelHistoryEntry entry = {};
         entry.backend = JitBackend::LLVM;
         entry.type = type;
+        entry.recording_mode = recording_mode;
         entry.size = width;
         entry.input_count = 1;
         entry.output_count = 1;
@@ -193,7 +194,7 @@ void LLVMThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
     uint8_t src8[8] { };
     std::memcpy(&src8, src, isize);
 
-    submit_cpu(KernelType::Other,
+    submit_cpu(KernelType::Other, this->recording_mode,
         [ptr, src8, size, isize](uint32_t) {
             switch (isize) {
                 case 1:
@@ -303,6 +304,7 @@ void LLVMThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
 
     submit_cpu(
         KernelType::Reduce,
+        this->recording_mode,
         [red, work_unit_size, size, block_size, chunk_size, chunk_count, chunks_per_block, in, buf](uint32_t index) {
             red(index, work_unit_size, size, block_size, chunk_size, chunk_count, chunks_per_block, in, buf);
         },
@@ -387,6 +389,7 @@ void LLVMThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
 
         submit_cpu(
             KernelType::Reduce,
+            this->recording_mode,
             [red_1, work_unit_size, size, block_size, chunk_size, chunk_count,
              chunks_per_block, in, scratch](uint32_t index) {
                 red_1(index, work_unit_size, size, block_size, chunk_size,
@@ -410,6 +413,7 @@ void LLVMThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
 
     submit_cpu(
         KernelType::Reduce,
+        this->recording_mode,
         [red_2, work_unit_size, size, block_size, chunk_size, chunk_count,
          chunks_per_block, exclusive, reverse, in, scratch,
          out](uint32_t index) {
@@ -431,6 +435,7 @@ void LLVMThreadState::poke(void *dst, const void *src, uint32_t size) {
 
     submit_cpu(
         KernelType::Other,
+        this->recording_mode,
         [src8, size, dst](uint32_t) {
             std::memcpy(dst, &src8, size);
         },
@@ -462,6 +467,7 @@ void LLVMThreadState::reduce_dot(VarType type, const void *ptr_1,
     Reduction2 reduction = jitc_reduce_dot_create(type);
     submit_cpu(
         KernelType::Reduce,
+        this->recording_mode,
         [block_size, size, tsize, ptr_1, ptr_2, reduction, target](uint32_t index) {
             reduction(ptr_1, ptr_2, index * block_size,
                       std::min((index + 1) * block_size, size),
@@ -503,6 +509,7 @@ uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
 
         submit_cpu(
             KernelType::Other,
+            this->recording_mode,
             [block_size, size, in, scratch](uint32_t index) {
                 uint32_t start = index * block_size,
                          end = std::min(start + block_size, size);
@@ -523,6 +530,7 @@ uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
 
     submit_cpu(
         KernelType::Other,
+        this->recording_mode,
         [block_size, size, scratch, in, out, &count_out](uint32_t index) {
             uint32_t start = index * block_size,
                      end = std::min(start + block_size, size);
@@ -589,6 +597,7 @@ uint32_t LLVMThreadState::mkperm(const uint32_t *ptr, uint32_t size,
     // Phase 1
     submit_cpu(
         KernelType::CallReduce,
+        this->recording_mode,
         [block_size, size, buckets, bucket_count, ptr](uint32_t index) {
             ProfilerPhase profiler(profiler_region_mkperm_phase_1);
             uint32_t start = index * block_size,
@@ -610,6 +619,7 @@ uint32_t LLVMThreadState::mkperm(const uint32_t *ptr, uint32_t size,
     // Local accumulation step
     submit_cpu(
         KernelType::CallReduce,
+        this->recording_mode,
         [bucket_count, blocks, buckets, offsets, &unique_count](uint32_t) {
             uint32_t sum = 0, unique_count_local = 0;
             for (uint32_t i = 0; i < bucket_count; ++i) {
@@ -643,6 +653,7 @@ uint32_t LLVMThreadState::mkperm(const uint32_t *ptr, uint32_t size,
     // Phase 2
     submit_cpu(
         KernelType::CallReduce,
+        this->recording_mode,
         [block_size, size, buckets, perm, ptr](uint32_t index) {
             ProfilerPhase profiler(profiler_region_mkperm_phase_2);
 
@@ -677,6 +688,7 @@ void LLVMThreadState::memcpy(void *dst, const void *src, size_t size) {
 void LLVMThreadState::memcpy_async(void *dst, const void *src, size_t size) {
     submit_cpu(
         KernelType::Other,
+        this->recording_mode,
         [dst, src, size](uint32_t) {
             std::memcpy(dst, src, size);
         },
@@ -700,6 +712,7 @@ void LLVMThreadState::aggregate(void *dst_, AggregationEntry *agg,
 
     submit_cpu(
         KernelType::Other,
+        this->recording_mode,
         [dst_, agg, size, work_unit_size](uint32_t index) {
             uint32_t start = index * work_unit_size,
                      end = std::min(start + work_unit_size, size);
@@ -725,7 +738,8 @@ void LLVMThreadState::aggregate(void *dst_, AggregationEntry *agg,
         size, work_units);
 
     submit_cpu(
-        KernelType::Other, [agg](uint32_t) { free(agg); }, 1, 1);
+        KernelType::Other, this->recording_mode, [agg](uint32_t) { free(agg); },
+        1, 1);
 }
 
 void LLVMThreadState::enqueue_host_func(void (*callback)(void *),
@@ -735,7 +749,8 @@ void LLVMThreadState::enqueue_host_func(void (*callback)(void *),
         callback(payload);
     } else {
         submit_cpu(
-            KernelType::Other, [payload, callback](uint32_t) { callback(payload); }, 1, 1);
+            KernelType::Other, this->recording_mode,
+            [payload, callback](uint32_t) { callback(payload); }, 1, 1);
     }
 }
 
@@ -829,6 +844,7 @@ void LLVMThreadState::reduce_expanded(VarType vt, ReduceOp op, void *ptr,
 
     submit_cpu(
         KernelType::Reduce,
+        this->recording_mode,
         [ptr, block_size, exp, size, kernel](uint32_t index) {
             kernel(ptr, index * block_size,
                    std::min((index + 1) * block_size, size), exp, size);
