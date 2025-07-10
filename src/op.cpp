@@ -2580,8 +2580,8 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
             "jit_var_scatter(): input arrays are symbolic, but the operation "
             "was issued outside of a symbolic recording session.");
 
-    if ((n & (n-1)) || n == 1)
-        jitc_raise("jitc_var_scatter_packet(): vector size must be a power of two "
+    if (n == 1 || n % 2 != 0)
+        jitc_raise("jitc_var_scatter_packet(): vector size must be a multiple of two "
                    "and >= 1 (got %zu)!", n);
 
     if ((target_info.size & (n-1)) != 0 && target_info.size != 1)
@@ -2676,21 +2676,31 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         return target.release();
     }
 
-    // Packet size 8 is the max. for the LLVM backend. Split larger requests.
+    // Packet size 8 is the max. for the LLVM backend. Split larger requests
+    // into the largest possible packet sizes. For example, a packet of 6
+    // variables should be split into 3 scatters with 2 variables each.
     uint32_t max_width = std::min(8u, jitc_llvm_vector_width);
-    if (n > max_width && var_info.backend == JitBackend::LLVM) {
-        Ref step = steal(jitc_var_u32(var_info.backend, 1)),
-            scale_ = steal(jitc_var_u32(var_info.backend, (uint32_t) n/max_width)),
+    if (n > 1 && ((n & (n - 1)) || n > max_width) != 0 &&
+        var_info.backend == JitBackend::LLVM) {
+
+        // Find the largest power of two smaller than ``max_width`` that divides
+        // ``n``. This can be used to split the scatter operation.
+        uint32_t packet_size = n & -n;
+        while (packet_size > max_width && packet_size > 1)
+            packet_size >>= 1;
+
+        Ref step   = steal(jitc_var_u32(var_info.backend, 1)),
+            scale_ = steal(
+                jitc_var_u32(var_info.backend, (uint32_t) n / packet_size)),
             index2 = steal(jitc_var_mul(index, scale_));
 
-        for (size_t i = 0; i < n; i += max_width) {
-
+        for (size_t i = 0; i < n; i += packet_size) {
             uint32_t index_t = target;
             if (index_t == target_)
                 target.reset();
 
             target = steal(jitc_var_scatter_packet(
-                max_width, index_t, values + i, index2, mask, op, mode));
+                packet_size, index_t, values + i, index2, mask, op, mode));
             index2 = steal(jitc_var_add(index2, step));
         }
 
