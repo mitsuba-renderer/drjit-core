@@ -2602,12 +2602,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
                              && mode != ReduceMode::NoConflicts) {
         bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
         jitc_var_eval(target, raise_dirty_error);
-        jitc_var_eval(index_);
-        jitc_var_eval(mask);
-
         target_v = jitc_var(target);
-        index_v = jitc_var(index_);
-        mask_v = jitc_var(mask);
     }
 
     // Go to the original if 'target' is wrapped into a loop state variable
@@ -2626,11 +2621,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
             "jit_var_scatter(): input arrays are symbolic, but the operation "
             "was issued outside of a symbolic recording session.");
 
-    if (n == 1 || n % 2 != 0)
-        jitc_raise("jitc_var_scatter_packet(): vector size must be a multiple of two "
-                   "and >= 1 (got %zu)!", n);
-
-    if ((target_info.size & (n-1)) != 0 && target_info.size != 1)
+    if (target_info.size % n != 0 && target_info.size != 1)
         jitc_raise("jitc_var_scatter_packet(): target r%u has size %u, which is not "
                    "divisible by %zu!", index_, target_info.size, n);
 
@@ -2672,6 +2663,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     }
 
     bool use_packet_op = false;
+    uint32_t compute_capability = thread_state(backend)->compute_capability;
 
     if (flags & (uint32_t) JitFlag::PacketOps) {
         if (op == ReduceOp::Identity) {
@@ -2692,7 +2684,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
                              mode == ReduceMode::Auto);
 
             VarType targe_type = (VarType) jitc_var(target)->type;
-            if (thread_state(backend)->compute_capability < 90)
+            if (compute_capability < 90)
                 use_packet_op = use_packet_op && op == ReduceOp::Add &&
                                 targe_type == VarType::Float16;
             else
@@ -2704,6 +2696,9 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
                        op == ReduceOp::Max)));
         }
     }
+
+    // If the packet size is not divisible by two we cannot use packet ops.
+    use_packet_op = use_packet_op && n > 1 && n % 2 == 0;
 
     Ref scale = steal(jitc_var_u32(backend, (uint32_t) n));
 
@@ -2722,17 +2717,29 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         return target.release();
     }
 
-    // Packet size 8 is the max. for the LLVM backend. Split larger requests
-    // into the largest possible packet sizes. For example, a packet of 6
-    // variables should be split into 3 scatters with 2 variables each.
-    uint32_t max_width = std::min(8u, jitc_llvm_vector_width);
-    if (n > 1 && ((n & (n - 1)) || n > max_width) != 0 &&
-        var_info.backend == JitBackend::LLVM) {
+    // Compute the maximum supported packet size. We assume, that the backends
+    // supports any packet size equal to a power of two smaller than
+    // this size.
+    uint32_t max_packet_size = 0;
+    if (var_info.backend == JitBackend::LLVM) {
+        max_packet_size = std::min(8u, jitc_llvm_vector_width);
+    } else if (var_info.backend == JitBackend::CUDA) {
+        if (compute_capability < 90)
+            max_packet_size = 2;
+        else if (target_info.type == VarType::Float16)
+            max_packet_size = 8;
+        else if (target_info.type == VarType::Float32)
+            max_packet_size = 4;
+    }
 
-        // Find the largest power of two smaller than ``max_width`` that divides
-        // ``n``. This can be used to split the scatter operation.
+    // Split large requests into the largest possible packet sizes. For
+    // example, a packet of 6 variables will be split into 3 scatters with 2
+    // variables each.
+    if (n > 1 && ((n & (n - 1)) || n > max_packet_size) != 0) {
+        // Find the largest supported packet size i.e. power of two smaller than
+        // ``max_packet_size`` that divides ``n``.
         uint32_t packet_size = n & -n;
-        while (packet_size > max_width && packet_size > 1)
+        while (packet_size > max_packet_size && packet_size > 1)
             packet_size >>= 1;
 
         Ref step   = steal(jitc_var_u32(var_info.backend, 1)),
