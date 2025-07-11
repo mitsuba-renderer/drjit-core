@@ -2680,11 +2680,26 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     } else if (var_info.backend == JitBackend::CUDA) {
         if (compute_capability < 90)
             max_packet_size = 2;
+        else if (op == ReduceOp::Identity &&
+                 (target_info.type == VarType::UInt32 ||
+                  target_info.type == VarType::Int32 ||
+                  target_info.type == VarType::Float32))
+            max_packet_size = 8;
+        else if (op == ReduceOp::Identity &&
+                 (target_info.type == VarType::UInt64 ||
+                  target_info.type == VarType::Int64 ||
+                  target_info.type == VarType::Float64))
+            max_packet_size = 4;
         else if (target_info.type == VarType::Float16)
             max_packet_size = 8;
         else if (target_info.type == VarType::Float32)
             max_packet_size = 4;
     }
+
+    if(max_packet_size == 0)
+        jitc_raise("jit_var_scatter_packet(): Could not determine a packet "
+                   "size to scatter %zu elements of type %s to scatter with.",
+                   n, type_name[(uint32_t) target_info.type]);
 
     // Split large requests into the largest possible packet sizes. For
     // example, a packet of 6 variables will be split into 3 scatters with 2
