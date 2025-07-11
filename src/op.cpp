@@ -2724,22 +2724,10 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     if (var_info.backend == JitBackend::LLVM) {
         max_packet_size = std::min(8u, jitc_llvm_vector_width);
     } else if (var_info.backend == JitBackend::CUDA) {
-        if (compute_capability < 90)
+        if (compute_capability < 90 && op == ReduceOp::Add)
             max_packet_size = 2;
-        else if (op == ReduceOp::Identity &&
-                 (target_info.type == VarType::UInt32 ||
-                  target_info.type == VarType::Int32 ||
-                  target_info.type == VarType::Float32))
-            max_packet_size = 8;
-        else if (op == ReduceOp::Identity &&
-                 (target_info.type == VarType::UInt64 ||
-                  target_info.type == VarType::Int64 ||
-                  target_info.type == VarType::Float64))
-            max_packet_size = 4;
-        else if (target_info.type == VarType::Float16)
-            max_packet_size = 8;
-        else if (target_info.type == VarType::Float32)
-            max_packet_size = 4;
+        else
+            max_packet_size = 16 / type_size[(uint32_t) target_info.type];
     }
 
     if(max_packet_size == 0)
