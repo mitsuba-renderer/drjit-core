@@ -1100,7 +1100,7 @@ static void jitc_cuda_render_trace(const Variable *v,
             disabled = true;
     } else if (!disabled) {
         some_masked = true;
-        if (td->reorder)
+        if (td->reorder && jit_flag(JitFlag::ShaderExecutionReordering))
             fmt("    @!$v bra l_reorder_$u;\n", valid, v->reg_index);
         else
             fmt("    @!$v bra l_masked_$u;\n", valid, v->reg_index);
