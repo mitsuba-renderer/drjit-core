@@ -1951,11 +1951,11 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
     auto [var_info, index_v, mask_v] =
         jitc_var_check("jit_var_gather_packet", index, mask);
 
-    if ((n & (n-1)) || n == 1)
+    if (n == 1)
         jitc_raise("jitc_var_gather_packet(): vector size must be a power of two "
                    "and >= 1 (got %zu)!", n);
 
-    if ((src_info.size & (n-1)) != 0 && src_info.size != 1)
+    if (src_info.size % 2 != 0 && src_info.size != 1)
         jitc_raise("jitc_var_gather_packet(): source r%u has size %u, which is not "
                    "divisible by %zu!", index, src_info.size, n);
 
@@ -1981,15 +1981,34 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
         return;
     }
 
+    // Compute the maximum supported packet size. We assume, that the backends
+    // supports any packet size equal to a power of two smaller than
+    // this size.
+    uint32_t max_packet_size = 0;
+    if (var_info.backend == JitBackend::LLVM)
+        max_packet_size = std::min(8u, jitc_llvm_vector_width);
+    else if (var_info.backend == JitBackend::CUDA)
+        max_packet_size = 16 / type_size[(uint32_t) src_info.type];
+
+    if (max_packet_size == 0)
+        jitc_raise("jit_var_gather_packet(): Could not determine a packet "
+                   "size to gather %zu elements of type %s.",
+                   n, type_name[(uint32_t) src_info.type]);
+
     // Packet size 8 is the max. for the LLVM backend. Split larger requests.
-    uint32_t max_width = std::min(8u, jitc_llvm_vector_width);
-    if (n > max_width && var_info.backend == JitBackend::LLVM) {
+    if (n > 1 && ((n & (n - 1)) != 0 || n > max_packet_size)) {
+        // Find the largest supported packet size i.e. power of two smaller than
+        // ``max_packet_size`` that divides ``n``.
+        uint32_t packet_size = n & -n;
+        while (packet_size > max_packet_size && packet_size > 1)
+            packet_size >>= 1;
+
         Ref step = steal(jitc_var_u32(var_info.backend, 1)),
-            scale_ = steal(jitc_var_u32(var_info.backend, (uint32_t) n/max_width)),
+            scale_ = steal(jitc_var_u32(var_info.backend, (uint32_t) n/packet_size)),
             index2 = steal(jitc_var_mul(index, scale_));
 
-        for (size_t i = 0; i < n; i += max_width) {
-            jitc_var_gather_packet(max_width, src_, index2, mask, out+i);
+        for (size_t i = 0; i < n; i += packet_size) {
+            jitc_var_gather_packet(packet_size, src_, index2, mask, out+i);
             index2 = steal(jitc_var_add(index2, step));
         }
         return;
@@ -2738,7 +2757,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     // Split large requests into the largest possible packet sizes. For
     // example, a packet of 6 variables will be split into 3 scatters with 2
     // variables each.
-    if (n > 1 && ((n & (n - 1)) || n > max_packet_size) != 0) {
+    if (n > 1 && ((n & (n - 1)) != 0 || n > max_packet_size)) {
         // Find the largest supported packet size i.e. power of two smaller than
         // ``max_packet_size`` that divides ``n``.
         uint32_t packet_size = n & -n;
