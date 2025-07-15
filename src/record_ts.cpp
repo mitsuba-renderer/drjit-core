@@ -657,23 +657,26 @@ bool RecordThreadState::resume() {
 Task *RecordThreadState::launch(Kernel kernel, KernelKey *key,
                                 XXH128_hash_t hash, uint32_t size,
                                 std::vector<void *> *params,
-                                const std::vector<uint32_t> *kernel_param_ids) {
+                                const std::vector<uint32_t> *kernel_param_ids,
+                                KernelHistoryEntry *kernel_history_entry,
+                                uint32_t operation_count) {
     if (!paused()) {
         try {
-            record_launch(kernel, key, hash, size, params,
-                          kernel_param_ids);
+            record_launch(kernel, key, hash, size, params, kernel_param_ids,
+                          operation_count);
         } catch (...) {
             record_exception();
         }
     }
     pause_scope pause(this);
-    return m_internal->launch(kernel, key, hash, size, params, nullptr);
+    return m_internal->launch(kernel, key, hash, size, params, nullptr,
+                              kernel_history_entry, operation_count);
 }
 
 void RecordThreadState::record_launch(
     Kernel kernel, KernelKey *key, XXH128_hash_t hash, uint32_t size,
-    std::vector<void *> *params,
-    const std::vector<uint32_t> *kernel_param_ids) {
+    std::vector<void *> *params, const std::vector<uint32_t> *kernel_param_ids,
+    uint32_t operation_count) {
     uint32_t kernel_param_offset = backend == JitBackend::CUDA ? 1 : 3;
 
     // The size of the largest variable used by the kernel directly.
@@ -786,10 +789,11 @@ void RecordThreadState::record_launch(
     size_t str_size    = buffer.size() + 1;
     op.kernel.key->str = (char *) malloc_check(str_size);
     std::memcpy(op.kernel.key->str, key->str, str_size);
-    op.kernel.hash        = hash;
-    op.kernel.key->device = key->device;
-    op.kernel.key->flags  = key->flags;
-    op.kernel.key->high64 = key->high64;
+    op.kernel.hash            = hash;
+    op.kernel.key->device     = key->device;
+    op.kernel.key->flags      = key->flags;
+    op.kernel.key->high64     = key->high64;
+    op.kernel.operation_count = operation_count;
 
     op.size = size;
 
@@ -1038,30 +1042,14 @@ int Recording::replay_launch(Operation &op) {
             kernel_history_entry.cache_hit = true;
             kernel_history_entry.input_count = input_count;
             kernel_history_entry.output_count = output_count;
-        }
-        if (unlikely(record_kernel_history && backend == JitBackend::CUDA)) {
-            auto &e = kernel_history_entry;
-            cuda_check(
-                cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));
-            cuda_check(
-                cuEventCreate((CUevent *) &e.event_end, CU_EVENT_DEFAULT));
-            cuda_check(cuEventRecord((CUevent) e.event_start, ts->stream));
+            kernel_history_entry.operation_count = op.kernel.operation_count;
         }
 
-        Task *ret_task = ts->launch(kernel, op.kernel.key, op.kernel.hash,
-                                    launch_size, &kernel_params, nullptr);
-
-        if (unlikely(record_kernel_history)) {
-            if (backend == JitBackend::CUDA) {
-                cuda_check(cuEventRecord(
-                    (CUevent) kernel_history_entry.event_end, ts->stream));
-            } else {
-                task_retain(ret_task);
-                kernel_history_entry.task = ret_task;
-            }
-
-            state.kernel_history.append(kernel_history_entry);
-        }
+        ts->launch(kernel, op.kernel.key, op.kernel.hash, launch_size,
+                   &kernel_params, nullptr,
+                   unlikely(record_kernel_history) ? &kernel_history_entry
+                                                   : nullptr,
+                   op.kernel.operation_count);
 
 #if defined(DRJIT_ENABLE_OPTIX)
         if (op.uses_optix)
@@ -2439,7 +2427,9 @@ struct DisabledThreadState : ThreadState {
     void barrier() override { record_exception(); }
     Task *launch(Kernel /*kernel*/, KernelKey * /*key*/, XXH128_hash_t /*hash*/,
                  uint32_t /*size*/, std::vector<void *> * /*kernel_params*/,
-                 const std::vector<uint32_t> * /*kernel_param_ids*/) override {
+                 const std::vector<uint32_t> * /*kernel_param_ids*/,
+                 KernelHistoryEntry * /*kernel_history_entry*/,
+                 uint32_t /*operation_count*/) override {
         record_exception();
         return nullptr;
     }

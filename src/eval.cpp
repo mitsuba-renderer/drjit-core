@@ -612,28 +612,13 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
     state.kernel_launches++;
 
-    if (unlikely(jit_flag(JitFlag::KernelHistory) &&
-                 ts->backend == JitBackend::CUDA)) {
-        auto &e = kernel_history_entry;
-        cuda_check(cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));
-        cuda_check(cuEventCreate((CUevent *) &e.event_end, CU_EVENT_DEFAULT));
-        cuda_check(cuEventRecord((CUevent) e.event_start, ts->stream));
-    }
+    KernelHistoryEntry *e = nullptr;
+    if(unlikely(jit_flag(JitFlag::KernelHistory)))
+        e = &kernel_history_entry;
 
-    Task *ret_task = ts->launch(kernel, &kernel_key, kernel_hash, group.size,
-                                &kernel_params, &kernel_param_ids);
-
-    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
-        if (ts->backend == JitBackend::CUDA) {
-            cuda_check(cuEventRecord((CUevent) kernel_history_entry.event_end,
-                                     ts->stream));
-        } else {
-            task_retain(ret_task);
-            kernel_history_entry.task = ret_task;
-        }
-
-        state.kernel_history.append(kernel_history_entry);
-    }
+    Task *ret_task =
+        ts->launch(kernel, &kernel_key, kernel_hash, group.size, &kernel_params,
+                   &kernel_param_ids, e, n_ops_total);
 
     return ret_task;
 }

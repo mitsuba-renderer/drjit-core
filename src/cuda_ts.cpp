@@ -45,11 +45,17 @@ static void submit_gpu(KernelType type, KernelRecordingMode recording_mode,
     }
 }
 
-Task *
-CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
-                        XXH128_hash_t /*hash*/, uint32_t size,
-                        std::vector<void *> *kernel_params,
-                        const std::vector<uint32_t> * /*kernel_param_ids*/) {
+Task *CUDAThreadState::launch(
+    Kernel kernel, KernelKey * /*key*/, XXH128_hash_t /*hash*/, uint32_t size,
+    std::vector<void *> *kernel_params,
+    const std::vector<uint32_t> * /*kernel_param_ids*/,
+    KernelHistoryEntry *kernel_history_entry, uint32_t /*operation_count*/) {
+    if (kernel_history_entry) {
+        auto &e = *kernel_history_entry;
+        cuda_check(cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));
+        cuda_check(cuEventCreate((CUevent *) &e.event_end, CU_EVENT_DEFAULT));
+        cuda_check(cuEventRecord((CUevent) e.event_start, this->stream));
+    }
 
     uint32_t kernel_param_count = (uint32_t) kernel_params->size();
 
@@ -107,6 +113,12 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
     // Cleanup global kernel parameters
     jitc_free(kernel_params_global);
     kernel_params_global = nullptr;
+
+    if (kernel_history_entry){
+        cuda_check(cuEventRecord((CUevent) kernel_history_entry->event_end,
+                                 this->stream));
+        state.kernel_history.append(*kernel_history_entry);
+    }
 
     return nullptr;
 }

@@ -4,7 +4,9 @@
 struct CUDAThreadState : ThreadState {
     Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
                  uint32_t size, std::vector<void *> *kernel_params,
-                 const std::vector<uint32_t> *kernel_param_ids) override;
+                 const std::vector<uint32_t> *kernel_param_ids,
+                 KernelHistoryEntry *kernel_history_entry,
+                 uint32_t operation_count) override;
 
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
