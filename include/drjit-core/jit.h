@@ -2309,7 +2309,7 @@ enum KernelType : uint32_t {
  * \brief Indicates, if the kernel was recorded or replayed by a frozen
  * function.
  *
- * A frozen function, records kernel launches, and can replay them later. This
+ * A frozen function records kernel launches and can replay them later. This
  * enum indicates if the kernel was recorded or replayed by a frozen function,
  * or not part of a frozen function at all.
  */
