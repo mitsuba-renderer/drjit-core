@@ -81,8 +81,10 @@ bool jitc_llvm_init() {
         return jitc_llvm_init_success;
     jitc_llvm_init_attempted = true;
 
-    if (!jitc_llvm_api_init())
+    if (!jitc_llvm_api_init()) {
+        jitc_log(Warn, "jitc_llvm_init(): LLVM API initialization failed ..");
         return false;
+    }
 
     if (!jitc_llvm_api_has_core()) {
         jitc_log(Warn, "jit_llvm_init(): detected LLVM version lacks core API "
