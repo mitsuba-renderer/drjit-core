@@ -23,6 +23,7 @@ enum class JitBackend: uint32_t;
 struct Kernel {
     void *data;
     uint32_t size;
+    uint32_t operation_count;
     union {
         /// 1. CUDA
         struct {

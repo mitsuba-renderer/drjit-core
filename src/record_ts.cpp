@@ -658,25 +658,23 @@ Task *RecordThreadState::launch(Kernel kernel, KernelKey *key,
                                 XXH128_hash_t hash, uint32_t size,
                                 std::vector<void *> *params,
                                 const std::vector<uint32_t> *kernel_param_ids,
-                                KernelHistoryEntry *kernel_history_entry,
-                                uint32_t operation_count) {
+                                KernelHistoryEntry *kernel_history_entry) {
     if (!paused()) {
         try {
-            record_launch(kernel, key, hash, size, params, kernel_param_ids,
-                          operation_count);
+            record_launch(kernel, key, hash, size, params, kernel_param_ids);
         } catch (...) {
             record_exception();
         }
     }
     pause_scope pause(this);
     return m_internal->launch(kernel, key, hash, size, params, nullptr,
-                              kernel_history_entry, operation_count);
+                              kernel_history_entry);
 }
 
 void RecordThreadState::record_launch(
     Kernel kernel, KernelKey *key, XXH128_hash_t hash, uint32_t size,
-    std::vector<void *> *params, const std::vector<uint32_t> *kernel_param_ids,
-    uint32_t operation_count) {
+    std::vector<void *> *params,
+    const std::vector<uint32_t> *kernel_param_ids) {
     uint32_t kernel_param_offset = backend == JitBackend::CUDA ? 1 : 3;
 
     // The size of the largest variable used by the kernel directly.
@@ -793,7 +791,6 @@ void RecordThreadState::record_launch(
     op.kernel.key->device     = key->device;
     op.kernel.key->flags      = key->flags;
     op.kernel.key->high64     = key->high64;
-    op.kernel.operation_count = operation_count;
 
     op.size = size;
 
@@ -1042,14 +1039,13 @@ int Recording::replay_launch(Operation &op) {
             kernel_history_entry.cache_hit = true;
             kernel_history_entry.input_count = input_count;
             kernel_history_entry.output_count = output_count;
-            kernel_history_entry.operation_count = op.kernel.operation_count;
+            kernel_history_entry.operation_count = op.kernel.kernel.operation_count;
         }
 
         ts->launch(kernel, op.kernel.key, op.kernel.hash, launch_size,
                    &kernel_params, nullptr,
                    unlikely(record_kernel_history) ? &kernel_history_entry
-                                                   : nullptr,
-                   op.kernel.operation_count);
+                                                   : nullptr);
 
 #if defined(DRJIT_ENABLE_OPTIX)
         if (op.uses_optix)
@@ -2428,8 +2424,7 @@ struct DisabledThreadState : ThreadState {
     Task *launch(Kernel /*kernel*/, KernelKey * /*key*/, XXH128_hash_t /*hash*/,
                  uint32_t /*size*/, std::vector<void *> * /*kernel_params*/,
                  const std::vector<uint32_t> * /*kernel_param_ids*/,
-                 KernelHistoryEntry * /*kernel_history_entry*/,
-                 uint32_t /*operation_count*/) override {
+                 KernelHistoryEntry * /*kernel_history_entry*/) override {
         record_exception();
         return nullptr;
     }

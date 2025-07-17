@@ -45,11 +45,12 @@ static void submit_gpu(KernelType type, KernelRecordingMode recording_mode,
     }
 }
 
-Task *CUDAThreadState::launch(
-    Kernel kernel, KernelKey * /*key*/, XXH128_hash_t /*hash*/, uint32_t size,
-    std::vector<void *> *kernel_params,
-    const std::vector<uint32_t> * /*kernel_param_ids*/,
-    KernelHistoryEntry *kernel_history_entry, uint32_t /*operation_count*/) {
+Task *
+CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
+                        XXH128_hash_t /*hash*/, uint32_t size,
+                        std::vector<void *> *kernel_params,
+                        const std::vector<uint32_t> * /*kernel_param_ids*/,
+                        KernelHistoryEntry *kernel_history_entry) {
     if (kernel_history_entry) {
         auto &e = *kernel_history_entry;
         cuda_check(cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));

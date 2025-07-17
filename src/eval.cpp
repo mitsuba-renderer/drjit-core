@@ -530,6 +530,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     auto it = state.kernel_cache.find(kernel_key);
     Kernel kernel;
     memset(&kernel, 0, sizeof(Kernel)); // quench uninitialized variable warning on MSVC
+    kernel.operation_count = n_ops_total;
 
     if (it == state.kernel_cache.end()) {
         bool cache_hit = false;
@@ -616,9 +617,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     if(unlikely(jit_flag(JitFlag::KernelHistory)))
         e = &kernel_history_entry;
 
-    Task *ret_task =
-        ts->launch(kernel, &kernel_key, kernel_hash, group.size, &kernel_params,
-                   &kernel_param_ids, e, n_ops_total);
+    Task *ret_task = ts->launch(kernel, &kernel_key, kernel_hash, group.size,
+                                &kernel_params, &kernel_param_ids, e);
 
     return ret_task;
 }
