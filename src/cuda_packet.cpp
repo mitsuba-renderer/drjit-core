@@ -146,17 +146,15 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
                   "elements not supported for reduction.");
 
     if (ts->compute_capability >= 90) {
-        // Use the new `red.global.v2` instructions. This enables both min & max
+        // Use the new `red.global.vX` instructions. This enables both min & max
         // as well as packet reductions with larger packet sizes per iteration
         // and `f32` types.
-        const uint32_t MAX_VARS_PER_IT = 16 / tsize;
 
-        // Find largest power of two dividing the number of variables, smaller
-        // than
-        // \c max_vars_per_it
-        uint32_t vars_per_it = count & -count;
-        while (vars_per_it > MAX_VARS_PER_IT && vars_per_it > 1)
-            vars_per_it >>= 1;
+        // Find the largest supported packet size dividing the number of
+        // variables.
+        uint32_t vars_per_it = 16 / tsize;
+        while ((count & (vars_per_it - 1)) != 0)
+            vars_per_it /= 2;
 
         fmt("    mad.wide.$t %rd3, $v, $u, $v;\n", index, index, tsize,
             ptr);
@@ -182,7 +180,7 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
             put("};\n");
         }
     } else {
-        // If the more broadly supported `.f16x2` instruction, only available
+        // The more broadly supported `.f16x2` instruction is, only available
         // for addition and f16 types.
 
         if (v0->type != (uint32_t) VarType::Float16)
@@ -259,7 +257,7 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
         index, index, tsize, ptr,
         var_bits, v, var_count);
 
-    // Try to load 128b/iteration
+    // Try to store 128b/iteration
     uint32_t bytes_per_it = 16;
 
     // Potentially reduce if the total size of the load isn't divisible
