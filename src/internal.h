@@ -43,10 +43,13 @@ enum class VarKind : uint32_t {
     // Common binary arithmetic operations
     Add, Sub, Mul, Div, DivApprox, Mod,
 
-    // High multiplication
-    Mulhi,
+    // High integer multiplication
+    MulHi,
 
-    // Fused multiply-add
+    // Wide integer multiplication
+    MulWide,
+
+    // Fused multiply-add (integers & floats)
     Fma,
 
     // Minimum, maximum

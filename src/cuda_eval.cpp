@@ -543,8 +543,12 @@ static void jitc_cuda_render(Variable *v) {
             fmt("    rem.$t $v, $v, $v;\n", v, v, a0, a1);
             break;
 
-        case VarKind::Mulhi:
+        case VarKind::MulHi:
             fmt("    mul.hi.$t $v, $v, $v;\n", v, v, a0, a1);
+            break;
+
+        case VarKind::MulWide:
+            fmt("    mul.wide.$t $v, $v, $v;\n", a0, v, a0, a1);
             break;
 
         case VarKind::Fma:
