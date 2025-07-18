@@ -220,14 +220,12 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
                 "        .reg.f16x2 %packed;\n"
                 "        .reg.f16x2 %v_aligned, %v_unaligned;\n"
                 "        .reg.pred %aligned;\n"
-                // "        .reg.u32 %index_aligned;\n"
                 "        mov.b16 %identity, $u;\n",
-                identity);
-
-            // Store aligned index in %r3, and test if index was aligned
-            fmt("        shr.b32 %r3, $v, 1;\n", index);
-            fmt("        shl.b32 %r3, %r3, 1;\n");
-            fmt("        setp.eq.b32 %aligned, %r3, $v;\n", index);
+                // Store aligned index in %r3, and test if index was aligned
+                "        shr.b32 %r3, $v, 1;\n"
+                "        shl.b32 %r3, %r3, 1;\n"
+                "        setp.eq.b32 %aligned, %r3, $v;\n",
+                identity, index, index);
 
             for (uint32_t i = 0; i < count; i += 2) {
                 uint32_t byte_offset = i * tsize;
