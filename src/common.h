@@ -152,7 +152,7 @@ struct divisor {
         }
     }
 
-    uint32_t mulhi(uint32_t a, uint32_t b) const {
+    uint32_t mul_hi(uint32_t a, uint32_t b) const {
         return (uint32_t) (((uint64_t) a * (uint64_t) b) >> 32);
     }
 
@@ -163,7 +163,7 @@ struct divisor {
             div = input >> shift;
             rem = input - (div << shift);
         } else {
-            uint32_t hi = mulhi(input, magic);
+            uint32_t hi = mul_hi(input, magic);
             div = (((input - hi) >> 1) + hi) >> shift;
             rem = input - div * value;
         }
