@@ -10,10 +10,13 @@
 
 #include "eval.h"
 #include "cuda_eval.h"
-#include "llvm_packet.h"
 #include "var.h"
 #include "op.h"
 #include "log.h"
+
+static const char *reduce_op_name[(int) ReduceOp::Count] = {
+    "", "add", "mul", "min", "max", "and", "or"
+};
 
 void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
                                     const Variable *index, const Variable *mask) {
@@ -121,12 +124,154 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
     }
 }
 
+/**
+ * Render the code required to scatter reduce a packet of variables.
+ */
+void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
+                                            const Variable *ptr,
+                                            const Variable *index,
+                                            const Variable *mask) {
+    bool is_masked         = !mask->is_literal() || mask->literal != 1;
+    PacketScatterData *psd = (PacketScatterData *) v->data;
+    const std::vector<uint32_t> &values = psd->values;
+    const Variable *v0                  = jitc_var(values[0]);
+    const ReduceOp op = psd->op;
+
+    const ThreadState *ts = thread_state_cuda;
+
+    uint32_t count = (uint32_t) values.size(),
+             tsize = type_size[v0->type];
+
+    // if (count % 2 != 0)
+    //     jitc_fail("jitc_cuda_render_scatter_reduce_packet(): Number of "
+    //               "elements not supported by reduction.");
+
+    if (ts->compute_capability >= 90) {
+        // Use the new `red.global.vX` instructions. This enables both min & max
+        // as well as packet reductions with larger packet sizes per iteration
+        // and `f32` types.
+
+        // Find the largest supported packet size dividing the number of
+        // variables.
+        uint32_t vars_per_it = 16 / tsize;
+        while ((count & (vars_per_it - 1)) != 0)
+            vars_per_it /= 2;
+
+        fmt("    mad.wide.$t %rd3, $v, $u, $v;\n", index, index, tsize,
+            ptr);
+
+        const char *op = reduce_op_name[(uint32_t) psd->op];
+        const char *qualifier =
+            v0->type == (uint32_t) VarType::Float16 ? ".noftz" : "";
+
+        for (uint32_t i = 0; i < count; i += vars_per_it) {
+            uint32_t byte_offset = i * tsize;
+
+            if (is_masked)
+                fmt("    @$v ", mask);
+            else
+                put("    ");
+            fmt("red.global.v$u.$t.$s$s [%rd3+$u], {",
+                vars_per_it, v0, op, qualifier, byte_offset);
+
+            for (uint32_t j = 0; j < vars_per_it; j++) {
+                fmt("$v, ", jitc_var(values[i + j]));
+            }
+            buffer.delete_trailing_commas();
+            put("};\n");
+        }
+    } else {
+        // The more broadly supported `.f16x2` instruction is, only available
+        // for addition and f16 types.
+
+        if (v0->type != (uint32_t) VarType::Float16)
+            jitc_fail("Packet scatter reductions are only supported with f16 "
+                      "variables on sm_%u. You tried to reduce %s.",
+                      ts->compute_capability, type_name[v0->type]);
+
+        if (op != ReduceOp::Add)
+            jitc_fail("Packet scatter reductions only support addition on "
+                      "sm_%u. You tried to reduce with %s.",
+                      ts->compute_capability,
+                      reduce_op_name[(uint32_t) psd->op]);
+
+        if (count % 2 == 0) {
+            fmt("    .reg.f16x2 $v_tmp;\n"
+                "    mad.wide.$t %rd3, $v, $u, $v;\n",
+                v, index, index, tsize, ptr);
+
+            for (uint32_t i = 0; i < count; i += 2) {
+                uint32_t byte_offset = i * tsize;
+
+                fmt("    mov.b32 $v_tmp, {$v, $v};\n", v, jitc_var(values[i]),
+                    jitc_var(values[i + 1]));
+
+                if (is_masked)
+                    fmt("    @$v ", mask);
+                else
+                    put("        ");
+                fmt("red.global.add.noftz.f16x2 [%rd3+$u], $v_tmp;\n",
+                    byte_offset, v);
+            }
+        } else {
+            uint64_t identity = jitc_reduce_identity((VarType) v0->type, op);
+            fmt("    {\n"
+                "        .reg.f16 %identity;\n"
+                "        .reg.f16x2 %packed;\n"
+                "        .reg.f16x2 %v_aligned, %v_unaligned;\n"
+                "        .reg.pred %aligned;\n"
+                "        mov.b16 %identity, $u;\n"
+                // Store aligned index in %r3, and test if index was aligned
+                "        shr.b32 %r3, $v, 1;\n"
+                "        shl.b32 %r3, %r3, 1;\n"
+                "        setp.eq.b32 %aligned, %r3, $v;\n"
+                // Calculate pointer
+                "        mad.wide.$t %rd3, %r3, $u, $v;\n",
+                identity, index, index, index, tsize, ptr);
+
+            for (uint32_t i = 0; i < count; i += 2) {
+                uint32_t byte_offset = i * tsize;
+
+                if (i == count-1)
+                    fmt("        mov.b32 %v_aligned, {$v, %identity};\n",
+                        jitc_var(values[i]));
+                else
+                    fmt("        mov.b32 %v_aligned, {$v, $v};\n",
+                        jitc_var(values[i]), jitc_var(values[i + 1]));
+                if (i == 0)
+                    fmt("        mov.b32 %v_unaligned, {%identity, $v};\n",
+                        jitc_var(values[i]));
+                else
+                    fmt("        mov.b32 %v_unaligned, {$v, $v};\n",
+                        jitc_var(values[i-1]), jitc_var(values[i]));
+
+                fmt("        selp.b32 %packed, %v_aligned, %v_unaligned, %aligned;\n");
+
+                if (is_masked)
+                    fmt("    @$v ", mask);
+                else
+                    put("        ");
+                fmt("red.global.add.noftz.f16x2 [%rd3+$u], %packed;\n",
+                    byte_offset);
+            }
+            fmt("    }\n");
+        }
+    }
+}
+
 void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
-                                     const Variable *index, const Variable *mask) {
+                                     const Variable *index,
+                                     const Variable *mask) {
     bool is_masked = !mask->is_literal() || mask->literal != 1;
     PacketScatterData *psd = (PacketScatterData *) v->data;
     const std::vector<uint32_t> &values = psd->values;
     const Variable *v0 = jitc_var(values[0]);
+
+    // Handle non-Identitiy reduction case
+    if (psd->op != ReduceOp::Identity) {
+        jitc_cuda_render_scatter_reduce_packet(v, ptr, index, mask);
+        return;
+    }
 
     uint32_t count = (uint32_t) values.size(),
              tsize = type_size[v0->type],
@@ -152,7 +297,7 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
         index, index, tsize, ptr,
         var_bits, v, var_count);
 
-    // Try to load 128b/iteration
+    // Try to store 128b/iteration
     uint32_t bytes_per_it = 16;
 
     // Potentially reduce if the total size of the load isn't divisible
