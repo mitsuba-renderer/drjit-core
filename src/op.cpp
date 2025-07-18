@@ -2669,7 +2669,8 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     }
 
     // If the packet size is not divisible by two we cannot use packet ops.
-    use_packet_op = use_packet_op && n > 1 && n % 2 == 0;
+    if (backend == JitBackend::LLVM)
+        use_packet_op = use_packet_op && n > 1 && n % 2 == 0;
 
     Ref scale = steal(jitc_var_u32(backend, (uint32_t) n));
 

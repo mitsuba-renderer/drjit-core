@@ -135,15 +135,16 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
     PacketScatterData *psd = (PacketScatterData *) v->data;
     const std::vector<uint32_t> &values = psd->values;
     const Variable *v0                  = jitc_var(values[0]);
+    const ReduceOp op = psd->op;
 
     const ThreadState *ts = thread_state_cuda;
 
     uint32_t count = (uint32_t) values.size(),
              tsize = type_size[v0->type];
 
-    if (count % 2 != 0)
-        jitc_fail("jitc_cuda_render_scatter_reduce_packet(): Number of "
-                  "elements not supported for reduction.");
+    // if (count % 2 != 0)
+    //     jitc_fail("jitc_cuda_render_scatter_reduce_packet(): Number of "
+    //               "elements not supported by reduction.");
 
     if (ts->compute_capability >= 90) {
         // Use the new `red.global.vX` instructions. This enables both min & max
@@ -188,33 +189,75 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
                       "variables on sm_%u. You tried to reduce %s.",
                       ts->compute_capability, type_name[v0->type]);
 
-        if (psd->op != ReduceOp::Add)
+        if (op != ReduceOp::Add)
             jitc_fail("Packet scatter reductions only support addition on "
                       "sm_%u. You tried to reduce with %s.",
                       ts->compute_capability,
                       reduce_op_name[(uint32_t) psd->op]);
 
-        if (count % 2 != 0)
-            jitc_fail("jitc_cuda_render_scatter_reduce_packet(): Number of "
-                      "variables not divisible by 2.");
+        if (count % 2 == 0) {
+            fmt("    .reg.f16x2 $v_tmp;\n"
+                "    mad.wide.$t %rd3, $v, $u, $v;\n",
+                v, index, index, tsize, ptr);
 
-        fmt("    .reg.f16x2 $v_tmp;\n"
-            "    mad.wide.$t %rd3, $v, $u, $v;\n",
-            v,
-            index, index, tsize, ptr);
+            for (uint32_t i = 0; i < count; i += 2) {
+                uint32_t byte_offset = i * tsize;
 
-        for (uint32_t i = 0; i < count; i += 2) {
-            uint32_t byte_offset = i * tsize;
+                fmt("    mov.b32 $v_tmp, {$v, $v};\n", v, jitc_var(values[i]),
+                    jitc_var(values[i + 1]));
 
-            fmt("    mov.b32 $v_tmp, {$v, $v};\n", v, jitc_var(values[i]),
-                jitc_var(values[i + 1]));
+                if (is_masked)
+                    fmt("    @$v ", mask);
+                else
+                    put("        ");
+                fmt("red.global.add.noftz.f16x2 [%rd3+$u], $v_tmp;\n",
+                    byte_offset, v);
+            }
+        } else {
+            uint64_t identity = jitc_reduce_identity((VarType) v0->type, op);
+            fmt("    {\n"
+                "        .reg.f16 %identity;\n"
+                "        .reg.f16x2 %packed;\n"
+                "        .reg.f16x2 %v_aligned, %v_unaligned;\n"
+                "        .reg.pred %aligned;\n"
+                // "        .reg.u32 %index_aligned;\n"
+                "        mov.b16 %identity, $u;\n",
+                identity);
 
-            if (is_masked)
-                fmt("    @$v ", mask);
-            else
-                put("        ");
-            fmt("red.global.add.noftz.f16x2 [%rd3+$u], $v_tmp;\n",
-                byte_offset, v);
+            // Store aligned index in %r3, and test if index was aligned
+            fmt("        shr.b32 %r3, $v, 1;\n", index);
+            fmt("        shl.b32 %r3, %r3, 1;\n");
+            fmt("        setp.eq.b32 %aligned, %r3, $v;\n", index);
+
+            for (uint32_t i = 0; i < count; i += 2) {
+                uint32_t byte_offset = i * tsize;
+
+                fmt("        mad.wide.$t %rd3, %r3, $u, $v;\n",
+                    index, tsize, ptr);
+
+                if (i == count-1)
+                    fmt("        mov.b32 %v_aligned, {$v, %identity};\n",
+                        jitc_var(values[i]));
+                else
+                    fmt("        mov.b32 %v_aligned, {$v, $v};\n",
+                        jitc_var(values[i]), jitc_var(values[i + 1]));
+                if (i == 0)
+                    fmt("        mov.b32 %v_unaligned, {%identity, $v};\n",
+                        jitc_var(values[i]));
+                else
+                    fmt("        mov.b32 %v_unaligned, {$v, $v};\n",
+                        jitc_var(values[i-1]), jitc_var(values[i]));
+
+                fmt("        selp.b32 %packed, %v_aligned, %v_unaligned, %aligned;\n");
+
+                if (is_masked)
+                    fmt("    @$v ", mask);
+                else
+                    put("        ");
+                fmt("red.global.add.noftz.f16x2 [%rd3+$u], %packed;\n",
+                    byte_offset);
+            }
+            fmt("    }\n");
         }
     }
 }
