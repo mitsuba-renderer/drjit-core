@@ -131,7 +131,7 @@ const char *op_name[(int) JitOp::Count] {
     "add", "sub", "mul", "div", "mod",
 
     // High multiplication
-    "mulhi",
+    "mul_hi",
 
     // Fused multiply-add
     "fma",
@@ -283,14 +283,14 @@ template <typename T> bool test_const_prop() {
          { JitOp::Add, JitOp::Sub, JitOp::Mul, JitOp::Div,
            JitOp::Mod, JitOp::Min, JitOp::Max, JitOp::And, JitOp::Or,
            JitOp::Xor, JitOp::Shl, JitOp::Shr, JitOp::Eq, JitOp::Neq,
-           JitOp::Lt, JitOp::Le, JitOp::Gt, JitOp::Ge, JitOp::Mulhi }) {
+           JitOp::Lt, JitOp::Le, JitOp::Gt, JitOp::Ge, JitOp::MulHi }) {
         if (op == JitOp::Mod && IsFloat)
             continue;
         if ((IsFloat || IsMask) && (op == JitOp::Shl || op == JitOp::Shr))
             continue;
         if (IsMask && !(op == JitOp::Or || op == JitOp::And || op == JitOp::Xor))
             continue;
-        if (!IsInt && op == JitOp::Mulhi)
+        if (!IsInt && op == JitOp::MulHi)
             continue;
 
         for (uint32_t i = 0; i < Size2; ++i)

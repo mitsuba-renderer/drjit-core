@@ -577,10 +577,10 @@ uint32_t jitc_var_mod(uint32_t a0, uint32_t a1) {
 // --------------------------------------------------------------------------
 
 template <typename T, enable_if_t<!(std::is_integral_v<T> && (sizeof(T) == 4 || sizeof(T) == 8))> = 0>
-T eval_mulhi(T, T) { jitc_fail("eval_mulhi(): unsupported operands!"); }
+T eval_mul_hi(T, T) { jitc_fail("eval_mul_hi(): unsupported operands!"); }
 
 template <typename T, enable_if_t<std::is_integral_v<T> && (sizeof(T) == 4 || sizeof(T) == 8)> = 0>
-T eval_mulhi(T a, T b) {
+T eval_mul_hi(T a, T b) {
     if constexpr (sizeof(T) == 4) {
         using Wide = std::conditional_t<drjit::detail::is_signed_v<T>, int64_t, uint64_t>;
         return T(((Wide) a * (Wide) b) >> 32);
@@ -597,14 +597,14 @@ T eval_mulhi(T a, T b) {
     }
 }
 
-uint32_t jitc_var_mulhi(uint32_t a0, uint32_t a1) {
-    auto [info, v0, v1] = jitc_var_check<IsInt>("jit_var_mulhi", a0, a1);
+uint32_t jitc_var_mul_hi(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsInt>("jit_var_mul_hi", a0, a1);
 
     uint32_t result = 0;
     if (info.simplify) {
         if (info.literal)
             result = jitc_eval_literal(
-                info, [](auto l0, auto l1) { return eval_mulhi(l0, l1); }, v0, v1);
+                info, [](auto l0, auto l1) { return eval_mul_hi(l0, l1); }, v0, v1);
         else if (jitc_is_zero(v0))
             result = jitc_var_resize(a0, info.size);
         else if (jitc_is_zero(v1))
@@ -612,10 +612,43 @@ uint32_t jitc_var_mulhi(uint32_t a0, uint32_t a1) {
     }
 
     if (!result && info.size)
-        result = jitc_var_new_node_2(info.backend, VarKind::Mulhi, info.type,
+        result = jitc_var_new_node_2(info.backend, VarKind::MulHi, info.type,
                                      info.size, info.symbolic, a0, v0, a1, v1);
 
-    jitc_trace("jit_var_mulhi(r%u <- r%u, r%u)", result, a0, a1);
+    jitc_trace("jit_var_mul_hi(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_mul_wide(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsInt>("jit_var_mul_wide", a0, a1);
+
+    switch (info.type) {
+        case VarType::UInt32: info.type = VarType::UInt64; break;
+        case VarType::Int32:  info.type = VarType::Int64; break;
+        default:
+            jitc_raise("jit_var_mul_wide(): unsupported operand type %s", type_name[(int) info.type]);
+    }
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal) {
+            Ref c0 = steal(jitc_var_cast(a0, info.type, false)),
+                c1 = steal(jitc_var_cast(a1, info.type, false));
+            return jitc_var_mul(c0, c1);
+        } else if (jitc_is_zero(v0)) {
+            result = jitc_make_zero(info);
+        } else if (jitc_is_zero(v1)) {
+            result = jitc_make_zero(info);
+        }
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, VarKind::MulWide, info.type,
+                                     info.size, info.symbolic, a0, v0, a1, v1);
+
+    jitc_trace("jit_var_mul_wide(r%u <- r%u, r%u)", result, a0, a1);
     return result;
 }
 
@@ -2752,46 +2785,47 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
 
 uint32_t jitc_var_op(JitOp op, const uint32_t *dep) {
     switch (op) {
-        case JitOp::Add:    return jitc_var_add(dep[0], dep[1]);
-        case JitOp::Sub:    return jitc_var_sub(dep[0], dep[1]);
-        case JitOp::Mul:    return jitc_var_mul(dep[0], dep[1]);
-        case JitOp::Mulhi:  return jitc_var_mulhi(dep[0], dep[1]);
-        case JitOp::Div:    return jitc_var_div(dep[0], dep[1]);
-        case JitOp::Mod:    return jitc_var_mod(dep[0], dep[1]);
-        case JitOp::Min:    return jitc_var_min(dep[0], dep[1]);
-        case JitOp::Max:    return jitc_var_max(dep[0], dep[1]);
-        case JitOp::Neg:    return jitc_var_neg(dep[0]);
-        case JitOp::Not:    return jitc_var_not(dep[0]);
-        case JitOp::Sqrt:   return jitc_var_sqrt(dep[0]);
-        case JitOp::Rcp:    return jitc_var_rcp(dep[0]);
-        case JitOp::Rsqrt:  return jitc_var_rsqrt(dep[0]);
-        case JitOp::Abs:    return jitc_var_abs(dep[0]);
-        case JitOp::Round:  return jitc_var_round(dep[0]);
-        case JitOp::Trunc:  return jitc_var_trunc(dep[0]);
-        case JitOp::Floor:  return jitc_var_floor(dep[0]);
-        case JitOp::Ceil:   return jitc_var_ceil(dep[0]);
-        case JitOp::Fma:    return jitc_var_fma(dep[0], dep[1], dep[2]);
-        case JitOp::Select: return jitc_var_select(dep[0], dep[1], dep[2]);
-        case JitOp::Sin:    return jitc_var_sin_intrinsic(dep[0]);
-        case JitOp::Cos:    return jitc_var_cos_intrinsic(dep[0]);
-        case JitOp::Exp2:   return jitc_var_exp2_intrinsic(dep[0]);
-        case JitOp::Log2:   return jitc_var_log2_intrinsic(dep[0]);
-        case JitOp::Tanh:   return jitc_var_tanh_intrinsic(dep[0]);
-        case JitOp::Eq:     return jitc_var_eq(dep[0], dep[1]);
-        case JitOp::Neq:    return jitc_var_neq(dep[0], dep[1]);
-        case JitOp::Lt:     return jitc_var_lt(dep[0], dep[1]);
-        case JitOp::Le:     return jitc_var_le(dep[0], dep[1]);
-        case JitOp::Gt:     return jitc_var_gt(dep[0], dep[1]);
-        case JitOp::Ge:     return jitc_var_ge(dep[0], dep[1]);
-        case JitOp::Popc:   return jitc_var_popc(dep[0]);
-        case JitOp::Clz:    return jitc_var_clz(dep[0]);
-        case JitOp::Brev:   return jitc_var_brev(dep[0]);
-        case JitOp::Ctz:    return jitc_var_ctz(dep[0]);
-        case JitOp::Shr:    return jitc_var_shr(dep[0], dep[1]);
-        case JitOp::Shl:    return jitc_var_shl(dep[0], dep[1]);
-        case JitOp::And:    return jitc_var_and(dep[0], dep[1]);
-        case JitOp::Or:     return jitc_var_or(dep[0], dep[1]);
-        case JitOp::Xor:    return jitc_var_xor(dep[0], dep[1]);
+        case JitOp::Add:     return jitc_var_add(dep[0], dep[1]);
+        case JitOp::Sub:     return jitc_var_sub(dep[0], dep[1]);
+        case JitOp::Mul:     return jitc_var_mul(dep[0], dep[1]);
+        case JitOp::MulHi:   return jitc_var_mul_hi(dep[0], dep[1]);
+        case JitOp::MulWide: return jitc_var_mul_wide(dep[0], dep[1]);
+        case JitOp::Div:     return jitc_var_div(dep[0], dep[1]);
+        case JitOp::Mod:     return jitc_var_mod(dep[0], dep[1]);
+        case JitOp::Min:     return jitc_var_min(dep[0], dep[1]);
+        case JitOp::Max:     return jitc_var_max(dep[0], dep[1]);
+        case JitOp::Neg:     return jitc_var_neg(dep[0]);
+        case JitOp::Not:     return jitc_var_not(dep[0]);
+        case JitOp::Sqrt:    return jitc_var_sqrt(dep[0]);
+        case JitOp::Rcp:     return jitc_var_rcp(dep[0]);
+        case JitOp::Rsqrt:   return jitc_var_rsqrt(dep[0]);
+        case JitOp::Abs:     return jitc_var_abs(dep[0]);
+        case JitOp::Round:   return jitc_var_round(dep[0]);
+        case JitOp::Trunc:   return jitc_var_trunc(dep[0]);
+        case JitOp::Floor:   return jitc_var_floor(dep[0]);
+        case JitOp::Ceil:    return jitc_var_ceil(dep[0]);
+        case JitOp::Fma:     return jitc_var_fma(dep[0], dep[1], dep[2]);
+        case JitOp::Select:  return jitc_var_select(dep[0], dep[1], dep[2]);
+        case JitOp::Sin:     return jitc_var_sin_intrinsic(dep[0]);
+        case JitOp::Cos:     return jitc_var_cos_intrinsic(dep[0]);
+        case JitOp::Exp2:    return jitc_var_exp2_intrinsic(dep[0]);
+        case JitOp::Log2:    return jitc_var_log2_intrinsic(dep[0]);
+        case JitOp::Tanh:    return jitc_var_tanh_intrinsic(dep[0]);
+        case JitOp::Eq:      return jitc_var_eq(dep[0], dep[1]);
+        case JitOp::Neq:     return jitc_var_neq(dep[0], dep[1]);
+        case JitOp::Lt:      return jitc_var_lt(dep[0], dep[1]);
+        case JitOp::Le:      return jitc_var_le(dep[0], dep[1]);
+        case JitOp::Gt:      return jitc_var_gt(dep[0], dep[1]);
+        case JitOp::Ge:      return jitc_var_ge(dep[0], dep[1]);
+        case JitOp::Popc:    return jitc_var_popc(dep[0]);
+        case JitOp::Clz:     return jitc_var_clz(dep[0]);
+        case JitOp::Brev:    return jitc_var_brev(dep[0]);
+        case JitOp::Ctz:     return jitc_var_ctz(dep[0]);
+        case JitOp::Shr:     return jitc_var_shr(dep[0], dep[1]);
+        case JitOp::Shl:     return jitc_var_shl(dep[0], dep[1]);
+        case JitOp::And:     return jitc_var_and(dep[0], dep[1]);
+        case JitOp::Or:      return jitc_var_or(dep[0], dep[1]);
+        case JitOp::Xor:     return jitc_var_xor(dep[0], dep[1]);
         default: jitc_raise("jit_var_new_op(): unsupported operation!");
     }
 }
