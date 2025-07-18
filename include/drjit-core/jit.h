@@ -2305,6 +2305,25 @@ enum KernelType : uint32_t {
     Other
 };
 
+/**
+ * \brief Indicates, if the kernel was recorded or replayed by a frozen
+ * function.
+ *
+ * A frozen function records kernel launches and can replay them later. This
+ * enum indicates if the kernel was recorded or replayed by a frozen function,
+ * or not part of a frozen function at all.
+ */
+enum KernelRecordingMode : uint32_t {
+    /// This kernel was not launched as part of a frozen function.
+    None,
+
+    /// This kernel was recorded by a frozen function.
+    Recorded,
+
+    /// This kernel was replayed by a frozen function.
+    Replayed,
+};
+
 /// Data structure for preserving kernel launch information (debugging, testing)
 struct KernelHistoryEntry {
     /// Jit backend, for which the kernel was compiled
@@ -2312,6 +2331,9 @@ struct KernelHistoryEntry {
 
     /// Kernel type
     KernelType type;
+
+    /// Was this kernel recorded or replayed by a frozen function?
+    KernelRecordingMode recording_mode;
 
     /// Stores the low/high 64 bits of the 128-bit hash kernel identifier
     uint64_t hash[2];

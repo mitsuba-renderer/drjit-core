@@ -1,3 +1,11 @@
+/*
+    src/record_ts.h -- Backend for function freezing
+
+    Copyright (c) 2024 Wenzel Jakob <wenzel.jakob@epfl.ch>
+
+    All rights reserved. Use of this source code is governed by a BSD-style
+    license that can be found in the LICENSE file.
+*/
 #include "drjit-core/hash.h"
 #include "drjit-core/jit.h"
 #include "internal.h"
@@ -380,13 +388,16 @@ public:
         this->m_recording.backend = internal->backend;
 
         this->scope = internal->scope;
+
+        this->recording_mode = KernelRecordingMode::Recorded;
     };
 
     void barrier() override;
 
     Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
                  uint32_t size, std::vector<void *> *kernel_params,
-                 const std::vector<uint32_t> *kernel_param_ids) override;
+                 const std::vector<uint32_t> *kernel_param_ids,
+                 KernelHistoryEntry *kernel_history_entry) override;
 
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,

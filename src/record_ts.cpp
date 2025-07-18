@@ -143,7 +143,14 @@ const char *op_type_name[(int) OpType::Count]{
     "OpaqueWidth",    "InitUndefined",     "BoolReduceBoolAsync4", "Free"
 };
 
+/// Indicating, that we are replaying in dry-run mode. In this mode,
+/// replaying a recording will not execute kernels, and only calculate the
+/// output size. This variable will be set by ``jitc_freeze_dry_run()``
 static bool dry_run = false;
+
+/// Indicates, that replaying a frozen function will generate kernel history
+/// entries. This function will be set by ``jitc_freeze_replay()``.
+static bool record_kernel_history = false;
 
 /**
  * Represents a variable during replay.
@@ -650,17 +657,18 @@ bool RecordThreadState::resume() {
 Task *RecordThreadState::launch(Kernel kernel, KernelKey *key,
                                 XXH128_hash_t hash, uint32_t size,
                                 std::vector<void *> *params,
-                                const std::vector<uint32_t> *kernel_param_ids) {
+                                const std::vector<uint32_t> *kernel_param_ids,
+                                KernelHistoryEntry *kernel_history_entry) {
     if (!paused()) {
         try {
-            record_launch(kernel, key, hash, size, params,
-                          kernel_param_ids);
+            record_launch(kernel, key, hash, size, params, kernel_param_ids);
         } catch (...) {
             record_exception();
         }
     }
     pause_scope pause(this);
-    return m_internal->launch(kernel, key, hash, size, params, nullptr);
+    return m_internal->launch(kernel, key, hash, size, params, nullptr,
+                              kernel_history_entry);
 }
 
 void RecordThreadState::record_launch(
@@ -779,9 +787,10 @@ void RecordThreadState::record_launch(
     size_t str_size    = buffer.size() + 1;
     op.kernel.key->str = (char *) malloc_check(str_size);
     std::memcpy(op.kernel.key->str, key->str, str_size);
-    op.kernel.key->device = key->device;
-    op.kernel.key->flags  = key->flags;
-    op.kernel.key->high64 = key->high64;
+    op.kernel.hash            = hash;
+    op.kernel.key->device     = key->device;
+    op.kernel.key->flags      = key->flags;
+    op.kernel.key->high64     = key->high64;
 
     op.size = size;
 
@@ -962,6 +971,8 @@ int Recording::replay_launch(Operation &op) {
     // Allocate output variables for kernel launch. The assumption here is that
     // for every kernel launch, the inputs are already allocated. Therefore we
     // only allocate output variables, which have the same size as the kernel.
+    uint32_t input_count = 0;
+    uint32_t output_count = 0;
     for (uint32_t j = op.dependency_range.first; j < op.dependency_range.second;
          ++j) {
         AccessInfo info     = dependencies[j];
@@ -971,6 +982,7 @@ int Recording::replay_launch(Operation &op) {
             uint32_t size = rv.size(info.vtype);
             jitc_log(LogLevel::Debug, " -> param s%u is_pointer=%u size=%u",
                      info.slot, info.pointer_access, size);
+            input_count++;
         } else {
             jitc_log(LogLevel::Debug, " <- param s%u is_pointer=%u", info.slot,
                      info.pointer_access);
@@ -978,6 +990,7 @@ int Recording::replay_launch(Operation &op) {
 
         if (info.type == ParamType::Output) {
             rv.alloc(backend, launch_size, info.vtype);
+            output_count++;
         }
         jitc_assert(rv.data != nullptr || dry_run,
                     "replay(): Encountered nullptr in kernel parameters.");
@@ -1008,8 +1021,32 @@ int Recording::replay_launch(Operation &op) {
             ts->optix_sbt = op.sbt;
         }
 #endif
+
+        // Add a kernel history entry, when replaying a kernel.
+        KernelHistoryEntry kernel_history_entry = {};
+        if (unlikely(record_kernel_history)) {
+            kernel_history_entry.backend = backend;
+            kernel_history_entry.type    = KernelType::JIT;
+            kernel_history_entry.recording_mode = KernelRecordingMode::Replayed;
+            kernel_history_entry.hash[0] = op.kernel.hash.low64;
+            kernel_history_entry.hash[1] = op.kernel.hash.high64;
+            uint32_t str_size = std::strlen(op.kernel.key->str);
+            kernel_history_entry.ir      = (char *) malloc_check(str_size + 1);
+            std::memcpy(kernel_history_entry.ir, op.kernel.key->str,
+                        str_size + 1);
+            kernel_history_entry.uses_optix   = uses_optix;
+            kernel_history_entry.size = launch_size;
+            kernel_history_entry.cache_hit = true;
+            kernel_history_entry.input_count = input_count;
+            kernel_history_entry.output_count = output_count;
+            kernel_history_entry.operation_count = op.kernel.kernel.operation_count;
+        }
+
         ts->launch(kernel, op.kernel.key, op.kernel.hash, launch_size,
-                   &kernel_params, nullptr);
+                   &kernel_params, nullptr,
+                   unlikely(record_kernel_history) ? &kernel_history_entry
+                                                   : nullptr);
+
 #if defined(DRJIT_ENABLE_OPTIX)
         if (op.uses_optix)
             uses_optix = false;
@@ -2386,7 +2423,8 @@ struct DisabledThreadState : ThreadState {
     void barrier() override { record_exception(); }
     Task *launch(Kernel /*kernel*/, KernelKey * /*key*/, XXH128_hash_t /*hash*/,
                  uint32_t /*size*/, std::vector<void *> * /*kernel_params*/,
-                 const std::vector<uint32_t> * /*kernel_param_ids*/) override {
+                 const std::vector<uint32_t> * /*kernel_param_ids*/,
+                 KernelHistoryEntry * /*kernel_history_entry*/) override {
         record_exception();
         return nullptr;
     }
@@ -2498,6 +2536,7 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
     for (uint32_t i = 0; i < n_inputs; ++i)
         record_ts->add_input(inputs[i]);
 
+    ts_->recording_mode = KernelRecordingMode::Recorded;
     jitc_set_flag(JitFlag::FreezingScope, true);
 }
 Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
@@ -2514,6 +2553,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         jitc_assert(rts->record_stack.empty(),
                     "Kernel recording ended while still recording loop!");
 
+        internal->recording_mode = KernelRecordingMode::None;
         jitc_set_flag(JitFlag::FreezingScope, false);
         if (rts->m_exception) {
             std::rethrow_exception(rts->m_exception);
@@ -2542,9 +2582,9 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         return recording;
     } else {
         jitc_fail(
-            "jit_record_stop(): Tried to stop recording a thread state "
+            "jit_freeze_stop(): Tried to stop recording a thread state "
             "for backend %u, while no recording was started for this backend. "
-            "Try to start the recording with jit_record_start.",
+            "Try to start the recording with jit_freeze_start.",
             (uint32_t) backend);
     }
 }
@@ -2572,6 +2612,7 @@ void jitc_freeze_abort(JitBackend backend) {
 
         delete rts;
 
+        internal->recording_mode = KernelRecordingMode::None;
         jitc_set_flag(JitFlag::FreezingScope, false);
     }
 }
@@ -2586,6 +2627,7 @@ int jitc_freeze_pause(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
+        rts->m_internal->recording_mode = KernelRecordingMode::None;
         jitc_set_flag(JitFlag::FreezingScope, false);
         return rts->pause();
     } else {
@@ -2600,6 +2642,7 @@ int jitc_freeze_resume(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
+        rts->m_internal->recording_mode = KernelRecordingMode::Recorded;
         jitc_set_flag(JitFlag::FreezingScope, true);
         return rts->resume();
     } else {
@@ -2614,7 +2657,23 @@ int jitc_freeze_resume(JitBackend backend) {
 void jitc_freeze_replay(Recording *recording, const uint32_t *inputs,
                         uint32_t *outputs) {
     dry_run = false;
-    recording->replay(inputs, outputs);
+    record_kernel_history = jit_flag(JitFlag::KernelHistory);
+    ThreadState *ts = nullptr;
+    if (record_kernel_history) {
+        ts                 = thread_state(recording->backend);
+        ts->recording_mode = KernelRecordingMode::Replayed;
+    }
+    try {
+        recording->replay(inputs, outputs);
+    } catch (std::exception &e) {
+        record_kernel_history = false;
+        if(record_kernel_history)
+            ts->recording_mode = KernelRecordingMode::None;
+        throw;
+    }
+    record_kernel_history = false;
+    if (record_kernel_history)
+        ts->recording_mode = KernelRecordingMode::None;
 }
 
 int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs) {

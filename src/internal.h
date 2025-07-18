@@ -626,6 +626,10 @@ struct ThreadStateBase {
     /// .. and the JIT variable that it will be mapped to
     uint32_t call_self_index = 0;
 
+    /// Indicates, if the thread state is used to record or replay frozen
+    /// functions.
+    KernelRecordingMode recording_mode = KernelRecordingMode::None;
+
     /// ---------------------------- CUDA-specific ----------------------------
 
     /// Redundant copy of the device context
@@ -683,7 +687,8 @@ struct ThreadState : public ThreadStateBase {
 
     virtual Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
                          uint32_t size, std::vector<void *> *kernel_params,
-                         const std::vector<uint32_t> *kernel_param_ids) = 0;
+                         const std::vector<uint32_t> *kernel_param_ids,
+                         KernelHistoryEntry *kernel_history_entry) = 0;
 
     /// Fill a device memory region with constants of a given type
     virtual void memset_async(void *ptr, uint32_t size, uint32_t isize,

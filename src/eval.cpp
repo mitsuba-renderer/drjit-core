@@ -494,6 +494,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         kernel_history_entry.backend = backend;
         kernel_history_entry.type = KernelType::JIT;
+        kernel_history_entry.recording_mode = ts->recording_mode;
         kernel_history_entry.hash[0] = kernel_hash.low64;
         kernel_history_entry.hash[1] = kernel_hash.high64;
         kernel_history_entry.ir = (char *) malloc_check(buffer.size() + 1);
@@ -529,6 +530,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     auto it = state.kernel_cache.find(kernel_key);
     Kernel kernel;
     memset(&kernel, 0, sizeof(Kernel)); // quench uninitialized variable warning on MSVC
+    kernel.operation_count = n_ops_total;
 
     if (it == state.kernel_cache.end()) {
         bool cache_hit = false;
@@ -611,28 +613,12 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
     state.kernel_launches++;
 
-    if (unlikely(jit_flag(JitFlag::KernelHistory) &&
-                 ts->backend == JitBackend::CUDA)) {
-        auto &e = kernel_history_entry;
-        cuda_check(cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));
-        cuda_check(cuEventCreate((CUevent *) &e.event_end, CU_EVENT_DEFAULT));
-        cuda_check(cuEventRecord((CUevent) e.event_start, ts->stream));
-    }
+    KernelHistoryEntry *e = nullptr;
+    if(unlikely(jit_flag(JitFlag::KernelHistory)))
+        e = &kernel_history_entry;
 
     Task *ret_task = ts->launch(kernel, &kernel_key, kernel_hash, group.size,
-                                &kernel_params, &kernel_param_ids);
-
-    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
-        if (ts->backend == JitBackend::CUDA) {
-            cuda_check(cuEventRecord((CUevent) kernel_history_entry.event_end,
-                                     ts->stream));
-        } else {
-            task_retain(ret_task);
-            kernel_history_entry.task = ret_task;
-        }
-
-        state.kernel_history.append(kernel_history_entry);
-    }
+                                &kernel_params, &kernel_param_ids, e);
 
     return ret_task;
 }
