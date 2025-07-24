@@ -1016,10 +1016,9 @@ int Recording::replay_launch(Operation &op) {
         std::vector<uint32_t> kernel_calls;
         Kernel kernel = op.kernel.kernel;
 #if defined(DRJIT_ENABLE_OPTIX)
-        if (op.uses_optix) {
-            uses_optix    = true;
+        uses_optix = op.uses_optix;
+        if (op.uses_optix)
             ts->optix_sbt = op.sbt;
-        }
 #endif
 
         // Add a kernel history entry, when replaying a kernel.
@@ -1048,8 +1047,7 @@ int Recording::replay_launch(Operation &op) {
                                                    : nullptr);
 
 #if defined(DRJIT_ENABLE_OPTIX)
-        if (op.uses_optix)
-            uses_optix = false;
+        uses_optix = false;
 #endif
     }
 
