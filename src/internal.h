@@ -1105,6 +1105,9 @@ inline bool jitc_is_uint(const Variable *v) { return jitc_is_uint((VarType) v->t
 inline bool jitc_is_int(const Variable *v) { return jitc_is_int((VarType) v->type); }
 inline bool jitc_is_void(const Variable *v) { return jitc_is_void((VarType) v->type); }
 inline bool jitc_is_bool(const Variable *v) { return jitc_is_bool((VarType) v->type); }
+inline bool jitc_is_subword(const Variable *v) {
+    return jit_type_size((VarType) v->type) == 1 && !jitc_is_bool(v);
+}
 
 inline bool jitc_is_zero(Variable *v) { return v->is_literal() && v->literal == 0; }
 inline bool jitc_is_any_zero(Variable *v) {

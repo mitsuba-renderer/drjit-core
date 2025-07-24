@@ -8,6 +8,8 @@
     license that can be found in the LICENSE file.
 */
 
+#include <cassert>
+
 #include "eval.h"
 #include "cuda_eval.h"
 #include "var.h"
@@ -35,7 +37,8 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
 
     // Number of output/temporary output registers and their size
     uint32_t dst_count = count,
-             dst_bits = tsize*8;
+             out_bits = tsize * 8,
+             dst_bits = out_bits;
 
     if (tsize >= 4) {
         suffix = "out";
@@ -58,15 +61,14 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
             fmt("    mov.b$u $v_$s_$u, 0;\n", dst_bits, v, suffix, i);
     }
 
-    // Try to load 128b/iteration
+    // Try to load 128b/iteration, potentially reduce if the total size of the load isn't divisible
     uint32_t bytes_per_it = 16;
-
-    // Potentially reduce if the total size of the load isn't divisible
     while ((total_bytes & (bytes_per_it - 1)) != 0)
         bytes_per_it /= 2;
-
     uint32_t regs_per_it = (bytes_per_it * 8) / dst_bits;
 
+    // Actually load the packets into the `_tmp` registers (or directly into the `_out` registers
+    // if the output type size is large enough).
     for (uint32_t byte_offset = 0; byte_offset < total_bytes; byte_offset += bytes_per_it) {
         uint32_t reg_offset = (byte_offset * 8) / dst_bits;
         if (is_masked)
@@ -100,20 +102,32 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
         }
     }
 
+    // Unpack the values into the `_out` registers, if needed.
     if (tsize == 1) {
-        if (dst_bits == 16) {
-            for (uint32_t i = 0; i < count; ++i) {
-                fmt("    and.b16 %w$u, $v_tmp_$u, $u;\n"
-                    "    setp.ne.b16 $v_out_$u, %w$u, 0;\n",
-                    v->reg_index, v, i/2, 0xFF << (8 * (i%2)),
-                    v, i, v->reg_index);
-            }
-        } else {
-            for (uint32_t i = 0; i < count; ++i) {
-                fmt("    and.b32 %r$u, $v_tmp_$u, $u;\n"
-                    "    setp.ne.b32 $v_out_$u, %r$u, 0;\n",
-                    v->reg_index, v, i/4, 0xFF << (8 * (i%4)),
-                    v, i, v->reg_index);
+        uint32_t outputs_per_tmp = dst_bits / out_bits;
+
+        for (uint32_t i = 0; i < dst_count; ++i) {
+            if (outputs_per_tmp == 1) {
+                fmt("    mov.b$u $v_out_$u, $v_tmp_$u;\n",
+                    dst_bits, v, i, v, i);
+            } else if (outputs_per_tmp == 2) {
+                // TODO: double-check the order of the output registers
+                fmt("    mov.b$u {$v_out_$u, $v_out_$u}, $v_tmp_$u;\n",
+                    dst_bits,
+                    v, 2 * i,
+                    v, 2 * i + 1,
+                    v, i);
+            } else if (outputs_per_tmp == 4) {
+                // TODO: double-check the order of the output registers
+                fmt("    mov.b$u {$v_out_$u, $v_out_$u, $v_out_$u, $v_out_$u}, $v_tmp_$u;\n",
+                    dst_bits,
+                    v, 4 * i,
+                    v, 4 * i + 1,
+                    v, 4 * i + 2,
+                    v, 4 * i + 3,
+                    v, i);
+            } else {
+                assert(false);
             }
         }
     } else if (tsize == 2) {

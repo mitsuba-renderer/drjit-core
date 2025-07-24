@@ -570,6 +570,8 @@ extern JIT_EXPORT uint32_t jit_var_literal(JIT_ENUM JitBackend backend,
 
 
 // Short-hand versions for making scalar literals
+extern JIT_EXPORT uint32_t jit_var_u8(JitBackend backend, uint8_t value);
+extern JIT_EXPORT uint32_t jit_var_i8(JitBackend backend, int8_t value);
 extern JIT_EXPORT uint32_t jit_var_u32(JitBackend backend, uint32_t value);
 extern JIT_EXPORT uint32_t jit_var_i32(JitBackend backend, int32_t value);
 
@@ -2913,4 +2915,3 @@ extern JIT_EXPORT uint32_t jit_coop_vec_outer_product_accum(
     const MatrixDescr *descr,
     uint32_t a,
     uint32_t b);
-

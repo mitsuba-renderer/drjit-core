@@ -55,6 +55,8 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         using half = drjit::half;
         switch (Type) {
             case VarType::Bool:    m_index = jit_var_bool(Backend, (bool) value); break;
+            case VarType::Int8:    m_index = jit_var_i8  (Backend, (int8_t) value); break;
+            case VarType::UInt8:   m_index = jit_var_u8  (Backend, (uint8_t) value); break;
             case VarType::Int32:   m_index = jit_var_i32 (Backend, (int32_t) value); break;
             case VarType::UInt32:  m_index = jit_var_u32 (Backend, (uint32_t) value); break;
             case VarType::Int64:   m_index = jit_var_i64 (Backend, (int64_t) value); break;
