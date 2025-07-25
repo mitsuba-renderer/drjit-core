@@ -673,7 +673,7 @@ static void jitc_llvm_render(Variable *v) {
                 v, a0, a1);
             break;
 
-        case VarKind::Mulhi:
+        case VarKind::MulHi:
             fmt("    $v_0 = $sext $V to $D\n"
                 "    $v_1 = $sext $V to $D\n"
                 "    $v_3 = insertelement $D undef, $d $u, i32 0\n"
@@ -688,6 +688,15 @@ static void jitc_llvm_render(Variable *v) {
                 v, v, v, v,
                 v, v, v, v,
                 v, v, v, v);
+            break;
+
+        case VarKind::MulWide:
+            fmt("    $v_0 = $sext $V to $D\n"
+                "    $v_1 = $sext $V to $D\n"
+                "    $v = mul $D $v_0, $v_1\n",
+                v, jitc_is_uint(v) ? "z" : "s", a0, a0,
+                v, jitc_is_uint(v) ? "z" : "s", a1, a1,
+                v, a0, v, v);
             break;
 
         case VarKind::Fma:

@@ -1240,9 +1240,14 @@ uint32_t jit_var_mod(uint32_t a0, uint32_t a1) {
     return jitc_var_mod(a0, a1);
 }
 
-uint32_t jit_var_mulhi(uint32_t a0, uint32_t a1) {
+uint32_t jit_var_mul_hi(uint32_t a0, uint32_t a1) {
     lock_guard guard(state.lock);
-    return jitc_var_mulhi(a0, a1);
+    return jitc_var_mul_hi(a0, a1);
+}
+
+uint32_t jit_var_mul_wide(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_mul_wide(a0, a1);
 }
 
 uint32_t jit_var_fma(uint32_t a0, uint32_t a1, uint32_t a2) {
