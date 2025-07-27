@@ -1029,7 +1029,7 @@ int Recording::replay_launch(Operation &op) {
             kernel_history_entry.recording_mode = KernelRecordingMode::Replayed;
             kernel_history_entry.hash[0] = op.kernel.hash.low64;
             kernel_history_entry.hash[1] = op.kernel.hash.high64;
-            uint32_t str_size = std::strlen(op.kernel.key->str);
+            uint32_t str_size = (uint32_t) std::strlen(op.kernel.key->str);
             kernel_history_entry.ir      = (char *) malloc_check(str_size + 1);
             std::memcpy(kernel_history_entry.ir, op.kernel.key->str,
                         str_size + 1);
@@ -2656,22 +2656,22 @@ void jitc_freeze_replay(Recording *recording, const uint32_t *inputs,
                         uint32_t *outputs) {
     dry_run = false;
     record_kernel_history = jit_flag(JitFlag::KernelHistory);
-    ThreadState *ts = nullptr;
+    ThreadState *tsr = nullptr;
     if (record_kernel_history) {
-        ts                 = thread_state(recording->backend);
-        ts->recording_mode = KernelRecordingMode::Replayed;
+        tsr                 = thread_state(recording->backend);
+        tsr->recording_mode = KernelRecordingMode::Replayed;
     }
     try {
         recording->replay(inputs, outputs);
-    } catch (std::exception &e) {
+    } catch (const std::exception &) {
         record_kernel_history = false;
         if(record_kernel_history)
-            ts->recording_mode = KernelRecordingMode::None;
+            tsr->recording_mode = KernelRecordingMode::None;
         throw;
     }
     record_kernel_history = false;
     if (record_kernel_history)
-        ts->recording_mode = KernelRecordingMode::None;
+        tsr->recording_mode = KernelRecordingMode::None;
 }
 
 int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs) {
