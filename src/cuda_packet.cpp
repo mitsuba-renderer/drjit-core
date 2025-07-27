@@ -221,7 +221,7 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
                 "        .reg.f16x2 %v_aligned, %v_unaligned;\n"
                 "        .reg.pred %aligned;\n"
                 "        mov.b16 %identity, $u;\n"
-                // Store aligned index in %r3, and test if index was aligned
+                // Store rounded index in %r3, and test if index is aligned
                 "        shr.b32 %r3, $v, 1;\n"
                 "        shl.b32 %r3, %r3, 1;\n"
                 "        setp.eq.b32 %aligned, %r3, $v;\n"

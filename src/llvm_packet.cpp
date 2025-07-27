@@ -251,16 +251,13 @@ void scatter_packet_recursive(ReduceOp op, uint32_t l, uint32_t i, uint32_t n, c
     }
 }
 
-
-void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
-                                     const Variable *index, const Variable *mask) {
+void jitc_llvm_scatter_packet_render_function(const Variable *v,
+                                              const Variable *v0, uint32_t n,
+                                              ReduceOp op) {
+    // Render scatter function
     size_t offset = buffer.size();
-    PacketScatterData *psd = (PacketScatterData *) v->data;
-    uint32_t n = (uint32_t) psd->values.size();
-    const Variable *v0 = jitc_var(psd->values[0]);
-
     const char *op_name = "";
-    if (psd->op == ReduceOp::Add) {
+    if (op == ReduceOp::Add) {
         op_name = "add_";
         fmt_intrinsic("declare <$u x $m> @llvm.masked.load.v$u$H.p0{v$u$H|}({<$u x $m> *}, i32, <$u x i1>, <$u x $m>)",
                       n, v0, n, v0, n, v0, n, v0, n, n, v0);
@@ -280,37 +277,74 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
     for (uint32_t i = 0; i < n; ++i)
         fmt("    %v0_0_$u = bitcast $M %r$u to $M\n", i, v0, i, v0);
 
-    scatter_packet_recursive(psd->op, 0, 0, n, v0);
+    scatter_packet_recursive(op, 0, 0, n, v0);
 
     fmt("    ret void\n"
         "$}");
 
     jitc_register_global(buffer.get() + offset);
     buffer.rewind_to(offset);
+}
 
-    if (v0->type != (uint32_t) VarType::Bool) {
-        fmt("    $v_0 = insertvalue [$u x <$w x $t>] undef, $V, 0\n", v, n, v0, v0);
+void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
+                                     const Variable *index, const Variable *mask) {
+    PacketScatterData *psd = (PacketScatterData *) v->data;
+    uint32_t n             = (uint32_t) psd->values.size();
+    const Variable *v0     = jitc_var(psd->values[0]);
+    uint32_t tsize         = type_size[v0->type];
+    ReduceOp op            = psd->op;
 
-        for (uint32_t i = 1; i < n; ++i)
-            fmt("    $v_$u = insertvalue [$u x <$w x $t>] $v_$u, $V, $u\n",
-                v, i, n, v0, v, i-1, jitc_var(psd->values[i]), i);
-    } else {
-        fmt("    $v_0_e = zext $V to $M\n"
-            "    $v_0 = insertvalue [$u x <$w x $m>] undef, $M $v_0_e, 0\n",
-            v, v0, v0,
-            v, n, v0, v0, v);
+    const char *op_name    = "";
+    if (op == ReduceOp::Add)
+        op_name = "add_";
 
-        for (uint32_t i = 1; i < n; ++i)
-            fmt("    $v_$u_e = zext $V to $M\n"
-                "    $v_$u = insertvalue [$u x <$w x $m>] $v_$u, $M $v_$u_e, $u\n",
-                v, i, jitc_var(psd->values[i]), v0,
-                v, i, n, v0, v, i-1, v0, v, i, i);
+    // Split large requests into the largest possible packet sizes. For
+    // example, a packet of 6 variables will be split into 3 scatters with 2
+    // variables each.
+    uint32_t packet_size = std::min(8u, jitc_llvm_vector_width);
+    while ((n & (packet_size - 1)) != 0)
+        packet_size /= 2;
+
+    jitc_llvm_scatter_packet_render_function(v, v0, packet_size, op);
+
+    for (uint32_t offset = 0; offset < n; offset += packet_size) {
+        fmt("; scatter $u..$u\n", offset, offset + packet_size);
+        if (v0->type != (uint32_t) VarType::Bool) {
+            fmt("    $v_$u = insertvalue [$u x <$w x $t>] undef, $V, 0\n", v, offset, n, v0, v0);
+
+            for (uint32_t i = 1; i < packet_size; ++i)
+                fmt("    $v_$u = insertvalue [$u x <$w x $t>] $v_$u, $V, $u\n",
+                    v, i + offset, n, v0, v, i-1 + offset, jitc_var(psd->values[i + offset]), i);
+        } else {
+            fmt("    $v_0_e = zext $V to $M\n"
+                "    $v_0 = insertvalue [$u x <$w x $m>] undef, $M $v_0_e, 0\n",
+                v, v0, v0,
+                v, n, v0, v0, v);
+
+            for (uint32_t i = 1; i < n; ++i)
+                fmt("    $v_$u_e = zext $V to $M\n"
+                    "    $v_$u = insertvalue [$u x <$w x $m>] $v_$u, $M $v_$u_e, $u\n",
+                    v, i + offset, jitc_var(psd->values[i + offset]), v0,
+                    v, i + offset, n, v0, v, i-1 + offset, v0, v, i + offset, i);
+        }
+
+        // Add offset to index
+        fmt(
+         "    $v_i$u = add $V, <",
+            v, offset, index
+        );
+        for (uint32_t m = 0; m < jitc_llvm_vector_width; m++)
+            fmt("$t $u, ", index, offset);
+        buffer.delete_trailing_commas();
+        fmt(">\n");
+
+        fmt("{    $v_p0 = bitcast $<i8*$> $v to $<$m*$>\n|}"
+             "    $v_$u_p1 = getelementptr $m, $<$m*$> {$v_p0|$v}, $T $v_i$u\n",
+            v, ptr, v0,
+            v, offset, v0, v0, v, ptr, index, v, offset);
+
+
+        fmt("    call fastcc void @scatter_$s$ux$H(<$w x {$m*}> $v_$u_p1, $V, [$u x <$w x $m>] $v_$u)\n",
+            op_name, packet_size, v0, v0, v, offset, mask, n, v0, v, offset + packet_size-1);
     }
-
-    fmt("{    $v_p0 = bitcast $<i8*$> $v to $<$m*$>\n|}"
-         "    $v_p1 = getelementptr $m, $<$m*$> {$v_p0|$v}, $V\n"
-         "    call fastcc void @scatter_$s$ux$H(<$w x {$m*}> $v_p1, $V, [$u x <$w x $m>] $v_$u)\n",
-        v, ptr, v0,
-        v, v0, v0, v, ptr, index,
-        op_name, n, v0, v0, v, mask, n, v0, v, n-1);
 }
