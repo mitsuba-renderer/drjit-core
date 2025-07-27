@@ -251,8 +251,7 @@ void scatter_packet_recursive(ReduceOp op, uint32_t l, uint32_t i, uint32_t n, c
     }
 }
 
-void jitc_llvm_scatter_packet_render_function(const Variable *v,
-                                              const Variable *v0, uint32_t n,
+void jitc_llvm_scatter_packet_render_function(const Variable *v0, uint32_t n,
                                               ReduceOp op) {
     // Render scatter function
     size_t offset = buffer.size();
@@ -291,7 +290,6 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
     PacketScatterData *psd = (PacketScatterData *) v->data;
     uint32_t n             = (uint32_t) psd->values.size();
     const Variable *v0     = jitc_var(psd->values[0]);
-    uint32_t tsize         = type_size[v0->type];
     ReduceOp op            = psd->op;
 
     const char *op_name    = "";
@@ -305,7 +303,7 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
     while ((n & (packet_size - 1)) != 0)
         packet_size /= 2;
 
-    jitc_llvm_scatter_packet_render_function(v, v0, packet_size, op);
+    jitc_llvm_scatter_packet_render_function(v0, packet_size, op);
 
     for (uint32_t offset = 0; offset < n; offset += packet_size) {
         fmt("; scatter $u..$u\n", offset, offset + packet_size);
@@ -338,6 +336,7 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
         buffer.delete_trailing_commas();
         fmt(">\n");
 
+        // First offset the base pointer by the packet offset.
         fmt("{    $v_p0 = bitcast $<i8*$> $v to $<$m*$>\n|}"
             "    $v_$u_p1 = getelementptr $m, $m* {$v_p0|$v}, i32 $u\n"
             "    $v_$u_p2 = getelementptr $m, $<$m*$> $v_$u_p1, $V\n",

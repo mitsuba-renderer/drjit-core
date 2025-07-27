@@ -2735,47 +2735,6 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         return target.release();
     }
 
-    // Compute the maximum supported packet size. We assume, that the backends
-    // supports any packet size equal to a power of two smaller than
-    // this size.
-    uint32_t max_packet_size = std::min(8u, jitc_llvm_vector_width);
-
-    // // Split large requests into the largest possible packet sizes. For
-    // // example, a packet of 6 variables will be split into 3 scatters with 2
-    // // variables each.
-    // if (var_info.backend == JitBackend::LLVM && n > 1 &&
-    //     ((n & (n - 1)) != 0 || n > max_packet_size)) {
-    //
-    //     if (max_packet_size == 0)
-    //         jitc_raise(
-    //             "jit_var_scatter_packet(): Could not determine a packet "
-    //             "size to scatter %zu elements of type %s to scatter with.",
-    //             n, type_name[(uint32_t) target_info.type]);
-    //
-    //     // Find the largest supported packet size i.e. power of two smaller than
-    //     // ``max_packet_size`` that divides ``n``.
-    //     uint32_t packet_size = std::min(8u, jitc_llvm_vector_width);;
-    //     while ((n & (packet_size - 1)) != 0)
-    //         packet_size /= 2;
-    //
-    //     Ref step   = steal(jitc_var_u32(var_info.backend, 1)),
-    //         scale_ = steal(
-    //             jitc_var_u32(var_info.backend, (uint32_t) n / packet_size)),
-    //         index2 = steal(jitc_var_mul(index, scale_));
-    //
-    //     for (size_t i = 0; i < n; i += packet_size) {
-    //         uint32_t index_t = target;
-    //         if (index_t == target_)
-    //             target.reset();
-    //
-    //         target = steal(jitc_var_scatter_packet(
-    //             packet_size, index_t, values + i, index2, mask, op, mode));
-    //         index2 = steal(jitc_var_add(index2, step));
-    //     }
-    //
-    //     return target.release();
-    // }
-
     // Must compute final index before potentially expanding below
     index = steal(jitc_var_mul(index, scale));
 
