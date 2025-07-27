@@ -307,33 +307,25 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
 
     for (uint32_t offset = 0; offset < n; offset += packet_size) {
         if (v0->type != (uint32_t) VarType::Bool) {
-            fmt("    $v_$u = insertvalue [$u x <$w x $t>] undef, $V, 0\n", v, offset, n, v0, v0);
+            fmt("    $v_$u = insertvalue [$u x <$w x $t>] undef, $V, 0\n",
+                v, offset, packet_size, v0, jitc_var(psd->values[offset]));
 
             for (uint32_t i = 1; i < packet_size; ++i)
                 fmt("    $v_$u = insertvalue [$u x <$w x $t>] $v_$u, $V, $u\n",
-                    v, i + offset, n, v0, v, i-1 + offset, jitc_var(psd->values[i + offset]), i);
+                    v, i + offset, packet_size, v0, v, i-1 + offset, jitc_var(psd->values[i + offset]), i);
         } else {
-            fmt("    $v_0_e = zext $V to $M\n"
-                "    $v_0 = insertvalue [$u x <$w x $m>] undef, $M $v_0_e, 0\n",
-                v, v0, v0,
-                v, n, v0, v0, v);
+            fmt("    $v_$u_e = zext $V to $M\n"
+                "    $v_$u = insertvalue [$u x <$w x $m>] undef, $M $v_$u_e, 0\n",
+                v, offset, jitc_var(psd->values[offset]), v0,
+                v, offset, packet_size, v0, v0, v, offset);
 
-            for (uint32_t i = 1; i < n; ++i)
+            for (uint32_t i = 1; i < packet_size; ++i){
                 fmt("    $v_$u_e = zext $V to $M\n"
                     "    $v_$u = insertvalue [$u x <$w x $m>] $v_$u, $M $v_$u_e, $u\n",
                     v, i + offset, jitc_var(psd->values[i + offset]), v0,
-                    v, i + offset, n, v0, v, i-1 + offset, v0, v, i + offset, i);
+                    v, i + offset, packet_size, v0, v, i-1 + offset, v0, v, i + offset, i);
+            }
         }
-
-        // Add offset to index
-        fmt(
-         "    $v_i$u = add $V, <",
-            v, offset, index
-        );
-        for (uint32_t m = 0; m < jitc_llvm_vector_width; m++)
-            fmt("$t $u, ", index, offset);
-        buffer.delete_trailing_commas();
-        fmt(">\n");
 
         // First offset the base pointer by the packet offset.
         fmt("{    $v_p0 = bitcast $<i8*$> $v to $<$m*$>\n|}"
@@ -344,6 +336,6 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
             v, offset, v0, v0, v, offset, index);
 
         fmt("    call fastcc void @scatter_$s$ux$H(<$w x {$m*}> $v_$u_p2, $V, [$u x <$w x $m>] $v_$u)\n",
-            op_name, packet_size, v0, v0, v, offset, mask, n, v0, v, offset + packet_size-1);
+            op_name, packet_size, v0, v0, v, offset, mask, packet_size, v0, v, offset + packet_size-1);
     }
 }
