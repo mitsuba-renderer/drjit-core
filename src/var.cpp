@@ -55,7 +55,7 @@ const char *type_name_llvm[(int) VarType::Count] {
     "i32", "i64", "i64", "i64", "???", "half", "float", "double"
 };
 
-/// Double size integer arrays for mulhi()
+/// Double size integer arrays for mul_hi()
 const char *type_name_llvm_big[(int) VarType::Count] {
     "???", "???",  "i16",  "i16", "i32", "i32", "i64",
     "i64", "i128", "i128", "???", "???", "???", "???", "???"
@@ -148,10 +148,13 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Common binary arithmetic operations
     "add", "sub", "mul", "div", "div.approx", "mod",
 
-    // High multiplication
-    "mulhi",
+    // High integer multiplication
+    "mul_hi",
 
-    // Fused multiply-add
+    // Wide integer multiplication
+    "mul_wide",
+
+    // Fused multiply-add (integers & floats)
     "fma",
 
     // Minimum, maximum

@@ -609,7 +609,10 @@ enum class JitOp : uint32_t {
     Add, Sub, Mul, Div, Mod,
 
     // High multiplication
-    Mulhi,
+    MulHi,
+
+    // Wide multiplication
+    MulWide,
 
     // Fused multiply-add
     Fma,
@@ -715,7 +718,10 @@ extern JIT_EXPORT uint32_t jit_var_div(uint32_t a0, uint32_t a1);
 extern JIT_EXPORT uint32_t jit_var_mod(uint32_t a0, uint32_t a1);
 
 /// Compute the high part of `a0 * a1` and return a variable representing the result
-extern JIT_EXPORT uint32_t jit_var_mulhi(uint32_t a0, uint32_t a1);
+extern JIT_EXPORT uint32_t jit_var_mul_hi(uint32_t a0, uint32_t a1);
+
+/// Compute all bits of `a0 * a1` and return a variable representing the result
+extern JIT_EXPORT uint32_t jit_var_mul_wide(uint32_t a0, uint32_t a1);
 
 /// Compute `a0 * a1 + a2` (fused) and return a variable representing the result
 extern JIT_EXPORT uint32_t jit_var_fma(uint32_t a0, uint32_t a1, uint32_t a2);
