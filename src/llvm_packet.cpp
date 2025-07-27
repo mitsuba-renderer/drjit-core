@@ -306,7 +306,6 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
     jitc_llvm_scatter_packet_render_function(v0, packet_size, op);
 
     for (uint32_t offset = 0; offset < n; offset += packet_size) {
-        fmt("; scatter $u..$u\n", offset, offset + packet_size);
         if (v0->type != (uint32_t) VarType::Bool) {
             fmt("    $v_$u = insertvalue [$u x <$w x $t>] undef, $V, 0\n", v, offset, n, v0, v0);
 
@@ -338,7 +337,7 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
 
         // First offset the base pointer by the packet offset.
         fmt("{    $v_p0 = bitcast $<i8*$> $v to $<$m*$>\n|}"
-            "    $v_$u_p1 = getelementptr $m, $m* {$v_p0|$v}, i32 $u\n"
+            "    $v_$u_p1 = getelementptr $m, $<$m*$> {$v_p0|$v}, i32 $u\n"
             "    $v_$u_p2 = getelementptr $m, $<$m*$> $v_$u_p1, $V\n",
             v, ptr, v0,
             v, offset, v0, v0, v, ptr, offset,
