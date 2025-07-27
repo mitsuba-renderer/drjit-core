@@ -339,12 +339,13 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
         fmt(">\n");
 
         fmt("{    $v_p0 = bitcast $<i8*$> $v to $<$m*$>\n|}"
-             "    $v_$u_p1 = getelementptr $m, $<$m*$> {$v_p0|$v}, $T $v_i$u\n",
+            "    $v_$u_p1 = getelementptr $m, $m* {$v_p0|$v}, i32 $u\n"
+            "    $v_$u_p2 = getelementptr $m, $<$m*$> $v_$u_p1, $V\n",
             v, ptr, v0,
-            v, offset, v0, v0, v, ptr, index, v, offset);
+            v, offset, v0, v0, v, ptr, offset,
+            v, offset, v0, v0, v, offset, index);
 
-
-        fmt("    call fastcc void @scatter_$s$ux$H(<$w x {$m*}> $v_$u_p1, $V, [$u x <$w x $m>] $v_$u)\n",
+        fmt("    call fastcc void @scatter_$s$ux$H(<$w x {$m*}> $v_$u_p2, $V, [$u x <$w x $m>] $v_$u)\n",
             op_name, packet_size, v0, v0, v, offset, mask, n, v0, v, offset + packet_size-1);
     }
 }
