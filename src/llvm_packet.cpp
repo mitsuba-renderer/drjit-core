@@ -328,11 +328,11 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
         }
 
         // First offset the base pointer by the packet offset.
-        fmt("{    $v_p0 = bitcast $<i8*$> $v to $<$m*$>\n|}"
-            "    $v_$u_p1 = getelementptr $m, $<$m*$> {$v_p0|$v}, i32 $u\n"
+        fmt("{    $v_$u_p0 = bitcast $<i8*$> $v to $<$m*$>\n|}"
+            "    $v_$u_p1 = getelementptr $m, $<$m*$> {$v_$u_p0|$v}, i32 $u\n"
             "    $v_$u_p2 = getelementptr $m, $<$m*$> $v_$u_p1, $V\n",
-            v, ptr, v0,
-            v, offset, v0, v0, v, ptr, offset,
+            v, offset, ptr, v0,
+            v, offset, v0, v0, v, offset, ptr, offset,
             v, offset, v0, v0, v, offset, index);
 
         fmt("    call fastcc void @scatter_$s$ux$H(<$w x {$m*}> $v_$u_p2, $V, [$u x <$w x $m>] $v_$u)\n",
