@@ -630,7 +630,11 @@ void jitc_value_print(const Variable *v, bool graphviz = false) {
 static char source_location_buf[256] { 0 };
 
 void jitc_set_source_location(const char *fname, size_t lineno) noexcept {
-    snprintf(source_location_buf, sizeof(source_location_buf), "%s:%zu", fname, lineno);
+    if (!fname)
+        source_location_buf[0] = '\0';
+    else
+        snprintf(source_location_buf, sizeof(source_location_buf),
+                 "%s:%zu", fname, lineno);
 }
 
 /// Append the given variable to the instruction trace and return its ID
