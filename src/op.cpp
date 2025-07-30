@@ -1608,8 +1608,16 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
 
 /// Change all indices/counters in an expression tree to 'new_index'
 static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
-                                 uint32_t mask, uint32_t size) {
+                                 uint32_t mask, uint32_t size,
+                                 tsl::robin_map<uint32_t, uint32_t, UInt32Hasher> &map) {
+    auto it = map.find(var_index);
+    if (it != map.end())
+        return jitc_var_new_ref(it.value());
+
     Variable *v = jitc_var(var_index);
+
+    if (map.size() > 200)
+        return 0; // this is a large expression, give up
 
     if (v->is_evaluated() || (VarType) v->type == VarType::Void)
         return 0; // evaluated variable, give up
@@ -1639,7 +1647,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
                 Ref default_mask = steal(jitc_var_mask_default(backend, size));
                 dep[i] = steal(jitc_var_and(mask, default_mask));
             } else {
-                dep[i] = steal(jitc_var_reindex(index_2, new_index, mask, size));
+                dep[i] = steal(jitc_var_reindex(index_2, new_index, mask, size, map));
             }
 
             v = jitc_var(var_index);
@@ -1650,8 +1658,10 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
     }
 
 
+    uint32_t result;
     if (v->kind == (uint32_t) VarKind::Counter) {
-        return jitc_var_new_ref(new_index);
+        map[var_index] = new_index;
+        result = jitc_var_new_ref(new_index);
     } else if (rebuild) {
         Variable v2;
         v2.kind = v->kind;
@@ -1665,11 +1675,13 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             v2.dep[i] = dep[i];
             jitc_var_inc_ref(dep[i]);
         }
-        return jitc_var_new(v2);
+        result = jitc_var_new(v2);
     } else {
         jitc_var_inc_ref(var_index, v);
-        return var_index;
+        result = var_index;
     }
+    map[var_index] = result;
+    return result;
 }
 
 uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
@@ -1846,7 +1858,8 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
     // Don't perform the gather operation if the inputs are trivial / can be re-indexed
     if (!result) {
         Ref index_2 = steal(jitc_var_cast(index, VarType::UInt32, 0));
-        Ref src_reindexed = steal(jitc_var_reindex(src, index_2, mask, var_info.size));
+        tsl::robin_map<uint32_t, uint32_t, UInt32Hasher> map;
+        Ref src_reindexed = steal(jitc_var_reindex(src, index_2, mask, var_info.size, map));
         if (src_reindexed) {
             // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'src'
             Ref unused = borrow(src_reindexed);
