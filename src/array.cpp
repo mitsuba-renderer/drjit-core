@@ -50,7 +50,7 @@ uint32_t jitc_array_init(uint32_t target, uint32_t value) {
         if (unlikely(cond))                                       \
             jitc_raise(                                           \
                 "jit_array_init(target=r%u, value=r%u): " fmt,    \
-                target, target, ##__VA_ARGS__);
+                target, value, ##__VA_ARGS__);
 
     fail_if(target == 0, "target array is uninitialized.");
     fail_if(value == 0, "value is uninitialized.");
