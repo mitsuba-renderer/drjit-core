@@ -2018,7 +2018,8 @@ extern JIT_EXPORT uint32_t jit_var_block_reduce(JIT_ENUM ReduceOp op, uint32_t i
 extern JIT_EXPORT uint32_t jit_var_tile(uint32_t index, uint32_t count);
 
 /// Repeat values of an array into larger blocks
-extern JIT_EXPORT uint32_t jit_var_repeat(uint32_t index, uint32_t count);
+/// The optional max_size parameter limits the output size (0 = no limit).
+extern JIT_EXPORT uint32_t jit_var_repeat(uint32_t index, uint32_t count, size_t max_size JIT_DEF(0));
 
 /// Perform a dot product reduction of two compatible arrays
 extern JIT_EXPORT uint32_t jit_var_reduce_dot(uint32_t index_1,

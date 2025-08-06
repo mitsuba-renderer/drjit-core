@@ -2300,7 +2300,7 @@ uint32_t jitc_var_tile(uint32_t index, uint32_t block_size) {
     return jitc_var_gather(index, offset, t_mask);
 }
 
-uint32_t jitc_var_repeat(uint32_t index, uint32_t block_size) {
+uint32_t jitc_var_repeat(uint32_t index, uint32_t block_size, size_t max_size) {
     if (index == 0)
         return 0;
 
@@ -2309,6 +2309,10 @@ uint32_t jitc_var_repeat(uint32_t index, uint32_t block_size) {
     JitBackend backend = (JitBackend) v->backend;
     size_t size = v->size,
            out_size = size * block_size;
+
+    // Apply max_size limit if specified
+    if (max_size > 0 && out_size > max_size)
+        out_size = max_size;
 
     jitc_check_size("jitc_var_repeat", out_size);
 

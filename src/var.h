@@ -244,7 +244,7 @@ extern uint32_t jitc_var_block_prefix_reduce(ReduceOp op, uint32_t index,
 uint32_t jitc_var_tile(uint32_t index, uint32_t count);
 
 /// Repeat values of an array into larger blocks
-uint32_t jitc_var_repeat(uint32_t index, uint32_t count);
+uint32_t jitc_var_repeat(uint32_t index, uint32_t count, size_t max_size = 0);
 
 /// Create a variable containing the buffer storing a specific attribute
 extern uint32_t jitc_var_registry_attr(JitBackend backend, VarType type,

@@ -1542,9 +1542,9 @@ uint32_t jit_var_tile(uint32_t index, uint32_t count) {
     return jitc_var_tile(index, count);
 }
 
-uint32_t jit_var_repeat(uint32_t index, uint32_t count) {
+uint32_t jit_var_repeat(uint32_t index, uint32_t count, size_t max_size) {
     lock_guard guard(state.lock);
-    return jitc_var_repeat(index, count);
+    return jitc_var_repeat(index, count, max_size);
 }
 
 uint32_t jit_array_create(JitBackend backend, VarType vt, size_t size,
