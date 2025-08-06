@@ -181,29 +181,28 @@ bool jitc_llvm_init() {
 //        return false;
 //    }
 //
-//    jitc_llvm_opaque_pointers = jitc_llvm_version_major >= 15;
-//
-//    jitc_llvm_update_strings();
-//
-//    char major_str[11] = "?", minor_str[11] = "?", patch_str[11] = "?";
-//
-//    if (jitc_llvm_version_major >= 0)
-//        snprintf(major_str, sizeof(major_str), "%i", jitc_llvm_version_major);
-//    if (jitc_llvm_version_minor >= 0)
-//        snprintf(minor_str, sizeof(minor_str), "%i", jitc_llvm_version_minor);
-//    if (jitc_llvm_version_patch >= 0)
-//        snprintf(patch_str, sizeof(patch_str), "%i", jitc_llvm_version_patch);
-//
-//    jitc_log(Info,
-//             "jit_llvm_init(): found LLVM %s.%s.%s (%s), target=%s, cpu=%s, %s pointers, width=%u.",
-//             major_str, minor_str, patch_str,
-//             jitc_llvm_use_orcv2 ? "ORCv2" : "MCJIT",
-//             jitc_llvm_target_triple, jitc_llvm_target_cpu,
-//             jitc_llvm_opaque_pointers ? "opaque" : "typed",
-//             jitc_llvm_vector_width);
-//
-//    return jitc_llvm_init_success;
-    return true;
+    jitc_llvm_opaque_pointers = jitc_llvm_version_major >= 15;
+
+    jitc_llvm_update_strings();
+
+    char major_str[11] = "?", minor_str[11] = "?", patch_str[11] = "?";
+
+    if (jitc_llvm_version_major >= 0)
+        snprintf(major_str, sizeof(major_str), "%i", jitc_llvm_version_major);
+    if (jitc_llvm_version_minor >= 0)
+        snprintf(minor_str, sizeof(minor_str), "%i", jitc_llvm_version_minor);
+    if (jitc_llvm_version_patch >= 0)
+        snprintf(patch_str, sizeof(patch_str), "%i", jitc_llvm_version_patch);
+
+    jitc_log(Info,
+             "jit_llvm_init(): found LLVM %s.%s.%s (%s), target=%s, cpu=%s, %s pointers, width=%u.",
+             major_str, minor_str, patch_str,
+             jitc_llvm_use_orcv2 ? "ORCv2" : "MCJIT",
+             jitc_llvm_target_triple, jitc_llvm_target_cpu,
+             jitc_llvm_opaque_pointers ? "opaque" : "typed",
+             jitc_llvm_vector_width);
+
+    return jitc_llvm_init_success;
 }
 
 void jitc_llvm_shutdown() {
@@ -224,29 +223,29 @@ void jitc_llvm_shutdown() {
         jitc_llvm_disasm_ctx = nullptr;
     }
 
-//    jitc_llvm_target_cpu = nullptr;
-//    jitc_llvm_target_features = nullptr;
-//    jitc_llvm_vector_width = 0;
-//    jitc_llvm_context = nullptr;
-//
-//    if (jitc_llvm_ones_str) {
-//        for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
-//            free(jitc_llvm_ones_str[i]);
-//        free(jitc_llvm_ones_str);
-//    }
-//    if (jitc_llvm_ones_bit_str) {
-//        for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
-//            free(jitc_llvm_ones_bit_str[i]);
-//        free(jitc_llvm_ones_bit_str);
-//    }
-//    jitc_llvm_ones_bit_str = nullptr;
-//    free(jitc_llvm_u32_arange_str);
-//    jitc_llvm_u32_arange_str = nullptr;
-//    free(jitc_llvm_u32_width_str);
-//    jitc_llvm_u32_width_str = nullptr;
-//
-//    jitc_llvm_init_success = false;
-//    jitc_llvm_init_attempted = false;
+    jitc_llvm_target_cpu = nullptr;
+    jitc_llvm_target_features = nullptr;
+    jitc_llvm_vector_width = 0;
+    jitc_llvm_context = nullptr;
+
+    if (jitc_llvm_ones_str) {
+        for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
+            free(jitc_llvm_ones_str[i]);
+        free(jitc_llvm_ones_str);
+    }
+    if (jitc_llvm_ones_bit_str) {
+        for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
+            free(jitc_llvm_ones_bit_str[i]);
+        free(jitc_llvm_ones_bit_str);
+    }
+    jitc_llvm_ones_bit_str = nullptr;
+    free(jitc_llvm_u32_arange_str);
+    jitc_llvm_u32_arange_str = nullptr;
+    free(jitc_llvm_u32_width_str);
+    jitc_llvm_u32_width_str = nullptr;
+
+    jitc_llvm_init_success = false;
+    jitc_llvm_init_attempted = false;
 
     jitc_llvm_api_shutdown();
 }
