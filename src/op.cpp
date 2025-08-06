@@ -1951,11 +1951,10 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
     auto [var_info, index_v, mask_v] =
         jitc_var_check("jit_var_gather_packet", index, mask);
 
-    if ((n & (n-1)) || n == 1)
-        jitc_raise("jitc_var_gather_packet(): vector size must be a power of two "
-                   "and >= 1 (got %zu)!", n);
+    if (n == 1)
+        jitc_raise("jitc_var_gather_packet(): vector size of 1 is not supported!");
 
-    if ((src_info.size & (n-1)) != 0 && src_info.size != 1)
+    if (src_info.size % 2 != 0 && src_info.size != 1)
         jitc_raise("jitc_var_gather_packet(): source r%u has size %u, which is not "
                    "divisible by %zu!", index, src_info.size, n);
 
@@ -1981,15 +1980,33 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
         return;
     }
 
+    // Compute the maximum supported packet size. We assume, that the backends
+    // support any packet size equal to a power of two smaller than
+    // this size.
+    uint32_t max_packet_size = std::min(8u, jitc_llvm_vector_width);
+
     // Packet size 8 is the max. for the LLVM backend. Split larger requests.
-    uint32_t max_width = std::min(8u, jitc_llvm_vector_width);
-    if (n > max_width && var_info.backend == JitBackend::LLVM) {
+    if (var_info.backend == JitBackend::LLVM && n > 1 &&
+        ((n & (n - 1)) != 0 || n > max_packet_size)) {
+
+        if (max_packet_size == 0)
+            jitc_raise("jit_var_gather_packet(): Could not determine a packet "
+                       "size to gather %zu elements of type %s.",
+                       n, type_name[(uint32_t) src_info.type]);
+
+
+        // Find the largest supported packet size i.e. power of two smaller than
+        // ``max_packet_size`` that divides ``n``.
+        uint32_t packet_size = std::min(8u, jitc_llvm_vector_width);;
+        while ((n & (packet_size - 1)) != 0)
+            packet_size /= 2;
+
         Ref step = steal(jitc_var_u32(var_info.backend, 1)),
-            scale_ = steal(jitc_var_u32(var_info.backend, (uint32_t) n/max_width)),
+            scale_ = steal(jitc_var_u32(var_info.backend, (uint32_t) n/packet_size)),
             index2 = steal(jitc_var_mul(index, scale_));
 
-        for (size_t i = 0; i < n; i += max_width) {
-            jitc_var_gather_packet(max_width, src_, index2, mask, out+i);
+        for (size_t i = 0; i < n; i += packet_size) {
+            jitc_var_gather_packet(packet_size, src_, index2, mask, out+i);
             index2 = steal(jitc_var_add(index2, step));
         }
         return;
@@ -2595,6 +2612,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         jitc_var_check("jit_var_scatter", index_, mask);
     const uint32_t target_size = target_v->size;
     const JitBackend backend = var_info.backend;
+    VarType vt = (VarType) target_v->type;
 
     // Flush any potential conflicting writes by evaluating the target before the scatter
     if (target_v->is_dirty() && op == ReduceOp::Identity
@@ -2602,17 +2620,19 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
                              && mode != ReduceMode::NoConflicts) {
         bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
         jitc_var_eval(target, raise_dirty_error);
-        jitc_var_eval(index_);
-        jitc_var_eval(mask);
-
         target_v = jitc_var(target);
-        index_v = jitc_var(index_);
-        mask_v = jitc_var(mask);
     }
 
     // Go to the original if 'target' is wrapped into a loop state variable
     unwrap(target, target_v);
     target_ = target;
+
+    if (!jitc_can_scatter_reduce(backend, vt, op) && backend == JitBackend::CUDA)
+        jitc_raise(
+            "jit_var_scatter_packet(): the %s backend does not support the requested "
+            "type of atomic reduction (%s) for variables of type (%s)",
+            backend == JitBackend::CUDA ? "CUDA" : "LLVM", red_name[(int) op],
+            type_name[(int) vt]);
 
     if (target_v->symbolic)
         jitc_raise(
@@ -2626,11 +2646,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
             "jit_var_scatter(): input arrays are symbolic, but the operation "
             "was issued outside of a symbolic recording session.");
 
-    if ((n & (n-1)) || n == 1)
-        jitc_raise("jitc_var_scatter_packet(): vector size must be a power of two "
-                   "and >= 1 (got %zu)!", n);
-
-    if ((target_info.size & (n-1)) != 0 && target_info.size != 1)
+    if (target_info.size % n != 0 && target_info.size != 1)
         jitc_raise("jitc_var_scatter_packet(): target r%u has size %u, which is not "
                    "divisible by %zu!", index_, target_info.size, n);
 
@@ -2685,8 +2701,17 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
                              mode == ReduceMode::NoConflicts ||
                              (mode == ReduceMode::Auto &&
                               target_info.size <= llvm_expand_threshold));
+        } else if (backend == JitBackend::CUDA) {
+            use_packet_op = (mode == ReduceMode::Permute ||
+                             mode == ReduceMode::NoConflicts ||
+                             mode == ReduceMode::Auto);
         }
     }
+
+    // If the packet size is not divisible by two we cannot use packet ops.
+    // TODO: Handle this case in the cuda_packet.cpp and llvm_packet.cpp when
+    // generating the assembly.
+    use_packet_op = use_packet_op && n > 1 && n % 2 == 0;
 
     Ref scale = steal(jitc_var_u32(backend, (uint32_t) n));
 
@@ -2702,27 +2727,6 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
 
             target = steal(jitc_var_scatter(index_t, values[i], index3, mask, op, mode));
         }
-        return target.release();
-    }
-
-    // Packet size 8 is the max. for the LLVM backend. Split larger requests.
-    uint32_t max_width = std::min(8u, jitc_llvm_vector_width);
-    if (n > max_width && var_info.backend == JitBackend::LLVM) {
-        Ref step = steal(jitc_var_u32(var_info.backend, 1)),
-            scale_ = steal(jitc_var_u32(var_info.backend, (uint32_t) n/max_width)),
-            index2 = steal(jitc_var_mul(index, scale_));
-
-        for (size_t i = 0; i < n; i += max_width) {
-
-            uint32_t index_t = target;
-            if (index_t == target_)
-                target.reset();
-
-            target = steal(jitc_var_scatter_packet(
-                max_width, index_t, values + i, index2, mask, op, mode));
-            index2 = steal(jitc_var_add(index2, step));
-        }
-
         return target.release();
     }
 
