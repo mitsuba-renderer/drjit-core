@@ -99,19 +99,19 @@ bool jitc_llvm_init() {
     }
 
 
-//    if (LLVMLinkInMCJIT)
-//        LLVMLinkInMCJIT();
-//    LLVMInitializeDrJitTargetInfo();
-//    LLVMInitializeDrJitTarget();
-//    LLVMInitializeDrJitTargetMC();
-//    LLVMInitializeDrJitAsmPrinter();
-//    LLVMInitializeDrJitDisassembler();
-//
-//    jitc_llvm_target_triple = LLVMGetDefaultTargetTriple();
-//    jitc_llvm_target_cpu = LLVMGetHostCPUName();
-//    jitc_llvm_target_features = LLVMGetHostCPUFeatures();
-//    jitc_llvm_context = LLVMGetGlobalContext();
-//
+    if (LLVMLinkInMCJIT)
+        LLVMLinkInMCJIT();
+    LLVMInitializeDrJitTargetInfo();
+    LLVMInitializeDrJitTarget();
+    LLVMInitializeDrJitTargetMC();
+    LLVMInitializeDrJitAsmPrinter();
+    LLVMInitializeDrJitDisassembler();
+
+    jitc_llvm_target_triple = LLVMGetDefaultTargetTriple();
+    jitc_llvm_target_cpu = LLVMGetHostCPUName();
+    jitc_llvm_target_features = LLVMGetHostCPUFeatures();
+    jitc_llvm_context = LLVMGetGlobalContext();
+
 //    jitc_llvm_disasm_ctx =
 //        LLVMCreateDisasm(jitc_llvm_target_triple, nullptr, 0, nullptr, nullptr);
 //
@@ -216,9 +216,9 @@ void jitc_llvm_shutdown() {
 //    jitc_llvm_orcv2_shutdown();
 //    jitc_llvm_mcjit_shutdown();
 //
-//    LLVMDisposeMessage(jitc_llvm_target_triple);
-//    LLVMDisposeMessage(jitc_llvm_target_cpu);
-//    LLVMDisposeMessage(jitc_llvm_target_features);
+    LLVMDisposeMessage(jitc_llvm_target_triple);
+    LLVMDisposeMessage(jitc_llvm_target_cpu);
+    LLVMDisposeMessage(jitc_llvm_target_features);
 //    if (jitc_llvm_disasm_ctx) {
 //        LLVMDisasmDispose(jitc_llvm_disasm_ctx);
 //        jitc_llvm_disasm_ctx = nullptr;
