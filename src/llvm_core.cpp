@@ -170,17 +170,17 @@ bool jitc_llvm_init() {
         jitc_llvm_shutdown();
     }
 
-//    if (jitc_llvm_api_has_orcv2() && jitc_llvm_orcv2_init()) {
-//        jitc_llvm_use_orcv2 = true;
-//    } else if (jitc_llvm_api_has_mcjit() && jitc_llvm_mcjit_init()) {
-//        jitc_llvm_use_orcv2 = false;
-//    } else {
-//        jitc_log(Warn, "jit_llvm_init(): ORCv2/MCJIT could not be initialized, "
-//                       "shutting down LLVM backend..");
-//        jitc_llvm_shutdown();
-//        return false;
-//    }
-//
+    if (jitc_llvm_api_has_orcv2() && jitc_llvm_orcv2_init()) {
+        jitc_llvm_use_orcv2 = true;
+    } else if (jitc_llvm_api_has_mcjit() && jitc_llvm_mcjit_init()) {
+        jitc_llvm_use_orcv2 = false;
+    } else {
+        jitc_log(Warn, "jit_llvm_init(): ORCv2/MCJIT could not be initialized, "
+                       "shutting down LLVM backend..");
+        jitc_llvm_shutdown();
+        return false;
+    }
+
     jitc_llvm_opaque_pointers = jitc_llvm_version_major >= 15;
 
     jitc_llvm_update_strings();
@@ -206,15 +206,15 @@ bool jitc_llvm_init() {
 }
 
 void jitc_llvm_shutdown() {
-//    if (!jitc_llvm_init_success)
-//        return;
-//
-//    jitc_log(Info, "jit_llvm_shutdown()");
-//
-//    jitc_llvm_memmgr_shutdown();
-//    jitc_llvm_orcv2_shutdown();
-//    jitc_llvm_mcjit_shutdown();
-//
+    if (!jitc_llvm_init_success)
+        return;
+
+    jitc_log(Info, "jit_llvm_shutdown()");
+
+    jitc_llvm_memmgr_shutdown();
+    jitc_llvm_orcv2_shutdown();
+    jitc_llvm_mcjit_shutdown();
+
     LLVMDisposeMessage(jitc_llvm_target_triple);
     LLVMDisposeMessage(jitc_llvm_target_cpu);
     LLVMDisposeMessage(jitc_llvm_target_features);
