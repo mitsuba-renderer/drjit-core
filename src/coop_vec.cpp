@@ -600,8 +600,8 @@ uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
     }
 
     void *p = nullptr;
-    Ref tmp = steal(jitc_var_data(target, false, &p));
-    Ref target_ptr = steal(jitc_var_pointer(backend, p, tmp, 1));
+    target = steal(jitc_var_data(target, false, &p));
+    Ref target_ptr = steal(jitc_var_pointer(backend, p, target, 1));
 
     Ref mask = steal(jitc_var_bool(backend, true));
     mask = steal(jitc_var_mask_apply(mask, size));
@@ -678,8 +678,8 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
     }
 
     void *p = nullptr;
-    Ref tmp = steal(jitc_var_data(target, false, &p));
-    Ref target_ptr = steal(jitc_var_pointer(backend, p, tmp, 1));
+    target = steal(jitc_var_data(target, false, &p));
+    Ref target_ptr = steal(jitc_var_pointer(backend, p, target, 1));
 
     Ref mask = steal(jitc_var_bool(backend, true));
     mask = steal(jitc_var_mask_apply(mask, size));
