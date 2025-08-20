@@ -441,6 +441,28 @@ uint32_t jit_var_bool(JitBackend backend, bool value) {
     return jitc_var_new(v);
 }
 
+uint32_t jit_var_u8(JitBackend backend, uint8_t value) {
+    Variable v;
+    memcpy(&v.literal, &value, sizeof(uint8_t));
+    v.kind = (uint32_t) VarKind::Literal;
+    v.type = (uint32_t) VarType::UInt8;
+    v.size = 1;
+    v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
+    return jitc_var_new(v);
+}
+
+uint32_t jit_var_i8(JitBackend backend, int8_t value) {
+    Variable v;
+    memcpy(&v.literal, &value, sizeof(int8_t));
+    v.kind = (uint32_t) VarKind::Literal;
+    v.type = (uint32_t) VarType::Int8;
+    v.size = 1;
+    v.backend = (uint32_t) backend;
+    lock_guard guard(state.lock);
+    return jitc_var_new(v);
+}
+
 uint32_t jit_var_u32(JitBackend backend, uint32_t value) {
     Variable v;
     memcpy(&v.literal, &value, sizeof(uint32_t));

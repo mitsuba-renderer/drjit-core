@@ -439,6 +439,29 @@ void jitc_cuda_render_loop_end(Variable *a0) {
         a0->reg_index, a0->reg_index);
 }
 
+static bool jitc_int8_unsupported(VarKind kind) {
+    switch (kind) {
+        case VarKind::Literal:
+        case VarKind::Select:
+        case VarKind::Add:
+        case VarKind::Sub:
+        case VarKind::Mul:
+        case VarKind::Fma:
+        case VarKind::Abs:
+        case VarKind::Neg:
+        case VarKind::Not:
+        case VarKind::Or:
+        case VarKind::And:
+        case VarKind::Xor:
+        case VarKind::Shl:
+        case VarKind::Shr:
+        case VarKind::Popc:
+        case VarKind::Bitcast:
+            return true;
+        default:
+            return false;
+    }
+}
 
 static void jitc_cuda_render(Variable *v) {
     const char *stmt = nullptr;
@@ -454,22 +477,61 @@ static void jitc_cuda_render(Variable *v) {
 
     const ThreadState *ts = thread_state_cuda;
 
-    bool f32_upcast = jitc_is_half(v) &&
-        ts->compute_capability < jitc_fp16_min_compute_cuda((VarKind)v->kind);
+    VarType orig_vt = (VarType) v->type, vt = orig_vt;
+    VarKind kind = (VarKind) v->kind;
 
-    if (f32_upcast) {
+    switch (orig_vt) {
+        case VarType::Float16:
+            if (ts->compute_capability < jitc_fp16_min_compute_cuda(kind))
+                vt = VarType::Float32;
+            break;
+
+        case VarType::Int8:
+        case VarType::UInt8:
+            if (jitc_int8_unsupported(kind))
+                vt = orig_vt == VarType::Int8 ? VarType::Int16 : VarType::UInt16;
+            break;
+
+        case VarType::Bool:
+            if (a0) {
+                if ((VarType) a0->type == VarType::UInt8) {
+                    orig_vt = VarType::UInt8;
+                    vt = VarType::UInt16;
+                } else if ((VarType) a0->type == VarType::Int8) {
+                    orig_vt = VarType::Int8;
+                    vt = VarType::Int16;
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    if (vt != orig_vt) {
         Variable* b = const_cast<Variable*>(v);
-        b->type = (uint32_t)VarType::Float32;
+
+        if ((VarType) b->type == orig_vt)
+            b->type = (uint32_t) vt;
+
         for (size_t i = 0; i < 4; ++i) {
             Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
-            if (dep) {
-                fmt("    cvt.f32.f16 %f$u, %h$u;\n", dep->reg_index, dep->reg_index);
-                dep->type = (uint32_t)VarType::Float32;
+
+            if (dep && (VarType) dep->type == orig_vt) {
+                fmt("    cvt.$s.$t $s$u, $v;\n",
+                    type_name_ptx[(uint32_t) vt],
+                    dep,
+                    type_prefix[(uint32_t) vt],
+                    dep->reg_index,
+                    dep
+                );
+
+                dep->type = (uint32_t) vt;
             }
         }
     }
 
-    switch ((VarKind) v->kind) {
+    switch (kind) {
         case VarKind::Undefined:
         case VarKind::Literal:
             fmt("    mov.$b $v, $l;\n", v, v, v);
@@ -590,18 +652,19 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::Eq:
-            if (jitc_is_bool(a0))
+            if (!jitc_is_bool(a0)) {
+                fmt("    setp.eq.$t $v, $v, $v;\n", a0, v, a0, a1);
+            } else {
                 fmt("    xor.$t $v, $v, $v;\n"
                     "    not.$t $v, $v;", v, v, a0, a1, v, v, v);
-            else
-                fmt("    setp.eq.$t $v, $v, $v;\n", a0, v, a0, a1);
+            }
             break;
 
         case VarKind::Neq:
-            if (jitc_is_bool(a0))
-                fmt("    xor.$t $v, $v, $v;\n", v, v, a0, a1);
-            else
+            if (!jitc_is_bool(a0))
                 fmt("    setp.ne.$t $v, $v, $v;\n", a0, v, a0, a1);
+            else
+                fmt("    xor.$t $v, $v, $v;\n", v, v, a0, a1);
             break;
 
         case VarKind::Lt:
@@ -773,7 +836,6 @@ static void jitc_cuda_render(Variable *v) {
             fmt("    tanh.approx.$t $v, $v;\n", v, v, a0);
             break;
 
-
         case VarKind::Cast:
             if (jitc_is_bool(v)) {
                 fmt(jitc_is_float(a0) && !jitc_is_half(a0)
@@ -821,6 +883,9 @@ static void jitc_cuda_render(Variable *v) {
                 if (is_masked) {
                     if (is_bool)
                         fmt("    mov.b16 %w0, 0;\n");
+                    else if ((VarType) v->type == VarType::UInt8 || (VarType) v->type == VarType::Int8)
+                        // There is no `mov.b8`
+                        fmt("    cvt.u8.u16 $v, 0;\n", v);
                     else
                         fmt("    mov.$b $v, 0;\n", v, v);
                     fmt("    @$v ", a2);
@@ -953,7 +1018,12 @@ static void jitc_cuda_render(Variable *v) {
 #endif
 
         case VarKind::Extract:
-            fmt("    mov.$b $v, $v_out_$u;\n", v, v, a0, (uint32_t) v->literal);
+            if (vt == VarType::UInt8 || vt == VarType::Int8) {
+                fmt("    cvt.u16.u8 %w3, $v_out_$u;\n", a0, (uint32_t) v->literal);
+                fmt("    cvt.u8.u16 $v, %w3;\n", v);
+            } else {
+                fmt("    mov.$b $v, $v_out_$u;\n", v, v, a0, (uint32_t) v->literal);
+            }
             break;
 
         case VarKind::LoopStart: {
@@ -1049,16 +1119,26 @@ static void jitc_cuda_render(Variable *v) {
                       var_kind_name[(uint32_t) v->kind]);
     }
 
-    if (f32_upcast) {
+    if (vt != orig_vt) {
         Variable* b = const_cast<Variable*>(v);
-        b->type = (uint32_t)VarType::Float16;
+
         for (size_t i = 0; i < 4; ++i) {
             Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
-            if (dep)
-                dep->type = (uint32_t)VarType::Float16;
+            if (dep && (VarType) dep->type == vt)
+                dep->type = (uint32_t) orig_vt;
         }
 
-        fmt("    cvt.rn.f16.f32 $v, %f$u;\n", v, v->reg_index);
+        if ((VarType) b->type == vt) {
+            b->type = (uint32_t) orig_vt;
+
+            fmt("    cvt$s.$t.$s $v, $s$u;\n",
+                orig_vt == VarType::Float16 ? ".rn" : "",
+                v,
+                type_name_ptx[(uint32_t) vt],
+                v,
+                type_prefix[(uint32_t) vt],
+                v->reg_index);
+        }
     }
 }
 
@@ -1484,4 +1564,3 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
 
     fmt("\nl_done_$u:\n", call_reg);
 }
-

@@ -250,13 +250,13 @@ struct alignas(64) Variable {
     // (+15 bits)
 
     // Variable kind (IR statement / literal constant / data)
-    uint32_t kind : 8;
+    uint32_t kind : 7;
 
     /// Backend associated with this variable
     uint32_t backend : 2;
 
     /// Variable type (Bool/Int/Float/....)
-    uint32_t type : 4;
+    uint32_t type : 5;
 
     /// Is this a pointer variable that is used to write to some array?
     uint32_t write_ptr : 1;

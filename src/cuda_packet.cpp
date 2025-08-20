@@ -20,22 +20,29 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
 
 void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
                                     const Variable *index, const Variable *mask) {
-    bool is_masked = !mask->is_literal() || mask->literal != 1;
+    bool is_masked = !mask->is_literal() || mask->literal != 1,
+         is_bool   = (VarType) v->type == VarType::Bool;
 
     uint32_t count = (uint32_t) v->literal,
              tsize = type_size[v->type],
              total_bytes = count * tsize;
-
-    const char *suffix;
 
     fmt("    mad.wide.$t %rd3, $v, $u, $v;\n"
         "    .reg.$t $v_out_<$u>;\n",
         index, index, total_bytes, ptr,
         v, v, count);
 
+    const char *suffix, *out_name = "out";
+
+    if (is_bool) {
+        fmt("    .reg.b8 $v_tmp2_<$u>;\n", v, count);
+        out_name = "tmp2";
+    }
+
     // Number of output/temporary output registers and their size
     uint32_t dst_count = count,
-             dst_bits = tsize*8;
+             out_bits = tsize * 8,
+             dst_bits = out_bits;
 
     if (tsize >= 4) {
         suffix = "out";
@@ -58,15 +65,14 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
             fmt("    mov.b$u $v_$s_$u, 0;\n", dst_bits, v, suffix, i);
     }
 
-    // Try to load 128b/iteration
+    // Try to load 128b/iteration, potentially reduce if the total size of the load isn't divisible
     uint32_t bytes_per_it = 16;
-
-    // Potentially reduce if the total size of the load isn't divisible
     while ((total_bytes & (bytes_per_it - 1)) != 0)
         bytes_per_it /= 2;
-
     uint32_t regs_per_it = (bytes_per_it * 8) / dst_bits;
 
+    // Actually load the packets into the `_tmp` registers (or directly into the `_out` registers
+    // if the output type size is large enough).
     for (uint32_t byte_offset = 0; byte_offset < total_bytes; byte_offset += bytes_per_it) {
         uint32_t reg_offset = (byte_offset * 8) / dst_bits;
         if (is_masked)
@@ -100,26 +106,45 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
         }
     }
 
+    // Unpack the values into the `_out` registers, if needed.
     if (tsize == 1) {
-        if (dst_bits == 16) {
-            for (uint32_t i = 0; i < count; ++i) {
-                fmt("    and.b16 %w$u, $v_tmp_$u, $u;\n"
-                    "    setp.ne.b16 $v_out_$u, %w$u, 0;\n",
-                    v->reg_index, v, i/2, 0xFF << (8 * (i%2)),
-                    v, i, v->reg_index);
-            }
-        } else {
-            for (uint32_t i = 0; i < count; ++i) {
-                fmt("    and.b32 %r$u, $v_tmp_$u, $u;\n"
-                    "    setp.ne.b32 $v_out_$u, %r$u, 0;\n",
-                    v->reg_index, v, i/4, 0xFF << (8 * (i%4)),
-                    v, i, v->reg_index);
+        uint32_t outputs_per_tmp = dst_bits / out_bits;
+
+        for (uint32_t i = 0; i < dst_count; ++i) {
+            if (outputs_per_tmp == 1) {
+                fmt("    mov.b$u $v_$s_$u, $v_tmp_$u;\n",
+                    dst_bits, v, out_name, i, v, i);
+            } else if (outputs_per_tmp == 2) {
+                fmt("    mov.b$u {$v_$s_$u, $v_$s_$u}, $v_tmp_$u;\n",
+                    dst_bits,
+                    v, out_name, 2 * i,
+                    v, out_name, 2 * i + 1,
+                    v, i);
+            } else if (outputs_per_tmp == 4) {
+                fmt("    mov.b$u {$v_$s_$u, $v_$s_$u, $v_$s_$u, $v_$s_$u}, $v_tmp_$u;\n",
+                    dst_bits,
+                    v, out_name, 4 * i,
+                    v, out_name, 4 * i + 1,
+                    v, out_name, 4 * i + 2,
+                    v, out_name, 4 * i + 3,
+                    v, i);
+            } else {
+                jitc_fail("jitc_cuda_render_gather_packet: internal error!");
             }
         }
     } else if (tsize == 2) {
         for (uint32_t i = 0; i < count/2; ++i) {
-            fmt("    mov.b$u {$v_out_$u, $v_out_$u}, $v_tmp_$u;\n",
-                dst_bits, v, 2*i, v, 2*i+1, v, i);
+            fmt("    mov.b$u {$v_$s_$u, $v_$s_$u}, $v_tmp_$u;\n",
+                dst_bits, v, out_name, 2*i, v, out_name, 2*i+1, v, i);
+        }
+    }
+
+    if (is_bool) {
+        for (uint32_t i = 0; i < count; ++i) {
+            fmt("    cvt.u16.u8 %w3, $v_tmp2_$u;\n"
+                "    setp.ne.u16 $v_out_$u, %w3, 0;\n",
+                v, i,
+                v, i);
         }
     }
 }
@@ -301,6 +326,13 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
         } else if (count == var_count * 2) {
             fmt("    mov.b$u $v_$u, {$v, $v};\n",
                 var_bits, v, i, jitc_var(values[2*i]), jitc_var(values[2*i+1]));
+        } else if (count == var_count * 4) {
+            fmt("    mov.b$u $v_$u, {$v, $v, $v, $v};\n",
+                var_bits, v, i,
+                jitc_var(values[4*i]),
+                jitc_var(values[4*i+1]),
+                jitc_var(values[4*i+2]),
+                jitc_var(values[4*i+3]));
         } else {
             jitc_fail("jitc_cuda_render_scatter_packet(): internal failure! (1)");
         }
