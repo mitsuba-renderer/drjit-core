@@ -286,19 +286,11 @@ using CUgraphicsResource = struct CUgraphicsResource_st *;
 using GLuint = unsigned int;
 using GLenum = unsigned int;
 
-enum cudaGraphicsMapFlags {
-    cudaGraphicsMapFlagsNone         = 0,  /**< Default; Assume resource can be read/written */
-    cudaGraphicsMapFlagsReadOnly     = 1,  /**< CUDA will not write to this resource */
-    cudaGraphicsMapFlagsWriteDiscard = 2   /**< CUDA will only write to and will not read from this resource */
-};
-
-enum cudaMemcpyKind {
-    cudaMemcpyHostToHost          =   0,      /**< Host   -> Host */
-    cudaMemcpyHostToDevice        =   1,      /**< Host   -> Device */
-    cudaMemcpyDeviceToHost        =   2,      /**< Device -> Host */
-    cudaMemcpyDeviceToDevice      =   3,      /**< Device -> Device */
-    cudaMemcpyDefault             =   4       /**< Direction of the transfer is inferred from the pointer values. Requires unified virtual addressing */
-};
+#define CU_GRAPHICS_REGISTER_FLAGS_NONE 0x00
+#define CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY 0x01
+#define CU_GRAPHICS_REGISTER_FLAGS_WRITE_DISCARD 0x02
+#define CU_GRAPHICS_REGISTER_FLAGS_SURFACE_LDST 0x04
+#define CU_GRAPHICS_REGISTER_FLAGS_TEXTURE_GATHER 0x08
 
 DR_CUDA_SYM(CUresult (*cuGraphicsGLRegisterBuffer)(CUgraphicsResource *, GLuint,
                                                    unsigned int));
