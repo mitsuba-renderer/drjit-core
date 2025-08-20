@@ -280,4 +280,32 @@ DR_CUDA_SYM(CUresult (*cuMemcpy3DAsync)(const CUDA_MEMCPY3D *, CUstream));
 DR_CUDA_SYM(CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream));
 DR_CUDA_SYM(CUresult (*cuProfilerStart)());
 DR_CUDA_SYM(CUresult (*cuProfilerStop)());
+
+// ----- CUDA / OpenGL interop
+using CUgraphicsResource = struct CUgraphicsResource_st *;
+using GLuint = unsigned int;
+using GLenum = unsigned int;
+
+#define CU_GRAPHICS_REGISTER_FLAGS_NONE 0x00
+#define CU_GRAPHICS_REGISTER_FLAGS_READ_ONLY 0x01
+#define CU_GRAPHICS_REGISTER_FLAGS_WRITE_DISCARD 0x02
+#define CU_GRAPHICS_REGISTER_FLAGS_SURFACE_LDST 0x04
+#define CU_GRAPHICS_REGISTER_FLAGS_TEXTURE_GATHER 0x08
+
+DR_CUDA_SYM(CUresult (*cuGraphicsGLRegisterBuffer)(CUgraphicsResource *, GLuint,
+                                                   unsigned int));
+DR_CUDA_SYM(CUresult (*cuGraphicsGLRegisterImage)(
+    CUgraphicsResource *pCudaResource, GLuint, GLenum, unsigned int));
+DR_CUDA_SYM(CUresult (*cuGraphicsUnregisterResource)(CUgraphicsResource));
+DR_CUDA_SYM(CUresult (*cuGraphicsMapResources)(unsigned int,
+                                               CUgraphicsResource *, CUstream));
+DR_CUDA_SYM(CUresult (*cuGraphicsUnmapResources)(unsigned int,
+                                                 CUgraphicsResource *,
+                                                 CUstream));
+DR_CUDA_SYM(CUresult (*cuGraphicsSubResourceGetMappedArray)(
+    CUarray *, CUgraphicsResource, unsigned int, unsigned int mipLevel));
+DR_CUDA_SYM(CUresult (*cuGraphicsResourceGetMappedPointer)(CUdeviceptr *,
+                                                           size_t *,
+                                                           CUgraphicsResource));
+
 #endif
