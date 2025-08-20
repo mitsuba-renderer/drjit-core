@@ -2285,8 +2285,10 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
         compute_capability = thread_state(backend)->compute_capability;
 
     switch (vt) {
+        case VarType::Int8:
+        case VarType::UInt8:
         case VarType::Bool:
-            // Scatter-reductions of masks not implemented
+            // Scatter-reductions of masks/8-bit ints not implemented
             return false;
 
         case VarType::Float16:

@@ -339,12 +339,7 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                     "    setp.ne.u16 $v, %w0, 0;\n",
                     offset, v);
         } else if (v->is_literal()) {
-            // We need a special case for subword-sized types
-            if (!jitc_is_subword(v))
-                fmt("    mov.$b $v, $l;\n", v, v, v);
-            else
-                fmt("    mov.b16 %w3, $l;\n"
-                    "    mov.b16 {$v, _}, %w3;\n", v, v);
+            fmt("    mov.$b $v, $l;\n", v, v, v);
         } else {
             jitc_cuda_render(v);
         }
@@ -444,6 +439,29 @@ void jitc_cuda_render_loop_end(Variable *a0) {
         a0->reg_index, a0->reg_index);
 }
 
+static bool jitc_int8_unsupported(VarKind kind) {
+    switch (kind) {
+        case VarKind::Literal:
+        case VarKind::Select:
+        case VarKind::Add:
+        case VarKind::Sub:
+        case VarKind::Mul:
+        case VarKind::Fma:
+        case VarKind::Abs:
+        case VarKind::Neg:
+        case VarKind::Not:
+        case VarKind::Or:
+        case VarKind::And:
+        case VarKind::Xor:
+        case VarKind::Shl:
+        case VarKind::Shr:
+        case VarKind::Popc:
+        case VarKind::Bitcast:
+            return true;
+        default:
+            return false;
+    }
+}
 
 static void jitc_cuda_render(Variable *v) {
     const char *stmt = nullptr;
@@ -459,30 +477,64 @@ static void jitc_cuda_render(Variable *v) {
 
     const ThreadState *ts = thread_state_cuda;
 
-    bool f32_upcast = jitc_is_half(v) &&
-        ts->compute_capability < jitc_fp16_min_compute_cuda((VarKind)v->kind);
+    VarType orig_vt = (VarType) v->type, vt = orig_vt;
+    VarKind kind = (VarKind) v->kind;
 
-    if (f32_upcast) {
+    switch (orig_vt) {
+        case VarType::Float16:
+            if (ts->compute_capability < jitc_fp16_min_compute_cuda(kind))
+                vt = VarType::Float32;
+            break;
+
+        case VarType::Int8:
+        case VarType::UInt8:
+            if (jitc_int8_unsupported(kind))
+                vt = orig_vt == VarType::Int8 ? VarType::Int16 : VarType::UInt16;
+            break;
+
+        case VarType::Bool:
+            if (a0) {
+                if ((VarType) a0->type == VarType::UInt8) {
+                    orig_vt = VarType::UInt8;
+                    vt = VarType::UInt16;
+                } else if ((VarType) a0->type == VarType::Int8) {
+                    orig_vt = VarType::Int8;
+                    vt = VarType::Int16;
+                }
+            }
+            break;
+
+        default:
+            break;
+    }
+
+    if (vt != orig_vt) {
         Variable* b = const_cast<Variable*>(v);
-        b->type = (uint32_t)VarType::Float32;
+
+        if ((VarType) b->type == orig_vt)
+            b->type = (uint32_t) vt;
+
         for (size_t i = 0; i < 4; ++i) {
             Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
-            if (dep) {
-                fmt("    cvt.f32.f16 %f$u, %h$u;\n", dep->reg_index, dep->reg_index);
-                dep->type = (uint32_t)VarType::Float32;
+
+            if (dep && (VarType) dep->type == orig_vt) {
+                fmt("    cvt.$s.$t $s$u, $v;\n",
+                    type_name_ptx[(uint32_t) vt],
+                    dep,
+                    type_prefix[(uint32_t) vt],
+                    dep->reg_index,
+                    dep
+                );
+
+                dep->type = (uint32_t) vt;
             }
         }
     }
 
-    switch ((VarKind) v->kind) {
+    switch (kind) {
         case VarKind::Undefined:
         case VarKind::Literal:
-            // We need a special case for subword-sized types
-            if (!jitc_is_subword(v))
-                fmt("    mov.$b $v, $l;\n", v, v, v);
-            else
-                fmt("    mov.b16 %w3, $l;\n"
-                    "    mov.b16 {$v, _}, %w3;\n", v, v);
+            fmt("    mov.$b $v, $l;\n", v, v, v);
             break;
 
         case VarKind::Nop:
@@ -600,38 +652,19 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::Eq:
-            if (jitc_is_bool(a0)) {
-                fmt("    xor.$t $v, $v, $v;\n"
-                    "    not.$t $v, $v;", v, v, a0, a1, v, v, v);
-            } else if (type_size[a0->type] > 1 || type_size[a1->type] > 1) {
+            if (!jitc_is_bool(a0)) {
                 fmt("    setp.eq.$t $v, $v, $v;\n", a0, v, a0, a1);
             } else {
-                // Special case for subword-sized types
-                fmt("    {\n"
-                    "        .reg.b16 %tmp1, %tmp2;\n"
-                    "        mov.b16 %tmp1, {$v, 0};\n"
-                    "        mov.b16 %tmp2, {$v, 0};\n"
-                    "        setp.eq.b16 $v, %tmp1, %tmp2;\n"
-                    "    }\n",
-                    a0, a1, v);
+                fmt("    xor.$t $v, $v, $v;\n"
+                    "    not.$t $v, $v;", v, v, a0, a1, v, v, v);
             }
             break;
 
         case VarKind::Neq:
-            if (jitc_is_bool(a0)) {
-                fmt("    xor.$t $v, $v, $v;\n", v, v, a0, a1);
-            } else if (type_size[a0->type] > 1 || type_size[a1->type] > 1) {
+            if (!jitc_is_bool(a0))
                 fmt("    setp.ne.$t $v, $v, $v;\n", a0, v, a0, a1);
-            } else {
-                // Special case for subword-sized types
-                fmt("    {\n"
-                    "        .reg.b16 %tmp1, %tmp2;\n"
-                    "        mov.b16 %tmp1, {$v, 0};\n"
-                    "        mov.b16 %tmp2, {$v, 0};\n"
-                    "        setp.ne.b16 $v, %tmp1, %tmp2;\n"
-                    "    }\n",
-                    a0, a1, v);
-            }
+            else
+                fmt("    xor.$t $v, $v, $v;\n", v, v, a0, a1);
             break;
 
         case VarKind::Lt:
@@ -738,43 +771,17 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::And:
-            if (a0->type == a1->type) {
-                if (!jitc_is_subword(v)) {
-                    fmt("    and.$b $v, $v, $v;\n", v, v, a0, a1);
-                } else {
-                    // Special case for subword-sized output
-                    fmt("    {\n"
-                        "        .reg.b16 %tmp1, %tmp2;\n"
-                        "        mov.b16 %tmp1, {$v, 0};\n"
-                        "        mov.b16 %tmp2, {$v, 0};\n"
-                        "        and.b16 %tmp1, %tmp1, %tmp2;\n"
-                        "        mov.b16 {$v, _}, %tmp1;\n"
-                        "    }\n",
-                        a0, a1, v);
-                }
-            } else {
+            if (a0->type == a1->type)
+                fmt("    and.$b $v, $v, $v;\n", v, v, a0, a1);
+            else
                 fmt("    selp.$b $v, $v, 0, $v;\n", v, v, a0, a1);
-            }
             break;
 
         case VarKind::Or:
-            if (a0->type == a1->type) {
-                if (!jitc_is_subword(v)) {
-                    fmt("    or.$b $v, $v, $v;\n", v, v, a0, a1);
-                } else {
-                    // Special case for subword-sized output
-                    fmt("    {\n"
-                        "        .reg.b16 %tmp1, %tmp2;\n"
-                        "        mov.b16 %tmp1, {$v, 0};\n"
-                        "        mov.b16 %tmp2, {$v, 0};\n"
-                        "        or.b16 %tmp1, %tmp1, %tmp2;\n"
-                        "        mov.b16 {$v, _}, %tmp1;\n"
-                        "    }\n",
-                        a0, a1, v);
-                }
-            } else {
+            if (a0->type == a1->type)
+                fmt("    or.$b $v, $v, $v;\n", v, v, a0, a1);
+            else
                 fmt("    selp.$b $v, -1, $v, $v;\n", v, v, a0, a1);
-            }
             break;
 
         case VarKind::Xor:
@@ -782,28 +789,20 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::Shl:
-        case VarKind::Shr: {
-            const char *op_str = ((VarKind) v->kind == VarKind::Shl) ? "shl" : "shr";
-            uint32_t size = type_size[v->type];
-            if (size == 4) {
-                fmt("    $s.$b $v, $v, $v;\n", op_str, v, v, a0, a1);
-            } else if (size == 1) {
-                // Special case for subword-sized types.
-                // Shifts required the shift integer to be a u32
-                fmt("    {\n"
-                    "        .reg.b16 %tmp;\n"
-                    "        mov.b16 %tmp, {$v, 0};\n"
-                    "        cvt.u32.$t %r3, $v;\n"
-                    "        $s.b16 %tmp, %tmp, %r3;\n"
-                    "        mov.b16 {$v, _}, %tmp;\n"
-                    "    }\n",
-                    a0, a1, a1, op_str, v);
-            } else {
+            if (type_size[v->type] == 4)
+                fmt("    shl.$b $v, $v, $v;\n", v, v, a0, a1);
+            else
                 fmt("    cvt.u32.$t %r3, $v;\n"
-                    "    $s.$b $v, $v, %r3;\n", a1, a1, op_str, v, v, a0);
-            }
+                    "    shl.$b $v, $v, %r3;\n", a1, a1, v, v, a0);
             break;
-        }
+
+        case VarKind::Shr:
+            if (type_size[v->type] == 4)
+                fmt("    shr.$t $v, $v, $v;\n", v, v, a0, a1);
+            else
+                fmt("    cvt.u32.$t %r3, $v;\n"
+                    "    shr.$t $v, $v, %r3;\n", a1, a1, v, v, a0);
+            break;
 
         case VarKind::RcpApprox:
             fmt("    rcp.approx.ftz.$t $v, $v;\n", v, v, a0);
@@ -837,41 +836,18 @@ static void jitc_cuda_render(Variable *v) {
             fmt("    tanh.approx.$t $v, $v;\n", v, v, a0);
             break;
 
-
         case VarKind::Cast:
             if (jitc_is_bool(v)) {
-                // Destination is a boolean, use: v = (a0 != 0)
-                if (!jitc_is_subword(a0)) {
-                    fmt(jitc_is_float(a0) && !jitc_is_half(a0)
-                        ? "    setp.ne.$t $v, $v, 0.0;\n"
-                        : "    setp.ne.$b $v, $v, 0;\n",
-                        a0, v, a0);
-                } else {
-                    // Special case for subword-sized input types, e.g. u8 to bool
-                    fmt("    {\n"
-                        "        .reg.b16 %tmp;\n"
-                        "        mov.b16 %tmp, {$v, 0};\n"
-                        "        setp.ne.b16 $v, %tmp, 0;\n"
-                        "    }\n",
-                        a0, v);
-                }
+                fmt(jitc_is_float(a0) && !jitc_is_half(a0)
+                    ? "    setp.ne.$t $v, $v, 0.0;\n"
+                    : "    setp.ne.$b $v, $v, 0;\n",
+                    a0, v, a0);
             } else if (jitc_is_bool(a0)) {
-                // Source is a boolean, we can use: select(a0, 1, 0)
-                if (!jitc_is_subword(v)) {
-                    // No selp for fp16 so use b16 view
-                    fmt(jitc_is_half(v)  ? "    selp.$b $v, 0x3C00, 0, $v;\n" :
-                        jitc_is_float(v) ? "    selp.$t $v, 1.0, 0.0, $v;\n" :
-                                           "    selp.$t $v, 1, 0, $v;\n",
-                        v, v, a0);
-                } else {
-                    // Special case for subword-sized output types, e.g. bool to u8
-                    fmt("    {\n"
-                        "        .reg.b16 %tmp;\n"
-                        "        selp.b16 %tmp, 1, 0, $v;\n"
-                        "        mov.b16 {$v, _}, %tmp;\n"
-                        "    }\n",
-                        a0, v);
-                }
+                // No selp for fp16 so use b16 view
+                fmt(jitc_is_half(v)  ? "    selp.$b $v, 0x3C00, 0, $v;\n" :
+                    jitc_is_float(v) ? "    selp.$t $v, 1.0, 0.0, $v;\n" :
+                                       "    selp.$t $v, 1, 0, $v;\n",
+                    v, v, a0);
             } else if (jitc_is_float(v) && !jitc_is_float(a0)) {
                 fmt("    cvt.rn.$t.$t $v, $v;\n", v, a0, v, a0);
             } else if (!jitc_is_float(v) && jitc_is_float(a0)) {
@@ -886,12 +862,7 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::Bitcast:
-            if (!jitc_is_subword(a0)) {
-                fmt("    mov.$b $v, $v;\n", v, v, a0);
-            } else {
-                // Special case for subword-sized types, e.g. bool to u8
-                fmt("    mov.b16 {$v, _}, {$v, 0};\n", v, a0);
-            }
+            fmt("    mov.$b $v, $v;\n", v, v, a0);
             break;
 
         case VarKind::Gather: {
@@ -912,7 +883,7 @@ static void jitc_cuda_render(Variable *v) {
                 if (is_masked) {
                     if (is_bool)
                         fmt("    mov.b16 %w0, 0;\n");
-                    else if ((VarType) v->type == VarType::UInt8)
+                    else if ((VarType) v->type == VarType::UInt8 || (VarType) v->type == VarType::Int8)
                         // There is no `mov.b8`
                         fmt("    cvt.u8.u16 $v, 0;\n", v);
                     else
@@ -1047,14 +1018,11 @@ static void jitc_cuda_render(Variable *v) {
 #endif
 
         case VarKind::Extract:
-            if (!jitc_is_subword(v)) {
-                fmt("    mov.$b $v, $v_out_$u;\n", v, v, a0, (uint32_t) v->literal);
+            if (vt == VarType::UInt8 || vt == VarType::Int8) {
+                fmt("    cvt.u16.u8 %w3, $v_out_$u;\n", a0, (uint32_t) v->literal);
+                fmt("    cvt.u8.u16 $v, %w3;\n", v);
             } else {
-                // Special case for subword-sized types (there's no `mov.b8` instruction)
-                fmt("    mov.b16 %w3, {$v_out_$u, 0};\n"
-                    "    mov.b16 {$v, _}, %w3;\n",
-                    a0, (uint32_t) v->literal,
-                    v);
+                fmt("    mov.$b $v, $v_out_$u;\n", v, v, a0, (uint32_t) v->literal);
             }
             break;
 
@@ -1151,16 +1119,26 @@ static void jitc_cuda_render(Variable *v) {
                       var_kind_name[(uint32_t) v->kind]);
     }
 
-    if (f32_upcast) {
+    if (vt != orig_vt) {
         Variable* b = const_cast<Variable*>(v);
-        b->type = (uint32_t)VarType::Float16;
+
         for (size_t i = 0; i < 4; ++i) {
             Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
-            if (dep)
-                dep->type = (uint32_t)VarType::Float16;
+            if (dep && (VarType) dep->type == vt)
+                dep->type = (uint32_t) orig_vt;
         }
 
-        fmt("    cvt.rn.f16.f32 $v, %f$u;\n", v, v->reg_index);
+        if ((VarType) b->type == vt) {
+            b->type = (uint32_t) orig_vt;
+
+            fmt("    cvt$s.$t.$s $v, $s$u;\n",
+                orig_vt == VarType::Float16 ? ".rn" : "",
+                v,
+                type_name_ptx[(uint32_t) vt],
+                v,
+                type_prefix[(uint32_t) vt],
+                v->reg_index);
+        }
     }
 }
 

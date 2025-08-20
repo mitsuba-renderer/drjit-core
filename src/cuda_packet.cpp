@@ -8,8 +8,6 @@
     license that can be found in the LICENSE file.
 */
 
-#include <cassert>
-
 #include "eval.h"
 #include "cuda_eval.h"
 #include "var.h"
@@ -22,18 +20,24 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
 
 void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
                                     const Variable *index, const Variable *mask) {
-    bool is_masked = !mask->is_literal() || mask->literal != 1;
+    bool is_masked = !mask->is_literal() || mask->literal != 1,
+         is_bool   = (VarType) v->type == VarType::Bool;
 
     uint32_t count = (uint32_t) v->literal,
              tsize = type_size[v->type],
              total_bytes = count * tsize;
 
-    const char *suffix;
-
     fmt("    mad.wide.$t %rd3, $v, $u, $v;\n"
         "    .reg.$t $v_out_<$u>;\n",
         index, index, total_bytes, ptr,
         v, v, count);
+
+    const char *suffix, *out_name = "out";
+
+    if (is_bool) {
+        fmt("    .reg.b8 $v_tmp2_<$u>;\n", v, count);
+        out_name = "tmp2";
+    }
 
     // Number of output/temporary output registers and their size
     uint32_t dst_count = count,
@@ -108,32 +112,39 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
 
         for (uint32_t i = 0; i < dst_count; ++i) {
             if (outputs_per_tmp == 1) {
-                fmt("    mov.b$u $v_out_$u, $v_tmp_$u;\n",
-                    dst_bits, v, i, v, i);
+                fmt("    mov.b$u $v_$s_$u, $v_tmp_$u;\n",
+                    dst_bits, v, out_name, i, v, i);
             } else if (outputs_per_tmp == 2) {
-                // TODO: double-check the order of the output registers
-                fmt("    mov.b$u {$v_out_$u, $v_out_$u}, $v_tmp_$u;\n",
+                fmt("    mov.b$u {$v_$s_$u, $v_$s_$u}, $v_tmp_$u;\n",
                     dst_bits,
-                    v, 2 * i,
-                    v, 2 * i + 1,
+                    v, out_name, 2 * i,
+                    v, out_name, 2 * i + 1,
                     v, i);
             } else if (outputs_per_tmp == 4) {
-                // TODO: double-check the order of the output registers
-                fmt("    mov.b$u {$v_out_$u, $v_out_$u, $v_out_$u, $v_out_$u}, $v_tmp_$u;\n",
+                fmt("    mov.b$u {$v_$s_$u, $v_$s_$u, $v_$s_$u, $v_$s_$u}, $v_tmp_$u;\n",
                     dst_bits,
-                    v, 4 * i,
-                    v, 4 * i + 1,
-                    v, 4 * i + 2,
-                    v, 4 * i + 3,
+                    v, out_name, 4 * i,
+                    v, out_name, 4 * i + 1,
+                    v, out_name, 4 * i + 2,
+                    v, out_name, 4 * i + 3,
                     v, i);
             } else {
-                assert(false);
+                jitc_fail("jitc_cuda_render_gather_packet: internal error!");
             }
         }
     } else if (tsize == 2) {
         for (uint32_t i = 0; i < count/2; ++i) {
-            fmt("    mov.b$u {$v_out_$u, $v_out_$u}, $v_tmp_$u;\n",
-                dst_bits, v, 2*i, v, 2*i+1, v, i);
+            fmt("    mov.b$u {$v_$s_$u, $v_$s_$u}, $v_tmp_$u;\n",
+                dst_bits, v, out_name, 2*i, v, out_name, 2*i+1, v, i);
+        }
+    }
+
+    if (is_bool) {
+        for (uint32_t i = 0; i < count; ++i) {
+            fmt("    cvt.u16.u8 %w3, $v_tmp2_$u;\n"
+                "    setp.ne.u16 $v_out_$u, %w3, 0;\n",
+                v, i,
+                v, i);
         }
     }
 }
@@ -315,6 +326,13 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
         } else if (count == var_count * 2) {
             fmt("    mov.b$u $v_$u, {$v, $v};\n",
                 var_bits, v, i, jitc_var(values[2*i]), jitc_var(values[2*i+1]));
+        } else if (count == var_count * 4) {
+            fmt("    mov.b$u $v_$u, {$v, $v, $v, $v};\n",
+                var_bits, v, i,
+                jitc_var(values[4*i]),
+                jitc_var(values[4*i+1]),
+                jitc_var(values[4*i+2]),
+                jitc_var(values[4*i+3]));
         } else {
             jitc_fail("jitc_cuda_render_scatter_packet(): internal failure! (1)");
         }
