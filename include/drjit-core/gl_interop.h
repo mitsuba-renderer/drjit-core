@@ -63,15 +63,12 @@ void *jit_map_graphics_resource_ptr(void *cuda_resource, size_t *n_bytes);
  *
  * \param cuda_resource
  *     The CUDA graphics resource to map
- * \param array_index
- *     The array index of the sub-resource (default: 0)
  * \param mip_level
  *     The mip level of the sub-resource (default: 0)
  * \return CUDA array handle to the mapped sub-resource
  */
 extern JIT_EXPORT
-void *jit_map_graphics_resource_array(void *cuda_resource, uint32_t array_index = 0,
-                                      uint32_t mip_level = 0);
+void *jit_map_graphics_resource_array(void *cuda_resource, uint32_t mip_level = 0);
 
 /**
  * Unmap a CUDA graphics resource that was previously mapped with
@@ -92,20 +89,15 @@ void jit_unmap_graphics_resource(void *cuda_resource);
  *     Source buffer (host or device memory)
  * \param src_pitch
  *     Pitch (bytes per row) of the source buffer
- * \param component_size_bytes
- *     Size in bytes of each component
- * \param width
- *     Width of the region to copy (in elements)
  * \param height
  *     Height of the region to copy (in elements)
  * \param from_host
  *     True if copying from host memory, false for device memory
  */
-extern JIT_EXPORT
-void jit_memcpy_2d_to_array_async(void *dst, void *src,
-                                  size_t src_pitch, size_t component_size_bytes,
-                                  size_t width, size_t height,
-                                  bool from_host);
+extern JIT_EXPORT void jit_memcpy_2d_to_array_async(void *dst, const void *src,
+                                                    size_t src_pitch,
+                                                    size_t height,
+                                                    bool from_host);
 
 #if defined(__cplusplus)
 }

@@ -38,8 +38,13 @@ void jit_unregister_cuda_resource(void *cuda_resource) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
-    cuda_check(
-        cuGraphicsUnregisterResource((CUgraphicsResource) cuda_resource));
+    uint32_t rv = cuGraphicsUnregisterResource((CUgraphicsResource) cuda_resource);
+
+    // OpenGL has already shut down. Ignore.
+    if (rv == CUDA_ERROR_INVALID_GRAPHICS_CONTEXT)
+        return;
+
+    cuda_check(rv);
 }
 
 void *jit_map_graphics_resource_ptr(void *cuda_resource, size_t *n_bytes) {
@@ -56,8 +61,7 @@ void *jit_map_graphics_resource_ptr(void *cuda_resource, size_t *n_bytes) {
     return ptr;
 }
 
-void *jit_map_graphics_resource_array(void *cuda_resource, uint32_t array_index,
-                                      uint32_t mip_level) {
+void *jit_map_graphics_resource_array(void *cuda_resource, uint32_t mip_level) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
@@ -65,8 +69,7 @@ void *jit_map_graphics_resource_array(void *cuda_resource, uint32_t array_index,
     cuda_check(cuGraphicsMapResources(1, (CUgraphicsResource *) &cuda_resource,
                                       ts->stream));
     cuda_check(cuGraphicsSubResourceGetMappedArray(
-        (CUarray *) &ptr, (CUgraphicsResource) cuda_resource, array_index,
-        mip_level));
+        (CUarray *) &ptr, (CUgraphicsResource) cuda_resource, 0, mip_level));
 
     return ptr;
 }
@@ -79,8 +82,7 @@ void jit_unmap_graphics_resource(void *cuda_resource) {
         cuGraphicsUnmapResources(1, (CUgraphicsResource *) &cuda_resource, 0));
 }
 
-void jit_memcpy_2d_to_array_async(void *dst, void *src, size_t src_pitch,
-                                  size_t component_size_bytes, size_t width,
+void jit_memcpy_2d_to_array_async(void *dst, const void *src, size_t src_pitch,
                                   size_t height, bool from_host) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
@@ -95,10 +97,11 @@ void jit_memcpy_2d_to_array_async(void *dst, void *src, size_t src_pitch,
         op.srcMemoryType = CU_MEMORYTYPE_DEVICE;
         op.srcDevice     = (CUdeviceptr) src;
     }
+
     op.srcPitch      = src_pitch;
     op.dstMemoryType = CU_MEMORYTYPE_ARRAY;
     op.dstArray      = (CUarray) dst;
-    op.WidthInBytes  = width * component_size_bytes;
+    op.WidthInBytes  = src_pitch;
     op.Height        = height;
 
     cuda_check(cuMemcpy2DAsync(&op, ts->stream));
