@@ -345,7 +345,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
             auto it = call->data_map.find(key);
             if (unlikely(it == call->data_map.end())) {
                 jitc_fail("jitc_llvm_assemble_func(): could not find entry for "
-                          "variable r%u in 'data_map'", sv.index);
+                          "variable r%u in 'data_map' for function %s", sv.index, call->name.c_str());
                 continue;
             }
 
