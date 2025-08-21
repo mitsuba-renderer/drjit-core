@@ -1091,6 +1091,11 @@ inline bool jitc_is_int(VarType type) {
     return jitc_is_sint(type) || jitc_is_uint(type);
 }
 
+/// Returns true if the value is represented using 8 bits, excluding booleans.
+inline bool jitc_is_b8(VarType type) {
+    return type == VarType::Int8 || type == VarType::UInt8;
+}
+
 inline bool jitc_is_void(VarType type) {
     return type == VarType::Void;
 }

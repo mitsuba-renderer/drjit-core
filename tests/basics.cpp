@@ -497,6 +497,8 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
         VarType::Float16,
         VarType::Float32,
         VarType::Float64,
+        VarType::Int8,
+        VarType::UInt8,
         VarType::Int32,
         VarType::UInt32,
         VarType::Int64,
@@ -520,20 +522,25 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
     for (int reinterpret = 0; reinterpret < 2; ++reinterpret) {
         for (VarType source_type : types) {
             for (VarType target_type : types) {
+                bool source_bool = source_type == VarType::Bool,
+                     target_bool = target_type == VarType::Bool;
                 bool test_sign =
+                    source_type != VarType::UInt8 &&
                     source_type != VarType::UInt32 &&
                     source_type != VarType::UInt64 &&
-                    source_type != VarType::Bool &&
+                    !source_bool &&
+                    target_type != VarType::UInt8 &&
                     target_type != VarType::UInt32 &&
                     target_type != VarType::UInt64 &&
-                    target_type != VarType::Bool;
+                    !target_bool;
 
                 if (type_sizes[(int) source_type] == 0 ||
                     type_sizes[(int) target_type] == 0)
                     continue;
 
-                if (reinterpret && type_sizes[(int) source_type] !=
-                                   type_sizes[(int) target_type])
+                // Booleans can only be bitcast to and from boolean.
+                if (reinterpret && (source_bool ? 0 : type_sizes[(int) source_type]) !=
+                                   (target_bool ? 0 : type_sizes[(int) target_type]))
                     continue;
 
                 int size = source_type == VarType::Bool ? 2 : 10;
@@ -562,7 +569,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
                     }
 
                     source_value[i] = jit_var_literal(Backend, source_type,
-                                                          &value, 1, i < size);
+                                                      &value, 1, i < size);
                     target_value[i] = jit_var_cast(
                         source_value[i], target_type, reinterpret);
                     jit_var_schedule(target_value[i]);
@@ -571,7 +578,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
 
                 for (int i = 0; i < size; ++i) {
                     int ref_id = target_value[i],
-                      value_id = target_value[i + size];
+                        value_id = target_value[i + size];
                     uint64_t value = 0, ref = 0;
                     jit_var_read(value_id, 0, &value);
                     jit_var_read(ref_id, 0, &ref);
