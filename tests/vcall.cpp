@@ -201,7 +201,7 @@ TEST_BOTH(01_recorded_vcall) {
     };
 
     for (size_t i = 0; i < 2; ++i) {
-        jit_set_flag(JitFlag::OptimizeCalls, i);
+        jit_set_flag(JitFlag::OptimizeCalls, (int) i);
 
         uint32_t inputs[n_inputs] = { x.index() };
         uint32_t outputs[n_outputs] = { 0 };

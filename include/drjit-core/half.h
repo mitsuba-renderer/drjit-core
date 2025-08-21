@@ -29,9 +29,16 @@ struct half {
     half &operator=(const half &) = default;
     half &operator=(half &&) = default;
 
+#if defined(_MSC_VER)
+  #pragma warning(push)
+  #pragma warning(disable : 4756) /* warning C4756: overflow in constant arithmetic */
+#endif
     template <typename Value, enable_if_t<std::is_arithmetic_v<Value> &&
                                           !std::is_same_v<Value, half>> = 0>
     half(Value val) : value(float32_to_float16((float) val)) {}
+#if defined(_MSC_VER)
+#  pragma warning(pop)
+#endif
 
     half operator-() const { return from_binary(value ^ (uint16_t) 0x8000); }
 

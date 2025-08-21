@@ -150,7 +150,7 @@ TEST_BOTH(06_reduce_hsum) {
  */
 TEST_BOTH(07_prefix_sum) {
 
-    auto func = [](UInt32 x) { return block_prefix_sum(x, x.size()); };
+    auto func = [](UInt32 x) { return block_prefix_sum(x, (uint32_t) x.size()); };
 
     FrozenFunction frozen(Backend, func);
 
@@ -251,7 +251,7 @@ TEST_LLVM(10_scatter) {
 
 TEST_BOTH(11_opaque_width) {
     auto func = [](UInt32 x) {
-        auto y = block_prefix_sum(x+1, x.size());
+        auto y = block_prefix_sum(x+1, (uint32_t) x.size());
         if (jit_flag(JitFlag::FreezingScope))
             y = y / x.opaque_width_();
         else
