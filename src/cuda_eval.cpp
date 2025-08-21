@@ -1081,11 +1081,11 @@ static void jitc_cuda_render(Variable *v) {
         case VarKind::CondMid: {
                 const CondData *cd = (CondData *) a0->data;
                 for (size_t i = 0; i < cd->indices_out.size(); ++i) {
-                    Variable *vt = jitc_var(cd->indices_t[i]),
-                             *vo = jitc_var(cd->indices_out[i]);
+                    Variable *vt2 = jitc_var(cd->indices_t[i]),
+                             *vo  = jitc_var(cd->indices_out[i]);
                     if (!vo || !vo->reg_index)
                         continue;
-                    fmt("    mov.$b $v, $v;\n", vo, vo, vt);
+                    fmt("    mov.$b $v, $v;\n", vo, vo, vt2);
                 }
                 fmt("    bra l_$u_end;\n\n"
                     "l_$u_f:\n", a0->reg_index, a0->reg_index);

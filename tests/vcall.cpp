@@ -161,6 +161,7 @@ const char *backend_name(JitBackend backend) {
 TEST_BOTH(01_recorded_vcall) {
     /// Test a simple virtual function call
     struct Base {
+        virtual ~Base() = default;
         virtual Float f(Float x) = 0;
     };
 
@@ -236,6 +237,7 @@ TEST_BOTH(02_calling_conventions) {
     using Double = Array<double>;
 
     struct Base {
+        virtual ~Base() = default;
         virtual tuple<Mask, Float, Double, Float, Mask>
         f(Mask p0, Float p1, Double p2, Float p3, Mask p4) = 0;
     };
@@ -347,6 +349,7 @@ TEST_BOTH(03_devirtualize) {
     /* This test checks that outputs which produce identical values across
        all instances are moved out of the virtual call interface. */
     struct Base {
+        virtual ~Base() = default;
         virtual tuple<Float, Float, Float> f(Float p1, Float p2) = 0;
     };
 
@@ -468,6 +471,7 @@ TEST_BOTH(04_extra_data) {
 
     /// Ensure that evaluated scalar fields in instances can be accessed
     struct Base {
+        virtual ~Base() = default;
         virtual Float f(Float) = 0;
     };
 
@@ -549,6 +553,7 @@ TEST_BOTH_FP32(05_side_effects) {
     */
 
     struct Base {
+        virtual ~Base() = default;
         virtual void go() = 0;
     };
 
@@ -613,6 +618,7 @@ TEST_BOTH_FP32(06_side_effects_only_once) {
        once, even when that function is evaluated multiple times. */
 
     struct Base {
+        virtual ~Base() = default;
         virtual tuple<Float, Float> f() = 0;
     };
 
@@ -695,6 +701,7 @@ TEST_BOTH(07_multiple_calls) {
        files!*/
 
     struct Base {
+        virtual ~Base() = default;
         virtual Float f(Float) = 0;
     };
 
@@ -779,8 +786,14 @@ TEST_BOTH(08_big) {
        relatively many of them. This tests the various tables, offset
        calculations, binary search trees, etc. */
 
-    struct Base1 { virtual Float f() = 0; };
-    struct Base2 { virtual Float f() = 0; };
+    struct Base1 {
+        virtual ~Base1() = default;
+        virtual Float f() = 0;
+    };
+    struct Base2 {
+        virtual ~Base2() = default;
+        virtual Float f() = 0;
+    };
 
     struct I1 : Base1 {
         Float v;
@@ -900,7 +913,8 @@ TEST_BOTH(09_self) {
     struct Base;
     using BasePtr = Array<Base *>;
 
-    struct Base { virtual Array<Base *> f() = 0; };
+    struct Base {
+        virtual ~Base() = default; virtual Array<Base *> f() = 0; };
     struct I : Base { BasePtr f() {
         BasePtr result = this;
         return result;
@@ -948,10 +962,16 @@ TEST_BOTH(09_self) {
 
 
 TEST_BOTH(10_recursion) {
-    struct Base1 { virtual Float f(const Float &x) = 0; };
+    struct Base1 {
+        virtual ~Base1() = default;
+        virtual Float f(const Float &x) = 0;
+    };
     using Base1Ptr = Array<Base1 *>;
 
-    struct Base2 { virtual Float g(const Base1Ptr &ptr, const Float &x) = 0; };
+    struct Base2 {
+        virtual ~Base2() = default;
+        virtual Float g(const Base1Ptr &ptr, const Float &x) = 0;
+    };
     using Base2Ptr = Array<Base2 *>;
 
     struct I1 : Base1 {
@@ -1047,10 +1067,16 @@ TEST_BOTH(10_recursion) {
 
 
 TEST_BOTH(11_recursion_with_local) {
-    struct Base1 { virtual Float f(const Float &x) = 0; };
+    struct Base1 {
+        virtual ~Base1() = default;
+        virtual Float f(const Float &x) = 0;
+    };
     using Base1Ptr = Array<Base1 *>;
 
-    struct Base2 { virtual Float g(const Base1Ptr &ptr, const Float &x) = 0; };
+    struct Base2 {
+        virtual ~Base2() = default;
+        virtual Float g(const Base1Ptr &ptr, const Float &x) = 0;
+    };
     using Base2Ptr = Array<Base2 *>;
 
     struct I1 : Base1 {
@@ -1145,6 +1171,7 @@ TEST_BOTH(11_recursion_with_local) {
 
 TEST_BOTH_FP32(12_nested_with_side_effects) {
     struct Base {
+        virtual ~Base() = default;
         virtual void f() = 0;
         virtual void g() = 0;
     };
@@ -1162,8 +1189,8 @@ TEST_BOTH_FP32(12_nested_with_side_effects) {
 
             Mask mask = Mask::steal(jit_var_bool(Backend, true));
 
-            auto f_call = [](void *self, uint32_t* /*inputs*/, uint32_t* /*outputs*/) {
-                Base* base = (Base*)self;
+            auto f_call = [](void *self_, uint32_t* /*inputs*/, uint32_t* /*outputs*/) {
+                Base* base = (Base*)self_;
                 base->g();
             };
 
@@ -1238,6 +1265,7 @@ TEST_BOTH_FP32(12_nested_with_side_effects) {
 
 TEST_BOTH(13_load_bool_data) {
     struct Base {
+        virtual ~Base() = default;
         virtual Float f() = 0;
     };
     using BasePtr = Array<Base *>;
@@ -1317,6 +1345,7 @@ TEST_BOTH(14_frozen_vcall) {
     jit_set_flag(JitFlag::SymbolicCalls, true);
 
     struct Base {
+        virtual ~Base() = default;
         virtual UInt32 f(UInt32 x) = 0;
     };
 
