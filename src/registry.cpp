@@ -250,17 +250,19 @@ void jitc_registry_clear() {
 void jitc_registry_shutdown() {
     Registry &r = registry;
 
-    if (!r.rev_map.empty()) {
-        std::vector<size_t> leak_counts(r.domains.size(), 0);
+    if (jit_leak_warnings()) {
+        if (!r.rev_map.empty()) {
+            std::vector<size_t> leak_counts(r.domains.size(), 0);
 
-        for (const auto &entry : r.rev_map)
-            leak_counts.at(entry.second.domain_id)++;
+            for (const auto &entry : r.rev_map)
+                leak_counts.at(entry.second.domain_id)++;
 
-        for (size_t i = 0; i < r.domains.size(); i++) {
-            if (leak_counts[i] > 0)
-                jitc_log(Warn,
-                         "jit_registry_shutdown(): leaking %zu instances of type \"%s\".",
-                         leak_counts[i], r.domains[i].name);
+            for (size_t i = 0; i < r.domains.size(); i++) {
+                if (leak_counts[i] > 0)
+                    jitc_log(Warn,
+                            "jit_registry_shutdown(): leaking %zu instances of type \"%s\".",
+                            leak_counts[i], r.domains[i].name);
+            }
         }
     }
 
