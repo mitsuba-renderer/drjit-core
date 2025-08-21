@@ -1534,8 +1534,8 @@ uint32_t jitc_var_cast(uint32_t a0, VarType target_type, int reinterpret) {
 
     const VarType source_type = (VarType) v0->type;
 
-    bool source_bool = jitc_is_bool(source_type),
-         target_bool = jitc_is_bool(target_type),
+    bool source_bool  = jitc_is_bool(source_type),
+         target_bool  = jitc_is_bool(target_type),
          source_float = jitc_is_float(source_type),
          target_float = jitc_is_float(target_type);
 

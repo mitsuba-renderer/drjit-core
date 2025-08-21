@@ -456,6 +456,7 @@ static bool jitc_int8_unsupported(VarKind kind) {
         case VarKind::Shl:
         case VarKind::Shr:
         case VarKind::Popc:
+        case VarKind::Cast:
         case VarKind::Bitcast:
             return true;
         default:
@@ -477,7 +478,8 @@ static void jitc_cuda_render(Variable *v) {
 
     const ThreadState *ts = thread_state_cuda;
 
-    VarType orig_vt = (VarType) v->type, vt = orig_vt;
+    VarType orig_vt = (VarType) v->type,
+            vt = orig_vt;
     VarKind kind = (VarKind) v->kind;
 
     switch (orig_vt) {
@@ -861,9 +863,31 @@ static void jitc_cuda_render(Variable *v) {
             }
             break;
 
-        case VarKind::Bitcast:
-            fmt("    mov.$b $v, $v;\n", v, v, a0);
+        case VarKind::Bitcast: {
+            VarType a0_vtype = (VarType) a0->type;
+            if (jitc_is_b8(orig_vt) && jitc_is_b8(a0_vtype)) {
+                // Cast or bitcast from i8/u8 to i8/u8. Since there's
+                // no `mov.b8` instruction, we go through i16/u16. Note that the
+                // target variable was already automatically upcast to i16/u16.
+                VarType dep_vtype = (a0_vtype == VarType::Int8) ? VarType::Int16 : VarType::UInt16;
+                fmt("    cvt.$s.$t $s$u, $v;\n"
+                    "    mov.$b $v, $s$u;\n",
+                    type_name_ptx[(uint32_t) dep_vtype],
+                    a0,
+                    type_prefix[(uint32_t) dep_vtype],
+                    a0->reg_index,
+                    a0,
+                    v,
+                    v,
+                    type_prefix[(uint32_t) dep_vtype],
+                    a0->reg_index
+                );
+
+            } else {
+                fmt("    mov.$b $v, $v;\n", v, v, a0);
+            }
             break;
+        }
 
         case VarKind::Gather: {
                 bool index_zero = a1->is_literal() && a1->literal == 0;
