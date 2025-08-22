@@ -1617,6 +1617,9 @@ enum class JitFlag : uint32_t {
     /// Reorder threads in OptiX after a ray-intersection
     ShaderExecutionReordering = 1 << 23,
 
+    /// Spill registers under pressure into shared memory
+    SpillToSharedMemory = 1 << 24,
+
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
@@ -1624,7 +1627,8 @@ enum class JitFlag : uint32_t {
               (uint32_t) MergeFunctions | (uint32_t) OptimizeCalls |
               (uint32_t) SymbolicConditionals | (uint32_t) ReuseIndices |
               (uint32_t) ScatterReduceLocal | (uint32_t) PacketOps |
-              (uint32_t) KernelFreezing | (uint32_t) ShaderExecutionReordering,
+              (uint32_t) KernelFreezing | (uint32_t) ShaderExecutionReordering |
+              (uint32_t) SpillToSharedMemory,
 
     // Deprecated aliases, will be removed in a future version of Dr.Jit
     LoopRecord = SymbolicLoops,
@@ -1659,7 +1663,8 @@ enum JitFlag {
     JitFlagKernelFreezing = 1 << 20,
     JitFlagFreezingScope = 1 << 21,
     JitFlagEnableObjectTraversal = 1 << 22,
-    JitFlagShaderExecutionReordering = 1 << 23
+    JitFlagShaderExecutionReordering = 1 << 23,
+    JitFlagSpillToSharedMemory = 1 << 24
 };
 #endif
 
