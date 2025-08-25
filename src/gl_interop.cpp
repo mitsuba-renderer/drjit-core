@@ -38,7 +38,7 @@ void jit_unregister_cuda_resource(void *cuda_resource) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
-    uint32_t rv = cuGraphicsUnregisterResource((CUgraphicsResource) cuda_resource);
+    int rv = cuGraphicsUnregisterResource((CUgraphicsResource) cuda_resource);
 
     // OpenGL has already shut down. Ignore.
     if (rv == CUDA_ERROR_INVALID_GRAPHICS_CONTEXT)
@@ -78,8 +78,13 @@ void jit_unmap_graphics_resource(void *cuda_resource) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
-    cuda_check(
-        cuGraphicsUnmapResources(1, (CUgraphicsResource *) &cuda_resource, 0));
+    int rv = cuGraphicsUnmapResources(1, (CUgraphicsResource *) &cuda_resource, 0);
+
+    // OpenGL has already shut down. Ignore.
+    if (rv == CUDA_ERROR_INVALID_GRAPHICS_CONTEXT)
+        return;
+
+    cuda_check(rv);
 }
 
 void jit_memcpy_2d_to_array_async(void *dst, const void *src, size_t src_pitch,
