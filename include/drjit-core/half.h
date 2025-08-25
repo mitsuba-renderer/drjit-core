@@ -215,6 +215,7 @@ template <> struct constants<half> {
 
     static constexpr half Infinity        = half::from_binary(0xfc00);
     static constexpr half NaN             = half::from_binary(0xffff);
+    static constexpr half OneMinusEpsilon = half::from_binary(0x3bff);
 };
 
 template <> struct debug_init<half> {
