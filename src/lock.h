@@ -28,7 +28,7 @@
 struct Lock {
     pthread_spinlock_t lock;
     pthread_t owner;
-    int recursion_count;
+    size_t recursion_count;
 };
 
 // Danger zone: the drjit-core locks are held for an extremely short amount of
@@ -53,7 +53,7 @@ inline void lock_acquire(Lock &lock) {
 inline void lock_release(Lock &lock) {
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
-        lock.owner = 0;
+        lock.owner = (pthread_t) -1;
         pthread_spin_unlock(&lock.lock);
     }
 }
@@ -63,12 +63,12 @@ inline void lock_release(Lock &lock) {
 struct Lock {
     os_unfair_lock_s lock;
     pthread_t owner;
-    int recursion_count;
+    size_t recursion_count;
 };
 
 inline void lock_init(Lock &lock) {
     lock.lock            = OS_UNFAIR_LOCK_INIT;
-    lock.owner           = 0;
+    lock.owner           = (pthread_t) -1;
     lock.recursion_count = 0;
 }
 inline void lock_destroy(Lock &) {}
@@ -86,24 +86,25 @@ inline void lock_acquire(Lock &lock) {
 inline void lock_release(Lock &lock) {
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
-        lock.owner = 0;
+        lock.owner = (pthread_t) -1;
         os_unfair_lock_unlock(&lock.lock);
     }
 }
 #else
+#include <thread>
 #if defined(_WIN32)
 #include <shared_mutex>
 struct Lock {
     std::shared_mutex lock; // Based on the faster Win7 SRWLOCK
     std::thread::id owner;
-    int recursion_count;
+    size_t recursion_count;
 };
 #else
 #include <mutex>
 struct Lock {
     std::mutex lock;
     std::thread::id owner;
-    int recursion_count;
+    size_t recursion_count;
 };
 #endif
 
@@ -111,6 +112,7 @@ inline void lock_init(Lock &lock) {
     lock.owner           = std::thread::id();
     lock.recursion_count = 0;
 }
+
 inline void lock_destroy(Lock &) {}
 inline void lock_acquire(Lock &lock) {
     std::thread::id self = std::this_thread::get_id();
@@ -120,7 +122,7 @@ inline void lock_acquire(Lock &lock) {
     }
 
     lock.lock.lock();
-    lock.owner           = self;
+    lock.owner = self;
     lock.recursion_count = 1;
 }
 inline void lock_release(Lock &lock) {
