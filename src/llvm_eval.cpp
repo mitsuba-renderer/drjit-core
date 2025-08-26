@@ -397,6 +397,10 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                         v, v, v, v);
                 break;
 
+            case VarKind::DefaultMask:
+                fmt("    $v = bitcast <$w x i1> %mask to <$w x i1>\n", v);
+                break;
+
             default:
                 jitc_llvm_render(v);
                 break;
