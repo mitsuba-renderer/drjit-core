@@ -688,7 +688,7 @@ uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
     }
 
     return jitc_var_new_node_2(JitBackend::CUDA, VarKind::VectorLoad, type,
-                               size, symbolic, sbt_data_ptr, v_sbt_data_ptr,
+                               size, symbolic, sbt_data_ptr, jitc_var(sbt_data_ptr),
                                mask, jitc_var(mask), offset);
 }
 
@@ -708,4 +708,3 @@ void jit_optix_check_impl(int errval, const char *file, const int line) {
         jitc_optix_check_impl(errval, file, line);
     }
 }
-
