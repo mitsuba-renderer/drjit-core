@@ -38,7 +38,7 @@ void jit_unregister_cuda_resource(void *cuda_resource) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
-    int rv = cuGraphicsUnregisterResource((CUgraphicsResource) cuda_resource);
+    CUresult rv = cuGraphicsUnregisterResource((CUgraphicsResource) cuda_resource);
 
     // OpenGL has already shut down. Ignore.
     if (rv == CUDA_ERROR_INVALID_GRAPHICS_CONTEXT)
@@ -56,7 +56,7 @@ void *jit_map_graphics_resource_ptr(void *cuda_resource, size_t *n_bytes) {
 
     void *ptr;
     cuda_check(cuGraphicsResourceGetMappedPointer(
-        &ptr, n_bytes, (CUgraphicsResource) cuda_resource));
+        (CUdeviceptr*) &ptr, n_bytes, (CUgraphicsResource) cuda_resource));
 
     return ptr;
 }
@@ -78,7 +78,7 @@ void jit_unmap_graphics_resource(void *cuda_resource) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
-    int rv = cuGraphicsUnmapResources(1, (CUgraphicsResource *) &cuda_resource, 0);
+    CUresult rv = cuGraphicsUnmapResources(1, (CUgraphicsResource *) &cuda_resource, 0);
 
     // OpenGL has already shut down. Ignore.
     if (rv == CUDA_ERROR_INVALID_GRAPHICS_CONTEXT)
