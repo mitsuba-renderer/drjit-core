@@ -34,3 +34,9 @@ extern void jitc_cuda_render_scatter_add_kahan(const Variable *v,
                                                const Variable *value);
 
 extern void jitc_cuda_render_scatter_cas(const Variable *v);
+
+extern void jitc_cuda_render_scatter_cas(const Variable *v,
+                                         const Variable *ptr,
+                                         const Variable *old_value,
+                                         const Variable *new_value,
+                                         const Variable *index);
