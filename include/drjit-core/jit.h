@@ -1053,6 +1053,17 @@ extern JIT_EXPORT uint32_t jit_var_scatter_inc(uint32_t *target,
                                                uint32_t mask);
 
 /**
+ * \brief Atomically compare-and-swap
+ *
+ * # FIXME
+ */
+extern JIT_EXPORT uint32_t jit_var_scatter_cas(uint32_t *target,
+                                               uint32_t old_value,
+                                               uint32_t new_value,
+                                               uint32_t index,
+                                               uint32_t mask);
+
+/**
  * \brief Create an identical copy of the given variable
  *
  * This function creates an exact copy of the variable \c index and returns the

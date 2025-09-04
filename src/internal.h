@@ -86,7 +86,7 @@ enum class VarKind : uint32_t {
     BoundsCheck,
 
     // Memory-related operations
-    Gather, Scatter, ScatterInc, ScatterKahan,
+    Gather, Scatter, ScatterInc, ScatterKahan, ScatterCAS,
 
     // Gather multiple contiguous values at once
     PacketGather,
