@@ -2254,6 +2254,110 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     return result;
 }
 
+uint32_t jitc_var_scatter_cas(uint32_t *target_p, uint32_t old_value,
+                              uint32_t new_value, uint32_t index,
+                              uint32_t mask) {
+
+    auto print_log = [&](const char *msg) {
+        int type_id = 0;
+        if (new_value)
+            type_id = jitc_var(new_value)->type;
+
+        jitc_log(Debug,
+                 "jit_var_scatter_cas(): cas(r%u[r%u], r%u, r%u) (type=%s, "
+                 "mask=r%u) [%s]",
+                 *target_p, index, old_value, new_value,
+                 type_name[type_id], mask,  msg);
+    };
+
+
+    if (*target_p == 0)
+        jitc_raise("jit_var_scatter(): attempted to scatter to an empty array!");
+
+    auto [var_info, old_v, new_v, index_v, mask_v] =
+        jitc_var_check("jit_var_scatter_cas", old_value, new_value, index, mask);
+
+    Ref target = borrow(*target_p);
+    auto [target_info, target_v] =
+        jitc_var_check("jit_var_scatter_cas", (uint32_t) target); //FIXME wrong
+
+    // Go to the original if 'target' is wrapped into a loop state variable
+    unwrap(target, target_v);
+
+    //FIXME consistent sizes target and values
+
+
+    if (target_v->symbolic)
+        jitc_raise(
+            "jit_var_scatter_cas(): cannot scatter to a symbolic variable (r%u)!",
+            (uint32_t) target);
+
+    if (target_v->type != old_v->type || old_v->type != new_v->type)
+        jitc_raise("jit_var_scatter_cas(): 'target', 'old_value' and "
+                   "'new_value' must have the same type.");
+
+    if ((VarType) index_v->type != VarType::UInt32)
+        jitc_raise(
+            "jit_var_scatter_cas(): 'index' must be an unsigned 32-bit array.");
+
+    uint32_t flags = jitc_flags();
+    bool symbolic = flags & (uint32_t) JitFlag::SymbolicScope;
+
+    if (var_info.symbolic && !symbolic)
+        jitc_raise(
+            "jit_var_scatter_cas(): input arrays are symbolic, but the "
+            "operation was issued outside of a symbolic recording session.");
+
+    if (target_v->is_literal() && new_v->is_literal() &&
+        target_v->literal == new_v->literal) {
+        print_log("skipped, target/source are value variables with the "
+                  "same value");
+        return target.release();
+    }
+
+    if (mask_v->is_literal() && mask_v->literal == 0) {
+        print_log("skipped, always masked");
+        return target.release();
+    }
+
+    // Flush any potential conflicting writes by evaluating the target before the scatter
+    if (target_v->is_dirty()) {
+        bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
+        jitc_var_eval(target, raise_dirty_error);
+        target_v = jitc_var(target);
+    }
+
+    // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
+    if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1) {
+        target = steal(jitc_var_copy(target));
+        target_v = jitc_var(target);
+    }
+
+    // Get a pointer to the array data.
+    void *target_addr = nullptr;
+    target = steal(jitc_var_data(target, false, &target_addr));
+    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 1));
+
+    if (target != *target_p) {
+        jitc_var_inc_ref(target);
+        jitc_var_dec_ref(*target_p);
+        *target_p = target;
+        target_v = jitc_var(target);
+    }
+
+    // Apply default masks
+    Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
+        index_2 = steal(jitc_scatter_gather_index(target, index));
+
+    if (flags & (uint32_t) JitFlag::Debug)
+        mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::ScatterCAS, index,
+                                             mask_2, target_info.size));
+
+
+
+    return 0;
+}
+
 extern size_t llvm_expand_threshold;
 
 // Determine whether or not a particular type of reduction is supported

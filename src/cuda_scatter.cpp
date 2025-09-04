@@ -479,3 +479,5 @@ void jitc_cuda_render_scatter_add_kahan(const Variable *v,
 
     fmt("\nl_$u_done:\n", v->reg_index);
 }
+
+void jitc_cuda_render_scatter_cas(const Variable *v) { }

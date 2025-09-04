@@ -300,6 +300,7 @@ enum class BoundsCheckType {
     ScatterReduce,
     ScatterAddKahan,
     ScatterInc,
+    ScatterCAS,
     Gather,
     PacketGather,
     PacketScatter,
