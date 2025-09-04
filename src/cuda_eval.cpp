@@ -71,6 +71,8 @@ static void jitc_cuda_render_reorder(const Variable *, const Variable *);
 
 void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
+    uint32_t flags = jitc_flags();
+    
     bool params_global = !uses_optix && n_params > jitc_cuda_arg_limit;
     bool print_labels  = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
@@ -110,6 +112,10 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         fmt(".entry drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
             ".param .align 8 .b8 params[$u]) {\n",
             params_global ? 8u : (n_params * (uint32_t) sizeof(void *)));
+        
+        if ((flags & (uint32_t) JitFlag::SpillToSharedMemory) && 
+           ts->compute_capability >= 75 && ts->ptx_version >= 87)
+            fmt("    .pragma \"enable_smem_spilling\";\n\n");
     } else {
         fmt(".const .align 8 .b8 params[$u];\n\n"
             ".entry __raygen__^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^() {\n",
