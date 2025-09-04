@@ -949,7 +949,7 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::ScatterCAS:
-            jitc_cuda_render_scatter_cas(v);
+            jitc_cuda_render_scatter_cas(v, a0, a1, a2, a3);
             break;
 
         case VarKind::BoundsCheck:
