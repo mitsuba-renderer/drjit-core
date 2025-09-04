@@ -8,6 +8,7 @@
 #include "util.h"
 #include "op.h"
 #include "array.h"
+#include <iostream>
 
 #if defined(_MSC_VER)
 #  pragma warning (disable: 4702) // unreachable code
@@ -1749,6 +1750,10 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
                         msg = "drjit.scatter_add_kahan(): out-of-bounds write to position";
                         break;
 
+                    case BoundsCheckType::ScatterCAS:
+                        msg = "drjit.scatter_cas(): out-of-bounds write to position";
+                        break;
+
                     case BoundsCheckType::ArrayRead:
                         msg = "drjit.Local.read(): out-of-bounds read from position";
                         break;
@@ -2257,7 +2262,6 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
 uint32_t jitc_var_scatter_cas(uint32_t *target_p, uint32_t old_value,
                               uint32_t new_value, uint32_t index,
                               uint32_t mask) {
-
     auto print_log = [&](const char *msg) {
         int type_id = 0;
         if (new_value)
@@ -2279,13 +2283,10 @@ uint32_t jitc_var_scatter_cas(uint32_t *target_p, uint32_t old_value,
 
     Ref target = borrow(*target_p);
     auto [target_info, target_v] =
-        jitc_var_check("jit_var_scatter_cas", (uint32_t) target); //FIXME wrong
+        jitc_var_check("jit_var_scatter_cas", (uint32_t) target);
 
     // Go to the original if 'target' is wrapped into a loop state variable
     unwrap(target, target_v);
-
-    //FIXME consistent sizes target and values
-
 
     if (target_v->symbolic)
         jitc_raise(
@@ -2353,9 +2354,34 @@ uint32_t jitc_var_scatter_cas(uint32_t *target_p, uint32_t old_value,
         mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::ScatterCAS, index,
                                              mask_2, target_info.size));
 
+    uint32_t op_size = std::max(var_info.size, jitc_var(mask_2)->size);
+    
+    // Note: Setting 'mask' dependency through variable's payload
+    uint32_t scatter_cas_op = jitc_var_new_node_4(
+        target_info.backend, VarKind::ScatterCAS, target_info.type,
+        op_size, symbolic, ptr, jitc_var(ptr),
+        old_value, jitc_var(old_value), new_value, jitc_var(new_value),
+        index_2, jitc_var(index_2), mask_2);
 
+    // Handle 'mask' ref count
+    std::cout << "Mask_2: " << mask_2 << std::endl;
+    uint32_t* mask_ptr = new uint32_t(mask_2);
+    jitc_var_inc_ref(mask_2);
+    auto callback = [](uint32_t /*index*/, int free, void* ptr) {
+        if (free) {
+            uint32_t mask = *((uint32_t*) ptr);
+            jitc_var_dec_ref(mask);
+        }
+    };
+    jitc_var_set_callback(scatter_cas_op, callback, mask_ptr, true);
 
-    return 0;
+    // Need extra node to encode the side-effect on the target array
+    uint32_t scatter_cas_se = jitc_var_new_node_1(
+        target_info.backend, VarKind::Nop, VarType::Void, op_size, symbolic,
+        scatter_cas_op, jitc_var(scatter_cas_op));
+    jitc_var_mark_side_effect(scatter_cas_se);
+
+    return scatter_cas_op;
 }
 
 extern size_t llvm_expand_threshold;
