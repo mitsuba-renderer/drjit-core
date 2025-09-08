@@ -1766,3 +1766,138 @@ bool jit_coop_vec_supported(JitBackend backend) {
     lock_guard guard(state.lock);
     return jitc_coop_vec_supported(backend);
 }
+
+// ====================================================================
+//                            Event API
+// ====================================================================
+
+JitEvent jit_event_create(JitBackend backend, int enable_timing) {
+    // Not necessary to acquire Dr.Jit-Core mutex for this function
+    if (jit_flag(JitFlag::FreezingScope))
+        jitc_raise("jit_event_create(): events cannot be used while recording a frozen function");
+
+    switch (backend) {
+        case JitBackend::CUDA:
+            return jitc_cuda_event_create(enable_timing);
+        case JitBackend::LLVM:
+            return jitc_llvm_event_create(enable_timing);
+        default:
+            jitc_raise("jit_event_create(): invalid backend");
+            return nullptr;
+    }
+}
+
+void jit_event_destroy(JitEvent event) {
+    // Not necessary to acquire Dr.Jit-Core mutex for this function
+    if (jit_flag(JitFlag::FreezingScope))
+        jitc_raise("jit_event_destroy(): events cannot be used while recording a frozen function");
+
+    EventData* e = (EventData*)event;
+
+    switch (e->backend) {
+        case JitBackend::CUDA:
+            jitc_cuda_event_destroy(event);
+            break;
+        case JitBackend::LLVM:
+            jitc_llvm_event_destroy(event);
+            break;
+        default:
+            jitc_raise("jit_event_destroy(): invalid backend");
+    }
+}
+
+void jit_event_record(JitEvent event) {
+    // Not necessary to acquire Dr.Jit-Core mutex for this function
+    if (jit_flag(JitFlag::FreezingScope))
+        jitc_raise("jit_event_record(): events cannot be used while recording a frozen function");
+
+    EventData* e = (EventData*)event;
+
+    switch (e->backend) {
+        case JitBackend::CUDA:
+            jitc_cuda_event_record(event);
+            break;
+        case JitBackend::LLVM:
+            jitc_llvm_event_record(event);
+            break;
+        default:
+            jitc_raise("jit_event_record(): invalid backend");
+    }
+}
+
+int jit_event_query(JitEvent event) {
+    // Not necessary to acquire Dr.Jit-Core mutex for this function
+    if (jit_flag(JitFlag::FreezingScope))
+        jitc_raise("jit_event_query(): events cannot be used while recording a frozen function");
+
+    EventData* e = (EventData*)event;
+
+    switch (e->backend) {
+        case JitBackend::CUDA:
+            return jitc_cuda_event_query(event);
+        case JitBackend::LLVM:
+            return jitc_llvm_event_query(event);
+        default:
+            jitc_raise("jit_event_query(): invalid backend");
+            return 0;
+    }
+}
+
+void jit_event_wait(JitEvent event) {
+    // Not necessary to acquire Dr.Jit-Core mutex for this function
+    if (jit_flag(JitFlag::FreezingScope))
+        jitc_raise("jit_event_wait(): events cannot be used while recording a frozen function");
+
+    EventData* e = (EventData*)event;
+
+    switch (e->backend) {
+        case JitBackend::CUDA:
+            jitc_cuda_event_wait(event);
+            break;
+        case JitBackend::LLVM:
+            jitc_llvm_event_wait(event);
+            break;
+        default:
+            jitc_raise("jit_event_wait(): invalid backend");
+    }
+}
+
+float jit_event_elapsed_time(JitEvent start, JitEvent end) {
+    // Not necessary to acquire Dr.Jit-Core mutex for this function
+    if (jit_flag(JitFlag::FreezingScope))
+        jitc_raise("jit_event_elapsed_time(): events cannot be used while recording a frozen function");
+
+    EventData* s = (EventData*)start;
+    EventData* e = (EventData*)end;
+
+    if (s->backend != e->backend)
+        jitc_raise("jit_event_elapsed_time(): events must be from the same backend");
+
+    switch (s->backend) {
+        case JitBackend::CUDA:
+            return jitc_cuda_event_elapsed_time(start, end);
+        case JitBackend::LLVM:
+            return jitc_llvm_event_elapsed_time(start, end);
+        default:
+            jitc_raise("jit_event_elapsed_time(): invalid backend");
+            return 0.0f;
+    }
+}
+
+void* jit_event_handle(JitEvent event) {
+    // Not necessary to acquire Dr.Jit-Core mutex for this function
+    if (jit_flag(JitFlag::FreezingScope))
+        jitc_raise("jit_event_handle(): events cannot be used while recording a frozen function");
+
+    EventData* e = (EventData*)event;
+
+    switch (e->backend) {
+        case JitBackend::CUDA:
+            return (void*)e->cuda_event;
+        case JitBackend::LLVM:
+            return (void*)e->llvm_task;
+        default:
+            jitc_raise("jit_event_handle(): invalid backend");
+            return nullptr;
+    }
+}

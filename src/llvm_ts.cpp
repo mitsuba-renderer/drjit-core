@@ -914,3 +914,68 @@ void LLVMThreadState::coop_vec_pack(uint32_t count, const void *in,
     task_release(jitc_task);
     jitc_task = new_task;
 }
+
+// ====================================================================
+//                       Event API implementation
+// ====================================================================
+
+JitEvent jitc_llvm_event_create(bool enable_timing) {
+    EventData* event = new EventData(JitBackend::LLVM, enable_timing);
+    event->ts = thread_state(JitBackend::LLVM);
+    return (JitEvent)event;
+}
+
+void jitc_llvm_event_destroy(JitEvent event) {
+    EventData* e = (EventData*)event;
+    if (e->llvm_task)
+        task_release(e->llvm_task);
+    delete e;
+}
+
+void jitc_llvm_event_record(JitEvent event) {
+    EventData* e = (EventData*)event;
+
+    if (e->llvm_task) {
+        task_release(e->llvm_task);
+        e->llvm_task = nullptr;
+    }
+
+    // Create a minimal task that depends on current work
+    e->llvm_task = task_submit_dep(
+        nullptr, &jitc_task, jitc_task ? 1 : 0,
+        1,        // size = 1 (minimally sized work unit)
+        nullptr,  // func = nullptr (no actual work)
+        nullptr,  // payload
+        0,        // payload_size
+        nullptr,  // payload_deleter
+        1,        // always_async = 1 (never execute locally)
+        e->enable_timing ? 1 : 0  // profile = 1 if timing is enabled
+    );
+}
+
+int jitc_llvm_event_query(JitEvent event) {
+    EventData* e = (EventData*)event;
+    return task_query(e->llvm_task);
+}
+
+void jitc_llvm_event_wait(JitEvent event) {
+    EventData* e = (EventData*)event;
+    task_wait(e->llvm_task);
+}
+
+float jitc_llvm_event_elapsed_time(JitEvent start, JitEvent end) {
+    EventData* s = (EventData*)start;
+    EventData* e = (EventData*)end;
+
+    if (!s->enable_timing || !e->enable_timing)
+        jitc_raise("jit_event_elapsed_time(): both events must have timing enabled");
+
+    if (!s->llvm_task || !e->llvm_task)
+        jitc_raise("jit_event_elapsed_time(): events must be recorded");
+
+    // Ensure both tasks are complete
+    task_wait(s->llvm_task);
+    task_wait(e->llvm_task);
+
+    return (float) task_time_rel(s->llvm_task, e->llvm_task);
+}

@@ -2917,3 +2917,97 @@ extern JIT_EXPORT uint32_t jit_coop_vec_outer_product_accum(
     const MatrixDescr *descr,
     uint32_t a,
     uint32_t b);
+
+// ====================================================================
+//                            Event API
+// ====================================================================
+
+/// Opaque handle type for events
+typedef struct JitEvent_* JitEvent;
+
+/**
+ * \brief Create a new event for synchronization and timing
+ *
+ * \param backend
+ *     The backend to create the event for (CUDA or LLVM)
+ *
+ * \param enable_timing
+ *     If true, the event can be used for timing measurements.
+ *     If false, timing queries will raise an error.
+ *
+ * \return
+ *     An opaque handle to the created event
+ */
+extern JIT_EXPORT JitEvent jit_event_create(JIT_ENUM JitBackend backend,
+                                            int enable_timing JIT_DEF(1));
+
+/**
+ * \brief Destroy an event and free associated resources
+ *
+ * \param event
+ *     The event to destroy. Can be NULL (no-op in that case)
+ */
+extern JIT_EXPORT void jit_event_destroy(JitEvent event);
+
+/**
+ * \brief Record the event in the current stream
+ *
+ * Marks a point in the computation stream. The event will be considered
+ * complete when all previously enqueued work has finished.
+ *
+ * \param event
+ *     The event to record
+ */
+extern JIT_EXPORT void jit_event_record(JitEvent event);
+
+/**
+ * \brief Check if the event has completed without blocking
+ *
+ * \param event
+ *     The event to query
+ *
+ * \return
+ *     1 if all work preceding the event has completed, 0 otherwise
+ */
+extern JIT_EXPORT int jit_event_query(JitEvent event);
+
+/**
+ * \brief Wait for the event to complete
+ *
+ * Blocks the current thread until all work preceding the event has completed.
+ *
+ * \param event
+ *     The event to wait for
+ */
+extern JIT_EXPORT void jit_event_wait(JitEvent event);
+
+/**
+ * \brief Calculate elapsed time between two events
+ *
+ * \param start
+ *     The start event for timing measurement
+ *
+ * \param end
+ *     The end event for timing measurement
+ *
+ * \return
+ *     Elapsed time in milliseconds between start and end events
+ *
+ * \note
+ *     Both events must have timing enabled and must be from the same backend
+ */
+extern JIT_EXPORT float jit_event_elapsed_time(JitEvent start, JitEvent end);
+
+/**
+ * \brief Get the raw backend-specific event handle
+ *
+ * For CUDA backend, returns the CUevent handle.
+ * For LLVM backend, returns the Task* pointer.
+ *
+ * \param event
+ *     The event to get the handle from
+ *
+ * \return
+ *     The raw event handle as a void pointer
+ */
+extern JIT_EXPORT void* jit_event_handle(JitEvent event);

@@ -78,6 +78,7 @@ extern CUresult (*cuStreamWaitEvent_ptsz)(CUstream, CUevent, unsigned int);
 #  define CUDA_ERROR_OUT_OF_MEMORY 2
 #  define CUDA_ERROR_INVALID_GRAPHICS_CONTEXT 219
 #  define CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED 704
+#  define CUDA_ERROR_NOT_READY 600
 #  define CUDA_SUCCESS 0
 
 #define CU_RESOURCE_TYPE_ARRAY 0
@@ -229,6 +230,7 @@ DR_CUDA_SYM(CUresult (*cuDriverGetVersion)(int *));
 DR_CUDA_SYM(CUresult (*cuEventCreate)(CUevent *, unsigned int));
 DR_CUDA_SYM(CUresult (*cuEventDestroy)(CUevent));
 DR_CUDA_SYM(CUresult (*cuEventRecord)(CUevent, CUstream));
+DR_CUDA_SYM(CUresult (*cuEventQuery)(CUevent));
 DR_CUDA_SYM(CUresult (*cuEventSynchronize)(CUevent));
 DR_CUDA_SYM(CUresult (*cuEventElapsedTime)(float *, CUevent, CUevent));
 DR_CUDA_SYM(CUresult (*cuFuncSetAttribute)(CUfunction, int, int));

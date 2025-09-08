@@ -467,3 +467,65 @@ void jitc_cuda_shutdown() {
 
     jitc_cuda_api_shutdown();
 }
+
+// ====================================================================
+//                       Event API implementation
+// ====================================================================
+
+JitEvent jitc_cuda_event_create(bool enable_timing) {
+    ThreadState* ts = thread_state(JitBackend::CUDA);
+    scoped_set_context guard(ts->context);
+
+    EventData* event = new EventData(JitBackend::CUDA, enable_timing);
+    event->ts = ts;
+
+    unsigned int flags = enable_timing ? CU_EVENT_DEFAULT : CU_EVENT_DISABLE_TIMING;
+    cuda_check(cuEventCreate(&event->cuda_event, flags));
+
+    return (JitEvent)event;
+}
+
+void jitc_cuda_event_destroy(JitEvent event) {
+    EventData* e = (EventData*)event;
+    scoped_set_context guard(e->ts->context);
+    cuda_check(cuEventDestroy(e->cuda_event));
+    delete e;
+}
+
+void jitc_cuda_event_record(JitEvent event) {
+    EventData* e = (EventData*)event;
+    cuda_check(cuEventRecord(e->cuda_event, e->ts->stream));
+}
+
+int jitc_cuda_event_query(JitEvent event) {
+    EventData* e = (EventData*)event;
+    scoped_set_context guard(e->ts->context);
+    CUresult result = cuEventQuery(e->cuda_event);
+
+    if (result == CUDA_SUCCESS)
+        return 1;
+    else if (result == CUDA_ERROR_NOT_READY)
+        return 0;
+    else
+        cuda_check(result);
+    return 0;
+}
+
+void jitc_cuda_event_wait(JitEvent event) {
+    EventData* e = (EventData*)event;
+    scoped_set_context guard(e->ts->context);
+    cuda_check(cuEventSynchronize(e->cuda_event));
+}
+
+float jitc_cuda_event_elapsed_time(JitEvent start, JitEvent end) {
+    EventData* s = (EventData*)start;
+    EventData* e = (EventData*)end;
+
+    if (!s->enable_timing || !e->enable_timing)
+        jitc_raise("jit_event_elapsed_time(): both events must have timing enabled");
+
+    scoped_set_context guard(s->ts->context);
+    float ms;
+    cuda_check(cuEventElapsedTime(&ms, s->cuda_event, e->cuda_event));
+    return ms;
+}
