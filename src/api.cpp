@@ -1659,14 +1659,22 @@ void jit_freeze_destroy(Recording *recording) {
 
 void jit_profile_start() {
     lock_guard guard(state.lock);
+#if defined(DRJIT_DYNAMIC_CUDA)
     if (cuProfilerStart)
         cuProfilerStart();
+#else
+    cuProfilerStart();
+#endif
 }
 
 void jit_profile_stop() {
     lock_guard guard(state.lock);
-    if (cuProfilerStart)
+#if defined(DRJIT_DYNAMIC_CUDA)
+    if (cuProfilerStop)
         cuProfilerStop();
+#else
+    cuProfilerStop();
+#endif
 }
 
 uint32_t jit_coop_vec_pack(uint32_t n, const uint32_t *in) {
