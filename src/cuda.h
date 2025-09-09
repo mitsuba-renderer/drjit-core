@@ -94,3 +94,12 @@ extern CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
                                                 [(int) VarType::Count][10];
 extern CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count];
 extern CUfunction *jitc_cuda_aggregate;
+
+/// Event API functions for CUDA backend
+typedef struct JitEvent_* JitEvent;
+extern JitEvent jitc_cuda_event_create(bool enable_timing);
+extern void jitc_cuda_event_destroy(JitEvent event);
+extern void jitc_cuda_event_record(JitEvent event);
+extern int jitc_cuda_event_query(JitEvent event);
+extern void jitc_cuda_event_wait(JitEvent event);
+extern float jitc_cuda_event_elapsed_time(JitEvent start, JitEvent end);

@@ -1143,4 +1143,28 @@ extern bool jitc_is_max(Variable *v);
 extern bool jitc_is_min(Variable *v);
 inline void jitc_var_set_data(Variable &v, void *data) { v.data = data; }
 
+// ====================================================================
+//                         Event data structure
+// ====================================================================
+
+struct EventData {
+    JitBackend backend;
+    bool enable_timing;
+    ThreadState* ts;
+    union {
+        CUevent cuda_event;
+        Task* llvm_task;
+    };
+
+    EventData(JitBackend backend, bool enable_timing)
+        : backend(backend), enable_timing(enable_timing), ts(nullptr) {
+        if (backend == JitBackend::CUDA)
+            cuda_event = nullptr;
+        else
+            llvm_task = nullptr;
+    }
+
+    ~EventData() = default;
+};
+
 extern const char *var_kind_name[(int) VarKind::Count];

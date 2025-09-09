@@ -122,3 +122,12 @@ extern void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
 /// atomic scatter.
 extern std::pair<uint32_t, uint32_t>
 jitc_llvm_expand_replication_factor(uint32_t size, uint32_t tsize);
+
+/// Event API functions for LLVM backend
+typedef struct JitEvent_* JitEvent;
+extern JitEvent jitc_llvm_event_create(bool enable_timing);
+extern void jitc_llvm_event_destroy(JitEvent event);
+extern void jitc_llvm_event_record(JitEvent event);
+extern int jitc_llvm_event_query(JitEvent event);
+extern void jitc_llvm_event_wait(JitEvent event);
+extern float jitc_llvm_event_elapsed_time(JitEvent start, JitEvent end);

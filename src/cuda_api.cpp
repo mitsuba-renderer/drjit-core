@@ -95,6 +95,7 @@ bool jitc_cuda_api_init() {
         LOAD(cuEventRecord);
         LOAD(cuEventSynchronize);
         LOAD(cuEventElapsedTime);
+        LOAD(cuEventQuery);
         LOAD(cuFuncSetAttribute);
         LOAD(cuGetErrorName);
         LOAD(cuGetErrorString);
