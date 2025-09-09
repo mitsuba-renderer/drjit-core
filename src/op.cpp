@@ -2259,27 +2259,27 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     return result;
 }
 
-uint32_t jitc_var_scatter_cas(uint32_t *target_p, uint32_t old_value,
-                              uint32_t new_value, uint32_t index,
-                              uint32_t mask) {
+void jitc_var_scatter_cas(uint32_t *target_p, uint32_t compare, uint32_t value,
+                          uint32_t index, uint32_t mask, uint32_t *old,
+                          uint32_t *success) {
     auto print_log = [&](const char *msg) {
         int type_id = 0;
-        if (new_value)
-            type_id = jitc_var(new_value)->type;
+        if (value)
+            type_id = jitc_var(value)->type;
 
         jitc_log(Debug,
                  "jit_var_scatter_cas(): cas(r%u[r%u], r%u, r%u) (type=%s, "
                  "mask=r%u) [%s]",
-                 *target_p, index, old_value, new_value,
+                 *target_p, index, compare, value,
                  type_name[type_id], mask,  msg);
     };
 
 
     if (*target_p == 0)
-        jitc_raise("jit_var_scatter(): attempted to scatter to an empty array!");
+        jitc_raise("jit_var_scatter_cas(): attempted to scatter to an empty array!");
 
     auto [var_info, old_v, new_v, index_v, mask_v] =
-        jitc_var_check("jit_var_scatter_cas", old_value, new_value, index, mask);
+        jitc_var_check("jit_var_scatter_cas", compare, value, index, mask);
 
     Ref target = borrow(*target_p);
     auto [target_info, target_v] =
@@ -2313,19 +2313,14 @@ uint32_t jitc_var_scatter_cas(uint32_t *target_p, uint32_t old_value,
         target_v->literal == new_v->literal) {
         print_log("skipped, target/source are value variables with the "
                   "same value");
-        return target.release();
+        *target_p = target.release();
+        return;
     }
 
     if (mask_v->is_literal() && mask_v->literal == 0) {
         print_log("skipped, always masked");
-        return target.release();
-    }
-
-    // Flush any potential conflicting writes by evaluating the target before the scatter
-    if (target_v->is_dirty()) {
-        bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
-        jitc_var_eval(target, raise_dirty_error);
-        target_v = jitc_var(target);
+        *target_p = target.release();
+        return;
     }
 
     // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
@@ -2355,16 +2350,15 @@ uint32_t jitc_var_scatter_cas(uint32_t *target_p, uint32_t old_value,
                                              mask_2, target_info.size));
 
     uint32_t op_size = std::max(var_info.size, jitc_var(mask_2)->size);
-    
+
     // Note: Setting 'mask' dependency through variable's payload
     uint32_t scatter_cas_op = jitc_var_new_node_4(
-        target_info.backend, VarKind::ScatterCAS, target_info.type,
+        target_info.backend, VarKind::ScatterCAS, VarType::Void,
         op_size, symbolic, ptr, jitc_var(ptr),
-        old_value, jitc_var(old_value), new_value, jitc_var(new_value),
+        compare, jitc_var(compare), value, jitc_var(value),
         index_2, jitc_var(index_2), mask_2);
 
     // Handle 'mask' ref count
-    std::cout << "Mask_2: " << mask_2 << std::endl;
     uint32_t* mask_ptr = new uint32_t(mask_2);
     jitc_var_inc_ref(mask_2);
     auto callback = [](uint32_t /*index*/, int free, void* ptr) {
@@ -2375,13 +2369,24 @@ uint32_t jitc_var_scatter_cas(uint32_t *target_p, uint32_t old_value,
     };
     jitc_var_set_callback(scatter_cas_op, callback, mask_ptr, true);
 
-    // Need extra node to encode the side-effect on the target array
-    uint32_t scatter_cas_se = jitc_var_new_node_1(
-        target_info.backend, VarKind::Nop, VarType::Void, op_size, symbolic,
-        scatter_cas_op, jitc_var(scatter_cas_op));
-    jitc_var_mark_side_effect(scatter_cas_se);
+    // Extract first return value: the old content of the ptr
+    *old = jitc_var_new_node_1(
+        target_info.backend, VarKind::Extract, target_info.type, op_size, symbolic,
+        scatter_cas_op, jitc_var(scatter_cas_op), (uint64_t) 0);
+    
+    // Extract second return value: whether or not the swap took place
+    *success = jitc_var_new_node_1(
+        target_info.backend, VarKind::Extract, VarType::Bool, op_size, symbolic,
+        scatter_cas_op, jitc_var(scatter_cas_op), (uint64_t) 1);
 
-    return scatter_cas_op;
+    jitc_var_mark_side_effect(scatter_cas_op);
+    target.release();
+
+    //// Need extra node to encode the side-effect on the target array
+    //uint32_t scatter_cas_se = jitc_var_new_node_1(
+    //    target_info.backend, VarKind::Nop, VarType::Void, op_size, symbolic,
+    //    scatter_cas_op, jitc_var(scatter_cas_op));
+    //jitc_var_mark_side_effect(scatter_cas_se);
 }
 
 extern size_t llvm_expand_threshold;
@@ -2629,14 +2634,14 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // operation like dr.if_stmt()), then use that instead.
     target_v = jitc_var(target);
 
-    // Flush any potential conflicting writes by evaluating the target before the scatter
-    if (target_v->is_dirty() && op == ReduceOp::Identity
-                             && mode != ReduceMode::Permute
-                             && mode != ReduceMode::NoConflicts) {
-        bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
-        jitc_var_eval(target, raise_dirty_error);
-        target_v = jitc_var(target);
-    }
+    //// Flush any potential conflicting writes by evaluating the target before the scatter
+    //if (target_v->is_dirty() && op == ReduceOp::Identity
+    //                         && mode != ReduceMode::Permute
+    //                         && mode != ReduceMode::NoConflicts) {
+    //    bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
+    //    jitc_var_eval(target, raise_dirty_error);
+    //    target_v = jitc_var(target);
+    //}
 
     if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));

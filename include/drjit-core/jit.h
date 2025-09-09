@@ -1057,11 +1057,13 @@ extern JIT_EXPORT uint32_t jit_var_scatter_inc(uint32_t *target,
  *
  * # FIXME
  */
-extern JIT_EXPORT uint32_t jit_var_scatter_cas(uint32_t *target,
-                                               uint32_t old_value,
-                                               uint32_t new_value,
-                                               uint32_t index,
-                                               uint32_t mask);
+extern JIT_EXPORT void jit_var_scatter_cas(uint32_t *target,
+                                           uint32_t compare,
+                                           uint32_t value,
+                                           uint32_t index,
+                                           uint32_t mask,
+                                           uint32_t *old,
+                                           uint32_t *success);
 
 /**
  * \brief Create an identical copy of the given variable

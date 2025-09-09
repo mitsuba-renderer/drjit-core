@@ -684,3 +684,81 @@ void jitc_llvm_render_scatter_add_kahan(const Variable *v,
         v, reg_index, reg_index,
         reg_index);
 }
+
+
+void jitc_llvm_render_scatter_cas(Variable *v,
+                                  const Variable *ptr,
+                                  const Variable *compare,
+                                  const Variable *value,
+                                  const Variable *index) {
+    Variable* mask = jitc_var((uint32_t) v->literal);
+    bool is_unmasked = mask->is_literal() && mask->literal == 1;
+
+//  br label %loop
+//loop: ; loop header
+//  ; i is a phi node, starts at 0 and increments by 1
+//  %i = phi i32 [0, %entry], [%next, %loop_end]
+//
+//  ; check loop bound
+//  %cmp = icmp slt i32 %i, 4
+//  br i1 %cmp, label %loop_body, label %exit
+//
+//loop_body:
+//  ; get address of current element
+//  %addr = getelementptr i32, ptr %base, i32 %i
+//
+//  ; extract expected and desired values for this lane
+//  %exp = extractelement <4 x i32> %expected, i32 %i
+//  %des = extractelement <4 x i32> %desired, i32 %i
+//
+//  ; atomic compare-and-swap
+//  %res = cmpxchg ptr %addr, i32 %exp, i32 %des acquire monotonic
+//  %ok  = extractvalue { i32, i1 } %res, 1
+//
+//  ; store result into temporary vector (accumulated through PHI node)
+//  %prev_result = phi <4 x i1> [zeroinitializer, %loop], [%updated_result, %loop_end]
+//  %updated_result = insertelement <4 x i1> %prev_result, i1 %ok, i32 %i
+//
+//  ; increment i
+//  %next = add i32 %i, 1
+//  br label %loop_end
+//
+//loop_end:
+//  br label %loop
+//
+//exit:
+//  ; when loop ends, %prev_result is our final vector
+//  ret <4 x i1> %prev_result
+
+    //fmt("\nl$u_entry:\n"
+    //    "    br label %l$u_start\n"
+    //    "\nl$u_start:\n"
+    //    "    $v_i = phi i32 [0, %l$u_entry], [$v_i_next, %l$u_end]\n"
+    //    "    $v_cond = icmp slt i32 $v_i, $w\n"
+    //    "    br i1 $v_cond, label %l$u_body, label %l$u_exit\n"
+    //    "l$u_body:\n"
+    //    "    %addr = getelementptr i32, ptr %base, i32 %i\n"
+    //     "   $v_target = getelementptr inbounds $t, $<$p$> {$v_0|$v}, i32 $v_i\n"
+    //     ,
+    //     v->reg_index,
+    //     v->reg_index,
+
+    //     v->reg_index,
+    //     v, v->reg_index, v, v->reg_index,
+    //     v, v,
+    //     v, v->reg_index, v->reg_index,
+
+    //     v->reg_index,
+    //     v, ,
+    //);
+
+
+
+
+
+
+    // FIXME if (!is_unmasked)
+
+
+    v->consumed = 1;
+}
