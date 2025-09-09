@@ -243,6 +243,9 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
         jitc_var_traverse(size, index2, depth);
     }
 
+    if (unlikely(v->consumed))
+        jitc_raise("Kernel depends on consumed variable!");
+
     if (depth == 0) {
         // If we're visiting this variable the first time regardless of size
         if (visited.emplace(0, index, depth).second)

@@ -480,25 +480,33 @@ void jitc_cuda_render_scatter_add_kahan(const Variable *v,
     fmt("\nl_$u_done:\n", v->reg_index);
 }
 
-void jitc_cuda_render_scatter_cas(const Variable *v,
+void jitc_cuda_render_scatter_cas(Variable *v,
                                   const Variable *ptr,
-                                  const Variable *old_value,
-                                  const Variable *new_value,
+                                  const Variable *compare,
+                                  const Variable *value,
                                   const Variable *index) {
     Variable* mask = jitc_var((uint32_t) v->literal);
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
     jitc_cuda_prepare_index(ptr, index, index);
 
+    fmt("    .reg.$b $v_out_0;\n"
+        "    mov.$b $v_out_0, 0;\n"
+        "    .reg.pred $v_out_1;\n"
+        "    mov.pred $v_out_1, 0;\n",
+        value, v,
+        value, v,
+        v,
+        v);
+
+    put("    ");
     if (!is_unmasked)
         fmt("@$v ", mask);
- 
-    //atom{.sem}{.scope}{.space}.cas.b16 d, [a], b, c;
-    //    d = *a;
-    //*a =  operation(*a, b, c)
-    //     cas(r,s,t) = (r == s) ? t : r;
-    //     cas(a,b,c) = (*a == b) ? c : a;
-    //     cas(target, old_value, new_value) = (*a == b) ? c : a;
-    fmt("    atom.global.cas.$b $v, [%rd3], $v, $v;\n",
-        new_value, v, old_value, new_value);
+
+    fmt("atom.global.cas.$b $v_out_0, [%rd3], $v, $v;\n"
+        "    setp.eq.$b $v_out_1, $v_out_0, $v;\n",
+        value, v, compare, value,
+        value, v, v, compare);
+
+    v->consumed = 1;
 }
