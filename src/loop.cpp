@@ -159,21 +159,36 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
 
     checkpoint &= 0x7fffffff; // ignore top bit, which jit_record_start() uses as a flag
 
+    Variable *cond_v = jitc_var(cond);
+    JitBackend backend = (JitBackend) cond_v->backend;
+
     // Determine the size of variables that are processed by this loop
     uint32_t size = jitc_var(cond)->size;
-    for (size_t i = 0; i < ld->size; ++i) {
-        // Ignore loop-invariant state variables
-        if (indices[i] == ld->inner_in[i])
-            continue;
+    {
+        for (size_t i = 0; i < ld->size; ++i) {
+            // Ignore loop-invariant state variables
+            if (indices[i] == ld->inner_in[i])
+                continue;
 
-        const Variable *v1 = jitc_var(ld->outer_in[i]),
-                       *v2 = jitc_var(indices[i]);
+            const Variable *v1 = jitc_var(ld->outer_in[i]),
+                           *v2 = jitc_var(indices[i]);
 
-        // Ignore variables that are the target of side effects from the loop state
-        if (v2->is_dirty())
-            continue;
+            // Ignore variables that are the target of side effects from the loop state
+            if (v2->is_dirty())
+                continue;
 
-        size = std::max(size, std::max(v1->size, v2->size));
+            size = std::max(size, std::max(v1->size, v2->size));
+        }
+
+        // Check loop's side-effects
+        std::vector<uint32_t> &se_list =
+            thread_state(backend)->side_effects_symbolic;
+        uint32_t se_idx = se_list.size();
+        while (se_idx > 0 && checkpoint < se_list[se_idx - 1] ) {
+            uint32_t index = se_list.back();
+            size = std::max(size, jitc_var(index)->size);
+            se_idx--;
+        }
     }
 
     if (!ld->retry) {
@@ -236,11 +251,8 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
         }
     }
 
-    JitBackend backend;
     {
-        Variable *cond_v = jitc_var(cond);
-        size = cond_v->size;
-        backend = (JitBackend) cond_v->backend;
+        cond_v = jitc_var(cond);
 
         uint32_t active = cond_v->dep[1];
         for (size_t i = 0; i < ld->size; ++i) {
