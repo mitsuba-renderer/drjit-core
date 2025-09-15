@@ -364,7 +364,9 @@ bool jitc_cuda_init() {
         cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
         cuda_check(cuEventCreate(&device.sync_stream_event, CU_EVENT_DISABLE_TIMING));
 
-        uint32_t driver_to_ptx_isa_mappling[][2] = {
+        // This table maps from CUDA version to the PTX ISA version based on the table available here:
+        // https://docs.nvidia.com/cuda/parallel-thread-execution/#release-notes
+        uint32_t driver_to_ptx_isa_mapping[][2] = {
             { 10, 10 },  { 11, 11 },  { 20, 12 },  { 21, 13 },  { 22, 14 },
             { 23, 14 },  { 30, 20 },  { 31, 21 },  { 32, 22 },  { 40, 23 },
             { 41, 23 },  { 42, 30 },  { 50, 31 },  { 55, 32 },  { 60, 40 },
@@ -373,18 +375,18 @@ bool jitc_cuda_init() {
             { 110, 70 }, { 111, 71 }, { 112, 72 }, { 113, 73 }, { 114, 74 },
             { 115, 75 }, { 116, 76 }, { 117, 77 }, { 118, 78 }, { 120, 80 },
             { 121, 81 }, { 122, 82 }, { 123, 83 }, { 124, 84 }, { 125, 85 },
-            { 126, 85 }, { 127, 86 }, { 128, 87 }
+            { 126, 85 }, { 127, 86 }, { 128, 87 }, { 129, 88 }, { 130, 90 }
         };
 
-        const uint32_t table_size = sizeof(driver_to_ptx_isa_mappling) /
+        const uint32_t table_size = sizeof(driver_to_ptx_isa_mapping) /
                                     (uint32_t) (sizeof(uint32_t) * 2);
 
         uint32_t driver_version = jitc_cuda_version_major*10+jitc_cuda_version_minor;
         uint32_t ptx_version = 0;
 
         for (uint32_t j = 0; j < table_size; ++j) {
-            uint32_t driver_version_j = driver_to_ptx_isa_mappling[j][0],
-                     ptx_version_j    = driver_to_ptx_isa_mappling[j][1];
+            uint32_t driver_version_j = driver_to_ptx_isa_mapping[j][0],
+                     ptx_version_j    = driver_to_ptx_isa_mapping[j][1];
 
             if (driver_version >= driver_version_j)
                 ptx_version = ptx_version_j;
