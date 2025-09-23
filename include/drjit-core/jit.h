@@ -1053,6 +1053,22 @@ extern JIT_EXPORT uint32_t jit_var_scatter_inc(uint32_t *target,
                                                uint32_t mask);
 
 /**
+ * \brief Atomically exchange values
+ *
+ * This operation is almost exactly like ``jit_var_scatter``, it differs in the
+ * fact that it also returns the previous value of the ``target`` (before
+ * writing the new ``value``). This operation is atomic on each lane, collisions
+ * in the ``index`` variable can therefore produce non-deterministic results.
+ *
+ * The ``target`` argument will be updated if it is unsafe to directly write to
+ * it.
+ */
+extern JIT_EXPORT uint32_t jit_var_scatter_exch(uint32_t *target,
+                                                uint32_t value,
+                                                uint32_t index,
+                                                uint32_t mask);
+
+/**
  * \brief Perform an atomic compare-and-swap
  *
  * This operation is similar to ``jit_var_scatter`` but with an extra comparison
@@ -1084,7 +1100,6 @@ extern JIT_EXPORT void jit_var_scatter_cas(uint32_t *target,
  * index of the copy, whose reference count is initialized to 1.
  */
 extern JIT_EXPORT uint32_t jit_var_copy(uint32_t index);
-
 
 /**
  * Register an existing memory region as a variable in the JIT compiler, and

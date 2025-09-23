@@ -686,6 +686,83 @@ void jitc_llvm_render_scatter_add_kahan(const Variable *v,
         reg_index);
 }
 
+void jitc_llvm_render_scatter_exch(Variable *v,
+                                   const Variable *ptr,
+                                   const Variable *value,
+                                   const Variable *index,
+                                   const Variable *mask) {
+    bool is_unmasked = mask->is_literal() && mask->literal == 1;
+
+    fmt("    br label %l$u_prelude\n"
+        "\nl$u_prelude:\n"
+       "{    $v_addr_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
+        "    $v_addr = getelementptr inbounds $t, $<$p$> {$v_addr_0|$v}, $V\n"
+        "    br label %l$u_cond\n\n"
+        ""
+        "l$u_cond:\n"
+        "    $v = phi <$w x $t> [$z, %l$u_prelude], [$v_next, %l$u_end]\n"
+        "    $v_i = phi i32 [0, %l$u_prelude], [$v_i_next, %l$u_end]\n"
+        "    $v_cond = icmp slt i32 $v_i, $w\n",
+        // prelude
+        v->reg_index,
+        v->reg_index,
+        v, ptr, value,
+        v, value, value, v, ptr, index,
+        v->reg_index,
+
+        // cond
+        v->reg_index,
+        v, value, v->reg_index, v, v->reg_index,
+        v, v->reg_index, v, v->reg_index,
+        v, v);
+
+    if (is_unmasked)
+        fmt("    br label %l$u_body\n\n",
+            v->reg_index);
+    else
+        fmt("    br i1 $v_cond, label %l$u_check_mask, label %l$u_exit\n\n"
+            ""
+            "l$u_check_mask:\n"
+            "    $v_mask = extractelement $V, i32 $v_i\n"
+            "    br i1 $v_mask, label %l$u_body, label %l$u_end\n\n",
+            v, v->reg_index, v->reg_index,
+            v->reg_index,
+            v, mask, v,
+            v, v->reg_index, v->reg_index);
+
+    fmt("l$u_body:\n"
+        "    $v_value = extractelement $V, i32 $v_i\n"
+        "    $v_target = extractelement <$w x {$p}> $v_addr, i32 $v_i\n"
+        "    $v_ret_i = atomicrmw xchg {$p} $v_target, $t $v_value monotonic\n"
+        "    br label %l$u_end\n\n"
+        ""
+        "l$u_end:\n"
+        "    $v_ret = phi $t [$z, %l$u_check_mask], [$v_ret_i, %l$u_body]\n"
+        "    $v_next = insertelement <$w x $t> $v, $t $v_ret, i32 $v_i\n"
+        "    $v_i_next = add i32 $v_i, 1\n"
+        "    br label %l$u_cond\n\n"
+        ""
+        "l$u_exit:\n",
+        // body
+        v->reg_index,
+        v, value, v,
+        v, value, v, v,
+        v, value, v, value, v,
+        v->reg_index,
+
+        // end
+        v->reg_index,
+        v, value, v->reg_index, v, v->reg_index,
+        v, value, v, value, v, v,
+        v, v,
+        v->reg_index,
+
+        // exit
+        v->reg_index
+    );
+
+    v->consumed = 1;
+}
 
 void jitc_llvm_render_scatter_cas(Variable *v,
                                   const Variable *ptr,
@@ -786,7 +863,6 @@ void jitc_llvm_render_scatter_cas(Variable *v,
         // exit
         v->reg_index
     );
-
 
     v->consumed = 1;
 }

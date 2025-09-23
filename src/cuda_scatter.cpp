@@ -481,6 +481,26 @@ void jitc_cuda_render_scatter_add_kahan(const Variable *v,
     fmt("\nl_$u_done:\n", v->reg_index);
 }
 
+void jitc_cuda_render_scatter_exch(Variable *v,
+                                   const Variable *ptr,
+                                   const Variable *value,
+                                   const Variable *index,
+                                   const Variable *mask) {
+    bool is_unmasked = mask->is_literal() && mask->literal == 1;
+
+    jitc_cuda_prepare_index(ptr, index, index);
+
+    fmt("    mov.$b $v, 0;\n"
+        "    ",
+        v, v);
+    if (!is_unmasked)
+        fmt("@$v ", mask);
+    fmt("atom.global.exch.$b $v, [%rd3], $v;\n",
+        value, v, value);
+
+    v->consumed = 1;
+}
+
 void jitc_cuda_render_scatter_cas(Variable *v,
                                   const Variable *ptr,
                                   const Variable *compare,

@@ -1753,6 +1753,10 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
                         msg = "drjit.scatter_cas(): out-of-bounds write to position";
                         break;
 
+                    case BoundsCheckType::ScatterExch:
+                        msg = "drjit.scatter_xchg(): out-of-bounds write to position";
+                        break;
+
                     case BoundsCheckType::ArrayRead:
                         msg = "drjit.Local.read(): out-of-bounds read from position";
                         break;
@@ -2258,6 +2262,114 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     return result;
 }
 
+uint32_t jitc_var_scatter_exch(uint32_t *target_p, uint32_t value,
+                               uint32_t index, uint32_t mask) {
+    auto print_log = [&](const char *msg) {
+        int type_id = 0;
+        if (value)
+            type_id = jitc_var(value)->type;
+
+        jitc_log(Debug,
+                 "jit_var_scatter_xchg(): xchg(r%u[r%u], r%u) (type=%s, "
+                 "mask=r%u) [%s]",
+                 *target_p, index, value, type_name[type_id], mask, msg);
+    };
+
+    if (*target_p == 0)
+        jitc_raise("jit_var_scatter_xchg(): attempted to scatter to an empty array!");
+
+    auto [var_info, value_v, index_v, mask_v] =
+        jitc_var_check("jit_var_scatter_xchg", value, index, mask);
+
+    Ref target = borrow(*target_p);
+    auto [target_info, target_v] =
+        jitc_var_check("jit_var_scatter_xchg", (uint32_t) target);
+
+    // Go to the original if 'target' is wrapped into a loop state variable
+    unwrap(target, target_v);
+
+    if (target_v->symbolic)
+        jitc_raise(
+            "jit_var_scatter_xchg(): cannot scatter to a symbolic variable (r%u)!",
+            (uint32_t) target);
+    if (target_v->type != value_v->type)
+        jitc_raise("jit_var_scatter_xchg(): 'target', 'compare' and 'value' "
+                   "must have the same type.");
+    if ((VarType) index_v->type != VarType::UInt32)
+        jitc_raise(
+            "jit_var_scatter_xchg(): 'index' must be an unsigned 32-bit array.");
+
+    uint32_t flags = jitc_flags();
+    bool symbolic = flags & (uint32_t) JitFlag::SymbolicScope;
+
+    if (var_info.symbolic && !symbolic)
+        jitc_raise(
+            "jit_var_scatter_xchg(): input arrays are symbolic, but the "
+            "operation was issued outside of a symbolic recording session.");
+
+    if (target_v->is_literal() && value_v->is_literal() &&
+        target_v->literal == value_v->literal) {
+        print_log("skipped, target/source are value variables with the "
+                  "same value");
+        target.release();
+        return *target_p;
+    }
+
+    if (mask_v->is_literal() && mask_v->literal == 0) {
+        print_log("skipped, always masked");
+        target.release();
+        return *target_p;
+    }
+
+    // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
+    if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1) {
+        target = steal(jitc_var_copy(target));
+        target_v = jitc_var(target);
+    }
+
+    // Get a pointer to the array data (non-writable).
+    void *target_addr = nullptr;
+    target = steal(jitc_var_data(target, false, &target_addr));
+    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0));
+
+    // Update target argument
+    bool updated_target = false;
+    if (target != *target_p) {
+        updated_target = true;
+        jitc_var_inc_ref(target);
+        jitc_var_dec_ref(*target_p);
+        *target_p = target;
+        target_v = jitc_var(target);
+    }
+
+    // Apply default masks
+    Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
+        index_2 = steal(jitc_scatter_gather_index(target, index));
+
+    if (flags & (uint32_t) JitFlag::Debug)
+        mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::ScatterExch, index,
+                                             mask_2, target_info.size));
+
+    uint32_t op_size = std::max(var_info.size, jitc_var(mask_2)->size);
+
+    uint32_t scatter_xchg_op = jitc_var_new_node_4(
+        target_info.backend, VarKind::ScatterExch, target_info.type, op_size,
+        symbolic, ptr, jitc_var(ptr), value, jitc_var(value), index_2,
+        jitc_var(index_2), mask_2, jitc_var(mask_2));
+
+    print_log(updated_target ? "direct" : "copied target");
+
+    // Dummy node that represents the side-effect
+    uint32_t write_ptr = jitc_var_pointer(var_info.backend, target_addr, target, 1);
+    uint32_t se = jitc_var_new_node_1(var_info.backend, VarKind::Nop,
+                                      VarType::Void, var_info.size, symbolic,
+                                      scatter_xchg_op, jitc_var(scatter_xchg_op));
+    jitc_var(se)->dep[3] = write_ptr;
+    jitc_var_mark_side_effect(se);
+
+    return scatter_xchg_op;
+}
+
 void jitc_var_scatter_cas(uint32_t *target_p, uint32_t compare, uint32_t value,
                           uint32_t index, uint32_t mask, uint32_t *old,
                           uint32_t *success) {
@@ -2291,8 +2403,8 @@ void jitc_var_scatter_cas(uint32_t *target_p, uint32_t compare, uint32_t value,
             "jit_var_scatter_cas(): cannot scatter to a symbolic variable (r%u)!",
             (uint32_t) target);
     if (target_v->type != compare_v->type || compare_v->type != value_v->type)
-        jitc_raise("jit_var_scatter_cas(): 'target', 'old_value' and "
-                   "'new_value' must have the same type.");
+        jitc_raise("jit_var_scatter_cas(): 'target', 'compare' and 'value' "
+                   "must have the same type.");
     if ((VarType) index_v->type != VarType::UInt32)
         jitc_raise(
             "jit_var_scatter_cas(): 'index' must be an unsigned 32-bit array.");
@@ -2305,8 +2417,8 @@ void jitc_var_scatter_cas(uint32_t *target_p, uint32_t compare, uint32_t value,
             "jit_var_scatter_cas(): input arrays are symbolic, but the "
             "operation was issued outside of a symbolic recording session.");
 
-    if (target_v->is_literal() && new_v->is_literal() &&
-        target_v->literal == new_v->literal) {
+    if (target_v->is_literal() && value_v->is_literal() &&
+        target_v->literal == value_v->literal) {
         print_log("skipped, target/source are value variables with the "
                   "same value");
         target.release();
