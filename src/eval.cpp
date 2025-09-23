@@ -253,7 +253,8 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
             "evalute the consumed variables if they are required by operations "
             "in an other kernel."
             "\nThis can happen when trying to re-use the outputs of the "
-            "dr.scatter_inc() or dr.sactter_cas() operations.", index);
+            "dr.scatter_inc(), dr.scatter_exch() or dr.sactter_cas() "
+            "operations.", index);
 
     if (depth == 0) {
         // If we're visiting this variable the first time regardless of size
