@@ -1749,6 +1749,10 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
                         msg = "drjit.scatter_add_kahan(): out-of-bounds write to position";
                         break;
 
+                    case BoundsCheckType::ScatterCAS:
+                        msg = "drjit.scatter_cas(): out-of-bounds write to position";
+                        break;
+
                     case BoundsCheckType::ArrayRead:
                         msg = "drjit.Local.read(): out-of-bounds read from position";
                         break;
@@ -2252,6 +2256,150 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     jitc_var_mark_side_effect(se.release());
 
     return result;
+}
+
+void jitc_var_scatter_cas(uint32_t *target_p, uint32_t compare, uint32_t value,
+                          uint32_t index, uint32_t mask, uint32_t *old,
+                          uint32_t *success) {
+    auto print_log = [&](const char *msg) {
+        int type_id = 0;
+        if (value)
+            type_id = jitc_var(value)->type;
+
+        jitc_log(Debug,
+                 "jit_var_scatter_cas(): (r%u, r%u) = (r%u[r%u] == r%u) ? r%u : r%u[r%u] "
+                 "(type=%s, mask=r%u) [%s]",
+                 *old, *success, *target_p, index, compare, value, *target_p, index,
+                 type_name[type_id], mask, msg);
+    };
+
+    if (*target_p == 0)
+        jitc_raise("jit_var_scatter_cas(): attempted to scatter to an empty array!");
+
+    auto [var_info, compare_v, value_v, index_v, mask_v] =
+        jitc_var_check("jit_var_scatter_cas", compare, value, index, mask);
+
+    Ref target = borrow(*target_p);
+    auto [target_info, target_v] =
+        jitc_var_check("jit_var_scatter_cas", (uint32_t) target);
+
+    // Go to the original if 'target' is wrapped into a loop state variable
+    unwrap(target, target_v);
+
+    if (target_v->symbolic)
+        jitc_raise(
+            "jit_var_scatter_cas(): cannot scatter to a symbolic variable (r%u)!",
+            (uint32_t) target);
+    if (target_v->type != compare_v->type || compare_v->type != value_v->type)
+        jitc_raise("jit_var_scatter_cas(): 'target', 'old_value' and "
+                   "'new_value' must have the same type.");
+    if ((VarType) index_v->type != VarType::UInt32)
+        jitc_raise(
+            "jit_var_scatter_cas(): 'index' must be an unsigned 32-bit array.");
+
+    uint32_t flags = jitc_flags();
+    bool symbolic = flags & (uint32_t) JitFlag::SymbolicScope;
+
+    if (var_info.symbolic && !symbolic)
+        jitc_raise(
+            "jit_var_scatter_cas(): input arrays are symbolic, but the "
+            "operation was issued outside of a symbolic recording session.");
+
+    if (target_v->is_literal() && new_v->is_literal() &&
+        target_v->literal == new_v->literal) {
+        print_log("skipped, target/source are value variables with the "
+                  "same value");
+        target.release();
+        return;
+    }
+
+    if (mask_v->is_literal() && mask_v->literal == 0) {
+        print_log("skipped, always masked");
+        target.release();
+        return;
+    }
+
+    // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
+    if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1) {
+        target = steal(jitc_var_copy(target));
+        target_v = jitc_var(target);
+    }
+
+    // Get a pointer to the array data (non-writable).
+    void *target_addr = nullptr;
+    target = steal(jitc_var_data(target, false, &target_addr));
+    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0));
+
+    // Update target argument
+    bool updated_target = false;
+    if (target != *target_p) {
+        updated_target = true;
+        jitc_var_inc_ref(target);
+        jitc_var_dec_ref(*target_p);
+        *target_p = target;
+        target_v = jitc_var(target);
+    }
+
+    // Apply default masks
+    Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
+        index_2 = steal(jitc_scatter_gather_index(target, index));
+
+    if (flags & (uint32_t) JitFlag::Debug)
+        mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::ScatterCAS, index,
+                                             mask_2, target_info.size));
+
+    uint32_t op_size = std::max(var_info.size, jitc_var(mask_2)->size);
+
+    /// This function produces 4 new variables:
+    /// - ScatterCAS node: This is the main node which when assembled produces
+    ///   the compare-and-swap instruction. When assembled, it is consumed.
+    /// - Extract 0 node: This node extracts the `old` value of the operation.
+    /// - Extract 1 node: This node extracts the `success` value of the operation.
+    /// - Nop node: This is a dummy node that's sole purpose is to track this
+    ///   entire function as a side-effect.
+    ///
+    /// The relations between these are very intricate. The last three nodes
+    /// depend on the ScatterCAS node, therefore guaranteeing that the operation
+    /// is only assembled & consumed once. The last Nop node, as it is a
+    /// side-effect, ensures that the operation takes place on the next kernel
+    /// launch. It is necessary to have the side-effect on a separate leaf node,
+    /// that depends on a writable pointer to the target, to correctly trigger
+    /// and flush the writes to the target.
+
+    ScatterCASDData *cas_data = new ScatterCASDData();
+    cas_data->mask = mask_2;
+    Ref scatter_cas_op = steal(jitc_var_new_node_4(
+        target_info.backend, VarKind::ScatterCAS, VarType::Void,
+        op_size, symbolic, ptr, jitc_var(ptr),
+        compare, jitc_var(compare), value, jitc_var(value),
+        index_2, jitc_var(index_2), (uintptr_t) cas_data));
+
+    jitc_var_inc_ref(mask_2);
+    auto callback = [](uint32_t /*index*/, int free, void *ptr) {
+        if (free)
+            delete (ScatterCASDData *) ptr;
+    };
+    jitc_var_set_callback(scatter_cas_op, callback, cas_data, true);
+
+    // Extract first return value: the old content of the target
+    *old = jitc_var_new_node_1(
+        target_info.backend, VarKind::Extract, target_info.type, op_size, symbolic,
+        scatter_cas_op, jitc_var(scatter_cas_op), (uint64_t) 0);
+
+    // Extract second return value: whether or not the swap took place
+    *success = jitc_var_new_node_1(
+        target_info.backend, VarKind::Extract, VarType::Bool, op_size, symbolic,
+        scatter_cas_op, jitc_var(scatter_cas_op), (uint64_t) 1);
+
+    print_log(updated_target ? "direct" : "copied target");
+
+    // Dummy node that represents the side-effect
+    uint32_t write_ptr = jitc_var_pointer(var_info.backend, target_addr, target, 1);
+    uint32_t se = jitc_var_new_node_1(var_info.backend, VarKind::Nop,
+                                      VarType::Void, var_info.size, symbolic,
+                                      scatter_cas_op, jitc_var(scatter_cas_op));
+    jitc_var(se)->dep[3] = write_ptr;
+    jitc_var_mark_side_effect(se);
 }
 
 extern size_t llvm_expand_threshold;

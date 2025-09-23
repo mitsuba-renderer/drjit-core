@@ -227,6 +227,12 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
             }
             break;
 
+        case VarKind::ScatterCAS: {
+                ScatterCASDData *cas_data = (ScatterCASDData *) v->data;
+                jitc_var_traverse(size, cas_data->mask, depth);
+            }
+            break;
+
         default:
             break;
     }
@@ -237,6 +243,17 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
             break;
         jitc_var_traverse(size, index2, depth);
     }
+
+    if (unlikely(v->consumed))
+        jitc_raise(
+            "Trying to launch a kernel that depends on a variable that was "
+            "already consumed!"
+            "\nThe variable r%u was already consumed by a prior kernel, it "
+            "cannot be re-computed withing this kernel. You must explicitly "
+            "evalute the consumed variables if they are required by operations "
+            "in an other kernel."
+            "\nThis can happen when trying to re-use the outputs of the "
+            "dr.scatter_inc() or dr.sactter_cas() operations.", index);
 
     if (depth == 0) {
         // If we're visiting this variable the first time regardless of size

@@ -12,6 +12,7 @@
 
 #include "eval.h"
 #include "var.h"
+#include "op.h"
 #include "llvm_eval.h"
 #include "llvm_scatter.h"
 
@@ -683,4 +684,109 @@ void jitc_llvm_render_scatter_add_kahan(const Variable *v,
         v, v,
         v, reg_index, reg_index,
         reg_index);
+}
+
+
+void jitc_llvm_render_scatter_cas(Variable *v,
+                                  const Variable *ptr,
+                                  const Variable *compare,
+                                  const Variable *value,
+                                  const Variable *index) {
+    ScatterCASDData *cas_data = (ScatterCASDData *) v->data;
+    Variable *mask = jitc_var(cas_data->mask);
+    bool is_unmasked = mask->is_literal() && mask->literal == 1;
+
+    fmt("    br label %l$u_prelude\n"
+        "\nl$u_prelude:\n"
+       "{    $v_addr_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
+        "    $v_addr = getelementptr inbounds $t, $<$p$> {$v_addr_0|$v}, $V\n"
+        "    br label %l$u_cond\n\n"
+        ""
+        "l$u_cond:\n"
+        "    $v_out_0 = phi <$w x $t> [$z, %l$u_prelude], [$v_out_0_next, %l$u_end]\n"
+        "    $v_out_1 = phi <$w x i1> [$z, %l$u_prelude], [$v_out_1_next, %l$u_end]\n"
+        "    $v_i = phi i32 [0, %l$u_prelude], [$v_i_next, %l$u_end]\n"
+        "    $v_cond = icmp slt i32 $v_i, $w\n",
+        // prelude
+        v->reg_index,
+        v->reg_index,
+        v, ptr, value,
+        v, value, value, v, ptr, index,
+        v->reg_index,
+
+        // cond
+        v->reg_index,
+        v, value, v->reg_index, v, v->reg_index,
+        v, v->reg_index, v, v->reg_index,
+        v, v->reg_index, v, v->reg_index,
+        v, v);
+
+    if (is_unmasked)
+        fmt("    br label %l$u_body\n\n",
+            v->reg_index);
+    else
+        fmt("    br i1 $v_cond, label %l$u_check_mask, label %l$u_exit\n\n"
+            ""
+            "l$u_check_mask:\n"
+            "    $v_mask = extractelement $V, i32 $v_i\n"
+            "    br i1 $v_mask, label %l$u_body, label %l$u_end\n\n",
+            v, v->reg_index, v->reg_index,
+            v->reg_index,
+            v, mask, v,
+            v, v->reg_index, v->reg_index);
+
+    fmt("l$u_body:\n"
+        "    $v_cmp = extractelement $V, i32 $v_i\n"
+        "    $v_cmp_b = bitcast $t $v_cmp to $b\n"
+        "    $v_value = extractelement $V, i32 $v_i\n"
+        "    $v_value_b = bitcast $t $v_value to $b\n"
+        "    $v_target = extractelement <$w x {$p}> $v_addr, i32 $v_i\n"
+       "{    $v_target_b = bitcast $p $v_target to $b*\n|}"
+        ""
+        "    $v_res = cmpxchg {$b*} $v_target{_b|}, $b $v_cmp_b, $b $v_value_b acquire monotonic\n"
+        "    $v_old_i_b = extractvalue ${ $b, i1 $} $v_res, 0\n"
+        "    $v_old_i = bitcast $b $v_old_i_b to $t\n"
+        "    $v_success_i = extractvalue ${ $b, i1 $} $v_res, 1\n"
+        "    br label %l$u_end\n\n"
+        ""
+        "l$u_end:\n"
+        "    $v_old = phi $t [$z, %l$u_check_mask], [$v_old_i, %l$u_body]\n"
+        "    $v_success = phi i1 [$z, %l$u_check_mask], [$v_success_i, %l$u_body]\n"
+        "    $v_out_0_next = insertelement <$w x $t> $v_out_0, $t $v_old, i32 $v_i\n"
+        "    $v_out_1_next = insertelement <$w x i1> $v_out_1, i1 $v_success, i32 $v_i\n"
+        "    $v_i_next = add i32 $v_i, 1\n"
+        "    br label %l$u_cond\n\n"
+        ""
+        "l$u_exit:\n",
+        // body
+        v->reg_index,
+
+        v, compare, v,
+        v, compare, v, compare,
+        v, value, v,
+        v, compare, v, value,
+        v, value, v, v,
+        v, value, v, value,
+
+        v, value, v, compare, v, value, v,
+        v, value, v,
+        v, value, v, value,
+        v, value, v,
+        v->reg_index,
+
+        // end
+        v->reg_index,
+        v, value, v->reg_index, v, v->reg_index,
+        v, v->reg_index, v, v->reg_index,
+        v, value, v, value, v, v,
+        v, v, v, v,
+        v, v,
+        v->reg_index,
+
+        // exit
+        v->reg_index
+    );
+
+
+    v->consumed = 1;
 }

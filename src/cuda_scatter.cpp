@@ -14,6 +14,7 @@
 #include "eval.h"
 #include "src/log.h"
 #include "var.h"
+#include "op.h"
 #include "cuda_eval.h"
 #include "cuda_scatter.h"
 
@@ -478,4 +479,36 @@ void jitc_cuda_render_scatter_add_kahan(const Variable *v,
         value);
 
     fmt("\nl_$u_done:\n", v->reg_index);
+}
+
+void jitc_cuda_render_scatter_cas(Variable *v,
+                                  const Variable *ptr,
+                                  const Variable *compare,
+                                  const Variable *value,
+                                  const Variable *index) {
+    ScatterCASDData *cas_data = (ScatterCASDData *) v->data;
+    Variable *mask = jitc_var(cas_data->mask);
+    bool is_unmasked = mask->is_literal() && mask->literal == 1;
+
+    jitc_cuda_prepare_index(ptr, index, index);
+
+    fmt("    .reg.$b $v_out_0;\n"
+        "    mov.$b $v_out_0, 0;\n"
+        "    .reg.pred $v_out_1;\n"
+        "    mov.pred $v_out_1, 0;\n",
+        value, v,
+        value, v,
+        v,
+        v);
+
+    put("    ");
+    if (!is_unmasked)
+        fmt("@$v ", mask);
+
+    fmt("atom.global.cas.$b $v_out_0, [%rd3], $v, $v;\n"
+        "    setp.eq.$b $v_out_1, $v_out_0, $v;\n",
+        value, v, compare, value,
+        value, v, v, compare);
+
+    v->consumed = 1;
 }

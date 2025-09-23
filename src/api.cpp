@@ -602,6 +602,13 @@ uint32_t jit_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t mask) {
     return jitc_var_scatter_inc(target, index, mask);
 }
 
+void jit_var_scatter_cas(uint32_t *target, uint32_t compare, uint32_t value,
+                         uint32_t index, uint32_t mask, uint32_t *old,
+                         uint32_t *success) {
+    lock_guard guard(state.lock);
+    jitc_var_scatter_cas(target, compare, value, index, mask, old, success);
+}
+
 uint32_t jit_var_pointer(JitBackend backend, const void *value,
                          uint32_t dep, int write) {
     lock_guard guard(state.lock);
