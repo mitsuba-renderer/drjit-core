@@ -41,6 +41,11 @@ extern void jitc_var_scatter_add_kahan(uint32_t *target_1, uint32_t *target_2,
 /// Atomic scatter-increment
 extern uint32_t jitc_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t mask);
 
+/// Atomic compare-and-swap
+extern void jitc_var_scatter_cas(uint32_t *target, uint32_t compare,
+                                 uint32_t value, uint32_t index, uint32_t mask,
+                                 uint32_t *old, uint32_t *success);
+
 /// Perform an ordinary or reinterpreting cast of the variable 'index'
 extern uint32_t jitc_var_cast(uint32_t index, VarType target_type,
                               int reinterpret);
@@ -126,5 +131,14 @@ struct PacketScatterData {
     ~PacketScatterData() {
         for (uint32_t index: values)
             jitc_var_dec_ref(index);
+    }
+};
+
+/// Extra data describing a scatter CAS operation
+struct ScatterCASDData {
+    uint32_t mask;
+
+    ~ScatterCASDData() {
+        jitc_var_dec_ref(mask);
     }
 };

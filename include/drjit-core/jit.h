@@ -1053,6 +1053,31 @@ extern JIT_EXPORT uint32_t jit_var_scatter_inc(uint32_t *target,
                                                uint32_t mask);
 
 /**
+ * \brief Perform an atomic compare-and-swap
+ *
+ * This operation is similar to ``jit_var_scatter`` but with an extra comparison
+ * before writing the new value. More specifically, it will compare the current
+ * value in the target buffer against ``compare``, and will only write the new
+ * value if these two match. This operation is atomic on each lane, collisions
+ * in the ``index`` variable can therefore produce non-deterministic results.
+ *
+ * It returns two new variables ``old`` and ``success`, the former holds the
+ * original value of the target buffer at the looked up index and the latter is
+ * a boolean array which is only set to true for indices where the new value
+ * was written.
+ *
+ * The ``target`` argument will be updated if it is unsafe to directly write to
+ * it.
+ */
+extern JIT_EXPORT void jit_var_scatter_cas(uint32_t *target,
+                                           uint32_t compare,
+                                           uint32_t value,
+                                           uint32_t index,
+                                           uint32_t mask,
+                                           uint32_t *old,
+                                           uint32_t *success);
+
+/**
  * \brief Create an identical copy of the given variable
  *
  * This function creates an exact copy of the variable \c index and returns the
