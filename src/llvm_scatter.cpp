@@ -684,3 +684,132 @@ void jitc_llvm_render_scatter_add_kahan(const Variable *v,
         v, reg_index, reg_index,
         reg_index);
 }
+
+
+void jitc_llvm_render_scatter_cas(Variable *v,
+                                  const Variable *ptr,
+                                  const Variable *compare,
+                                  const Variable *value,
+                                  const Variable *index) {
+    Variable* mask = jitc_var((uint32_t) v->literal);
+    bool is_unmasked = mask->is_literal() && mask->literal == 1;
+
+//  br label %loop
+//loop: ; loop header
+//  ; i is a phi node, starts at 0 and increments by 1
+//  %i = phi i32 [0, %entry], [%next, %loop_end]
+//
+//  ; check loop bound
+//  %cmp = icmp slt i32 %i, 4
+//  br i1 %cmp, label %loop_body, label %exit
+//
+//loop_body:
+//  ; get address of current element
+//  %addr = getelementptr i32, ptr %base, i32 %i
+//
+//  ; extract expected and desired values for this lane
+//  %exp = extractelement <4 x i32> %expected, i32 %i
+//  %des = extractelement <4 x i32> %desired, i32 %i
+//
+//  ; atomic compare-and-swap
+//  %res = cmpxchg ptr %addr, i32 %exp, i32 %des acquire monotonic
+//  %ok  = extractvalue { i32, i1 } %res, 1
+//
+//  ; store result into temporary vector (accumulated through PHI node)
+//  %prev_result = phi <4 x i1> [zeroinitializer, %loop], [%updated_result, %loop_end]
+//  %updated_result = insertelement <4 x i1> %prev_result, i1 %ok, i32 %i
+//
+//  ; increment i
+//  %next = add i32 %i, 1
+//  br label %loop_end
+//
+//loop_end:
+//  br label %loop
+//
+//exit:
+//  ; when loop ends, %prev_result is our final vector
+//  ret <4 x i1> %prev_result
+
+    fmt("    br label %l$u_prelude\n"
+        "\nl$u_prelude:\n"
+       "{    $v_addr_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
+        "    $v_addr = getelementptr inbounds $t, $<$p$> {$v_0|$v}, $V\n"
+        "    br label %l$u_cond\n"
+
+        "\nl$u_cond:\n"
+        "    $v_out_0 = phi <$w x $t> [$z, %l$u_prelude], [$v_out_0_next, %l$u_end]\n"
+        "    $v_out_1 = phi <$w x i1> [$z, %l$u_prelude], [$v_out_1_next, %l$u_end]\n"
+        "    $v_i = phi i32 [0, %l$u_prelude], [$v_i_next, %l$u_end]\n"
+        "    $v_cond = icmp slt i32 $v_i, $w\n"
+        "    br i1 $v_cond, label %l$u_check_mask, label %l$u_exit\n"
+
+        "\nl$u_check_mask:\n"
+        "    $v_mask = extractelement $V, i32 $v_i\n"
+        "    br i1 $v_mask, label %l$u_body, label %l$u_end\n"
+
+        "\nl$u_body:\n"
+        "    $v_cmp = extractelement $V, i32 $v_i\n"
+        "    $v_value = extractelement $V, i32 $v_i\n"
+        "    $v_target = extractelement <$w x {$p}> $v_addr, i32 $v_i\n"
+
+        "    $v_res = cmpxchg {$p} $v_target, $t $v_cmp, $t $v_value acquire monotonic\n"
+        "    $v_old_0 = extractvalue ${ $t, i1 $} $v_res, 0\n"
+        "    $v_success_0 = extractvalue ${ $t, i1 $} $v_res, 1\n"
+        "    br label %l$u_end\n"
+
+        "\nl$u_end:\n"
+        "    $v_old = phi $t [$z, %l$u_check_mask], [$v_old_0, %l$u_body]\n"
+        "    $v_success = phi i1 [$z, %l$u_check_mask], [$v_success_0, %l$u_body]\n"
+        "    $v_out_0_next = insertelement <$w x $t> $v_out_0, $t $v_old, i32 $v_i\n"
+        "    $v_out_1_next = insertelement <$w x i1> $v_out_1, i1 $v_success, i32 $v_i\n"
+        "    $v_i_next = add i32 $v_i, 1\n"
+        "    br label %l$u_cond\n"
+
+        "\nl$u_exit:\n",
+        // prelude
+        v->reg_index,
+        v->reg_index,
+        v, ptr, value,
+        v, value, value, v, ptr, index,
+        v->reg_index,
+
+        // cond
+        v->reg_index,
+        v, value, v->reg_index, v, v->reg_index,
+        v, v->reg_index, v, v->reg_index,
+        v, v->reg_index, v, v->reg_index,
+        v, v,
+        v, v->reg_index, v->reg_index,
+
+        // check mask
+        v->reg_index,
+        v, mask, v,
+        v, v->reg_index, v->reg_index,
+
+        // body
+        v->reg_index,
+        v, compare, v,
+        v, value, v,
+        v, value, v, v,
+
+        v, value, v, value, v, value, v,
+        v, value, v,
+        v, value, v,
+        v->reg_index,
+
+        // end
+        v->reg_index,
+        v, value, v->reg_index, v, v->reg_index,
+        v, v->reg_index, v, v->reg_index,
+        v, value, v, value, v, v,
+        v, v, v, v,
+        v, v,
+        v->reg_index,
+
+        // exit
+        v->reg_index
+    );
+
+
+    v->consumed = 1;
+}

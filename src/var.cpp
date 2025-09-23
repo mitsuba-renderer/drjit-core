@@ -191,7 +191,7 @@ const char *var_kind_name[(int) VarKind::Count] {
     "bounds_check",
 
     // Memory-related operations
-    "gather", "scatter", "scatter_inc", "scatter_kahan",
+    "gather", "scatter", "scatter_inc", "scatter_kahan", "scatter_cas",
 
     // Gather multiple contiguous values at once
     "packet_gather",
