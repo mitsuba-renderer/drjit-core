@@ -173,8 +173,9 @@ TEST_BOTH(10_scatter_atomic_rmw) {
     }
 }
 
-TEST_BOTH(11_reindex) {
+TEST_CUDA(11_reindex) {
     // Test that a gather expression can rewrite the original expression
+    // On LLVM the default mask gets applied, so the JIT indices do not match.
     UInt32 i1 = arange<UInt32>(100) + 5,
            i2 = arange<UInt32>(10) * 3,
            i3 = gather<UInt32>(i1, i2),
@@ -223,18 +224,17 @@ TEST_BOTH(15_gather_symbolic_multiple_mask) {
      * mask to any previous gather operations it depends on */
     Float buf_0 = Float(1, 2, 3, 4, 5, 6, 7, 8);
 
-    // true, true, true, false, true
-    Mask mask_1 = (arange<UInt32>(0, 5, 1) % 4) != 0;
+    Mask mask_1 = neq(arange<UInt32>(0, 5, 1) % 4, 0); // false, true, true, true, false
     UInt32 index_1 = arange<UInt32>(0, 5, 1);
-    Float buf_1 = gather<Float>(buf_0, index_1, mask_1);
+    Float buf_1 = gather<Float>(buf_0, index_1, mask_1); // 0, 2, 3, 4, 0
 
     Mask mask_2 = Mask(true, true, false, false);
-    UInt32 index_2 = UInt32(0, 1, -1, -1);
+    UInt32 index_2 = UInt32(0, 2, -1, -1);
 
     // This gather will reindex, and should apply `mask_2` to the previous
     // gather, or else it will lookup invalid memory
     Float buf_2 = gather<Float>(buf_1, index_2, mask_2);
-    jit_assert(strcmp(buf_2.str(), "[1, 2, 0, 0]") == 0);
+    jit_assert(strcmp(buf_2.str(), "[0, 3, 0, 0]") == 0);
 }
 
 TEST_BOTH(16_scatter_inc) {
