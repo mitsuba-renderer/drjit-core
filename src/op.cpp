@@ -1641,13 +1641,13 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             if (!index_2)
                 continue;
 
+            dep[i] = steal(jitc_var_reindex(index_2, new_index, mask, size, map));
             if (v->kind == (uint32_t) VarKind::Gather && i == 2) {
-                // Gather nodes must have their masks replaced rather than reindexed
+                // Gather nodes must also apply the new mask
                 JitBackend backend = (JitBackend) v->backend;
                 Ref default_mask = steal(jitc_var_mask_default(backend, size));
-                dep[i] = steal(jitc_var_and(mask, default_mask));
-            } else {
-                dep[i] = steal(jitc_var_reindex(index_2, new_index, mask, size, map));
+                dep[i] = steal(jitc_var_and(dep[i], default_mask));
+                dep[i] = steal(jitc_var_and(dep[i], mask));
             }
 
             v = jitc_var(var_index);
@@ -1867,12 +1867,13 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
     if (!result) {
         Ref index_2 = steal(jitc_var_cast(index, VarType::UInt32, 0));
         tsl::robin_map<uint32_t, uint32_t, UInt32Hasher> map;
-        Ref src_reindexed = steal(jitc_var_reindex(src, index_2, mask, var_info.size, map));
+        Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size));
+        Ref src_reindexed = steal(jitc_var_reindex(src, index_2, mask_2, var_info.size, map));
         if (src_reindexed) {
             // Temporarily hold an extra reference to prevent 'jitc_var_resize' from changing 'src'
             Ref unused = borrow(src_reindexed);
             Ref tmp = steal(jitc_var_resize(src_reindexed, var_info.size));
-            result = jitc_var_and(tmp, mask);
+            result = jitc_var_and(tmp, mask_2);
             msg = " [elided, reindexed]";
         }
     }
