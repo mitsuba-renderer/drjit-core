@@ -1631,9 +1631,15 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
     Ref dep[4];
     bool rebuild = v->size != size && v->size != 1;
 
-    if (v->kind == (uint32_t) VarKind::DefaultMask && rebuild)
-        // Do not re-index the mask, only resize it
-        return jitc_var_mask_default((JitBackend) v->backend, size);
+    if (v->kind == (uint32_t) VarKind::DefaultMask) {
+        if (rebuild) { // Do not re-index the mask, only resize it
+            return jitc_var_mask_default((JitBackend) v->backend, size);
+        } else { // Just keep it as is
+            jitc_var_inc_ref(var_index, v);
+            map[var_index] = var_index;
+            return var_index;
+        }
+    }
 
     if (!v->is_literal()) {
         for (uint32_t i = 0; i < 4; ++i) {
@@ -1642,7 +1648,7 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
                 continue;
 
             dep[i] = steal(jitc_var_reindex(index_2, new_index, mask, size, map));
-            if (v->kind == (uint32_t) VarKind::Gather && i == 2) {
+            if (dep[i] && v->kind == (uint32_t) VarKind::Gather && i == 2) {
                 // Gather nodes must also apply the new mask
                 JitBackend backend = (JitBackend) v->backend;
                 Ref default_mask = steal(jitc_var_mask_default(backend, size));
