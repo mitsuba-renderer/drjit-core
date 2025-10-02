@@ -176,6 +176,7 @@ struct ReplayVariable {
             data_size   = alloc_size;
             if (!dry_run) {
                 index = jitc_var_copy(index);
+                v = jitc_var(index); // 'v' may have been invalidated
                 data  = v->data;
             }
         }
