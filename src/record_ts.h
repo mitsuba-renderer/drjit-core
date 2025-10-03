@@ -61,6 +61,14 @@ extern const char *op_type_name[(int) OpType::Count];
  * record_ts.cpp file.
  */
 struct Operation {
+
+    ~Operation() {
+        if (type == OpType::KernelLaunch) {
+            free(kernel.key->str);
+            free(kernel.key);
+        }
+    }
+
     OpType type;
 
     /// Indices into the dependency vector

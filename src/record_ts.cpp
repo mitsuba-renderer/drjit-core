@@ -784,7 +784,7 @@ void RecordThreadState::record_launch(
     op.dependency_range = std::pair(start, end);
 
     op.kernel.kernel   = kernel;
-    op.kernel.key      = (KernelKey *) std::malloc(sizeof(KernelKey));
+    op.kernel.key      = (KernelKey *) malloc_check(sizeof(KernelKey));
     size_t str_size    = buffer.size() + 1;
     op.kernel.key->str = (char *) malloc_check(str_size);
     std::memcpy(op.kernel.key->str, key->str, str_size);

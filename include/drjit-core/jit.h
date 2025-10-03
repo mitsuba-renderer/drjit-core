@@ -2395,7 +2395,7 @@ struct KernelHistoryEntry {
     uint64_t hash[2];
 
     /// Copy of the kernel IR string buffer
-    char *ir;
+    char *ir = nullptr;
 
     /// Does the kernel contain any OptiX (ray tracing) operations?
     int uses_optix;

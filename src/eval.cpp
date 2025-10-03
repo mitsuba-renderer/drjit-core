@@ -275,6 +275,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     alloca_size = alloca_align = -1;
     callable_count = 0;
     callable_count_unique = 0;
+    free(kernel_history_entry.ir);
     kernel_history_entry = { };
 
 #if defined(DRJIT_ENABLE_OPTIX)
