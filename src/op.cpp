@@ -1609,7 +1609,7 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
 /// Change all indices/counters in an expression tree to 'new_index'
 static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
                                  uint32_t mask, uint32_t size,
-                                 tsl::robin_map<uint32_t, uint32_t, UInt32Hasher> &map) {
+                                 tsl::robin_map<uint32_t, Ref, UInt32Hasher> &map) {
     auto it = map.find(var_index);
     if (it != map.end())
         return jitc_var_new_ref(it.value());
@@ -1636,10 +1636,12 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             return jitc_var_mask_default((JitBackend) v->backend, size);
         } else { // Just keep it as is
             jitc_var_inc_ref(var_index, v);
-            map[var_index] = var_index;
+            map[var_index] = borrow(var_index);
             return var_index;
         }
     }
+
+    VarKind v_kind = (VarKind) v->kind;
 
     if (!v->is_literal()) {
         for (uint32_t i = 0; i < 4; ++i) {
@@ -1648,25 +1650,23 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
                 continue;
 
             dep[i] = steal(jitc_var_reindex(index_2, new_index, mask, size, map));
-            if (dep[i] && v->kind == (uint32_t) VarKind::Gather && i == 2) {
-                // Gather nodes must also apply the new mask
-                JitBackend backend = (JitBackend) v->backend;
-                Ref default_mask = steal(jitc_var_mask_default(backend, size));
-                dep[i] = steal(jitc_var_and(dep[i], default_mask));
+            if (dep[i] && v_kind == VarKind::Gather && i == 2) {
+                // Gather nodes must also apply the new mask (which should
+                // already contain the default mask)
                 dep[i] = steal(jitc_var_and(dep[i], mask));
             }
 
-            v = jitc_var(var_index);
             if (!dep[i])
                 return 0; // recursive call failed, give up
             rebuild |= dep[i] != index_2;
+
+            // The above operations may have invalidated 'v'
+            v = jitc_var(var_index);
         }
     }
 
-
     uint32_t result;
     if (v->kind == (uint32_t) VarKind::Counter) {
-        map[var_index] = new_index;
         result = jitc_var_new_ref(new_index);
     } else if (rebuild) {
         Variable v2;
@@ -1686,7 +1686,8 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
         jitc_var_inc_ref(var_index, v);
         result = var_index;
     }
-    map[var_index] = result;
+    map[var_index] = borrow(result);
+
     return result;
 }
 
@@ -1872,7 +1873,7 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
     // Don't perform the gather operation if the inputs are trivial / can be re-indexed
     if (!result) {
         Ref index_2 = steal(jitc_var_cast(index, VarType::UInt32, 0));
-        tsl::robin_map<uint32_t, uint32_t, UInt32Hasher> map;
+        tsl::robin_map<uint32_t, Ref, UInt32Hasher> map;
         Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size));
         Ref src_reindexed = steal(jitc_var_reindex(src, index_2, mask_2, var_info.size, map));
         if (src_reindexed) {

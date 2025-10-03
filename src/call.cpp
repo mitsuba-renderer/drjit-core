@@ -171,7 +171,7 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
     //
     std::unique_ptr<CallData> call(new CallData());
     call->backend = backend;
-    call->name = strdup(name);
+    call->name = name;
     call->n_in = n_in;
     call->n_out = n_out;
     call->n_inst = n_inst;
