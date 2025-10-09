@@ -840,6 +840,8 @@ private:
 
 using UnusedPQ = std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>;
 
+using PointerMap = tsl::robin_map<const void *, uint32_t, PointerHasher>;
+
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
     /// Must be held to access members of this data structure
@@ -926,6 +928,13 @@ struct State {
     /// Index of the JIT variable handling the lifetime of the default Optix SBT
     uint32_t optix_default_sbt_index = 0;
 #endif
+
+#ifndef NDEBUG
+    /// Mapping from pointers that are managed by variables to their variable
+    /// indices. This is used for debugging purposes in frozen functions.
+    PointerMap ptr_to_variable;
+#endif
+
 
     State() {
         variables.resize(1);
