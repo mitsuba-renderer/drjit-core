@@ -309,8 +309,22 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
 
         if (v->is_evaluated()) {
             // Release memory referenced by this variable
-            if (!v->retain_data)
+            if (!v->retain_data) {
                 jitc_free(v->data);
+
+#ifndef NDEBUG
+                // This warning should never be thrown, except if we forgot to
+                // populate the mapping
+                if (!state.ptr_to_variable.contains(v->data))
+                    jitc_log(
+                        LogLevel::Warn,
+                        "Pointr <%p> was mangaged by variable r%u, but this "
+                        "was not recorded in the pointer to variable map!",
+                        v->data, index);
+
+                state.ptr_to_variable.erase(v->data);
+#endif
+            }
         } else {
             // Unevaluated variable, drop from CSE cache
             jitc_lvn_drop(index, v);
@@ -782,6 +796,11 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     // Optional: intense internal sanitation instrumentation
 #if defined(DRJIT_SANITIZE_INTENSE)
     jitc_sanitation_checkpoint();
+#endif
+
+#ifndef NDEBUG
+    if (v.is_evaluated())
+        state.ptr_to_variable.insert({ v.data, index });
 #endif
 
     return index;

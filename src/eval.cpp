@@ -817,6 +817,10 @@ void jitc_eval_impl(ThreadState *ts) {
 
             if (v->is_array())
                 v->scope = 0;
+
+#ifndef NDEBUG
+            state.ptr_to_variable.insert({ v->data, index });
+#endif
         }
 
         uint32_t dep[4], side_effect = v->side_effect;
