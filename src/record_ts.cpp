@@ -2046,7 +2046,7 @@ void Recording::validate(uint32_t scope) {
             if (it != state.ptr_to_variable.end()) {
                 index = it->second;
                 Variable *var = jitc_var(index);
-                if (var->scope < scope)
+                if (var->scope >= scope)
                     scope_string = "inside";
             }
             if (last_op.type == OpType::Aggregate) {
