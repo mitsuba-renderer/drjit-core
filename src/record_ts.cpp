@@ -2034,21 +2034,27 @@ void RecordThreadState::enqueue_host_func(void (*callback)(void *),
     (void) callback; (void) payload;
 }
 
-void Recording::validate() {
+void Recording::validate(uint32_t scope) {
     for (uint32_t i = 0; i < recorded_variables.size(); i++) {
         RecordedVariable &rv = recorded_variables[i];
         if (rv.state == RecordedVarState::Uninitialized) {
             Operation &last_op = operations[rv.last_op];
 #ifndef NDEBUG
             uint32_t index = 0;
+            const char *scope_string = "before";
             auto it        = state.ptr_to_variable.find(rv.ptr);
-            if (it != state.ptr_to_variable.end())
+            if (it != state.ptr_to_variable.end()) {
                 index = it->second;
+                Variable *var = jitc_var(index);
+                if (var->scope < scope)
+                    scope_string = "inside";
+            }
             if (last_op.type == OpType::Aggregate) {
                 jitc_raise(
                     "validate(): The frozen function included a virtual "
                     "function call involving Variable r%u at slot s%u <%p>"
-                    "which was last used by operation o%u. Dr.Jit would "
+                    "which created %s the frozen function and was last used by "
+                    "operation o%u. Dr.Jit would "
                     "normally traverse a registry of all relevant object "
                     "instances in order to collect their member variables. "
                     "However, when recording this frozen function, this "
@@ -2058,15 +2064,16 @@ void Recording::validate() {
                     "or by specifying them using the state_fn argument. "
                     "Alternatively, this error might be caused by a nested "
                     "virtual function call.",
-                    index, i, rv.ptr, rv.last_op);
+                    index, i, rv.ptr, scope_string, rv.last_op);
             } else
                 jitc_raise(
-                    "validate(): Variable r%u at slot s%u <%p>, was used by %s "
+                    "validate(): Variable r%u at slot s%u <%p> which was "
+                    "created %s the frozen function and was last used by %s "
                     "operation o%u but left in an uninitialized state! This "
                     "indicates that the associated variable was used, but not "
                     "traversed as part of the frozen function input.",
-                    index, i, rv.ptr, op_type_name[(uint32_t) last_op.type],
-                    rv.last_op);
+                    index, i, rv.ptr, scope_string,
+                    op_type_name[(uint32_t) last_op.type], rv.last_op);
 #else
             if (last_op.type == OpType::Aggregate) {
                 jitc_raise(
@@ -2564,6 +2571,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
         ThreadState *internal = rts->m_internal;
+        uint32_t scope = internal->scope;
 
         // Perform reassignments to internal thread-state of possibly changed
         // variables
@@ -2591,7 +2599,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         }
         Recording *recording = new Recording(std::move(rts->m_recording));
         try{
-            recording->validate();
+            recording->validate(scope);
         } catch (const std::exception &) {
             recording->destroy();
             throw;

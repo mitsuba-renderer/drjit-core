@@ -321,7 +321,7 @@ struct Recording {
 
     /// This function is called after recording and checks that the recording is
     /// valid i.e. that no variables where left uninitialized.
-    void validate();
+    void validate(uint32_t scope);
     /// Checks if all recorded kernels are still in the kernel cache. This might
     /// occur when calling dr.kernel_cache_flush between recording the function
     /// and replaying it.
