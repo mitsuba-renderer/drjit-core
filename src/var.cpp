@@ -313,6 +313,8 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
                 jitc_free(v->data);
 
 #ifndef NDEBUG
+                // This warning should never be thrown, except if we forgot to
+                // populate the mapping
                 if (!state.ptr_to_variable.contains(v->data))
                     jitc_log(
                         LogLevel::Warn,

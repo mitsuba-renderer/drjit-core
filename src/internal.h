@@ -853,10 +853,6 @@ struct State {
     /// A flat list of variable data structures, including unused one
     std::vector<Variable> variables;
 
-#ifndef NDEBUG
-    PointerMap ptr_to_variable;
-#endif
-
     /// A priority queue of indices into 'variables' that are currently unused
     UnusedPQ unused_variables;
 
@@ -932,6 +928,13 @@ struct State {
     /// Index of the JIT variable handling the lifetime of the default Optix SBT
     uint32_t optix_default_sbt_index = 0;
 #endif
+
+#ifndef NDEBUG
+    /// Mapping from pointers that are managed by variables to their variable
+    /// indices. This is used for debugging purposes in frozen functions.
+    PointerMap ptr_to_variable;
+#endif
+
 
     State() {
         variables.resize(1);
