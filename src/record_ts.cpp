@@ -2040,28 +2040,33 @@ void Recording::validate() {
         if (rv.state == RecordedVarState::Uninitialized) {
             Operation &last_op = operations[rv.last_op];
 #ifndef NDEBUG
+            uint32_t index = 0;
+            auto it        = state.ptr_to_variable.find(rv.ptr);
+            if (it != state.ptr_to_variable.end())
+                index = it->second;
             if (last_op.type == OpType::Aggregate) {
                 jitc_raise(
                     "validate(): The frozen function included a virtual "
-                    "function call involving variable s%u <%p>, last used by "
-                    "operation o%u. Dr.Jit would normally traverse a registry "
-                    "of all relevant object instances in order to collect "
-                    "their member variables. However, when recording this "
-                    "frozen function, this traversal was skipped because no "
-                    "such object instance was found in the function's inputs. "
-                    "You can trigger traversal by including the relevant "
-                    "objects in the function input, or by specifying them "
-                    "using the state_fn argument. Alternatively, this error "
-                    "might be caused by a nested "
+                    "function call involving Variable r%u at slot s%u <%p>"
+                    "which was last used by operation o%u. Dr.Jit would "
+                    "normally traverse a registry of all relevant object "
+                    "instances in order to collect their member variables. "
+                    "However, when recording this frozen function, this "
+                    "traversal was skipped because no such object instance was "
+                    "found in the function's inputs. You can trigger traversal "
+                    "by including the relevant objects in the function input, "
+                    "or by specifying them using the state_fn argument. "
+                    "Alternatively, this error might be caused by a nested "
                     "virtual function call.",
-                    i, rv.ptr, rv.last_op);
+                    index, i, rv.ptr, rv.last_op);
             } else
                 jitc_raise(
-                    "validate(): Variable at slot s%u <%p> was used by %s operation "
-                    "o%u but left in an uninitialized state! This indicates "
-                    "that the associated variable was used, but not traversed "
-                    "as part of the frozen function input.",
-                    i, rv.ptr, op_type_name[(uint32_t) last_op.type], rv.last_op);
+                    "validate(): Variable r%u at slot s%u <%p>, was used by %s "
+                    "operation o%u but left in an uninitialized state! This "
+                    "indicates that the associated variable was used, but not "
+                    "traversed as part of the frozen function input.",
+                    index, i, rv.ptr, op_type_name[(uint32_t) last_op.type],
+                    rv.last_op);
 #else
             if (last_op.type == OpType::Aggregate) {
                 jitc_raise(
@@ -2301,7 +2306,20 @@ void RecordThreadState::add_param(AccessInfo info) {
         jitc_log(LogLevel::Debug, " -> param s%u", info.slot);
 
         RecordedVariable &rv = m_recording.recorded_variables[info.slot];
-        if (info.test_uninit && rv.state == RecordedVarState::Uninitialized)
+        if (info.test_uninit && rv.state == RecordedVarState::Uninitialized){
+#ifndef NDEBUG
+            uint32_t index = 0;
+            auto it        = state.ptr_to_variable.find(rv.ptr);
+            if (it != state.ptr_to_variable.end())
+                index = it->second;
+            jitc_raise("record(): Variable r%u at slot s%u was read by "
+                       "operation o%u, but it had not yet been initialized! "
+                       "This can occur if the variable was not part of "
+                       "the input but is used by a recorded operation, for "
+                       "example if it was not specified as a member in a "
+                       "DRJIT_STRUCT but used in the frozen function.",
+                       index, info.slot, (uint32_t) m_recording.operations.size());
+#else
             jitc_raise("record(): Variable at slot s%u was read by "
                        "operation o%u, but it had not yet been initialized! "
                        "This can occur if the variable was not part of "
@@ -2309,6 +2327,8 @@ void RecordThreadState::add_param(AccessInfo info) {
                        "example if it was not specified as a member in a "
                        "DRJIT_STRUCT but used in the frozen function.",
                        info.slot, (uint32_t) m_recording.operations.size());
+#endif
+        }
 
         if (info.vtype == VarType::Void)
             info.vtype = rv.type;

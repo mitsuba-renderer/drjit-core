@@ -840,6 +840,8 @@ private:
 
 using UnusedPQ = std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>;
 
+using PointerMap = tsl::robin_map<const void *, uint32_t, PointerHasher>;
+
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
     /// Must be held to access members of this data structure
@@ -850,6 +852,10 @@ struct State {
 
     /// A flat list of variable data structures, including unused one
     std::vector<Variable> variables;
+
+#ifndef NDEBUG
+    PointerMap ptr_to_variable;
+#endif
 
     /// A priority queue of indices into 'variables' that are currently unused
     UnusedPQ unused_variables;
