@@ -321,9 +321,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     pgd[0].raygen.module = kernel.optix.mod;
     pgd[0].raygen.entryFunctionName = strdup(kern_name);
 
-    // Prefer continuation over direct callables when compiling programs that
-    // make use of cooperative vectors.
-    bool continuation_callables = jitc_optix_max_coopvec_size != 0;
+    bool continuation_callables = jitc_optix_use_continuation_callables();
 
     for (auto const &it : globals_map) {
         if (!it.first.callable)
