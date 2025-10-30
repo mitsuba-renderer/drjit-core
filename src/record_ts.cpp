@@ -668,6 +668,11 @@ Task *RecordThreadState::launch(Kernel kernel, KernelKey *key,
         }
     }
     pause_scope pause(this);
+    // Forward the OptiX SBT and pipeline to the internal thread state.
+#if defined(DRJIT_ENABLE_OPTIX)
+    m_internal->optix_pipeline = optix_pipeline;
+    m_internal->optix_sbt      = optix_sbt;
+#endif
     return m_internal->launch(kernel, key, hash, size, params, nullptr,
                               kernel_history_entry);
 }
@@ -875,13 +880,6 @@ void RecordThreadState::record_launch(
     }
 
     m_recording.operations.push_back(op);
-
-    // Re-assign optix specific variables to internal thread state since they
-    // might have changed
-#if defined(DRJIT_ENABLE_OPTIX)
-    m_internal->optix_pipeline = optix_pipeline;
-    m_internal->optix_sbt      = optix_sbt;
-#endif
 }
 
 int Recording::replay_launch(Operation &op) {
