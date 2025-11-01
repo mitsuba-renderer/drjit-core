@@ -172,6 +172,24 @@ extern JIT_EXPORT void jit_cuda_push_context(void *);
 /// Pop the CUDA context associated to the current thread and return it
 extern JIT_EXPORT void* jit_cuda_pop_context();
 
+/// Forward declaration of an opaque CUDA green context handle
+typedef struct CUDAGreenContext CUDAGreenContext;
+
+/// Create a CUDA green context covering a subset of SMs
+extern JIT_EXPORT CUDAGreenContext *
+jit_cuda_green_context_make(uint32_t sm_count,
+                            uint32_t *sm_count_actual,
+                            void **other_context);
+
+/// Release a previously created CUDA green context
+extern JIT_EXPORT void jit_cuda_green_context_release(CUDAGreenContext *ctx);
+
+/// Activate a CUDA green context for the calling thread. Returns a token.
+extern JIT_EXPORT void *jit_cuda_green_context_enter(CUDAGreenContext *ctx);
+
+/// Restore the CUDA thread state using a token from jit_cuda_green_context_enter().
+extern JIT_EXPORT void jit_cuda_green_context_leave(void *token);
+
 /// Query the compute capability of the current device (e.g. '52')
 extern JIT_EXPORT int jit_cuda_compute_capability();
 
