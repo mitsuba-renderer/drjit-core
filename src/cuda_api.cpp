@@ -164,6 +164,23 @@ bool jitc_cuda_api_init() {
     cuMemFreeAsync =
         decltype(cuMemFreeAsync)(dlsym(jitc_cuda_handle, "cuMemFreeAsync"));
 
+    cuDeviceGetDevResource = decltype(cuDeviceGetDevResource)(
+        dlsym(jitc_cuda_handle, "cuDeviceGetDevResource"));
+    cuCtxGetDevResource = decltype(cuCtxGetDevResource)(
+        dlsym(jitc_cuda_handle, "cuCtxGetDevResource"));
+    cuDevSmResourceSplitByCount = decltype(cuDevSmResourceSplitByCount)(
+        dlsym(jitc_cuda_handle, "cuDevSmResourceSplitByCount"));
+    cuDevResourceGenerateDesc = decltype(cuDevResourceGenerateDesc)(
+        dlsym(jitc_cuda_handle, "cuDevResourceGenerateDesc"));
+    cuDevResourceDestroyDesc = decltype(cuDevResourceDestroyDesc)(
+        dlsym(jitc_cuda_handle, "cuDevResourceDestroyDesc"));
+    cuGreenCtxCreate = decltype(cuGreenCtxCreate)(
+        dlsym(jitc_cuda_handle, "cuGreenCtxCreate"));
+    cuGreenCtxDestroy = decltype(cuGreenCtxDestroy)(
+        dlsym(jitc_cuda_handle, "cuGreenCtxDestroy"));
+    cuCtxFromGreenCtx = decltype(cuCtxFromGreenCtx)(
+        dlsym(jitc_cuda_handle, "cuCtxFromGreenCtx"));
+
     return true;
 }
 
@@ -183,6 +200,9 @@ void jitc_cuda_api_shutdown() {
     Z(cuMemFree); Z(cuMemFreeHost); Z(cuMemcpy); Z(cuMemcpyAsync);
     Z(cuMemsetD16Async); Z(cuMemsetD32Async); Z(cuMemsetD8Async);
     Z(cuModuleGetFunction); Z(cuModuleLoadData); Z(cuModuleLoadDataEx); Z(cuModuleUnload);
+    Z(cuDeviceGetDevResource); Z(cuCtxGetDevResource); Z(cuDevSmResourceSplitByCount);
+    Z(cuDevResourceGenerateDesc); Z(cuDevResourceDestroyDesc);
+    Z(cuGreenCtxCreate); Z(cuGreenCtxDestroy); Z(cuCtxFromGreenCtx);
     Z(cuOccupancyMaxPotentialBlockSize); Z(cuCtxPushCurrent);
     Z(cuCtxPopCurrent); Z(cuStreamCreate); Z(cuStreamDestroy);
     Z(cuStreamSynchronize); Z(cuStreamWaitEvent); Z(cuStreamWaitEvent_ptsz); Z(cuPointerGetAttribute);

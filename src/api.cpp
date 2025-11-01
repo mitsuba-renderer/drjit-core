@@ -15,6 +15,7 @@
 #include "registry.h"
 #include "llvm.h"
 #include "cuda_tex.h"
+#include "cuda_green.h"
 #include "op.h"
 #include "call.h"
 #include "loop.h"
@@ -250,6 +251,28 @@ void jit_cuda_push_context(void* ctx) {
 void* jit_cuda_pop_context() {
     lock_guard guard(state.lock);
     return jitc_cuda_pop_context();
+}
+
+CUDAGreenContext *jit_cuda_green_context_make(uint32_t sm_count,
+                                              uint32_t *sm_count_actual,
+                                              void **other_context) {
+    lock_guard guard(state.lock);
+    return (CUDAGreenContext *) jitc_cuda_green_context_make(sm_count,
+                                                             sm_count_actual,
+                                                             other_context);
+}
+
+void jit_cuda_green_context_release(CUDAGreenContext *ctx) {
+    lock_guard guard(state.lock);
+    jitc_cuda_green_context_release(ctx);
+}
+
+void *jit_cuda_green_context_enter(CUDAGreenContext *ctx) {
+    return jitc_cuda_green_context_enter(ctx);
+}
+
+void jit_cuda_green_context_leave(void *token) {
+    jitc_cuda_green_context_leave(token);
 }
 
 int jit_cuda_device_count() {
