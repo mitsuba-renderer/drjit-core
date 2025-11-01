@@ -108,11 +108,40 @@ using CUstream     = struct CUstream_st *;
 using CUevent      = struct CUevent_st *;
 using CUarray      = struct CUarray_st *;
 using CUtexObject  = struct CUtexObject_st *;
+using CUgreenCtx   = struct CUgreenCtx_st *;
 using CUresult     = int;
 using CUdevice     = int;
 using CUdeviceptr  = void *;
 using CUjit_option = int;
 using CUarray_format = int;
+using CUdevResourceType = unsigned int;
+
+#define CU_DEV_RESOURCE_TYPE_INVALID 0
+#define CU_DEV_RESOURCE_TYPE_SM 1
+#define CU_DEV_SM_RESOURCE_SPLIT_IGNORE_SM_COSCHEDULING 0x1
+#define CU_GREEN_CTX_DEFAULT_STREAM 0x1
+
+struct CUdevSmResource {
+    unsigned int smCount;
+    unsigned int minSmPartitionSize;
+    unsigned int smCoscheduledAlignment;
+};
+
+struct CUdevResource {
+    CUdevResourceType type;
+    unsigned char _internal_padding[92];
+    union {
+        CUdevSmResource sm;
+        unsigned char _oversize[256]; // RESOURCE_ABI_EXTERNAL_BYTES
+    };
+};
+
+struct CUdevResourceDesc_st {
+    unsigned long long reserved0;
+    void *reserved1;
+};
+
+using CUdevResourceDesc = CUdevResourceDesc_st *;
 
 struct CUDA_ARRAY_DESCRIPTOR {
     size_t Width;
@@ -257,6 +286,14 @@ DR_CUDA_SYM(CUresult (*cuModuleGetFunction)(CUfunction *, CUmodule, const char *
 DR_CUDA_SYM(CUresult (*cuModuleLoadData)(CUmodule *, const void *));
 DR_CUDA_SYM(CUresult (*cuModuleLoadDataEx)(CUmodule *, const void *, unsigned int, CUjit_option*, void**));
 DR_CUDA_SYM(CUresult (*cuModuleUnload)(CUmodule));
+DR_CUDA_SYM(CUresult (*cuDeviceGetDevResource)(CUdevice, CUdevResource *, CUdevResourceType));
+DR_CUDA_SYM(CUresult (*cuCtxGetDevResource)(CUcontext, CUdevResource *, CUdevResourceType));
+DR_CUDA_SYM(CUresult (*cuDevSmResourceSplitByCount)(CUdevResource *, unsigned int *, const CUdevResource *, CUdevResource *, unsigned int, unsigned int));
+DR_CUDA_SYM(CUresult (*cuDevResourceGenerateDesc)(CUdevResourceDesc *, CUdevResource *, unsigned int));
+DR_CUDA_SYM(CUresult (*cuDevResourceDestroyDesc)(CUdevResourceDesc));
+DR_CUDA_SYM(CUresult (*cuGreenCtxCreate)(CUgreenCtx *, CUdevResourceDesc, CUdevice, unsigned int));
+DR_CUDA_SYM(CUresult (*cuGreenCtxDestroy)(CUgreenCtx));
+DR_CUDA_SYM(CUresult (*cuCtxFromGreenCtx)(CUcontext *, CUgreenCtx));
 DR_CUDA_SYM(CUresult (*cuOccupancyMaxPotentialBlockSize)(int *, int *, CUfunction,
                                                          void *, size_t, int));
 DR_CUDA_SYM(CUresult (*cuCtxPushCurrent)(CUcontext));
