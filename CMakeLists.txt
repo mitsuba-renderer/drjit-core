@@ -121,6 +121,8 @@ add_library(
   src/cuda_api.h
   src/cuda_api.cpp
   src/cuda_core.cpp
+  src/cuda_green.h
+  src/cuda_green.cpp
   src/cuda_tex.h
   src/cuda_tex.cpp
   src/cuda_eval.cpp
