@@ -271,10 +271,14 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
     put(".visible .func");
     if (out_size)
         fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
-    fmt(" $s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
-        uses_optix ? (jitc_optix_use_continuation_callables()
-                          ? "__continuation_callable__"
-                          : "__direct_callable__") : "func_");
+
+    if (call->n_inst == 1)
+        put(" func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(");
+    else
+        fmt(" $s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
+            uses_optix ? (jitc_optix_use_continuation_callables()
+                              ? "__continuation_callable__"
+                              : "__direct_callable__") : "func_");
 
     if (call->use_index)
         put(".reg .u32 index, ");
@@ -1432,7 +1436,7 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     // 3. Turn callable ID into a function pointer
     // =====================================================
 
-    if (!uses_optix) {
+    if (call->n_inst == 1 || !uses_optix) {
         put("        ld.global.u64 %rd2, callables[%r3];\n");
     } else {
         fmt("        call (%rd2), _optix_call_$s_callable, (%r3);\n",
@@ -1526,7 +1530,10 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
             tname, v->param_offset, prefix, v->reg_index);
     }
 
-    put("            call ");
+    if (call->n_inst == 1)
+        put("            call.uni ");
+    else
+        put("            call ");
     if (out_size)
         put("(out), ");
     put("%rd2, (");
