@@ -72,7 +72,7 @@ static void jitc_cuda_render_reorder(const Variable *, const Variable *);
 void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
     uint32_t flags = jitc_flags();
-    
+
     bool params_global = !uses_optix && n_params > jitc_cuda_arg_limit;
     bool print_labels  = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
@@ -112,8 +112,8 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         fmt(".entry drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
             ".param .align 8 .b8 params[$u]) {\n",
             params_global ? 8u : (n_params * (uint32_t) sizeof(void *)));
-        
-        if ((flags & (uint32_t) JitFlag::SpillToSharedMemory) && 
+
+        if ((flags & (uint32_t) JitFlag::SpillToSharedMemory) &&
            ts->compute_capability >= 75 && ts->ptx_version >= 87)
             fmt("    .pragma \"enable_smem_spilling\";\n\n");
     } else {
@@ -239,6 +239,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                    buffer.get() + 18;
 
         fmt(".extern .global .u64 callables[$u];\n\n", callable_count_unique);
+
         buffer.move_suffix(suffix_start, suffix_target);
 
         fmt("\n.visible .global .align 8 .u64 callables[$u] = {\n",
@@ -268,7 +269,11 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (flags & (uint32_t) JitFlag::PrintIR);
 
-    put(".visible .func");
+    if (call->n_inst == 1)
+        put(".func");
+    else
+        put(".visible .func");
+
     if (out_size)
         fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
 
@@ -1436,7 +1441,8 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     // 3. Turn callable ID into a function pointer
     // =====================================================
 
-    if (call->n_inst == 1 || !uses_optix) {
+    if (call->n_inst == 1) { }
+    else if (!uses_optix) {
         put("        ld.global.u64 %rd2, callables[%r3];\n");
     } else {
         fmt("        call (%rd2), _optix_call_$s_callable, (%r3);\n",
@@ -1479,21 +1485,23 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     put("        {\n");
 
     // Call prototype
-    put("            proto: .callprototype");
-    if (out_size)
-        fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
-    put(" _(");
+    if (call->n_inst != 1) {
+        put("            proto: .callprototype");
+        if (out_size)
+            fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
+        put(" _(");
 
-    if (call->use_index)
-        put(".reg .u32 index, ");
-    if (call->use_self)
-        put(".reg .u32 self, ");
-    if (data_reg)
-        put(".reg .u64 data, ");
-    if (in_size)
-        fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
-    buffer.delete_trailing_commas();
-    put(");\n");
+        if (call->use_index)
+            put(".reg .u32 index, ");
+        if (call->use_self)
+            put(".reg .u32 self, ");
+        if (data_reg)
+            put(".reg .u64 data, ");
+        if (in_size)
+            fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
+        buffer.delete_trailing_commas();
+        put(");\n");
+    }
 
     // Input/output parameter arrays
     if (out_size)
@@ -1530,13 +1538,44 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
             tname, v->param_offset, prefix, v->reg_index);
     }
 
-    if (call->n_inst == 1)
+    if (call->n_inst == 1) {
+        put("            .func ");
+        if (out_size)
+            fmt("(.param .align $u .b8 result[$u]) ", out_align, out_size);
+        put("func_");
+        XXH128_hash_t hash = call->inst_hash[0];
+        buffer.put_q64_unchecked(hash.high64);
+        buffer.put_q64_unchecked(hash.low64);
+        put("(");
+
+        if (call->use_index)
+            put(".reg .u32 index, ");
+        if (call->use_self)
+            put(".reg .u32 self, ");
+        if (data_reg)
+            put(".reg .u64 data, ");
+        if (in_size)
+            fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
+        buffer.delete_trailing_commas();
+        put(");\n");
+
         put("            call.uni ");
-    else
+    } else {
         put("            call ");
+    }
+
     if (out_size)
         put("(out), ");
-    put("%rd2, (");
+
+    if (call->n_inst != 1) {
+        put("%rd2, (");
+    } else {
+        XXH128_hash_t hash = call->inst_hash[0];
+        put("func_");
+        buffer.put_q64_unchecked(hash.high64);
+        buffer.put_q64_unchecked(hash.low64);
+        put(", (");
+    }
     if (call->use_index) {
         if (callable_depth == 0)
             put("%r0, ");
@@ -1550,7 +1589,13 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     if (in_size)
         put("in, ");
     buffer.delete_trailing_commas();
-    put("), proto;\n");
+
+    if (call->n_inst != 1)
+        put("), proto;\n");
+    else
+        put(");\n");
+
+
 
     // =====================================================
     // 5.2. Read back the output arguments

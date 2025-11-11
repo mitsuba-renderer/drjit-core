@@ -669,7 +669,7 @@ void jitc_call_upload(ThreadState *ts) {
         memset(data, 0, call->offset_size);
 
         for (uint32_t i = 0; i < call->n_inst; ++i) {
-            auto it = globals_map.find(GlobalKey(call->inst_hash[i], true));
+            auto it = globals_map.find(GlobalKey(call->inst_hash[i], call->n_inst != 1));
             if (it == globals_map.end())
                 jitc_fail("jitc_call_upload(): could not find callable!");
 

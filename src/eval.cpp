@@ -22,6 +22,7 @@
 #include "op.h"
 #include "array.h"
 #include <tsl/robin_set.h>
+#include <iostream>
 
 // ====================================================================
 //  The following data structures are temporarily used during program
@@ -914,7 +915,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         kernel_hash.high64 = 0;
     }
 
-    if (globals_map.emplace(GlobalKey(kernel_hash, true),
+    if (globals_map.emplace(GlobalKey(kernel_hash, call->n_inst != 1),
                             GlobalValue(globals.size(), kernel_length)).second) {
         // Replace '^'s in 'func_^^^..' or '__direct_callable__^^^..' with hash
         size_t hash_offset = strchr(buffer.get() + kernel_offset, '^') - buffer.get(),
@@ -930,7 +931,8 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         globals.put(buffer.get() + kernel_offset, kernel_length);
     }
 
-    callable_count++;
+    if (call->n_inst != 1)
+        callable_count++;
 
     buffer.rewind_to(kernel_offset);
 
@@ -953,6 +955,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
 
 /// Register a global declaration that will be included in the final program
 void jitc_register_global(const char *str) {
+    std::cout << "registerint: " << str << std::endl;
     size_t length = strlen(str);
     if (globals_map.emplace(GlobalKey(XXH128(str, length, 0), false),
                             GlobalValue(globals.size(), length)).second)
