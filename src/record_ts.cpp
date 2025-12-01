@@ -2037,7 +2037,7 @@ void Recording::validate(uint32_t scope) {
         RecordedVariable &rv = recorded_variables[i];
         if (rv.state == RecordedVarState::Uninitialized) {
             Operation &last_op = operations[rv.last_op];
-#ifndef NDEBUG
+#if !defined(NDEBUG)
             uint32_t index = 0;
             const char *scope_string = "before";
             auto it        = state.ptr_to_variable.find(rv.ptr);
@@ -2073,6 +2073,7 @@ void Recording::validate(uint32_t scope) {
                     index, i, rv.ptr, scope_string,
                     op_type_name[(uint32_t) last_op.type], rv.last_op);
 #else
+            (void) scope;
             if (last_op.type == OpType::Aggregate) {
                 jitc_raise(
                     "validate(): The frozen function included a virtual "
