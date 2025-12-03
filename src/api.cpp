@@ -1665,6 +1665,16 @@ int jit_freeze_dry_run(Recording *recording, const uint32_t *inputs) {
     return jitc_freeze_dry_run(recording, inputs);
 }
 
+void jit_freeze_discard(const char *message) {
+    lock_guard guard(state.lock);
+    jitc_freeze_discard(message);
+}
+
+int jit_freeze_discarded() {
+    lock_guard guard(state.lock);
+    return jitc_freeze_discarded();
+}
+
 void jit_freeze_destroy(Recording *recording) {
     lock_guard guard(state.lock);
     jitc_freeze_destroy(recording);
