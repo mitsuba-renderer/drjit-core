@@ -2770,6 +2770,21 @@ extern JIT_EXPORT int jit_freeze_dry_run(Recording *recording,
                                          const uint32_t *inputs);
 
 /**
+ * \brief Some function result in recordings that cannot be replayed. This
+ *     function marks such recordings, so that Dr.Jit can discard them.
+ *
+ * \param message
+ *     This function accepts an optional message.
+ */
+extern JIT_EXPORT void jit_freeze_discard(const char *message);
+
+/**
+ * \brief This function returns if the last frozen function recording should be
+ *     discarded or not.
+ */
+extern JIT_EXPORT int jit_freeze_discarded();
+
+/**
  * \brief Pause recording the ThreadState for this backend.
  *
  * Returns an integer indicating the pause state before calling this function,
