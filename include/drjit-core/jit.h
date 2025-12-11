@@ -2771,18 +2771,26 @@ extern JIT_EXPORT int jit_freeze_dry_run(Recording *recording,
 
 /**
  * \brief Some function result in recordings that cannot be replayed. This
- *     function marks such recordings, so that Dr.Jit can discard them.
+ *     function marks such recordings, so that Dr.Jit can discard them. If no
+ *     function is in the progress of being recorded this function has no
+ *     effect.
+ *
+ * \param backend
+ *     Backend for which the current recording should be discarded.
  *
  * \param message
  *     This function accepts an optional message.
  */
-extern JIT_EXPORT void jit_freeze_discard(const char *message);
+extern JIT_EXPORT void jit_freeze_discard(JitBackend backend, const char *message);
 
 /**
- * \brief This function returns if the last frozen function recording should be
+ * \brief This function returns if the frozen function recording should be
  *     discarded or not.
+ *
+ * \param recording
+ *     Recording for which this function should querry if it should be discarded.
  */
-extern JIT_EXPORT int jit_freeze_discarded();
+extern JIT_EXPORT int jit_freeze_discarded(const Recording *recording);
 
 /**
  * \brief Pause recording the ThreadState for this backend.
