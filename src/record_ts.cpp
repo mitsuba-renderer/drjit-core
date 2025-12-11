@@ -152,12 +152,6 @@ static bool dry_run = false;
 /// entries. This function will be set by ``jitc_freeze_replay()``.
 static bool record_kernel_history = false;
 
-/// Indicates if this frozen function recording should be discarded.
-/// Some functions can generate recordings that cannot be replayed. These
-/// functions can call `jit_freeze_discard` to mark the recording as such.
-/// Dr.Jit will then not add it to the recording cache.
-static bool discarded = false;
-
 /**
  * Represents a variable during replay.
  * It is created from the RecordVariable at the top of the replay function.
@@ -2550,9 +2544,6 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
         jitc_fail("Tried to record a thread_state while inside another "
                   "FreezingScope!");
 
-    // Reset the discarded flag.
-    discarded = false;
-
     // Increment scope, can be used to track missing inputs
     jitc_new_scope(backend);
 
@@ -2726,10 +2717,14 @@ int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs) {
     return result;
 }
 
-void jitc_freeze_discard(const char *) {
-    discarded = true;
+void jitc_freeze_discard(JitBackend backend, const char *) {
+    if (RecordThreadState *rts =
+            dynamic_cast<RecordThreadState *>(thread_state(backend));
+        rts != nullptr) {
+        rts->m_recording.discarded = true;
+    }
 }
 
-int jitc_freeze_discarded() {
-    return discarded;
+int jitc_freeze_discarded(const Recording *recording) {
+    return recording->discarded;
 }
