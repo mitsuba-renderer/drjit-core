@@ -24,6 +24,7 @@ struct Kernel {
     void *data;
     uint32_t size;
     uint32_t operation_count;
+    bool launched;
     union {
         /// 1. CUDA
         struct {

@@ -97,6 +97,9 @@ extern std::vector<ScheduledVariable> schedule;
 /// Groups of variables with the same size
 extern std::vector<ScheduledGroup> schedule_groups;
 
+/// List of enqueued dr.Queue callbacks
+extern std::vector<QueueCallback *> queue_callbacks, queue_callbacks_launched;
+
 /// Evaluate all computation that is queued on the current thread
 extern void jitc_eval(ThreadState *ts);
 

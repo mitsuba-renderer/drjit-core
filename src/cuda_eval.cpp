@@ -56,6 +56,7 @@
 #  include <drjit-core/optix.h>
 #  include "optix_coop_vec.h"
 #endif
+#include "cuda_queue.h"
 
 // Forward declarations
 static void jitc_cuda_render(Variable *v);
@@ -338,10 +339,10 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
 
             uint32_t offset = it->second - call->data_offset[inst];
             if (vt != VarType::Bool)
-                fmt("    ld.global.$b $v, [data+$u];\n",
+                fmt("    ld.weak.global.ca.$b $v, [data+$u];\n",
                     v, v, offset);
             else
-                fmt("    ld.global.u8 %w0, [data+$u];\n"
+                fmt("    ld.weak.global.ca.u8 %w0, [data+$u];\n"
                     "    setp.ne.u16 $v, %w0, 0;\n",
                     offset, v);
         } else if (v->is_literal()) {
@@ -1191,6 +1192,13 @@ static void jitc_cuda_render(Variable *v) {
             jitc_cuda_render_reorder(v, a0);
             break;
 #endif
+        case VarKind::QueueSend:
+            jitc_cuda_render_queue_send(v, a0, a1);
+            break;
+
+        case VarKind::QueueRecv:
+            jitc_cuda_render_queue_recv(v, a0);
+            break;
 
         default:
             jitc_fail("jitc_cuda_render(): unhandled variable kind \"%s\"!",

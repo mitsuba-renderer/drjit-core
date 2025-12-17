@@ -6,8 +6,6 @@
 #include "log.h"
 #include "eval.h"
 #include "var.h"
-#include "op.h"
-#include "util.h"
 #include "trace.h"
 
 static bool jitc_optix_cache_hit = false;
@@ -467,7 +465,7 @@ void jitc_optix_free(const Kernel &kernel) {
 
 void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
                        uint32_t launch_size, const void *args,
-                       uint32_t n_args) {
+                       uint32_t n_args, bool dummy_launch) {
     OptixShaderBindingTable &sbt = *ts->optix_sbt;
     sbt.raygenRecord = kernel.optix.sbt_record;
 
@@ -495,10 +493,20 @@ void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
                 (CUdeviceptr) ((uint8_t *) args + sizeof(uint32_t)),
                 offset, 1, ts->stream);
 
+        if (dummy_launch) {
+            cuMemsetD32Async((CUdeviceptr) args, 0, 1, ts->stream);
+            sub_launch_size = 1;
+        }
+
         jitc_optix_check(
             optixLaunch(kernel.optix.pipeline, ts->stream, (CUdeviceptr) args,
                         n_args * sizeof(void *), &sbt,
                         sub_launch_size, 1, 1));
+
+        if (dummy_launch) {
+            cuMemsetD32Async((CUdeviceptr) args, launch_size, 1, ts->stream);
+            break;
+        }
 
         launch_size -= sub_launch_size;
         offset += sub_launch_size;

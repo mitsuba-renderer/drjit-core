@@ -25,6 +25,7 @@
 #include "record_ts.h"
 #include "coop_vec.h"
 #include "reorder.h"
+#include "queue.h"
 #include <thread>
 #include <condition_variable>
 #include <drjit-core/half.h>
@@ -1811,6 +1812,26 @@ uint32_t jit_coop_vec_cast(uint32_t index, VarType vt) {
 bool jit_coop_vec_supported(JitBackend backend) {
     lock_guard guard(state.lock);
     return jitc_coop_vec_supported(backend);
+}
+
+// ====================================================================
+//                            Queue API
+// ====================================================================
+
+uint32_t jit_queue_send(uint32_t buffer, uint32_t msg_types,
+                        uint32_t msg_max_size, uint32_t batch_size,
+                        uint32_t batches, int debug, uint32_t msg_id,
+                        uint32_t n_indices, const uint32_t *indices,
+                        QueueCallback *callback) {
+    lock_guard guard(state.lock);
+    return jitc_queue_send(buffer, msg_types, msg_max_size, batch_size, batches,
+                           debug, msg_id, n_indices, indices, callback);
+}
+
+void jit_queue_recv(uint32_t ticket, uint32_t n_indices, const VarType *recv_vt,
+                    uint32_t *recv_idx) {
+    lock_guard guard(state.lock);
+    jitc_queue_recv(ticket, n_indices, recv_vt, recv_idx);
 }
 
 // ====================================================================

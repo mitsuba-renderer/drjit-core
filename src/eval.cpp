@@ -21,6 +21,7 @@
 #include "trace.h"
 #include "op.h"
 #include "array.h"
+#include "queue.h"
 #include <tsl/robin_set.h>
 
 // ====================================================================
@@ -97,6 +98,9 @@ KernelHistoryEntry kernel_history_entry;
 
 /// List of enqueued callbacks (bound checks, async dr.print statements, etc.)
 static std::vector<uint32_t> eval_callbacks;
+
+/// List of enqueued dr.Queue callbacks
+std::vector<QueueCallback *> queue_callbacks, queue_callbacks_launched;
 
 /// Temporary todo list needed to correctly process loops in jitc_var_traverse()
 static std::vector<VisitedKey> visit_later;
@@ -230,6 +234,13 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
         case VarKind::ScatterCAS: {
                 ScatterCASDData *cas_data = (ScatterCASDData *) v->data;
                 jitc_var_traverse(size, cas_data->mask, depth);
+            }
+            break;
+
+        case VarKind::QueueSend: {
+                QueueSendData *qsd = (QueueSendData *) jitc_var_extra(v)->callback_data;
+                for (uint32_t i : qsd->indices)
+                    jitc_var_traverse(size, i, depth);
             }
             break;
 

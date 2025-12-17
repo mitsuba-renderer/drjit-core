@@ -3005,6 +3005,46 @@ extern JIT_EXPORT uint32_t jit_coop_vec_outer_product_accum(
     uint32_t b);
 
 // ====================================================================
+//  Message queue for asynchronous computation
+// ====================================================================
+
+/**
+ * \brief Callback to launch a persistent kernel servicing a queue
+ *
+ * Just before launching a kernel that uses a queue, Dr.Jit will call 'callback'
+ * with the current CUDA stream as argument.
+ *
+ * The callback should launch a thread to service queue messages and perform
+ * an async memset on the provided stream to shut down the queue server again.
+ */
+struct QueueCallback {
+    void (*callback)(QueueCallback *cb, void *stream, int state);
+    void (*inc_ref)(QueueCallback *cb);
+    void (*dec_ref)(QueueCallback *cb);
+    void *payload_1;
+    void *payload_2;
+    uint32_t ref_count;
+
+    bool operator==(const QueueCallback &b) {
+      return callback == b.callback &&
+             payload_1 == b.payload_1 &&
+             payload_2 == b.payload_2;
+    }
+};
+
+/// Send a message to a queue and return a ticket on which we can wait for a reply
+extern JIT_EXPORT uint32_t jit_queue_send(uint32_t buffer, uint32_t msg_types,
+                                          uint32_t msg_max_size, uint32_t block_size,
+                                          uint32_t blocks, int debug, uint32_t msg_id,
+                                          uint32_t n_indices, const uint32_t *indices,
+                                          QueueCallback *callback);
+
+/// Wait for the reply of a message
+extern JIT_EXPORT void jit_queue_recv(uint32_t ticket, uint32_t n_indices,
+                                      const VarType *recv_vt,
+                                      uint32_t *recv_idx);
+
+// ====================================================================
 //                            Event API
 // ====================================================================
 

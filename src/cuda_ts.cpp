@@ -75,9 +75,23 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
     }
 
 #if defined(DRJIT_ENABLE_OPTIX)
+    if (!queue_callbacks.empty() && uses_optix && !kernel.launched)
+        jitc_optix_launch(this, kernel, size, kernel_params_global,
+                          kernel_param_count, true);
+#endif
+
+    // Boot up queue(s) for asynchoronous messaging
+    for (QueueCallback *cb: queue_callbacks) {
+        cb->callback(cb, stream, 1);
+        queue_callbacks_launched.push_back(cb);
+    }
+
+    queue_callbacks.clear();
+
+#if defined(DRJIT_ENABLE_OPTIX)
     if (unlikely(uses_optix))
         jitc_optix_launch(this, kernel, size, kernel_params_global,
-                          kernel_param_count);
+                          kernel_param_count, false);
 #else
     (void) kernel_param_count;
     (void) kernel_params_global;
@@ -102,6 +116,7 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
         cuda_check(cuLaunchKernel(kernel.cuda.func, block_count, 1, 1,
                                   thread_count, 1, 1, 0, stream,
                                   nullptr, config));
+
         jitc_trace("jit_run(): launching %u thread%s in %u block%s ..",
                    thread_count, thread_count == 1 ? "" : "s", block_count,
                    block_count == 1 ? "" : "s");
@@ -110,10 +125,10 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
     if (unlikely(jit_flag(JitFlag::LaunchBlocking)))
         cuda_check(cuStreamSynchronize(stream));
 
-
     // Cleanup global kernel parameters
     jitc_free(kernel_params_global);
     kernel_params_global = nullptr;
+    kernel.launched = true;
 
     if (kernel_history_entry){
         cuda_check(cuEventRecord((CUevent) kernel_history_entry->event_end,
@@ -122,6 +137,12 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
     }
 
     return nullptr;
+}
+
+void CUDAThreadState::barrier() {
+    for (QueueCallback *cb: queue_callbacks_launched)
+        cb->callback(cb, stream, 0);
+    queue_callbacks_launched.clear();
 }
 
 /// Fill a device memory region with constants of a given type

@@ -22,6 +22,7 @@
 #include "util.h"
 #include "var.h"
 #include "coop_vec.h"
+#include "queue.h"
 
 std::vector<CallData *> calls_assembled;
 
@@ -629,6 +630,10 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
     } else if (kind == VarKind::CoopVecPack) {
         CoopVecPackData *cvid = (CoopVecPackData *) v->data;
         for (uint32_t i : cvid->indices)
+            jitc_var_call_analyze(call, inst_id, i, data_offset);
+    } else if (kind == VarKind::QueueSend) {
+        QueueSendData *qsd = (QueueSendData *) jitc_var_extra((Variable *) v)->callback_data;
+        for (uint32_t i : qsd->indices)
             jitc_var_call_analyze(call, inst_id, i, data_offset);
     } else if (kind == VarKind::TraceRay) {
         TraceData *td = (TraceData *) v->data;

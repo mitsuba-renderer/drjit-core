@@ -109,6 +109,7 @@ add_library(
   src/strbuf.h        src/strbuf.cpp
   src/var.h           src/var.cpp
   src/array.h         src/array.cpp
+  src/queue.h         src/queue.cpp
   src/op.h            src/op.cpp
   src/malloc.h        src/malloc.cpp
   src/registry.h      src/registry.cpp
@@ -134,6 +135,9 @@ add_library(
   src/cuda_packet.cpp
   src/cuda_array.h
   src/cuda_array.cpp
+  src/cuda_queue.h
+  src/cuda_queue.cpp
+
   # CUDA / OpenGL interop
   include/drjit-core/gl_interop.h
   src/gl_interop.cpp

@@ -172,6 +172,12 @@ enum class VarKind : uint32_t {
     // Write an element to a variable array
     ArrayWrite,
 
+    // Send a message to an asynchronous queue
+    QueueSend,
+
+    // Receive a message from an asynchronous queue
+    QueueRecv,
+
     // Cooperative Vector API
     CoopVecLiteral,
     CoopVecPack,

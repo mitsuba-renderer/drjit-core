@@ -277,6 +277,12 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Write an element to a variable array
     "array_write",
 
+    // Send a message to an asynchronous queue
+    "queue_send",
+
+    // Receive a message from an asynchronous queue
+    "queue_recv",
+
     // Cooperative vector API
     "coop_vec_literal",
     "coop_vec_pack",

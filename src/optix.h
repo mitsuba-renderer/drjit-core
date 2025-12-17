@@ -66,7 +66,8 @@ extern void jitc_optix_free(const Kernel &kernel);
 
 /// Perform an OptiX kernel launch
 extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
-                              uint32_t size, const void *args, uint32_t n_args);
+                              uint32_t size, const void *args, uint32_t n_args,
+                              bool dummy_launch);
 
 /// Optional: set the desired launch size
 extern void jitc_optix_set_launch_size(uint32_t width, uint32_t height,

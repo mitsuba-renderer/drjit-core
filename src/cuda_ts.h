@@ -7,6 +7,8 @@ struct CUDAThreadState : ThreadState {
                  const std::vector<uint32_t> *kernel_param_ids,
                  KernelHistoryEntry *kernel_history_entry) override;
 
+    void barrier() override;
+
     /// Fill a device memory region with constants of a given type
     void memset_async(void *ptr, uint32_t size, uint32_t isize,
                       const void *src) override;
