@@ -27,6 +27,16 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
              tsize = type_size[v->type],
              total_bytes = count * tsize;
 
+    // Get compute capability for current device
+    const ThreadState *ts = thread_state_cuda;
+    uint32_t compute_capability = state.devices[ts->device].compute_capability;
+
+    // 256-bit operations require CC 12.0+, and for OptiX: CUDA driver 13.2+
+    bool supports_256bit = compute_capability >= 120 &&
+                          (!uses_optix ||
+                           (jitc_cuda_version_major > 13 ||
+                            (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2)));
+
     fmt("    mad.wide.$t %rd3, $v, $u, $v;\n"
         "    .reg.$t $v_out_<$u>;\n",
         index, index, total_bytes, ptr,
@@ -65,8 +75,9 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
             fmt("    mov.b$u $v_$s_$u, 0;\n", dst_bits, v, suffix, i);
     }
 
-    // Try to load 128b/iteration, potentially reduce if the total size of the load isn't divisible
-    uint32_t bytes_per_it = 16;
+    // Try to load 256b/iteration if supported, otherwise 128b/iteration
+    // Potentially reduce if the total size of the load isn't divisible
+    uint32_t bytes_per_it = supports_256bit ? 32 : 16;
     while ((total_bytes & (bytes_per_it - 1)) != 0)
         bytes_per_it /= 2;
     uint32_t regs_per_it = (bytes_per_it * 8) / dst_bits;
@@ -98,6 +109,21 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
                     v, suffix, reg_offset+1,
                     v, suffix, reg_offset+2,
                     v, suffix, reg_offset+3,
+                    byte_offset);
+                break;
+
+            case 8:
+                fmt("ld.global.nc.v8.b$u {$v_$s_$u, $v_$s_$u, $v_$s_$u, $v_$s_$u, "
+                    "$v_$s_$u, $v_$s_$u, $v_$s_$u, $v_$s_$u}, [%rd3+$u];\n",
+                    dst_bits,
+                    v, suffix, reg_offset,
+                    v, suffix, reg_offset+1,
+                    v, suffix, reg_offset+2,
+                    v, suffix, reg_offset+3,
+                    v, suffix, reg_offset+4,
+                    v, suffix, reg_offset+5,
+                    v, suffix, reg_offset+6,
+                    v, suffix, reg_offset+7,
                     byte_offset);
                 break;
 
@@ -172,7 +198,13 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
         jitc_fail("jitc_cuda_render_scatter_reduce_packet(): Number of "
                   "elements not supported by reduction.");
 
-    if (ts->compute_capability >= 90 && !uses_optix &&
+    // Vector reduction instructions require CC 9.0+ and for OptiX: CUDA driver 13.2+
+    bool supports_vector_reduction = ts->compute_capability >= 90 &&
+                                    (!uses_optix ||
+                                     (jitc_cuda_version_major > 13 ||
+                                      (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2)));
+
+    if (supports_vector_reduction &&
         (v0->type == (uint32_t) VarType::Float16 ||
          v0->type == (uint32_t) VarType::Float32)) {
         // Use the new `red.global.vX` instructions. This enables both min & max
@@ -181,7 +213,14 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
 
         // Find the largest supported packet size dividing the number of
         // variables.
-        uint32_t vars_per_it = 16 / tsize;
+        // Note: PTX limitations:
+        // - red.global.vX.f32: supports only .v2 or .v4 (max 128 bits)
+        // - red.global.vX.f16: supports up to .v8 (max 128 bits, 8x16bit)
+        // - No .v16 instruction exists in PTX
+        uint32_t max_bytes = 16;  // Default: max 128 bits
+        // For f16, we can use v8 (8 elements * 2 bytes = 16 bytes)
+        // but NOT v16 (which would be 32 bytes)
+        uint32_t vars_per_it = max_bytes / tsize;
         while ((count & (vars_per_it - 1)) != 0)
             vars_per_it /= 2;
 
@@ -281,6 +320,16 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
         return;
     }
 
+    // Get compute capability for current device
+    const ThreadState *ts = thread_state_cuda;
+    uint32_t compute_capability = state.devices[ts->device].compute_capability;
+
+    // 256-bit operations require CC 12.0+, and for OptiX: CUDA driver 13.2+
+    bool supports_256bit = compute_capability >= 120 &&
+                          (!uses_optix ||
+                           (jitc_cuda_version_major > 13 ||
+                            (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2)));
+
     uint32_t count = (uint32_t) values.size(),
              tsize = type_size[v0->type],
              total_bytes = count * tsize;
@@ -305,10 +354,10 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
         index, index, tsize, ptr,
         var_bits, v, var_count);
 
-    // Try to store 128b/iteration
-    uint32_t bytes_per_it = 16;
+    // Try to store 256b/iteration if supported, otherwise 128b/iteration
+    uint32_t bytes_per_it = supports_256bit ? 32 : 16;
 
-    // Potentially reduce if the total size of the load isn't divisible
+    // Potentially reduce if the total size of the store isn't divisible
     while ((total_bytes & (bytes_per_it - 1)) != 0)
         bytes_per_it /= 2;
 
@@ -362,6 +411,16 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
                     var_bits, byte_offset,
                     v, reg_offset,   v, reg_offset+1,
                     v, reg_offset+2, v, reg_offset+3);
+                break;
+
+            case 8:
+                fmt("st.global.v8.b$u [%rd3+$u], {$v_$u, $v_$u, $v_$u, $v_$u, "
+                    "$v_$u, $v_$u, $v_$u, $v_$u};\n",
+                    var_bits, byte_offset,
+                    v, reg_offset,   v, reg_offset+1,
+                    v, reg_offset+2, v, reg_offset+3,
+                    v, reg_offset+4, v, reg_offset+5,
+                    v, reg_offset+6, v, reg_offset+7);
                 break;
 
             default:
