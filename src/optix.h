@@ -92,7 +92,11 @@ extern uint32_t jitc_optix_max_coopvec_size;
 inline bool jitc_optix_use_continuation_callables() {
     // Prefer continuation callables when compiling programs that use coperative vectors
     // (This gives slightly better performance)
-    return jitc_optix_max_coopvec_size > 0;
+    //return jitc_optix_max_coopvec_size > 0;
+
+    // On drivers v580 and prior, using CC would cause unreliable execution
+    // TODO: revisit this once v590 or later is out
+    return false;
 }
 #else
 inline bool jitc_optix_use_continuation_callables() { return false; }
