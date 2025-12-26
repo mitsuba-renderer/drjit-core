@@ -118,7 +118,7 @@ LogLevel jit_log_level_stderr() {
     return state.log_level_stderr;
 }
 
-void jit_set_log_level_callback(LogLevel level, LogCallback callback) {
+void jit_set_log_level_callback(LogLevel level, JitLogCallback callback) {
     lock_guard guard(state.lock);
     state.log_level_callback = callback ? level : Disable;
     state.log_callback = callback;
