@@ -2039,6 +2039,9 @@ bool jitc_var_any(uint32_t index) {
     if (unlikely((VarType) v->type != VarType::Bool))
         jitc_raise("jit_var_any(r%u): requires a boolean array as input!", index);
 
+    if (v->kind == (uint32_t) VarKind::DefaultMask)
+        return true;
+
     if (v->is_literal())
         return (bool) v->literal;
 
@@ -2060,6 +2063,9 @@ uint32_t jitc_var_any_async(JitBackend backend, uint32_t index) {
 
     if (v->is_literal())
         return jitc_var_bool(backend, (bool) v->literal);
+
+    if (v->kind == (uint32_t) VarKind::DefaultMask)
+        return jitc_var_bool(backend, true);
 
     uint8_t *mem = (uint8_t *) jitc_malloc(
         backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, 4);
