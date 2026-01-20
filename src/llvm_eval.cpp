@@ -785,7 +785,7 @@ static void jitc_llvm_render(Variable *v) {
         case VarKind::Lt:
             if (jitc_is_float(a0))
                 stmt = "    $v = fcmp olt $V, $v\n";
-            else if (jitc_is_uint(a0))
+            else if (jitc_is_uint(a0) || jitc_is_bool(a0))
                 stmt = "    $v = icmp ult $V, $v\n";
             else
                 stmt = "    $v = icmp slt $V, $v\n";
@@ -795,7 +795,7 @@ static void jitc_llvm_render(Variable *v) {
         case VarKind::Le:
             if (jitc_is_float(a0))
                 stmt = "    $v = fcmp ole $V, $v\n";
-            else if (jitc_is_uint(a0))
+            else if (jitc_is_uint(a0) || jitc_is_bool(a0))
                 stmt = "    $v = icmp ule $V, $v\n";
             else
                 stmt = "    $v = icmp sle $V, $v\n";
@@ -805,7 +805,7 @@ static void jitc_llvm_render(Variable *v) {
         case VarKind::Gt:
             if (jitc_is_float(a0))
                 stmt = "    $v = fcmp ogt $V, $v\n";
-            else if (jitc_is_uint(a0))
+            else if (jitc_is_uint(a0) || jitc_is_bool(a0))
                 stmt = "    $v = icmp ugt $V, $v\n";
             else
                 stmt = "    $v = icmp sgt $V, $v\n";
@@ -815,7 +815,7 @@ static void jitc_llvm_render(Variable *v) {
         case VarKind::Ge:
             if (jitc_is_float(a0))
                 stmt = "    $v = fcmp oge $V, $v\n";
-            else if (jitc_is_uint(a0))
+            else if (jitc_is_uint(a0) || jitc_is_bool(a0))
                 stmt = "    $v = icmp uge $V, $v\n";
             else
                 stmt = "    $v = icmp sge $V, $v\n";

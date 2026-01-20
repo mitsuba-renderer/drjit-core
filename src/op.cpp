@@ -899,7 +899,7 @@ uint32_t jitc_var_neq(uint32_t a0, uint32_t a1) {
 // --------------------------------------------------------------------------
 
 uint32_t jitc_var_lt(uint32_t a0, uint32_t a1) {
-    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_lt", a0, a1);
+    auto [info, v0, v1] = jitc_var_check("jit_var_lt", a0, a1);
     info.type = VarType::Bool;
 
     uint32_t result = 0;
@@ -922,7 +922,7 @@ uint32_t jitc_var_lt(uint32_t a0, uint32_t a1) {
 // --------------------------------------------------------------------------
 
 uint32_t jitc_var_le(uint32_t a0, uint32_t a1) {
-    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_le", a0, a1);
+    auto [info, v0, v1] = jitc_var_check("jit_var_le", a0, a1);
     info.type = VarType::Bool;
 
     uint32_t result = 0;
@@ -945,7 +945,7 @@ uint32_t jitc_var_le(uint32_t a0, uint32_t a1) {
 // --------------------------------------------------------------------------
 
 uint32_t jitc_var_gt(uint32_t a0, uint32_t a1) {
-    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_gt", a0, a1);
+    auto [info, v0, v1] = jitc_var_check("jit_var_gt", a0, a1);
     info.type = VarType::Bool;
 
     uint32_t result = 0;
@@ -968,7 +968,7 @@ uint32_t jitc_var_gt(uint32_t a0, uint32_t a1) {
 // --------------------------------------------------------------------------
 
 uint32_t jitc_var_ge(uint32_t a0, uint32_t a1) {
-    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_ge", a0, a1);
+    auto [info, v0, v1] = jitc_var_check("jit_var_ge", a0, a1);
     info.type = VarType::Bool;
 
     uint32_t result = 0;

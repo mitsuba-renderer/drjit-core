@@ -290,6 +290,11 @@ template <typename T> bool test_const_prop() {
             continue;
         if (IsMask && !(op == JitOp::Or || op == JitOp::And || op == JitOp::Xor))
             continue;
+        if (IsMask &&
+            !(op == JitOp::Or || op == JitOp::And || op == JitOp::Xor ||
+              op == JitOp::Eq || op == JitOp::Neq || op == JitOp::Lt ||
+              op == JitOp::Le || op == JitOp::Gt || op == JitOp::Ge))
+            continue;
         if (!IsInt && op == JitOp::MulHi)
             continue;
 

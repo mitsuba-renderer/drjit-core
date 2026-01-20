@@ -676,27 +676,67 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::Lt:
-            fmt(jitc_is_uint(a0) ? "    setp.lo.$t $v, $v, $v;\n"
-                                 : "    setp.lt.$t $v, $v, $v;\n",
-                a0, v, a0, a1);
+            if (!jitc_is_bool(a0))
+                fmt(jitc_is_uint(a0) ? "    setp.lo.$t $v, $v, $v;\n"
+                                     : "    setp.lt.$t $v, $v, $v;\n",
+                    a0, v, a0, a1);
+            else
+                fmt("    .reg .b32 $v_<2>;\n"
+                    "    selp.b32 $v_0, 1, 0, $v;\n"
+                    "    selp.b32 $v_1, 1, 0, $v;\n"
+                    "    setp.lt.u32 $v, $v_0, $v_1;\n",
+                    v,
+                    v, a0,
+                    v, a1,
+                    v, v, v);
             break;
 
         case VarKind::Le:
-            fmt(jitc_is_uint(a0) ? "    setp.ls.$t $v, $v, $v;\n"
-                                 : "    setp.le.$t $v, $v, $v;\n",
-                a0, v, a0, a1);
+            if (!jitc_is_bool(a0))
+                fmt(jitc_is_uint(a0) ? "    setp.ls.$t $v, $v, $v;\n"
+                                     : "    setp.le.$t $v, $v, $v;\n",
+                    a0, v, a0, a1);
+            else
+                fmt("    .reg .b32 $v_<2>;\n"
+                    "    selp.b32 $v_0, 1, 0, $v;\n"
+                    "    selp.b32 $v_1, 1, 0, $v;\n"
+                    "    setp.le.u32 $v, $v_0, $v_1;\n",
+                    v,
+                    v, a0,
+                    v, a1,
+                    v, v, v);
             break;
 
         case VarKind::Gt:
-            fmt(jitc_is_uint(a0) ? "    setp.hi.$t $v, $v, $v;\n"
-                                 : "    setp.gt.$t $v, $v, $v;\n",
-                a0, v, a0, a1);
+            if (!jitc_is_bool(a0))
+                fmt(jitc_is_uint(a0) ? "    setp.hi.$t $v, $v, $v;\n"
+                                     : "    setp.gt.$t $v, $v, $v;\n",
+                    a0, v, a0, a1);
+            else
+                fmt("    .reg .b32 $v_<2>;\n"
+                    "    selp.b32 $v_0, 1, 0, $v;\n"
+                    "    selp.b32 $v_1, 1, 0, $v;\n"
+                    "    setp.gt.u32 $v, $v_0, $v_1;\n",
+                    v,
+                    v, a0,
+                    v, a1,
+                    v, v, v);
             break;
 
         case VarKind::Ge:
-            fmt(jitc_is_uint(a0) ? "    setp.hs.$t $v, $v, $v;\n"
-                                 : "    setp.ge.$t $v, $v, $v;\n",
-                a0, v, a0, a1);
+            if (!jitc_is_bool(a0))
+                fmt(jitc_is_uint(a0) ? "    setp.hs.$t $v, $v, $v;\n"
+                                     : "    setp.ge.$t $v, $v, $v;\n",
+                    a0, v, a0, a1);
+            else
+                fmt("    .reg .b32 $v_<2>;\n"
+                    "    selp.b32 $v_0, 1, 0, $v;\n"
+                    "    selp.b32 $v_1, 1, 0, $v;\n"
+                    "    setp.ge.u32 $v, $v_0, $v_1;\n",
+                    v,
+                    v, a0,
+                    v, a1,
+                    v, v, v);
             break;
 
         case VarKind::Array:
