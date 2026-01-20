@@ -133,6 +133,9 @@ const char *op_name[(int) JitOp::Count] {
     // High multiplication
     "mul_hi",
 
+    // Wide multiplication
+    "mul_wi",
+
     // Fused multiply-add
     "fma",
 
@@ -149,7 +152,7 @@ const char *op_name[(int) JitOp::Count] {
     "select",
 
     // Bit-level counting operations
-    "popc", "clz", "ctz",
+    "popc", "clz", "ctz", "brev",
 
     /// Bit-wise operations
     "and", "or", "xor",
@@ -161,7 +164,10 @@ const char *op_name[(int) JitOp::Count] {
     "rcp", "rsqrt",
 
     // Multi-function generator (CUDA)
-    "sin", "cos", "exp2", "log2",
+    "sin", "cos", "exp2", "log2", "tanh",
+
+    // Step function
+    "step",
 };
 
 template <typename T> bool test_const_prop() {
@@ -252,7 +258,8 @@ template <typename T> bool test_const_prop() {
                     double(value - ref) < 1e-7)
                     continue;
 
-                // FIXME: On R515.43 OptiX incorrectly handles `rsqrt(0)` (NaN instead of Inf)
+                // FIXME: See post OptiX forum post below
+                // https://forums.developer.nvidia.com/t/inconsistent-behavior-of-rcp-0-in-double-precision/358127
                 Value arg;
                 jit_var_read(in[ir], 0, &arg);
                 if (arg == 0 && op == JitOp::Rsqrt && jit_flag(JitFlag::ForceOptiX))
