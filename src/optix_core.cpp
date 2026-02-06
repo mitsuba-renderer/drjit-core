@@ -310,7 +310,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     // 3. Create an OptiX program group
     // =====================================================
 
-    size_t n_programs = 1 + callable_count_unique;
+    size_t n_programs = 1 + indirect_callable_count_unique;
 
     OptixProgramGroupOptions pgo { };
     std::unique_ptr<OptixProgramGroupDesc[]> pgd(
@@ -324,7 +324,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     bool continuation_callables = jitc_optix_use_continuation_callables();
 
     for (auto const &it : globals_map) {
-        if (!it.first.callable)
+        if (!it.first.indirect_callable)
             continue;
 
         char *name = (char *) malloc_check(58);

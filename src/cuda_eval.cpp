@@ -72,7 +72,7 @@ static void jitc_cuda_render_reorder(const Variable *, const Variable *);
 void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
     uint32_t flags = jitc_flags();
-    
+
     bool params_global = !uses_optix && n_params > jitc_cuda_arg_limit;
     bool print_labels  = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
@@ -112,8 +112,8 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         fmt(".entry drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
             ".param .align 8 .b8 params[$u]) {\n",
             params_global ? 8u : (n_params * (uint32_t) sizeof(void *)));
-        
-        if ((flags & (uint32_t) JitFlag::SpillToSharedMemory) && 
+
+        if ((flags & (uint32_t) JitFlag::SpillToSharedMemory) &&
            ts->compute_capability >= 75 && ts->ptx_version >= 87)
             fmt("    .pragma \"enable_smem_spilling\";\n\n");
     } else {
@@ -227,29 +227,30 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         put('\n');
         put(globals.get() + it.second.start, it.second.length);
         put('\n');
-        if (!it.first.callable)
+        if (!it.first.indirect_callable)
             continue;
         it.second.callable_index = ctr++;
     }
 
-    if (callable_count > 0 && !uses_optix) {
+    if (indirect_callable_count > 0 && !uses_optix) {
         size_t suffix_start = buffer.size(),
                suffix_target =
                    (char *) strstr(buffer.get(), ".address_size 64\n\n") -
                    buffer.get() + 18;
 
-        fmt(".extern .global .u64 callables[$u];\n\n", callable_count_unique);
+        fmt(".extern .global .u64 callables[$u];\n\n", indirect_callable_count_unique);
+
         buffer.move_suffix(suffix_start, suffix_target);
 
         fmt("\n.visible .global .align 8 .u64 callables[$u] = {\n",
-            callable_count_unique);
+            indirect_callable_count_unique);
         for (auto const &it : globals_map) {
-            if (!it.first.callable)
+            if (!it.first.indirect_callable)
                 continue;
 
             fmt("    func_$Q$Q$s\n",
                 it.first.hash.high64, it.first.hash.low64,
-                it.second.callable_index + 1 < callable_count_unique ? "," : "");
+                it.second.callable_index + 1 < indirect_callable_count_unique ? "," : "");
         }
 
         put("};\n\n");

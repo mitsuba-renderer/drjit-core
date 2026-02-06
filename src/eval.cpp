@@ -83,11 +83,11 @@ bool uses_optix = false;
 int32_t alloca_size = -1;
 int32_t alloca_align = -1;
 
-/// Number of tentative callables that were assembled in the kernel being compiled
-uint32_t callable_count = 0;
+/// Number of tentative indirect callables that were assembled in the kernel being compiled
+uint32_t indirect_callable_count = 0;
 
-/// Number of unique callables in the kernel being compiled
-uint32_t callable_count_unique = 0;
+/// Number of unique indirect callables in the kernel being compiled
+uint32_t indirect_callable_count_unique = 0;
 
 /// Specifies the nesting level of virtual calls being compiled
 uint32_t callable_depth = 0;
@@ -273,8 +273,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     globals.clear();
     globals_map.clear();
     alloca_size = alloca_align = -1;
-    callable_count = 0;
-    callable_count_unique = 0;
+    indirect_callable_count = 0;
+    indirect_callable_count_unique = 0;
     kernel_history_entry = { };
 
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -467,7 +467,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     memcpy(kernel_name, buffer.get() + hash_offset - prefix_len,
            prefix_len + 32);
 
-    if (uses_optix && callable_count > 0) {
+    if (uses_optix && indirect_callable_count > 0) {
         // Work around a bug in OptiX with driver version 570. When a two
         // pipelines share the same set of direct callables, the driver shares the
         // compiled result. This caching contaminates the second pipeline with
@@ -910,7 +910,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
     if (jit_flag(JitFlag::MergeFunctions)) {
         kernel_hash = XXH128(buffer.get() + kernel_offset, kernel_length, 0);
     } else {
-        kernel_hash.low64 = callable_count;
+        kernel_hash.low64 = indirect_callable_count;
         kernel_hash.high64 = 0;
     }
 
@@ -926,11 +926,11 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         buffer.rewind_to(end_offset);
 
         n_ops_total += n_regs;
-        callable_count_unique++;
+        indirect_callable_count_unique++;
         globals.put(buffer.get() + kernel_offset, kernel_length);
     }
 
-    callable_count++;
+    indirect_callable_count++;
 
     buffer.rewind_to(kernel_offset);
 

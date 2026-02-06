@@ -36,17 +36,17 @@ struct ScheduledGroup {
 
 struct GlobalKey {
     XXH128_hash_t hash;
-    bool callable;
+    bool indirect_callable;
 
     GlobalKey(XXH128_hash_t hash, bool callable)
-        : hash(hash), callable(callable) { }
+        : hash(hash), indirect_callable(callable) { }
 
     /* Order so that callables are defined before other globals, but don't use
        the callable ID itself for ordering (it can be non-deterministic in
        programs that use Dr.Jit with parallelization) */
     bool operator<(const GlobalKey &v) const {
-        int callable_key_t =   callable ? 0 : 1,
-            callable_key_v = v.callable ? 0 : 1;
+        int callable_key_t =   indirect_callable ? 0 : 1,
+            callable_key_v = v.indirect_callable ? 0 : 1;
         return std::tie(callable_key_t, hash.high64, hash.low64) <
                std::tie(callable_key_v, v.hash.high64, v.hash.low64);
     }
@@ -83,10 +83,10 @@ extern int32_t alloca_size;
 extern int32_t alloca_align;
 
 /// Number of tentative callables that were assembled in the kernel being compiled
-extern uint32_t callable_count;
+extern uint32_t indirect_callable_count;
 
 /// Number of unique callables in the kernel being compiled
-extern uint32_t callable_count_unique;
+extern uint32_t indirect_callable_count_unique;
 
 /// Specifies the nesting level of virtual calls being compiled
 extern uint32_t callable_depth;
