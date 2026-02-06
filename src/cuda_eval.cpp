@@ -1460,11 +1460,14 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
                                  uint32_t in_size, uint32_t in_align,
                                  uint32_t out_size, uint32_t out_align) {
     // =====================================================
-    // 1. Conditional branch
+    // 1. Conditional branch (masked lanes)
     // =====================================================
 
-    fmt("\n    @!%p$u bra l_masked_$u;\n\n"
-        "    { // Call: $s\n", mask_reg, call_reg, call->name.c_str());
+    Variable *mask = jitc_var(jitc_var(call->id)->dep[1]);
+    bool is_masked = !mask->is_literal() || mask->literal != 1;
+    if (is_masked)
+        fmt("\n    @!%p$u bra l_masked_$u;\n", mask_reg, call_reg);
+    fmt("\n    { // Call: $s\n", call->name.c_str());
 
     // =====================================================
     // 2. Determine unique callable ID
@@ -1660,7 +1663,9 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
             tname, prefix, v->reg_index, call->out_offset[i]);
     }
 
-    put("        }\n\n");
+    put("        }\n");
+    if (is_masked)
+        put("\n");
 
     // =====================================================
     // 6. Special handling for predicate return value(s)
@@ -1676,22 +1681,25 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
             v->reg_index, v->reg_index);
     }
 
-
-    fmt("        bra.uni l_done_$u;\n"
-        "    }\n", call_reg);
+    if (is_masked)
+        fmt("        bra.uni l_done_$u;\n", call_reg);
+    put("    }\n\n");
 
     // =====================================================
     // 7. Prepare output registers for masked lanes
     // =====================================================
 
-    fmt("\nl_masked_$u:\n", call_reg);
 
-    for (uint32_t i = 0; i < call->n_out; ++i) {
-        const Variable *v = jitc_var(call->outer_out[i]);
-        if (!v || !v->reg_index)
-            continue;
-        fmt("    mov.$b $v, 0;\n", v, v);
+    if (is_masked) {
+        fmt("l_masked_$u:\n", call_reg);
+
+        for (uint32_t i = 0; i < call->n_out; ++i) {
+            const Variable *v = jitc_var(call->outer_out[i]);
+            if (!v || !v->reg_index)
+                continue;
+            fmt("    mov.$b $v, 0;\n", v, v);
+        }
+
+        fmt("\nl_done_$u:\n", call_reg);
     }
-
-    fmt("\nl_done_$u:\n", call_reg);
 }
