@@ -222,11 +222,11 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
 
     /* The program requires extra memory or uses callables. Insert
        setup code the top of the function to accomplish this */
-    if (callable_count > 0 || alloca_size >= 0) {
+    if (indirect_callable_count > 0 || alloca_size >= 0) {
         size_t suffix_start = buffer.size(),
                suffix_target = (char *) strchr(buffer.get(), ':') - buffer.get() + 2;
 
-        if (callable_count > 0)
+        if (indirect_callable_count > 0)
             fmt("    %callables = load {i8**}, {i8***} @callables, align 8\n");
 
         if (alloca_size >= 0)
@@ -241,7 +241,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         put('\n');
         put(globals.get() + it.second.start, it.second.length);
         put('\n');
-        if (!it.first.callable)
+        if (!it.first.indirect_callable)
             continue;
         it.second.callable_index = 1 + ctr++;
     }
@@ -298,7 +298,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     bool print_labels = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
-    uint32_t width = jitc_llvm_vector_width, callables_local = callable_count;
+    uint32_t width = jitc_llvm_vector_width, callables_local = indirect_callable_count;
     fmt("define fastcc void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<$w x i1> %mask");
 
     if (call->use_self)
@@ -440,12 +440,12 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
 
     /* The function requires extra memory or uses callables. Insert
        setup code the top of the function to accomplish this */
-    if (alloca_size >= 0 || callables_local != callable_count) {
+    if (alloca_size >= 0 || callables_local != indirect_callable_count) {
         size_t suffix_start = buffer.size(),
                suffix_target =
                    (char *) strrchr(buffer.get(), '{') - buffer.get() + 9;
 
-        if (callables_local != callable_count)
+        if (callables_local != indirect_callable_count)
             fmt("    %callables = load {i8**}, {i8***} @callables, align 8\n");
 
         if (alloca_size >= 0)

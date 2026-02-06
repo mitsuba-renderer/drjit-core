@@ -127,11 +127,11 @@ void jitc_llvm_mcjit_compile(void *llvm_module,
     symbols[symbol_pos++] = resolve(kernel_name);
 
     /// Does the kernel perform virtual function calls via @callables?
-    if (callable_count_unique) {
+    if (indirect_callable_count_unique) {
         symbols[symbol_pos++] = resolve("callables");
 
         for (auto const &kv: globals_map) {
-            if (!kv.first.callable)
+            if (!kv.first.indirect_callable)
                 continue;
 
             char name_buf[38];

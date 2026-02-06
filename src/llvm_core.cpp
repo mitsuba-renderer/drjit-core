@@ -484,7 +484,7 @@ void jitc_llvm_compile(Kernel &kernel) {
 #endif
 
     std::vector<uint8_t *> reloc(
-        callable_count_unique ? (callable_count_unique + 2) : 1);
+        indirect_callable_count_unique ? (indirect_callable_count_unique + 2) : 1);
 
     if (jitc_llvm_use_orcv2)
         jitc_llvm_orcv2_compile(llvm_module, reloc);
