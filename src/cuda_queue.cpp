@@ -35,17 +35,18 @@ constexpr uint32_t CounterStride = 64 * (uint32_t) sizeof(uint32_t);
  * \\endcode
  */
 static void packet_memop(const Variable *v, const Variable *ptr, uint32_t n,
-                         const uint32_t *values, const VarType *vt, bool load) {
+                         const uint32_t *values, const VarType *vt, bool load,
+                         const char *out_suffix = "") {
     // Generate local variable declarations for loads
     if (load) {
         bool uniform_tp = true;
         for (uint32_t i = 1; i < n; i++)
             uniform_tp &= vt[i] == vt[0];
         if (uniform_tp) {
-            fmt("        .reg.b$u $v_<$u>;\n", type_size[(int) vt[0]] * 8, v, n);
+            fmt("    .reg.b$u $v$s<$u>;\n", type_size[(int) vt[0]] * 8, v, out_suffix, n);
         } else {
             for (uint32_t i = 0; i < n; i++)
-                fmt("        .reg.b$u $v_$u;\n", type_size[(int) vt[i]] * 8, v, i);
+                fmt("    .reg.b$u $v$s$u;\n", type_size[(int) vt[i]] * 8, v, out_suffix, i);
         }
     }
 
@@ -87,9 +88,9 @@ static void packet_memop(const Variable *v, const Variable *ptr, uint32_t n,
         // Generate load instructions
         if (load) {
             if (nbytes == 4) {
-                fmt("        ld.relaxed.global.b32 %tmp_0, [$v_data+$u];\n", ptr, offset);
+                fmt("        ld.relaxed.gpu.global.b32 %tmp_0, [$v_data+$u];\n", ptr, offset);
             } else {
-                fmt("        ld.relaxed.global.v$u.b32 {", nbytes / 4);
+                fmt("        ld.relaxed.gpu.global.v$u.b32 {", nbytes / 4);
                 for (uint32_t i = 0; i < nbytes / 4; i++)
                     fmt("$s%tmp_$u", i> 0 ? ", " : "", i);
                 fmt("}, [$v_data+$u];\n", ptr, offset);
@@ -104,22 +105,22 @@ static void packet_memop(const Variable *v, const Variable *ptr, uint32_t n,
 
             if (vsize == 2) {
                 if (load)
-                    fmt("        mov.b32 {$v_$u, $v_$u}, %tmp_$u;\n", v, j, v, j + 1, word_index);
+                    fmt("        mov.b32 {$v$s$u, $v$s$u}, %tmp_$u;\n", v, out_suffix, j, v, out_suffix, j + 1, word_index);
                 else
-                    fmt("        mov.b32 %tmp_$u, {$v, $v};\n", word_index, values[j], values[j + 1]);
+                    fmt("        mov.b32 %tmp_$u, {$v, $v};\n", word_index, jitc_var(values[j]), jitc_var(values[j + 1]));
                 vsize = 4; i += 1; // Process two half precision floats at once
             } else if (vsize == 4) {
                 if (load)
-                    fmt("        mov.b32 $v_$u, %tmp_$u;\n", v, j, word_index);
+                    fmt("        mov.b32 $v$s$u, %tmp_$u;\n", v, out_suffix, j, word_index);
                 else
-                    fmt("        mov.b32 %tmp_$u, $v;\n", word_index, values[j]);
+                    fmt("        mov.b32 %tmp_$u, $v;\n", word_index, jitc_var(values[j]));
             } else if (vsize == 8) {
                 if (load)
-                    fmt("        mov.b64 $v_$u, {%tmp_$u, %tmp_$u};\n",
-                           v, j, word_index, word_index + 1);
+                    fmt("        mov.b64 $v$s$u, {%tmp_$u, %tmp_$u};\n",
+                           v, out_suffix, j, word_index, word_index + 1);
                 else
                     fmt("        mov.b64 {%tmp_$u, %tmp_$u}, $v;\n",
-                           word_index, word_index + 1, values[j]);
+                           word_index, word_index + 1, jitc_var(values[j]));
             }
             pos += vsize;
         }
@@ -161,12 +162,12 @@ void jitc_cuda_render_queue_send(Variable *v,
         qsd->msg_types, qsd->block_size, block_size_bits, qsd->blocks, blocks_bits);
 
     fmt("    // 1. Determine mask for opportunistic warp-level cooporation\n"
-        "    .reg.b32 $v_active, $v_lane_id, $v_lane_lt, $v_queue_id, $v_tmp, $v_tmp2;\n"
+        "    .reg.b32 $v_active, $v_lane_id, $v_lane_lt, $v_queue_id, $v_tmp, $v_tmp2, $v_peers;\n"
         "    .reg.pred $v_ready;\n"
         "    activemask.b32 $v_active;\n"
         "    mov.b32 $v_lane_id, %laneid;\n"
         "    mov.b32 $v_lane_lt, %lanemask_lt;\n",
-        v, v, v, v, v, v,
+        v, v, v, v, v, v, v,
         v,
         v,
         v,
@@ -178,9 +179,7 @@ void jitc_cuda_render_queue_send(Variable *v,
         fmt("    mov.u32 $v_queue_id, 0;\n", v);
 
     if (virtual_queue && !msg_type->is_literal()) {
-        fmt("    .reg.b32 $v_peers;\n"
-            "    match.any.sync.b32 $v_peers, $v, $v_active;\n",
-            v,
+        fmt("    match.any.sync.b32 $v_peers, $v, $v_active;\n",
             v, msg_type, v);
         peers = "peers";
     }
@@ -201,25 +200,28 @@ void jitc_cuda_render_queue_send(Variable *v,
     fmt("\n"
         "    // 3. The leader reserves space by bumping the logical queue head pointer\n"
         "    .reg.b64 $v_head;\n"
-        "    mad.wide.b32 $v_head, $v_queue_id, $u, $v;"
+        "    .reg.b32 $v_offset;\n"
+        "    mad.wide.u32 $v_head, $v_queue_id, $u, $v;\n"
         "    @$v_leader atom.relaxed.gpu.global.add.u32 $v_offset, [$v_head], $v_count;\n",
+        v,
         v,
         v, v, CounterStride, queue_buffer,
         v, v, v, v);
 
     fmt("\n"
         "    // 4. Generate indices for all peers based on the leader's response\n"
-        "    .reg.b32 $v_peers_lt, $v_offset_local, $v_offset;\n"
+        "    .reg.b32 $v_peers_lt, $v_offset_local;\n"
         "    and.b32 $v_peers_lt, $v_lane_lt, $v_$s;\n"
         "    popc.b32 $v_offset_local, $v_peers_lt;\n"
         "    shfl.sync.idx.b32 $v_offset, $v_offset, $v_leader_id, 31, $v_active;\n"
         "    add.u32 $v_offset, $v_offset, $v_offset_local;\n",
-        v, v, v,
+        v, v,
         v, v, v, peers,
         v, v,
         v, v, v, v,
         v, v, v);
 
+    // CounterStride is already in bytes (256), so no additional sizeof(uint32_t) multiplication needed
     uint32_t state_offset = (qsd->msg_types + uint32_t(virtual_queue)) * CounterStride,
              state_size   = qsd->blocks * (uint32_t) sizeof(uint32_t),
              data_offset  = state_offset + state_size * (qsd->msg_types + uint32_t(virtual_queue));
@@ -294,7 +296,7 @@ void jitc_cuda_render_queue_send(Variable *v,
         "    and.b32 $v_log_offset, $v_offset, $u;\n"
         "    shr.u32 $v_log_block, $v_offset, $u;\n"
         "    and.b32 $v_log_block, $v_log_block, $u;\n"
-        "    and.u32 $v_log_ver, $v_offset, $u;\n",
+        "    and.b32 $v_log_ver, $v_offset, $u;\n",
         v, v, v, v, v,
         v,
         v, v, qsd->block_size - 1,
@@ -308,8 +310,8 @@ void jitc_cuda_render_queue_send(Variable *v,
             "    .reg.pred $v_new_block;\n"
             "    .reg.b64 $v_log_p;\n"
             "    setp.eq.b32 $v_new_block, $v_log_offset, 0;\n"
-            "    mad.wide.u32 $v_log_p, $v_queue_id, $u, $v;",
-            "    @!$v_new_block l$u_sync;\n",
+            "    mad.wide.u32 $v_log_p, $v_queue_id, $u, $v;"
+            "    @!$v_new_block bra l$u_sync;\n",
             v,
             v,
             v, v,
@@ -340,7 +342,7 @@ void jitc_cuda_render_queue_send(Variable *v,
 
         fmt("\n"
             "    // 6.4. Record the physical block in the logical queue map\n"
-            "    and.b32 $v_tmp, $v_log_ver, $v_phy_block;\n"
+            "    or.b32 $v_tmp, $v_log_ver, $v_phy_block;\n"
             "    st.relaxed.gpu.global.b32 [$v_log_p+$u], $v_tmp;\n",
             v, v, v,
             v, state_offset, v);
@@ -374,7 +376,7 @@ void jitc_cuda_render_queue_send(Variable *v,
             "l$u_wait_log:\n"
             "    ld.relaxed.gpu.global.b32 $v_tmp, [$v_log_p+$u];"
             "    and.b32 $v_tmp2, $v_tmp, $u;\n"
-            "    setp.eq.b32 $v_ready, $v_tmp_2, $v_log_ver;\n"
+            "    setp.eq.b32 $v_ready, $v_tmp2, $v_log_ver;\n"
             "    @!$v_ready bra l$u_wait_log;\n"
             "    and.b32 $v_phy_block, $v_tmp, $u;\n",
             v->reg_index,
@@ -388,7 +390,7 @@ void jitc_cuda_render_queue_send(Variable *v,
     } else {
         fmt("\n"
             "    // 6. Simplified case -- logical and physical queues coincide\n"
-            "    mov $v_phy_block, $v_log_block;\n",
+            "    mov.u32 $v_phy_block, $v_log_block;\n",
             v, v);
     }
 
@@ -407,12 +409,11 @@ void jitc_cuda_render_queue_send(Variable *v,
     if (!virtual_queue) {
         fmt("\n"
             "    // 8. Lock the physical block\n"
-            "    @!$v_leader br l$u_sync;\n"
-            "    shr.u32 $v_target, $v_log_ver, $u;\n"
-            "    add.u32 $v_target, $v_target, 1;\n"
-            "    shl.u32 $v_target, $v_target, $u;\n"
             "    mad.wide.u32 $v_phy_p, $v_phy_block, 4, $v;\n"
-            "    mov.u32 $v_target, $u;\n"
+            "    @!$v_leader bra l$u_sync;\n"
+            "    shr.b32 $v_target, $v_log_ver, $u;\n"
+            "    add.u32 $v_target, $v_target, 1;\n"
+            "    shl.b32 $v_target, $v_target, $u;\n"
             "\n"
             "l$u_wait_phy:\n"
             "    atom.relaxed.gpu.global.cas.b32 $v_tmp, [$v_phy_p+$u], 0, $v_target;\n"
@@ -421,24 +422,24 @@ void jitc_cuda_render_queue_send(Variable *v,
             "\n"
             "l$u_sync:\n"
             "    bar.warp.sync $v_active;\n",
+            v, v, queue_buffer,
             v, v->reg_index,
             v, v, block_size_bits+blocks_bits,
             v, v,
             v, v, (block_size_bits+1)*2,
-            v, v, queue_buffer,
-            v, 1u << ((block_size_bits+1)*2),
             v->reg_index,
             v, v, state_offset, v,
             v, v,
-            v, v->reg_index);
+            v, v->reg_index,
+            v->reg_index, v);
     }
 
     // Compute the precise position for reading/writing our message
-    fmt("    mad.lo.u32 $v_offset, $v_phy_block, $u, $u;\n"
+    fmt("    .reg.b64 $v_data;\n"
+        "    mad.lo.u32 $v_offset, $v_phy_block, $u, $u;\n"
         "    mad.lo.u32 $v_offset, $v_log_offset, $u, $v_offset;\n"
         "    cvt.u64.u32 $v_data, $v_offset;\n"
         "    add.u64 $v_data, $v_data, $v;\n",
-        v->reg_index,
         v,
         v, v, qsd->msg_max_size*qsd->block_size, data_offset,
         v, v, qsd->msg_max_size, v,
@@ -469,20 +470,23 @@ void jitc_cuda_render_queue_recv(Variable *vr,
         "l$u_wait_response:\n"
         "    ld.relaxed.gpu.global.u32 $v_tmp, [$v_phy_p+$u];\n"
         "    and.b32 $v_tmp, $v_tmp, $u;\n"
-        "    setp.ge.u32 %v_ready, $v_tmp, $u;\n"
-        "    @$v_ready bra l$u_wait_response;\n\n",
+        "    setp.ge.u32 $v_ready, $v_tmp, $u;\n"
+        "    @!$v_ready bra l$u_wait_response;\n\n",
         v->reg_index,
         v, v, state_offset,
         v, v, qsd->block_size*2-1,
+        v, v, qsd->block_size,
         v, v->reg_index
     );
 
     // Insert an efficient load sequence for the message response
-    packet_memop(v, v, (uint32_t) qrd->vt.size(), nullptr,
-                 qrd->vt.data(), true);
+    packet_memop(vr, v, (uint32_t) qrd->vt.size(), nullptr,
+                 qrd->vt.data(), true, "_out_");
 
     fmt("    shr.u32 $v_count, $v_count, $u;\n"
-        "    @$v_leader red.release.gpu.global.sub.u32 [$v_phy_p+$u], $v_count;\n",
+        "    neg.s32 $v_tmp, $v_count;\n"
+        "    @$v_leader red.release.gpu.global.add.s32 [$v_phy_p+$u], $v_tmp;\n",
         v, v, log2i_ceil(qsd->block_size)+1,
+        v, v,
         v, v, state_offset, v);
 }
