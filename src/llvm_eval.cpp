@@ -1605,33 +1605,44 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
     // 1. Declare a few intrinsics that we will use
     // =====================================================
 
-    fmt_intrinsic("@callables = dso_local local_unnamed_addr global {i8**} null, align 8");
+    if (call->n_inst != 1) {
+        fmt_intrinsic("@callables = dso_local local_unnamed_addr global {i8**} null, align 8");
 
-    /* How to prevent @callables from being optimized away as a constant, while
-       at the same time not turning it an external variable that would require a
-       global offset table (GOT)? Let's make a dummy function that writes to it.. */
-    fmt_intrinsic("define void @set_callables({i8**} %ptr) local_unnamed_addr #0 ${\n"
-                  "    store {i8**} %ptr, {i8***} @callables\n"
-                  "    ret void\n"
-                  "$}");
+        /* How to prevent @callables from being optimized away as a constant, while
+           at the same time not turning it an external variable that would require a
+           global offset table (GOT)? Let's make a dummy function that writes to it.. */
+        fmt_intrinsic("define void @set_callables({i8**} %ptr) local_unnamed_addr #0 ${\n"
+                      "    store {i8**} %ptr, {i8***} @callables\n"
+                      "    ret void\n"
+                      "$}");
 
-    fmt_intrinsic("declare i32 @llvm$e.vector.reduce.umax.v$wi32(<$w x i32>)");
-    fmt_intrinsic("declare <$w x i64> @llvm.masked.gather.v$wi64(<$w x "
-                  "{i64*}>, i32, <$w x i1>, <$w x i64>)");
+        fmt_intrinsic("declare i32 @llvm$e.vector.reduce.umax.v$wi32(<$w x i32>)");
+    }
 
-    fmt( "\n"
-         "    br label %l$u_start\n"
-         "\nl$u_start:\n"
-         "    ; Call: $s\n"
-        "{    %u$u_self_ptr_0 = bitcast $<i8*$> %rd$u to $<i64*$>\n|}"
-         "    %u$u_self_ptr = getelementptr i64, $<{i64*}$> {%u$u_self_ptr_0|%rd$u}, <$w x i32> %r$u\n"
-         "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x {i64*}> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z)\n"
-         "    %u$u_self_initial = trunc <$w x i64> %u$u_self_combined to <$w x i32>\n",
-        call_reg, call_reg, call->name.c_str(),
-        call_reg, offset_reg,
-        call_reg, call_reg, offset_reg, self_reg,
-        call_reg, call_reg, mask_reg,
-        call_reg, call_reg);
+    fmt("\n    ; Call: $s\n", call->name.c_str());
+
+    if (call->n_inst != 1) {
+        fmt("    br label %l$u_start\n"
+            "\nl$u_start:\n",
+            call_reg, call_reg);
+    }
+
+    if (call->n_inst != 1 || data_reg) {
+        fmt_intrinsic("declare <$w x i64> @llvm.masked.gather.v$wi64(<$w x "
+                      "{i64*}>, i32, <$w x i1>, <$w x i64>)");
+
+        fmt("{    %u$u_self_ptr_0 = bitcast $<i8*$> %rd$u to $<i64*$>\n|}"
+             "    %u$u_self_ptr = getelementptr i64, $<{i64*}$> {%u$u_self_ptr_0|%rd$u}, <$w x i32> %r$u\n"
+             "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x {i64*}> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z)\n",
+            call_reg, offset_reg,
+            call_reg, call_reg, offset_reg, self_reg,
+            call_reg, call_reg, mask_reg);
+    }
+
+    if (call->n_inst != 1) {
+        fmt("    %u$u_self_initial = trunc <$w x i64> %u$u_self_combined to <$w x i32>\n",
+            call_reg, call_reg);
+    }
 
     if (data_reg) {
         fmt("    %u$u_offset_1 = lshr <$w x i64> %u$u_self_combined, <",
@@ -1695,6 +1706,30 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
     // 3. Perform one call to each unique instance
     // =====================================================
 
+    if (call->n_inst == 1) {
+        // Direct call to the single callable function
+        put("    call fastcc void @func_");
+        XXH128_hash_t hash = call->inst_hash[0];
+        buffer.put_q64_unchecked(hash.high64);
+        buffer.put_q64_unchecked(hash.low64);
+        fmt("(<$w x i1> %p$u", mask_reg);
+
+        if (call->use_self)
+            fmt(", <$w x i32> %r$u", self_reg);
+
+        if (call->use_index)
+            fmt(", i64 %index");
+
+        if (call->use_thread_id)
+            fmt(", i32 %thread_id");
+
+        fmt(", {i8*} %buffer");
+
+        if (data_reg)
+            fmt(", $<{i8*}$> %rd$u, <$w x i32> %u$u_offset", data_reg, call_reg);
+
+        fmt(")\n");
+    } else {
     fmt("    br label %l$u_check\n"
         "\nl$u_check:\n"
         "    %u$u_self = phi <$w x i32> [ %u$u_self_initial, %l$u_start ], [ %u$u_self_next, %l$u_call ]\n",
@@ -1768,6 +1803,7 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         "\nl$u_end:\n",
         call_reg, call_reg, call_reg, call_reg,
         call_reg);
+    }
 
     // =====================================================
     // 5. Read back the output arguments
@@ -1791,6 +1827,8 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
                 fmt("    $v = trunc $M $v_0 to $T\n", v, v, v, v);
     }
 
-    fmt("    br label %l$u_done\n"
-        "\nl$u_done:\n", call_reg, call_reg);
+    if (call->n_inst != 1) {
+        fmt("    br label %l$u_done\n"
+            "\nl$u_done:\n", call_reg, call_reg);
+    }
 }
