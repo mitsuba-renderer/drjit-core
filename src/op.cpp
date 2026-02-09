@@ -279,6 +279,72 @@ JIT_INLINE uint32_t jitc_eval_literal(const OpInfo &info, Func func,
 }
 
 // --------------------------------------------------------------------------
+// Helpers for running operations in F32 instead of F16
+// --------------------------------------------------------------------------
+
+bool needs_f32_upcast(OpInfo info, VarKind kind) {
+    if (info.backend == JitBackend::LLVM && info.type == VarType::Float16)
+        switch (kind) {
+            case VarKind::Min:
+            case VarKind::Max:
+#if !defined(__aarch64__)
+                return true;
+#endif
+            default:
+                return false;
+        }
+
+    return false;
+}
+
+uint32_t f32_unary_op(uint32_t (*op)(uint32_t), uint32_t a0) {
+    uint32_t a0_f32 = jitc_var_cast(a0, VarType::Float32, false);
+
+    uint32_t f32_result = op(a0_f32);
+    jitc_var_dec_ref(a0_f32);
+
+    uint32_t result = jitc_var_cast(f32_result, VarType::Float16, false);
+    jitc_var_dec_ref(f32_result);
+
+    return result;
+}
+
+uint32_t f32_binary_op(uint32_t (*op)(uint32_t, uint32_t), uint32_t a0,
+                       uint32_t a1, bool downcast_result) {
+    uint32_t a0_f32 = jitc_var_cast(a0, VarType::Float32, false);
+    uint32_t a1_f32 = jitc_var_cast(a1, VarType::Float32, false);
+
+    uint32_t result = op(a0_f32, a1_f32);
+    jitc_var_dec_ref(a0_f32);
+    jitc_var_dec_ref(a1_f32);
+
+    if (downcast_result) {
+        uint32_t f32_result = result;
+        result = jitc_var_cast(f32_result, VarType::Float16, false);
+        jitc_var_dec_ref(f32_result);
+    }
+
+    return result;
+}
+
+uint32_t f32_ternary_op(uint32_t (*op)(uint32_t, uint32_t, uint32_t),
+                        uint32_t a0, uint32_t a1, uint32_t a2) {
+    uint32_t a0_f32 = jitc_var_cast(a0, VarType::Float32, false);
+    uint32_t a1_f32 = jitc_var_cast(a1, VarType::Float32, false);
+    uint32_t a2_f32 = jitc_var_cast(a2, VarType::Float32, false);
+
+    uint32_t f32_result = op(a0_f32, a1_f32, a2_f32);
+    jitc_var_dec_ref(a0_f32);
+    jitc_var_dec_ref(a1_f32);
+    jitc_var_dec_ref(a2_f32);
+
+    uint32_t result = jitc_var_cast(f32_result, VarType::Float16, false);
+    jitc_var_dec_ref(f32_result);
+
+    return result;
+}
+
+// --------------------------------------------------------------------------
 // Common constants
 // --------------------------------------------------------------------------
 
@@ -338,6 +404,10 @@ uint32_t jitc_var_neg(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_neg(l0); }, v0);
 
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Neg))
+        return f32_unary_op(jitc_var_neg, a0);
+
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Neg, info.type,
                                      info.size, info.symbolic, a0, v0);
@@ -362,6 +432,10 @@ uint32_t jitc_var_not(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_not(l0); }, v0);
 
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Not))
+        return f32_unary_op(jitc_var_not, a0);
+
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Not, info.type,
                                      info.size, info.symbolic, a0, v0);
@@ -384,6 +458,9 @@ uint32_t jitc_var_sqrt(uint32_t a0) {
     uint32_t result = 0;
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_sqrt(l0); }, v0);
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Sqrt))
+        return f32_unary_op(jitc_var_sqrt, a0);
 
     if (!result && info.size) {
         bool approx =
@@ -415,6 +492,9 @@ uint32_t jitc_var_abs(uint32_t a0) {
     if (!result && jitc_is_uint(info.type))
         result = jitc_var_new_ref(a0);
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Abs))
+        return f32_unary_op(jitc_var_abs, a0);
+
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Abs, info.type,
                                      info.size, info.symbolic, a0, v0);
@@ -439,6 +519,9 @@ uint32_t jitc_var_add(uint32_t a0, uint32_t a1) {
             result = jitc_var_resize(a0, info.size);
     }
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Add))
+        return f32_binary_op(jitc_var_add, a0, a1, true);
+
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Add, info.type,
                                      info.size, info.symbolic, a0, v0, a1, v1);
@@ -462,6 +545,9 @@ uint32_t jitc_var_sub(uint32_t a0, uint32_t a1) {
         else if (a0 == a1 && !jitc_is_float(v0))
             result = jitc_make_zero(info);
     }
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Sub))
+        return f32_binary_op(jitc_var_sub, a0, a1, true);
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Sub, info.type,
@@ -492,6 +578,9 @@ uint32_t jitc_var_mul(uint32_t a0, uint32_t a1) {
         else if (jitc_is_uint(info.type) && v1->is_literal() && jitc_is_pow2(v1->literal))
             result = jitc_var_shift<true>(info, a0, v1->literal);
     }
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Mul))
+        return f32_binary_op(jitc_var_mul, a0, a1, true);
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Mul, info.type,
@@ -529,6 +618,8 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
         }
     }
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Div))
+        return f32_binary_op(jitc_var_div, a0, a1, true);
 
     if (!result && info.size) {
         bool approx =
@@ -697,6 +788,9 @@ uint32_t jitc_var_fma(uint32_t a0, uint32_t a1, uint32_t a2) {
         }
     }
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Fma))
+        return f32_ternary_op(jitc_var_fma, a0, a1, a2);
+
     if (!result && info.size)
         result = jitc_var_new_node_3(info.backend, VarKind::Fma, info.type,
                                      info.size, info.symbolic,
@@ -724,6 +818,9 @@ uint32_t jitc_var_min(uint32_t a0, uint32_t a1) {
             result = jitc_var_resize(a0, info.size);
     }
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Min))
+        return f32_binary_op(jitc_var_min, a0, a1, true);
+
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Min, info.type,
                                      info.size, info.symbolic, a0, v0, a1, v1);
@@ -750,6 +847,9 @@ uint32_t jitc_var_max(uint32_t a0, uint32_t a1) {
             result = jitc_var_resize(a0, info.size);
     }
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Max))
+        return f32_binary_op(jitc_var_max, a0, a1, true);
+
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Max, info.type,
                                      info.size, info.symbolic, a0, v0, a1, v1);
@@ -772,6 +872,9 @@ uint32_t jitc_var_ceil(uint32_t a0) {
     uint32_t result = 0;
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_ceil(l0); }, v0);
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Ceil))
+        return f32_unary_op(jitc_var_ceil, a0);
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Ceil, info.type,
@@ -796,6 +899,9 @@ uint32_t jitc_var_floor(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_floor(l0); }, v0);
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Floor))
+        return f32_unary_op(jitc_var_floor, a0);
+
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Floor, info.type,
                                      info.size, info.symbolic, a0, v0);
@@ -818,6 +924,9 @@ uint32_t jitc_var_round(uint32_t a0) {
     uint32_t result = 0;
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_round(l0); }, v0);
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Round))
+        return f32_unary_op(jitc_var_round, a0);
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Round, info.type,
@@ -842,6 +951,9 @@ uint32_t jitc_var_trunc(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_trunc(l0); }, v0);
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Trunc))
+        return f32_unary_op(jitc_var_trunc, a0);
+
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Trunc, info.type,
                                      info.size, info.symbolic, a0, v0);
@@ -864,6 +976,9 @@ uint32_t jitc_var_eq(uint32_t a0, uint32_t a1) {
         else if (a0 == a1 && !jitc_is_float(v0))
             result = jitc_make_true(info);
     }
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Eq))
+        return f32_binary_op(jitc_var_eq, a0, a1, false);
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Eq, info.type,
@@ -888,6 +1003,9 @@ uint32_t jitc_var_neq(uint32_t a0, uint32_t a1) {
             result = jitc_make_zero(info);
     }
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Neq))
+        return f32_binary_op(jitc_var_neq, a0, a1, false);
+
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Neq, info.type,
                                      info.size, info.symbolic, a0, v0, a1, v1);
@@ -910,6 +1028,9 @@ uint32_t jitc_var_lt(uint32_t a0, uint32_t a1) {
         else if (a0 == a1)
             result = jitc_make_zero(info);
     }
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Lt))
+        return f32_binary_op(jitc_var_lt, a0, a1, false);
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Lt, info.type,
@@ -934,6 +1055,9 @@ uint32_t jitc_var_le(uint32_t a0, uint32_t a1) {
             result = jitc_make_true(info);
     }
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Le))
+        return f32_binary_op(jitc_var_le, a0, a1, false);
+
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Le, info.type,
                                      info.size, info.symbolic, a0, v0, a1, v1);
@@ -957,6 +1081,9 @@ uint32_t jitc_var_gt(uint32_t a0, uint32_t a1) {
             result = jitc_make_zero(info);
     }
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Gt))
+        return f32_binary_op(jitc_var_gt, a0, a1, false);
+
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Gt, info.type,
                                      info.size, info.symbolic, a0, v0, a1, v1);
@@ -979,6 +1106,9 @@ uint32_t jitc_var_ge(uint32_t a0, uint32_t a1) {
         else if (a0 == a1 && !jitc_is_float(v0))
             result = jitc_make_true(info);
     }
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Ge))
+        return f32_binary_op(jitc_var_ge, a0, a1, false);
 
     if (!result && info.size)
         result = jitc_var_new_node_2(info.backend, VarKind::Ge, info.type,
@@ -1364,6 +1494,9 @@ uint32_t jitc_var_rcp(uint32_t a0) {
         jitc_var_dec_ref(one);
     }
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Rcp))
+        return f32_unary_op(jitc_var_rcp, a0);
+
     if (!result && info.size) {
         bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
         result = jitc_var_new_node_1(
@@ -1389,6 +1522,7 @@ uint32_t jitc_var_rsqrt(uint32_t a0) {
     uint32_t result = 0;
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_rsqrt(l0); }, v0);
+
 
     bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
 
@@ -1423,6 +1557,9 @@ uint32_t jitc_var_sin_intrinsic(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_sin(l0); }, v0);
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Sin))
+        return f32_unary_op(jitc_var_sin_intrinsic, a0);
+
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Sin, info.type,
                                      info.size, info.symbolic, a0, v0);
@@ -1445,6 +1582,9 @@ uint32_t jitc_var_cos_intrinsic(uint32_t a0) {
     uint32_t result = 0;
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_cos(l0); }, v0);
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Cos))
+        return f32_unary_op(jitc_var_cos_intrinsic, a0);
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Cos, info.type,
@@ -1469,6 +1609,9 @@ uint32_t jitc_var_exp2_intrinsic(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_exp2(l0); }, v0);
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Exp2))
+        return f32_unary_op(jitc_var_exp2_intrinsic, a0);
+
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Exp2, info.type,
                                      info.size, info.symbolic, a0, v0);
@@ -1492,6 +1635,9 @@ uint32_t jitc_var_log2_intrinsic(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_log2(l0); }, v0);
 
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Log2))
+        return f32_unary_op(jitc_var_log2_intrinsic, a0);
+
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Log2, info.type,
                                      info.size, info.symbolic, a0, v0);
@@ -1514,6 +1660,9 @@ uint32_t jitc_var_tanh_intrinsic(uint32_t a0) {
     uint32_t result = 0;
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_tanh(l0); }, v0);
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::Tanh))
+        return f32_unary_op(jitc_var_tanh_intrinsic, a0);
 
     if (!result && info.size)
         result = jitc_var_new_node_1(info.backend, VarKind::Tanh, info.type,

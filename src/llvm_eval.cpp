@@ -459,18 +459,6 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
         "}");
 }
 
-static inline bool jitc_fp16_supported_llvm(VarKind kind) {
-    switch (kind) {
-        case VarKind::Min:
-        case VarKind::Max:
-#if !defined (__aarch64__)
-            return false;
-#endif
-        default:
-            return true;
-    }
-}
-
 static void jitc_llvm_render(Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
@@ -480,25 +468,6 @@ static void jitc_llvm_render(Variable *v) {
 
     if (v->coop_vec)
         return jitc_llvm_render_coop_vec(v, a0, a1, a2, a3);
-
-    bool f32_upcast = jitc_is_half(v) && !jitc_fp16_supported_llvm((VarKind)v->kind);
-
-    if (f32_upcast) {
-        Variable* b = const_cast<Variable*>(v);
-        b->type = (uint32_t)VarType::Float32;
-
-        for (size_t i = 0; i < 4; ++i) {
-            Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
-            if (dep) {
-                if (!dep->ssa_f32_cast) {
-                    fmt("    %f$u = fpext <$w x half> %h$u to <$w x float>\n",
-                        dep->reg_index, dep->reg_index);
-                    dep->ssa_f32_cast = 1;
-                }
-                dep->type = (uint32_t)VarType::Float32;
-            }
-        }
-    }
 
     switch ((VarKind) v->kind) {
         case VarKind::Undefined:
@@ -1260,20 +1229,6 @@ static void jitc_llvm_render(Variable *v) {
         default:
             jitc_fail("jitc_llvm_render(): unhandled node kind \"%s\"!",
                       var_kind_name[(uint32_t) v->kind]);
-    }
-
-    if (f32_upcast) {
-        Variable *b = const_cast<Variable *>(v);
-        b->type = (uint32_t) VarType::Float16;
-        for (size_t i = 0; i < 4; ++i) {
-            Variable* dep = b->dep[i] ? jitc_var(b->dep[i]) : nullptr;
-            if (dep)
-                dep->type = (uint32_t) VarType::Float16;
-        }
-
-        fmt("    %h$u = fptrunc <$w x float> %f$u to <$w x half>\n",
-            v->reg_index, v->reg_index);
-        b->ssa_f32_cast = 1;
     }
 }
 
