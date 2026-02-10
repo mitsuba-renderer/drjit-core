@@ -618,10 +618,20 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
             jitc_var_call_analyze(call, inst_id, index_2, data_offset);
     } else if (kind == VarKind::LoopCond) {
         LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
-        for (uint32_t index_2: loop->inner_out)
-            jitc_var_call_analyze(call, inst_id, index_2, data_offset);
-        for (uint32_t index_2: loop->outer_in)
-            jitc_var_call_analyze(call, inst_id, index_2, data_offset);
+
+        uint32_t loop_state_size = (uint32_t) loop->size;
+        for (uint32_t i = 0; i < loop_state_size; ++i) {
+            // Loop-invariant variables should not be traversed, as they might
+            // never be used in the call. In cases where these variables are
+            // used, they will still be traversed when acessing whichever
+            // variable/operation used said loop-invariaint variable. Typically,
+            // the variables are still used "indirectly", like the source of `gather`.
+            if (loop->outer_in[i] == loop->inner_in[i])
+                continue;
+
+            jitc_var_call_analyze(call, inst_id, loop->inner_out[i], data_offset);
+            jitc_var_call_analyze(call, inst_id, loop->outer_in[i], data_offset);
+        }
     } else if (kind == VarKind::PacketScatter) {
         PacketScatterData *psd = (PacketScatterData *) v->data;
         for (uint32_t i : psd->values)
