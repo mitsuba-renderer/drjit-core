@@ -224,24 +224,49 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                         for (uint32_t i =  0; i < v->array_length; ++i)
                             fmt("    $v_$u = $s $V_$u, $v_$u\n", v, i, op, a0, i, a1, i);
                     } else {
-                        fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, op, v, a0, a1);
+                        bool custom_intrinsic = false;
+#if !defined(__aarch64__)
+                        if ((VarType) a0->type == VarType::Float16) {
+                            if ((JitOp) v->literal == JitOp::Min)
+                                def_minnum_vec_f16_intrinsic();
+                            else
+                                def_maxnum_vec_f16_intrinsic();
+                            custom_intrinsic = true;
+                        }
+#endif
+                        if (!custom_intrinsic)
+                            fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)",
+                                          v, op, v, a0, a1);
+
+                        const char *intrinsic_prefix = custom_intrinsic ? "" : "llvm.";
                         for (uint32_t i =  0; i < v->array_length; ++i)
-                            fmt("    $v_$u = call fast $T @llvm.$s.v$w$h($V_$u, $V_$u)\n",
-                                v, i, v, op, v, a0, i, a1, i);
+                            fmt("    $v_$u = call fast $T @$s$s.v$w$h($V_$u, $V_$u)\n",
+                                v, i, v, intrinsic_prefix, op, v, a0, i, a1, i);
                     }
                 }
             }
             break;
 
-        case VarKind::CoopVecTernaryOp:
-            if ((JitOp) v->literal != JitOp::Fma)
-                jitc_fail("CoopVecTernaryOp: unsupported operation!");
+        case VarKind::CoopVecTernaryOp: {
+                if ((JitOp) v->literal != JitOp::Fma)
+                    jitc_fail("CoopVecTernaryOp: unsupported operation!");
 
-            fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)", v, v,
-                          a0, a1, a2);
-            for (uint32_t i = 0; i < v->array_length; ++i)
-                fmt("    $v_$u = call $T @llvm.fma.v$w$h($V_$u, $V_$u, $V_$u)\n",
-                    v, i, v, v, a0, i, a1, i, a2, i);
+                bool custom_intrinsic = false;
+#if !defined(__aarch64__)
+                if ((VarType) a0->type == VarType::Float16) {
+                    def_fma_vec_f16_intrinsic();
+                    custom_intrinsic = true;
+                }
+#endif
+                if (!custom_intrinsic)
+                    fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)",
+                                  v, v, a0, a1, a2);
+
+                const char *intrinsic_prefix = custom_intrinsic ? "" : "llvm.";
+                for (uint32_t i = 0; i < v->array_length; ++i)
+                    fmt("    $v_$u = call $T @$sfma.v$w$h($V_$u, $V_$u, $V_$u)\n",
+                        v, i, v, intrinsic_prefix, v, a0, i, a1, i, a2, i);
+            }
             break;
 
         case VarKind::Bitcast:
@@ -424,16 +449,25 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                         v, v, v, v, v, v, mask, v);
                 }
 
-                fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)", v, v,
-                              v, v, v);
+                bool custom_intrinsic = false;
+#if !defined(__aarch64__)
+                if ((VarType) v->type == VarType::Float16) {
+                    def_fma_vec_f16_intrinsic();
+                    custom_intrinsic = true;
+                }
+#endif
+                if (!custom_intrinsic)
+                    fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)",
+                                  v, v, v, v, v);
 
+                const char *intrinsic_prefix = custom_intrinsic ? "" : "llvm.";
                 fmt("    $v_y1 = getelementptr inbounds $T, {$T*} $v_po, i32 $v_i\n"
                     "    $v_y = load $T, {$T*} $v_y1, align $A\n"
-                    "    $v_r = call $T @llvm.fma.v$w$h($V_a, $V_x, $V_y)\n"
+                    "    $v_r = call $T @$sfma.v$w$h($V_a, $V_x, $V_y)\n"
                     "    store $V_r, {$T*} $v_y1, align $A\n",
                     v, v, v, v, v,
                     v, v, v, v, v,
-                    v, v, v, v, v, v,
+                    v, v, intrinsic_prefix, v, v, v, v,
                     v, v, v, v);
 
                 fmt("    br label %l$u_inner\n"
