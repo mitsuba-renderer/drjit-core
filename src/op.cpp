@@ -285,6 +285,7 @@ JIT_INLINE uint32_t jitc_eval_literal(const OpInfo &info, Func func,
 bool needs_f32_upcast(OpInfo info, VarKind kind) {
     if (info.backend == JitBackend::LLVM && info.type == VarType::Float16)
         switch (kind) {
+            case VarKind::Fma:
             case VarKind::Min:
             case VarKind::Max:
 #if !defined(__aarch64__)
