@@ -227,10 +227,7 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                         bool custom_intrinsic = false;
 #if !defined(__aarch64__)
                         if ((VarType) a0->type == VarType::Float16) {
-                            if ((JitOp) v->literal == JitOp::Min)
-                                def_minnum_vec_f16_intrinsic();
-                            else
-                                def_maxnum_vec_f16_intrinsic();
+                            def_f16_wrapper_binary_intrinsic(op);
                             custom_intrinsic = true;
                         }
 #endif
@@ -254,7 +251,7 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                 bool custom_intrinsic = false;
 #if !defined(__aarch64__)
                 if ((VarType) a0->type == VarType::Float16) {
-                    def_fma_vec_f16_intrinsic();
+                    def_f16_wrapper_ternary_intrinsic("fma");
                     custom_intrinsic = true;
                 }
 #endif
@@ -452,7 +449,7 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                 bool custom_intrinsic = false;
 #if !defined(__aarch64__)
                 if ((VarType) v->type == VarType::Float16) {
-                    def_fma_vec_f16_intrinsic();
+                    def_f16_wrapper_ternary_intrinsic("fma");
                     custom_intrinsic = true;
                 }
 #endif
