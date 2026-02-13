@@ -34,21 +34,25 @@ struct ScheduledGroup {
         : size(size), start(start), end(end) { }
 };
 
+enum class GlobalType : uint32_t {
+    IndirectCallable = 0, // Multi-target vcalls, assembled first
+    Callable = 1,         // Single-target vcalls, assembled second
+    Global = 2            // Other globals (intrinsics, etc.), assembled last
+};
+
 struct GlobalKey {
     XXH128_hash_t hash;
-    bool indirect_callable;
+    GlobalType type;
 
-    GlobalKey(XXH128_hash_t hash, bool callable)
-        : hash(hash), indirect_callable(callable) { }
+    GlobalKey(XXH128_hash_t hash, GlobalType type)
+        : hash(hash), type(type) { }
 
     /* Order so that callables are defined before other globals, but don't use
        the callable ID itself for ordering (it can be non-deterministic in
        programs that use Dr.Jit with parallelization) */
     bool operator<(const GlobalKey &v) const {
-        int callable_key_t =   indirect_callable ? 0 : 1,
-            callable_key_v = v.indirect_callable ? 0 : 1;
-        return std::tie(callable_key_t, hash.high64, hash.low64) <
-               std::tie(callable_key_v, v.hash.high64, v.hash.low64);
+        return std::tie(type, hash.high64, hash.low64) <
+               std::tie(v.type, v.hash.high64, v.hash.low64);
     }
 };
 

@@ -324,7 +324,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     bool continuation_callables = jitc_optix_use_continuation_callables();
 
     for (auto const &it : globals_map) {
-        if (!it.first.indirect_callable)
+        if (it.first.type != GlobalType::IndirectCallable)
             continue;
 
         char *name = (char *) malloc_check(58);

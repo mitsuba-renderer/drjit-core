@@ -227,7 +227,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         put('\n');
         put(globals.get() + it.second.start, it.second.length);
         put('\n');
-        if (!it.first.indirect_callable)
+        if (it.first.type != GlobalType::IndirectCallable)
             continue;
         it.second.callable_index = ctr++;
     }
@@ -245,7 +245,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         fmt("\n.visible .global .align 8 .u64 callables[$u] = {\n",
             indirect_callable_count_unique);
         for (auto const &it : globals_map) {
-            if (!it.first.indirect_callable)
+            if (it.first.type != GlobalType::IndirectCallable)
                 continue;
 
             fmt("    func_$Q$Q$s\n",
@@ -270,8 +270,10 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                         (flags & (uint32_t) JitFlag::PrintIR);
 
     if (call->n_inst == 1)
-        put(".func");
+        // Marked as weak, in case a forward declaration is assembled after this
+        put(".weak .func");
     else
+        // Marked as globally visible for OptiX
         put(".visible .func");
 
     if (out_size)
@@ -1585,7 +1587,7 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     }
 
     if (call->n_inst == 1) {
-        put("            .func ");
+        put("            .weak .func ");
         if (out_size)
             fmt("(.param .align $u .b8 result[$u]) ", out_align, out_size);
         put("func_unique_");

@@ -241,7 +241,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         put('\n');
         put(globals.get() + it.second.start, it.second.length);
         put('\n');
-        if (!it.first.indirect_callable)
+        if (it.first.type != GlobalType::IndirectCallable)
             continue;
         it.second.callable_index = 1 + ctr++;
     }

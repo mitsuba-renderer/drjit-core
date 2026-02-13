@@ -914,7 +914,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         kernel_hash.high64 = 0;
     }
 
-    if (globals_map.emplace(GlobalKey(kernel_hash, call->n_inst != 1),
+    if (globals_map.emplace(GlobalKey(kernel_hash, call->n_inst != 1 ? GlobalType::IndirectCallable : GlobalType::Callable),
                             GlobalValue(globals.size(), kernel_length)).second) {
         // Replace '^'s in 'func_^^^..' or '__direct_callable__^^^..' with hash
         size_t hash_offset = strchr(buffer.get() + kernel_offset, '^') - buffer.get(),
@@ -957,7 +957,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
 /// Register a global declaration that will be included in the final program
 void jitc_register_global(const char *str) {
     size_t length = strlen(str);
-    if (globals_map.emplace(GlobalKey(XXH128(str, length, 0), false),
+    if (globals_map.emplace(GlobalKey(XXH128(str, length, 0), GlobalType::Global),
                             GlobalValue(globals.size(), length)).second)
         globals.put(str, length);
 }

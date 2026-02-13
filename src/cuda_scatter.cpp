@@ -67,7 +67,7 @@ void jitc_cuda_render_scatter_reduce_bfly_32(const char *tp, const char *op,
                                              const char *op_ftz, uint32_t shiftamt) {
     fmt_intrinsic(
         ".func reduce_$s_$s(.param .u64 ptr, .param .$s value) {\n"
-        "    .reg .b32 %active, %index, %mask_lt, %mask_gt, %peers, \n"
+        "    .reg .b32 %active, %index, %mask_lt, %mask_gt, %peers,\n"
         "              %peers_lt, %peers_rev, %rank, %rank_bit, %rank_ballot;\n"
         "    .reg .b64 %ptr, %ptr_shift;\n"
         "    .reg .$s %q0, %q1;\n"
@@ -151,7 +151,7 @@ void jitc_cuda_render_scatter_reduce_bfly_64(const char *tp, const char *op,
                                              const char *op_ftz, uint32_t shiftamt) {
     fmt_intrinsic(
         ".func reduce_$s_$s(.param .u64 ptr, .param .$s value) {\n"
-        "    .reg .b32 %active, %index, %mask_lt, %mask_gt, %peers, \n"
+        "    .reg .b32 %active, %index, %mask_lt, %mask_gt, %peers,\n"
         "              %peers_lt, %peers_rev, %rank, %rank_bit, %rank_ballot;\n"
         "    .reg .b64 %ptr, %ptr_shift;\n"
         "    .reg .b32 %q0l, %q0h, %q1l, %q1h;\n"

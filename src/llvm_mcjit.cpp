@@ -131,7 +131,7 @@ void jitc_llvm_mcjit_compile(void *llvm_module,
         symbols[symbol_pos++] = resolve("callables");
 
         for (auto const &kv: globals_map) {
-            if (!kv.first.indirect_callable)
+            if (kv.first.type != GlobalType::IndirectCallable)
                 continue;
 
             char name_buf[38];
