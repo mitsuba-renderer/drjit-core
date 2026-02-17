@@ -232,16 +232,28 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         it.second.callable_index = ctr++;
     }
 
-    if (indirect_callable_count > 0 && !uses_optix) {
-        size_t suffix_start = buffer.size(),
-               suffix_target =
-                   (char *) strstr(buffer.get(), ".address_size 64\n\n") -
-                   buffer.get() + 18;
+    // Callable forward declarations
+    size_t suffix_start = buffer.size(),
+           suffix_target =
+               (char *) strstr(buffer.get(), ".address_size 64\n\n") -
+               buffer.get() + 18;
 
+    if (indirect_callable_count > 0 && !uses_optix)
         fmt(".extern .global .u64 callables[$u];\n\n", indirect_callable_count_unique);
 
+    for (auto &it : globals_map) {
+        if (it.first.type == GlobalType::Callable) {
+            const char *sig = globals.get() + it.second.start;
+            const char *eol = (const char *) memchr(sig, '\n', it.second.length);
+            put(sig, eol - 1 - sig);
+            put(";\n");
+        }
+    }
+
+    if (suffix_start != buffer.size())
         buffer.move_suffix(suffix_start, suffix_target);
 
+    if (indirect_callable_count > 0 && !uses_optix) {
         fmt("\n.visible .global .align 8 .u64 callables[$u] = {\n",
             indirect_callable_count_unique);
         for (auto const &it : globals_map) {
@@ -270,8 +282,7 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                         (flags & (uint32_t) JitFlag::PrintIR);
 
     if (call->n_inst == 1)
-        // Marked as weak, in case a forward declaration is assembled after this
-        put(".weak .func");
+        put(".func");
     else
         // Marked as globally visible for OptiX
         put(".visible .func");
@@ -1586,32 +1597,7 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
             tname, v->param_offset, prefix, v->reg_index);
     }
 
-    if (call->n_inst == 1) {
-        put("            .weak .func ");
-        if (out_size)
-            fmt("(.param .align $u .b8 result[$u]) ", out_align, out_size);
-        put("func_unique_");
-        XXH128_hash_t hash = call->inst_hash[0];
-        buffer.put_q64_unchecked(hash.high64);
-        buffer.put_q64_unchecked(hash.low64);
-        put("(");
-
-        if (call->use_index)
-            put(".reg .u32 index, ");
-        if (call->use_self)
-            put(".reg .u32 self, ");
-        if (data_reg)
-            put(".reg .u64 data, ");
-        if (in_size)
-            fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
-        buffer.delete_trailing_commas();
-        put(");\n");
-
-        put("            call.uni ");
-    } else {
-        put("            call ");
-    }
-
+    fmt("            call$s", call->n_inst == 1 ? ".uni " : " ");
     if (out_size)
         put("(out), ");
 
