@@ -536,7 +536,7 @@ enum class VarType : uint32_t {
     Void,
     // Boolean/mask type
     Bool,
-    // Unspecified floating point type, used only for type promotion
+    // Unspecified integer type, used only for type promotion
     BaseInt,
     // Signed and unsigned integer types
     Int8, UInt8, Int16, UInt16, Int32, UInt32, Int64, UInt64,
