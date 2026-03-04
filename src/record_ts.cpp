@@ -2131,15 +2131,19 @@ void Recording::destroy() {
             jitc_var_dec_ref(rv.index);
         }
     }
-#if defined(DRJIT_ENABLE_OPTIX)
     for (Operation &op : this->operations) {
+        if (op.type == OpType::KernelLaunch) {
+            free(op.kernel.key->str);
+            free(op.kernel.key);
+        }
+#if defined(DRJIT_ENABLE_OPTIX)
         if (op.uses_optix) {
             jitc_free(op.sbt->hitgroupRecordBase);
             jitc_free(op.sbt->missRecordBase);
             delete op.sbt;
         }
-    }
 #endif
+    }
 }
 
 /**
