@@ -685,7 +685,11 @@ int jitc_flag(JitFlag flag) {
 
 KernelHistory::KernelHistory() : m_data(nullptr), m_size(0), m_capacity(0) { }
 
-KernelHistory::~KernelHistory() { free(m_data); }
+KernelHistory::~KernelHistory() {
+    for (size_t i = 0; i < m_size; i++)
+        free(m_data[i].ir);
+    free(m_data);
+}
 
 void KernelHistory::append(const KernelHistoryEntry &value) {
     /* Expand kernel history buffer if necessary. There should always be
@@ -741,6 +745,7 @@ void KernelHistory::clear() {
         } else {
             task_release((Task *) k.task);
         }
+        free(k.ir);
     }
 
     free(m_data);
