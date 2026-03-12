@@ -631,7 +631,7 @@ struct ThreadStateBase {
 
     /// Indicates, if the thread state is used to record or replay frozen
     /// functions.
-    KernelRecordingMode recording_mode = KernelRecordingMode::None;
+    KernelRecordingMode recording_mode = KernelRecordingMode::Inactive;
 
     /// ---------------------------- CUDA-specific ----------------------------
 
