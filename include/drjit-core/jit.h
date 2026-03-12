@@ -2371,7 +2371,7 @@ enum KernelType : uint32_t {
  */
 enum KernelRecordingMode : uint32_t {
     /// This kernel was not launched as part of a frozen function.
-    None,
+    Inactive,
 
     /// This kernel was recorded by a frozen function.
     Recorded,
