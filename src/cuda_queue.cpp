@@ -1,3 +1,41 @@
+/*
+   Implementation of the client part of the dr.Queue communication primitive,
+   which is responsible for JIT-compiling two key operations into user code:
+   sending a message, and waiting for the response.
+
+   The implementation uses different code paths depending on whether the queue
+   services a single or multiple message types. In the latter case, the
+   implementation uses a *virtual* queue per message type backed by a single
+   physical queue. This is important because the queue has substantial
+   memory requirements to unlock sufficient parallelism. Allocating a separate
+   queue per message type (of which there can be many) would be too costly. The
+   ``logical_queue`` variable indicates whether the indirection through a
+   virtual queue is used.
+
+   Messages are grouped into *batches*. The server processes batches atomically.
+   Each batch must have a uniform message type. Enqueuing a message entails
+   figuring out the right target batch in the physical queue. In the simple case
+   (``logical_queue==false`), the queue data structure is organized as follows:
+
+   The client uses warp communication primitives to locally aggregate
+   information and minimize the number of atomic memory transactions needed to
+   update the queue data structure.
+
+   1. Head counter: 32-bit queue head counter, padded to ``CounterStride``
+      bytes. Each submitted message increases this counter.
+
+   2. Queue state: ``batches`` 32-bit values identifying the state of each
+      message batch.
+
+      - bit 0..``log2i(batch_size)``: number of messages to be processed.
+      - remainder: generation counter. Increases each each time a message
+        or its reply is ready to be picked up on the other end.
+
+   3. Message body (``batches`` * ``batch_size`` * ``max_message_size`` bytes).
+      This memory region is used for both the message and its reply.
+
+*/
+
 #include "eval.h"
 #include "cuda_queue.h"
 #include "cuda_eval.h"
@@ -5,454 +43,244 @@
 #include "queue.h"
 #include "var.h"
 
-/// Stride between head/tail/virtual head pointers to avoid false sharing
-constexpr uint32_t CounterStride = 64 * (uint32_t) sizeof(uint32_t);
+/// Byte stride between head/tail/virtual head pointers to avoid false sharing
+constexpr uint32_t CounterStride = 64;
 
-/**
- * \brief Generate efficient PTX to load/store a potentially heterogeneous
- * sequence of values from/to contiguous memory.
- *
- * The function groups consecutive loads/stores values into a minimal number of
- * maximally large vector memory operations. It handles 16-, 32-, and 64-bit
- * integer and floating point data types. It uses weak stores and relaxed/strong
- * loads to enable communication with another thread in conjunction with memory
- * barriers that must be inserted by the caller.
- *
- * The function assumes that:
- *  - all values are properly aligned without need for padding
- *  - 16-bit values come in properly paired sequences
- *
- * Example output for loads:
- * \\code
- *     .reg.b32 $v_0;
- *     .reg.b32 $v_1;
- *     {
- *         .reg.b32 %tmp_<4>;
- *         ld.relaxed.global.v2.b32 {%tmp_0, %tmp_1}, [%ptr + 0];
- *         mov.b32 $v_0, %tmp_0;
- *         mov.b32 $v_1, %tmp_1;
- *     }
- * \\endcode
- */
-static void packet_memop(const Variable *v, const Variable *ptr, uint32_t n,
-                         const uint32_t *values, const VarType *vt, bool load,
-                         const char *out_suffix = "") {
-    // Generate local variable declarations for loads
-    if (load) {
-        bool uniform_tp = true;
-        for (uint32_t i = 1; i < n; i++)
-            uniform_tp &= vt[i] == vt[0];
-        if (uniform_tp) {
-            fmt("    .reg.b$u $v$s<$u>;\n", type_size[(int) vt[0]] * 8, v, out_suffix, n);
-        } else {
-            for (uint32_t i = 0; i < n; i++)
-                fmt("    .reg.b$u $v$s$u;\n", type_size[(int) vt[i]] * 8, v, out_suffix, i);
-        }
-    }
+/// Helper function to dump internal state for debugging
+void jitc_device_printf(const char *str, const Variable *v,
+                        uint32_t count, ...) {
+    // Build format string: "%03i: <str>\n\0", zero-padded to 4-byte boundary
+    size_t len = strlen("%03i: ") + strlen(str) + 1;
+    size_t len_padded = ceil_div(len, 4)*4;
+    std::unique_ptr<char[]> full_str(new char[len_padded]{});
 
-    // Open local scope and declare temp registers
+    size_t pos = 0;
+    for (const char *p = "%03i: "; *p; p++)
+        full_str[pos++] = *p;
+    for (const char *p = str; *p; p++)
+        full_str[pos++] = *p;
+
+    uint32_t arg_size = (count + 1) * 4;
+
     put("    {\n"
-        "        .reg.b32 %tmp_<4>;\n");
+        "        .extern .func (.param .b32 rv) vprintf "
+            "(.param .b64 fmt, .param .b64 args);\n");
+    fmt("        .local .align 4 .b8 __fmt[$u];\n"
+        "        .local .align 4 .b8 __args[$u];\n",
+        (uint32_t) len_padded, arg_size);
+    put("        .reg.b32 %_pf_tmp;\n"
+        "        .reg.b64 %_pf_fmt, %_pf_args;\n");
 
-    const uint32_t max_packet =
-        thread_state_cuda->compute_capability > 100 ? 32 : 16;
-
-    uint32_t index = 0, offset = 0, count, nbytes;
-
-    while (index < n) {
-        // Choose the largest packet size in [32 for sm_100, 16, 8, 4 bytes]
-        for (uint32_t packet_size = max_packet; packet_size >= 4; packet_size /= 2) {
-            count = nbytes = 0;
-
-            for (uint32_t i = index; i < n; i++) {
-                uint32_t vsize =
-                    type_size[load ? (int) vt[i] : jitc_var(values[i])->type];
-
-                if (nbytes + vsize > packet_size)
-                    break;
-
-                count++;
-                nbytes += vsize;
-            }
-
-            if (count > 0) {
-                if (nbytes % 4 != 0)
-                    jitc_fail("packet_memop(): number of bytes (%u) must be a "
-                              "multiple of 4", nbytes);
-
-                if (nbytes == packet_size)
-                    break;
-            }
-        }
-
-        // Generate load instructions
-        if (load) {
-            if (nbytes == 4) {
-                fmt("        ld.relaxed.gpu.global.b32 %tmp_0, [$v_data+$u];\n", ptr, offset);
-            } else {
-                fmt("        ld.relaxed.gpu.global.v$u.b32 {", nbytes / 4);
-                for (uint32_t i = 0; i < nbytes / 4; i++)
-                    fmt("$s%tmp_$u", i> 0 ? ", " : "", i);
-                fmt("}, [$v_data+$u];\n", ptr, offset);
-            }
-        }
-
-        // Pack or unpack values
-        for (uint32_t i = 0, pos = 0; i < count; i++) {
-            uint32_t j          = index + i,
-                     vsize      = type_size[load ? (int) vt[j] : jitc_var(values[j])->type],
-                     word_index = pos / 4;
-
-            if (vsize == 2) {
-                if (load)
-                    fmt("        mov.b32 {$v$s$u, $v$s$u}, %tmp_$u;\n", v, out_suffix, j, v, out_suffix, j + 1, word_index);
-                else
-                    fmt("        mov.b32 %tmp_$u, {$v, $v};\n", word_index, jitc_var(values[j]), jitc_var(values[j + 1]));
-                vsize = 4; i += 1; // Process two half precision floats at once
-            } else if (vsize == 4) {
-                if (load)
-                    fmt("        mov.b32 $v$s$u, %tmp_$u;\n", v, out_suffix, j, word_index);
-                else
-                    fmt("        mov.b32 %tmp_$u, $v;\n", word_index, jitc_var(values[j]));
-            } else if (vsize == 8) {
-                if (load)
-                    fmt("        mov.b64 $v$s$u, {%tmp_$u, %tmp_$u};\n",
-                           v, out_suffix, j, word_index, word_index + 1);
-                else
-                    fmt("        mov.b64 {%tmp_$u, %tmp_$u}, $v;\n",
-                           word_index, word_index + 1, jitc_var(values[j]));
-            }
-            pos += vsize;
-        }
-
-        // Generate store instructions
-        if (!load) {
-            if (nbytes == 4) {
-                fmt("        st.weak.global.b32 [$v_data+$u], %tmp_0;\n", ptr, offset);
-            } else {
-                fmt("        st.weak.global.v$u.b32 [$v_data+$u], {", nbytes / 4, ptr, offset);
-                for (uint32_t i = 0; i < nbytes / 4; i++)
-                    fmt("$s%tmp_$u", i > 0 ? ", " : "", i);
-                put("};\n");
-            }
-        }
-
-        index += count;
-        offset += nbytes;
+    // Store format string to local memory, reading 4 bytes at a time (LE)
+    for (uint32_t i = 0; i < (uint32_t) len_padded; i += 4) {
+        uint32_t word;
+        memcpy(&word, full_str.get() + i, 4);
+        fmt("        mov.b32 %_pf_tmp, 0x$x;\n"
+            "        st.local.b32 [__fmt+$u], %_pf_tmp;\n", word, i);
     }
 
-    // Close local scope
-    put("    }\n");
+    // Store thread index (%r0) as first argument
+    put("        st.local.b32 [__args], %r0;\n");
+
+    va_list args;
+    va_start(args, count);
+    for (uint32_t i = 0; i < count; i++) {
+        const char *suffix = va_arg(args, const char *);
+        fmt("        st.local.b32 [__args+$u], $v_$s;\n",
+            (i + 1) * 4, v, suffix);
+    }
+    va_end(args);
+
+    // Convert to generic addresses and call vprintf
+    put("        cvta.local.u64 %_pf_fmt, __fmt;\n"
+        "        cvta.local.u64 %_pf_args, __args;\n"
+        "        {\n"
+        "            .param .b64 _fmt;\n"
+        "            .param .b64 _args;\n"
+        "            .reg.b32 %_pf_rv;\n"
+        "            st.param.b64 [_fmt], %_pf_fmt;\n"
+        "            st.param.b64 [_args], %_pf_args;\n"
+        "            call.uni (%_pf_rv), vprintf, (_fmt, _args);\n"
+        "        }\n"
+        "    }\n");
+}
+
+void elect(const Variable *v, const char *dst_id, const char *dst_mask, const char *peers) {
+#if 1
+    fmt("    elect.sync $v_$s|$v_$s, $v_$s;\n", v, dst_id, v, dst_mask, v, peers);
+#else
+    //"    mov.b32 $v_lane_id, %laneid;\n"
+    fmt(
+        "    bfind.u32 $v_$s, $v_$s;\n"
+        "    setp.eq.u32 $v_$s, $v_$s, $v_lane_id;\n",
+        v, dst_id, v, peers,
+        v, mask, v, peers
+    );
+#endif
 }
 
 void jitc_cuda_render_queue_send(Variable *v,
                                  Variable *queue_buffer,
                                  Variable *msg_type) {
     const QueueSendData *qsd = (const QueueSendData *) jitc_var_extra(v)->callback_data;
+    bool logical_queue = false;
 
-    // We might have to further group operations into peers if they
-    // go to different virtual queues
-    bool virtual_queue = qsd->msg_types != 1;
-    const char *peers = "active";
+    const uint32_t batch_size      = qsd->batch_size,
+                   batches         = qsd->batches,
+                   batch_mask      = batches - 1,
+                   batch_size_mask = batch_size - 1,
+                   batch_size_bits = log2i_ceil(batch_size),
+                   batches_bits    = log2i_ceil(batches),
+                   version_mask    = ((uint32_t) -1) * batches*batch_size;
 
-    const uint32_t block_size_bits = log2i_ceil(qsd->block_size),
-                   blocks_bits     = log2i_ceil(qsd->blocks);
+    // Offsets within the queue buffer
+    uint32_t state_offset = (qsd->msg_types + uint32_t(logical_queue)) * CounterStride,
+             state_size   = qsd->batches * (uint32_t) sizeof(uint32_t),
+             data_offset  = state_offset + state_size * (qsd->msg_types + uint32_t(logical_queue));
 
-    fmt("    // Queue encode logic for msg_types=$u, block_size=$u ($u bits), blocks=$u ($u bits)\n",
-        qsd->msg_types, qsd->block_size, block_size_bits, qsd->blocks, blocks_bits);
+    // ================================================================
+    fmt("\n"
+        "    // Enqueue message: msg_types=$u, batches=$u [$u bits], batch_size=$u [$u bits]\n",
+        qsd->msg_types, qsd->batches, batches_bits, qsd->batch_size, batch_size_bits);
 
-    fmt("    // 1. Determine mask for opportunistic warp-level cooporation\n"
-        "    .reg.b32 $v_active, $v_lane_id, $v_lane_lt, $v_queue_id, $v_tmp, $v_tmp2, $v_peers;\n"
-        "    .reg.pred $v_ready;\n"
-        "    activemask.b32 $v_active;\n"
-        "    mov.b32 $v_lane_id, %laneid;\n"
-        "    mov.b32 $v_lane_lt, %lanemask_lt;\n",
-        v, v, v, v, v, v, v,
+    fmt( "    // 1. Mask for opportunistic warp-level cooporation\n"
+        "    .reg.b32 $v_active, $v_peers;\n"
+        "    activemask.b32 $v_active;\n",
         v,
         v,
-        v,
-        v);
+        v
+    );
 
-    if (virtual_queue)
-        fmt("    add.u32 $v_queue_id, $v, 1;\n", v, msg_type);
-    else
-        fmt("    mov.u32 $v_queue_id, 0;\n", v);
+    // ================================================================
 
-    if (virtual_queue && !msg_type->is_literal()) {
-        fmt("    match.any.sync.b32 $v_peers, $v, $v_active;\n",
-            v, msg_type, v);
-        peers = "peers";
+    fmt(
+        "\n"
+        "    // 2. Identify target queue and peer threads\n"
+        "    .reg.b32 $v_queue_id;\n",
+        v
+    );
+    if (logical_queue) {
+        fmt("    .reg.b32 $v_peers;\n"
+            "    add.u32 $v_queue_id, $v, 1;\n"
+            "    match.any.sync.b32 $v_peers, $v_queue_id, $v_active;\n",
+            v,
+            v, msg_type,
+            v, v, v);
+    } else {
+        fmt("    mov.u32 $v_queue_id, 0;\n"
+            "    mov.u32 $v_peers, $v_active;\n",
+            v,
+            v, v);
     }
 
-    fmt("\n"
-        "    // 2. Determine a leader and count the messages in each peer group\n"
-        "    .reg.b32 $v_leader_id, $v_count;\n"
-        "    .reg.pred $v_leader;\n"
-        "    bfind.u32 $v_leader_id, $v_$s;\n"
-        "    popc.b32 $v_count, $v_$s;\n"
-        "    setp.eq.u32 $v_leader, $v_leader_id, $v_lane_id;\n",
-        v, v,
-        v,
-        v, v, peers,
-        v, v, peers,
-        v, v, v);
+    // ================================================================
 
     fmt("\n"
-        "    // 3. The leader reserves space by bumping the logical queue head pointer\n"
+        "    // 3. Elect a leader and count the messages in each peer group\n"
+        "    .reg.b32 $v_leader_id, $v_count;\n"
+        "    .reg.pred $v_leader_mask;\n",
+        v, v, v
+    );
+
+    elect(v, "leader_id", "leader_mask", "peers");
+    fmt("    popc.b32 $v_count, $v_$s;\n",
+        v, v, "peers");
+
+    // ================================================================
+
+    fmt("\n"
+        "    // 4. The leader reserves space by bumping the logical queue head pointer\n"
         "    .reg.b64 $v_head;\n"
         "    .reg.b32 $v_offset;\n"
         "    mad.wide.u32 $v_head, $v_queue_id, $u, $v;\n"
-        "    @$v_leader atom.relaxed.gpu.global.add.u32 $v_offset, [$v_head], $v_count;\n",
+        "    @$v_leader_mask atom.relaxed.gpu.global.add.u32 $v_offset, [$v_head], $v_count;\n",
         v,
         v,
         v, v, CounterStride, queue_buffer,
         v, v, v, v);
 
     fmt("\n"
-        "    // 4. Generate indices for all peers based on the leader's response\n"
-        "    .reg.b32 $v_peers_lt, $v_offset_local;\n"
-        "    and.b32 $v_peers_lt, $v_lane_lt, $v_$s;\n"
+        "    // 5. Generate indices for all peers based on the leader's response\n"
+        "    .reg.b32 $v_lane_lt, $v_peers_lt, $v_offset_local;\n"
+        "    mov.b32 $v_lane_lt, %lanemask_lt;\n"
+        "    and.b32 $v_peers_lt, $v_lane_lt, $v_peers;\n"
         "    popc.b32 $v_offset_local, $v_peers_lt;\n"
         "    shfl.sync.idx.b32 $v_offset, $v_offset, $v_leader_id, 31, $v_active;\n"
         "    add.u32 $v_offset, $v_offset, $v_offset_local;\n",
-        v, v,
-        v, v, v, peers,
+        v, v, v,
+        v,
+        v, v, v,
         v, v,
         v, v, v, v,
         v, v, v);
 
-    // CounterStride is already in bytes (256), so no additional sizeof(uint32_t) multiplication needed
-    uint32_t state_offset = (qsd->msg_types + uint32_t(virtual_queue)) * CounterStride,
-             state_size   = qsd->blocks * (uint32_t) sizeof(uint32_t),
-             data_offset  = state_offset + state_size * (qsd->msg_types + uint32_t(virtual_queue));
+    fmt("\n"
+        "    // 6. Determine the logical batch, generation, and offset within the batch\n"
+        "    .reg.b32 $v_log_batch, $v_log_gen;\n"
+        "    shr.u32 $v_log_batch, $v_offset, $u;\n" // logical batch index
+        "    and.b32 $v_log_batch, $v_log_batch, 0x$x;\n"
+        "    and.b32 $v_log_gen, $v_offset, 0x$x;\n"
+        "    and.b32 $v_offset, $v_offset, 0x$x;\n",   // offset within batch (logical + physical)
+        v, v,
+        v, v, batch_size_bits,
+        v, v, batch_mask,
+        v, v, version_mask,
+        v, v, batch_size_mask);
 
-    /*
-        The queue_buffer array consists of three parts:
-
-        1. Queue heads -- a 32-bit unsigned integer each.
-
-           - Physical queue head. SKIPPED when ``virtual_queue == false``.
-           - A set of ``msg_types`` logical queue heads
-
-           They are padded and each take up ``CounterStride`` bytes
-
-           (The server queue tail is stored elsewhere.)
-
-        2. Virtual/logical queue state
-
-           - Physical queue state: ``blocks`` uint32_t values. SKIPPED when ``virtual_queue == false``
-           - Logical queue state: ``msg_types * blocks`` uint32_t values.
-
-        3. The physical message payload
-
-        -------------------------------------------------------------------------
-
-        The logical queue head entries are counters, whose elements are interpreted as follows:
-
-        Bit 31         .....               0
-        | log_ver | log_block | log_offset |
-
-
-        where
-
-          log_offset: position within the block. Uses ``block_size_bits`` bits
-          log_block:  block ID within the physical or logical queue. log2i(blocks) bits
-          log_ver:    version number. Increases as blocks are repeatedly used.
-
-        -------------------------------------------------------------------------
-
-        The logical queue state entries have the following interpretation:
-
-        Bit 31         .....               0
-        | log_ver | unused | phy_block |
-
-          phy_block:  physical queue block associated with this logical queue block.
-          log_ver:    version number matching the bit position & depth in the queue head
-
-        -------------------------------------------------------------------------
-
-        The physical queue state entries have the following interpretation
-
-        Bit 31             .....                     0
-        | (unused) | msg_type | num_resp | num_query |
-
-        where
-
-          msg_type:  Message type encoded in this block. log2i(msg_types) bits.
-          num_resp:  Number of consumed responses. Uses ``block_size_bits+1`` bits.
-          num_query: Number of submitted queries.  Uses ``block_size_bits+1`` bits.
-
-        -------------------------------------------------------------------------
-    */
-
-    const uint32_t version_mask = 0xFFFFFFFFu /
-                                  (qsd->blocks * qsd->block_size) *
-                                  (qsd->blocks * qsd->block_size);
+    // ================================================================
 
     fmt("\n"
-        "    // 5. Determine the associated logical block, the offset within, and the version\n"
-        "    .reg.b32 $v_log_offset, $v_log_block, $v_phy_block, $v_log_ver, $v_target;\n"
+        "    // 7. Simple case: there is no difference between logical/physical queues\n"
+        "    .reg.b32 $v_phy_batch;\n"
         "    .reg.b64 $v_phy_p;\n"
-        "    and.b32 $v_log_offset, $v_offset, $u;\n"
-        "    shr.u32 $v_log_block, $v_offset, $u;\n"
-        "    and.b32 $v_log_block, $v_log_block, $u;\n"
-        "    and.b32 $v_log_ver, $v_offset, $u;\n",
-        v, v, v, v, v,
+        "    mad.wide.u32 $v_phy_p, $v_phy_batch, 4, $v;\n"
+        "    mov.b32 $v_phy_batch, $v_log_batch;\n",
         v,
-        v, v, qsd->block_size - 1,
-        v, v, block_size_bits,
-        v, v, qsd->blocks - 1,
-        v, v, version_mask);
-
-    if (virtual_queue) {
-        fmt("\n"
-            "    // 6.1. If log_offset == 0, allocate a logical block mapping:\n"
-            "    .reg.pred $v_new_block;\n"
-            "    .reg.b64 $v_log_p;\n"
-            "    setp.eq.b32 $v_new_block, $v_log_offset, 0;\n"
-            "    mad.wide.u32 $v_log_p, $v_queue_id, $u, $v;"
-            "    @!$v_new_block bra l$u_sync;\n",
-            v,
-            v,
-            v, v,
-            v, v, state_size, queue_buffer,
-            v, v->reg_index);
-
-        fmt("\n"
-            "    // 6.2. Request a block ID from the physical queue\n"
-            "    atom.relaxed.gpu.global.add.u32 $v_phy_block, [$v], 1;\n"
-            "    and.b32 $v_phy_block, $v_phy_block, $u;\n",
-            v, queue_buffer,
-            v, v, qsd->blocks - 1);
-
-        fmt("\n"
-            "    // 6.3. Lock the physical block\n"
-            "    mad.wide.u32 $v_phy_p, $v_phy_block, 4, $v;\n"
-            "    shl.u32 $v_target, $v_queue_id, $u;\n"
-            "l$u_wait_phy:\n"
-            "    atom.relaxed.gpu.global.cas.b32 $v_tmp, [$v_phy_p+$u], 0, $v_target;\n"
-            "    setp.eq.b32 $v_ready, $v_tmp, 0;\n"
-            "    @!$v_ready bra l$u_wait_phy;\n",
-            v, v, queue_buffer,
-            v, v, (block_size_bits+1)*2,
-            v->reg_index,
-            v, v, state_offset, v,
-            v, v,
-            v, v->reg_index);
-
-        fmt("\n"
-            "    // 6.4. Record the physical block in the logical queue map\n"
-            "    or.b32 $v_tmp, $v_log_ver, $v_phy_block;\n"
-            "    st.relaxed.gpu.global.b32 [$v_log_p+$u], $v_tmp;\n",
-            v, v, v,
-            v, state_offset, v);
-
-        fmt("\n"
-            "    // 6.5. The other threads must now determine the physical block ID\n"
-            "l$u_sync:\n",
-            v->reg_index);
-
-        #if 0
-        fmt("    // 6.4. Try to get the information from a neighboring thread\n"
-            "    ballot.sync.b32 $v_tmp, $v_new_block;\n"
-            "    and.b32 $v_tmp, $v_tmp, $v_peers;\n"
-            "    setp.eq.b32 $v_pred, $v_tmp, 0;\n"
-            "    @$v_pred $bra l$u_sync_fallback;\n"
-            "    bfind.u32 $v_leader_id, $v_tmp;\n"
-            "    shfl.sync.idx.b32 $v_phy_block, $v_phy_block, $v_leader_id, 31, $v_active;\n"
-            "    bra l$u_mapped;\n",
-            v, v,
-            v, v, v,
-            v, v,
-            v, v->reg_index,
-            v, v,
-            v, v, v, v,
-            v->reg_index
-        );
-        #endif
-
-        fmt("\n"
-            "    // 6.6. Query the logical queue map in global memory.\n"
-            "l$u_wait_log:\n"
-            "    ld.relaxed.gpu.global.b32 $v_tmp, [$v_log_p+$u];"
-            "    and.b32 $v_tmp2, $v_tmp, $u;\n"
-            "    setp.eq.b32 $v_ready, $v_tmp2, $v_log_ver;\n"
-            "    @!$v_ready bra l$u_wait_log;\n"
-            "    and.b32 $v_phy_block, $v_tmp, $u;\n",
-            v->reg_index,
-            v, v, state_offset,
-            v, v, version_mask,
-            v, v, v,
-            v, v->reg_index,
-            v, v, qsd->blocks - 1);
-
-        fmt("\nl$u_mapped:\n", v->reg_index);
-    } else {
-        fmt("\n"
-            "    // 6. Simplified case -- logical and physical queues coincide\n"
-            "    mov.u32 $v_phy_block, $v_log_block;\n",
-            v, v);
-    }
+        v,
+        v, v, queue_buffer,
+        v, v);
 
     fmt("\n"
-        "    // 7. Designate a new leader based on the physical block ID\n"
-        "    match.any.sync.b32 $v_peers, $v_phy_block, $v_active;\n"
-        "    bfind.u32 $v_leader_id, $v_peers;\n"
-        "    popc.b32 $v_count, $v_peers;\n"
-        "    setp.eq.u32 $v_leader, $v_leader_id, $v_lane_id;\n",
+        "    // 8. Designate a new leader based on the physical batch ID\n"
+        "    match.any.sync.b32 $v_peers, $v_phy_batch, $v_active;\n"
+        "    popc.b32 $v_count, $v_peers;\n",
         v, v, v,
-        v, v,
-        v, v,
-        v, v, v
+        v, v
     );
 
-    if (!virtual_queue) {
-        fmt("\n"
-            "    // 8. Lock the physical block\n"
-            "    mad.wide.u32 $v_phy_p, $v_phy_block, 4, $v;\n"
-            "    @!$v_leader bra l$u_sync;\n"
-            "    shr.b32 $v_target, $v_log_ver, $u;\n"
-            "    add.u32 $v_target, $v_target, 1;\n"
-            "    shl.b32 $v_target, $v_target, $u;\n"
-            "\n"
-            "l$u_wait_phy:\n"
-            "    atom.relaxed.gpu.global.cas.b32 $v_tmp, [$v_phy_p+$u], 0, $v_target;\n"
-            "    setp.eq.b32 $v_ready, $v_tmp, 0;\n"
-            "    @!$v_ready bra l$u_wait_phy;\n"
-            "\n"
-            "l$u_sync:\n"
-            "    bar.warp.sync $v_active;\n",
-            v, v, queue_buffer,
-            v, v->reg_index,
-            v, v, block_size_bits+blocks_bits,
-            v, v,
-            v, v, (block_size_bits+1)*2,
-            v->reg_index,
-            v, v, state_offset, v,
-            v, v,
-            v, v->reg_index,
-            v->reg_index, v);
-    }
+    elect(v, "leader_id", "leader_mask", "peers");
 
-    // Compute the precise position for reading/writing our message
-    fmt("    .reg.b64 $v_data;\n"
-        "    mad.lo.u32 $v_offset, $v_phy_block, $u, $u;\n"
-        "    mad.lo.u32 $v_offset, $v_log_offset, $u, $v_offset;\n"
-        "    cvt.u64.u32 $v_data, $v_offset;\n"
-        "    add.u64 $v_data, $v_data, $v;\n",
-        v,
-        v, v, qsd->msg_max_size*qsd->block_size, data_offset,
-        v, v, qsd->msg_max_size, v,
+
+    // ================================================================
+
+    fmt("\n"
+        "    // 9. Ensure that the previous message batch was fully processed.\n"
+        "    .reg.b32 $v_state, $v_exp_state;\n"
+        "    .reg.pred $v_ready;\n"
+        "    shr.b32 $v_exp_state, $v_log_gen, $u;\n" // generation ID at bit position batch_bits+1
+        "    @!$v_leader_mask bra l$u_sync;\n"
+        "\n"
+        "l$u_wait_phy:\n"
+        "    ld.relaxed.gpu.global.b32 $v_state, [$v_phy_p+$u];\n"
+        "    and.b32 $v_state, $v_state, 0x$x;\n"
+        "    setp.eq.u32 $v_ready, $v_state, $v_log_gen;\n"
+        "    @!$v_ready bra l$u_wait_phy;\n"
+        "\n"
+        "l$u_sync:\n"
+        "    bar.warp.sync $v_active;\n", // wait for other threads
         v, v,
-        v, v, queue_buffer);
+        v,
+        v, v, batches_bits-1,
+        v, v->reg_index,
+        v->reg_index,
+        v, v, state_offset,
+        v, v, ~batch_size_mask,
+        v, v, v,
+        v, v->reg_index,
+        v->reg_index, v);
 
-    // Insert an efficient write sequence for the message body
-    packet_memop(v, v, (uint32_t) qsd->indices.size(),
-                 qsd->indices.data(), nullptr, false);
-
-    // Update peer/count values based on physical blocks, and signal successful write of messages
-    fmt("    // 10. Inform the server that the messages have been written\n"
-        "    @$v_leader red.release.gpu.global.add.u32 [$v_phy_p+$u], $v_count;\n",
+    fmt("    // 10. Inform the server that the message has been written\n"
+        "    @$v_leader_mask red.release.gpu.global.add.u32 [$v_phy_p+$u], $v_count;\n",
         v, v, state_offset, v);
 
     queue_callbacks.push_back(qsd->callback);
@@ -463,30 +291,18 @@ void jitc_cuda_render_queue_recv(Variable *vr,
     const QueueSendData *qsd = (const QueueSendData *) jitc_var_extra(v)->callback_data;
     const QueueRecvData *qrd = (const QueueRecvData *) jitc_var_extra(vr)->callback_data;
 
-    bool virtual_queue = qsd->msg_types != 1;
-    uint32_t state_offset = (qsd->msg_types + uint32_t(virtual_queue)) * CounterStride;
+    const std::vector<VarType> &vt = qrd->vt;
+    uint32_t n = (uint32_t) vt.size();
 
-    fmt("\n"
-        "l$u_wait_response:\n"
-        "    ld.relaxed.gpu.global.u32 $v_tmp, [$v_phy_p+$u];\n"
-        "    and.b32 $v_tmp, $v_tmp, $u;\n"
-        "    setp.ge.u32 $v_ready, $v_tmp, $u;\n"
-        "    @!$v_ready bra l$u_wait_response;\n\n",
-        v->reg_index,
-        v, v, state_offset,
-        v, v, qsd->block_size*2-1,
-        v, v, qsd->block_size,
-        v, v->reg_index
-    );
+    // Declare output variables of recv operation
+    bool uniform_tp = true;
+    for (auto value: vt)
+        uniform_tp &= value == vt[0];
 
-    // Insert an efficient load sequence for the message response
-    packet_memop(vr, v, (uint32_t) qrd->vt.size(), nullptr,
-                 qrd->vt.data(), true, "_out_");
-
-    fmt("    shr.u32 $v_count, $v_count, $u;\n"
-        "    neg.s32 $v_tmp, $v_count;\n"
-        "    @$v_leader red.release.gpu.global.add.s32 [$v_phy_p+$u], $v_tmp;\n",
-        v, v, log2i_ceil(qsd->block_size)+1,
-        v, v,
-        v, v, state_offset, v);
+    if (uniform_tp) {
+        fmt("    .reg.b$u $v_out_<$u>;\n", type_size[(int) vt[0]] * 8, vr, n);
+    } else {
+        for (uint32_t i = 0; i < n; i++)
+            fmt("    .reg.b$u $v_out_$u;\n", type_size[(int) vt[i]] * 8, vr, i);
+    }
 }

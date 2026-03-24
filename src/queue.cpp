@@ -4,9 +4,12 @@
 #include "log.h"
 #include "util.h"
 
+/// Stride between atomic counters
+constexpr uint32_t CounterStride = 64;
+
 uint32_t jitc_queue_send(uint32_t buffer, uint32_t msg_types,
-                         uint32_t msg_max_size, uint32_t block_size,
-                         uint32_t blocks, int debug, uint32_t msg_id,
+                         uint32_t msg_max_size, uint32_t batch_size,
+                         uint32_t batches, int debug, uint32_t msg_id,
                          uint32_t n_indices, const uint32_t *indices,
                          QueueCallback *callback) {
     void *queue_buffer_p = nullptr;
@@ -32,19 +35,17 @@ uint32_t jitc_queue_send(uint32_t buffer, uint32_t msg_types,
         jitc_raise("jit_queue_send(): the message ID %llu was not in the range "
                    "[0, %u)", (unsigned long long) msg_id_v->literal, msg_types);
 
-    if (blocks == 0 || (blocks & (blocks-1)) != 0)
-        jitc_raise("jit_queue_send(): block count (%u) must be a power of two.", blocks);
+    if (batches == 0 || (batches & (batches-1)) != 0)
+        jitc_raise("jit_queue_send(): batch count (%u) must be a power of two.", batches);
 
-    if (block_size < 32 || (block_size & (block_size-1)) != 0)
-        jitc_raise("jit_queue_send(): block size (%u) must be a power of two >= 32.", block_size);
+    if (batch_size < 32 || (batch_size & (batch_size-1)) != 0)
+        jitc_raise("jit_queue_send(): batch size (%u) must be a power of two >= 32.", batch_size);
 
     uint32_t queue_count = msg_types == 1 ? 1 : (msg_types + 1u);
-    constexpr uint32_t CounterStride = 64;
-    uint32_t ctrl_size = queue_count * (CounterStride + blocks);
+    uint32_t ctrl_size = queue_count * (CounterStride + batches * (uint32_t) sizeof(uint32_t));
 
-    uint32_t size_expected =
-        (msg_max_size * block_size * blocks) / sizeof(uint32_t) + ctrl_size;
-    if (size_expected != queue_buffer_v->size)
+    uint32_t size_expected = ctrl_size + msg_max_size * batch_size * batches;
+    if (size_expected != queue_buffer_v->size * (uint32_t) sizeof(uint32_t))
         jitc_raise("jit_queue_send(): buffer has an unexpected size (expected "
                    "%u entries, got %u)", size_expected, queue_buffer_v->size);
 
@@ -77,8 +78,8 @@ uint32_t jitc_queue_send(uint32_t buffer, uint32_t msg_types,
 
     qsd->msg_types = msg_types;
     qsd->msg_max_size = msg_max_size;
-    qsd->block_size = block_size;
-    qsd->blocks = blocks;
+    qsd->batch_size = batch_size;
+    qsd->batches = batches;
     qsd->debug = debug;
     qsd->callback = callback;
     callback->inc_ref(callback);
@@ -103,8 +104,8 @@ uint32_t jitc_queue_send(uint32_t buffer, uint32_t msg_types,
 
     jitc_log(Debug,
              "jit_queue_send(buffer=r%u, msg_types=%u, msg_max_size=%u, "
-             "block_size=%u, blocks=%u, debug=%i): r%u",
-             buffer, msg_types, msg_max_size, block_size, blocks, debug, (uint32_t) index);
+             "batches=%u, batch_size=%u, debug=%i): r%u",
+             buffer, msg_types, msg_max_size, batches, batch_size, debug, (uint32_t) index);
 
     return index.release();
 }

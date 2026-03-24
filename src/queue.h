@@ -4,8 +4,8 @@ struct QueueSendData {
     std::vector<uint32_t> indices;
     uint32_t msg_types{0};
     uint32_t msg_max_size{0};
-    uint32_t block_size{0};
-    uint32_t blocks{0};
+    uint32_t batches{0};
+    uint32_t batch_size{0};
     uint32_t debug{0};
     QueueCallback *callback{nullptr};
 

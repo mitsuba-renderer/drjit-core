@@ -84,6 +84,7 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
     for (QueueCallback *cb: queue_callbacks) {
         cb->callback(cb, stream, 1);
         queue_callbacks_launched.push_back(cb);
+        printf("Callback launch..\n");
     }
 
     queue_callbacks.clear();
