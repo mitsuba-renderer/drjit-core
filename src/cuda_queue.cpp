@@ -25,17 +25,32 @@
       bytes. Each submitted message increases this counter.
 
    2. Queue state: ``batches`` 32-bit values identifying the state of each
-      message batch.
+      message batch. Each state word is a monotonically increasing counter:
 
-      - bit 0..``log2i(batch_size)``: number of messages to be processed.
-      - remainder: generation counter. Increases each each time a message
-        or its reply is ready to be picked up on the other end.
+      - bits 0..B-1 (B = ``batch_size_bits``): count within the batch.
+      - bits B+: generation counter, advancing by 4 per reuse cycle.
+
+      The two lowest generation bits encode the phase:
+
+        gen mod 4 == 0  write-ready (client can enqueue messages)
+        gen mod 4 == 1  batch full (server should process)
+        gen mod 4 == 3  response ready (client can read responses)
+
+      Transitions are driven by atomic additions to the state word:
+        - Client fill:  warp leaders add message counts (total = batch_size)
+        - Server:       adds 2*batch_size + bubbles after processing
+        - Client recv:  warp leaders add consumption counts
+
+      The server's +bubbles pre-compensates for responses that will never
+      be consumed, ensuring the total always reaches the next write-ready
+      state.
 
    3. Message body (``batches`` * ``batch_size`` * ``max_message_size`` bytes).
       This memory region is used for both the message and its reply.
 
 */
 
+#include "cuda.h"
 #include "eval.h"
 #include "cuda_queue.h"
 #include "cuda_eval.h"
@@ -105,11 +120,12 @@ void jitc_device_printf(const char *str, const Variable *v,
         "    }\n");
 }
 
-void elect(const Variable *v, const char *dst_id, const char *dst_mask, const char *peers) {
+/// Sjitc_cuda_elect a single thread from a mask, returns the ID and a predicate
+void jitc_cuda_elect(const Variable *v, const char *dst_id, const char *dst_mask, const char *peers) {
 #if 1
-    fmt("    elect.sync $v_$s|$v_$s, $v_$s;\n", v, dst_id, v, dst_mask, v, peers);
+    // Use 'jitc_cuda_elect.sync' if available
+    fmt("    jitc_cuda_elect.sync $v_$s|$v_$s, $v_$s;\n", v, dst_id, v, dst_mask, v, peers);
 #else
-    //"    mov.b32 $v_lane_id, %laneid;\n"
     fmt(
         "    bfind.u32 $v_$s, $v_$s;\n"
         "    setp.eq.u32 $v_$s, $v_$s, $v_lane_id;\n",
@@ -117,6 +133,134 @@ void elect(const Variable *v, const char *dst_id, const char *dst_mask, const ch
         v, mask, v, peers
     );
 #endif
+}
+
+// Vector width prefix for st/ld instructions, indexed by (count >> 1)
+static const char *vec_prefix[] = { "b32", "v2.b32", "v4.b32", nullptr, "v8.b32" };
+
+/**
+ * Emit an optimal sequence of PTX vector loads to read 'n' contiguous
+ * variables from the address in %data, then unpack into per-variable
+ * output registers.
+ *
+ * Assumes: total size is >= 4 bytes and a multiple of 4, 16-bit
+ * variables appear in consecutive pairs, and %data is suitably aligned.
+ */
+void jitc_cuda_packet_load(const Variable *v, uint32_t n, const VarType *vt) {
+    uint32_t nbytes = 0;
+    for (uint32_t i = 0; i < n; i++)
+        nbytes += type_size[(int) vt[i]];
+
+    if (nbytes % 4)
+        jitc_fail("jitc_cuda_packet_load(%u): packet read must load a multiple of 4 bytes!", nbytes);
+
+    uint32_t nwords  = nbytes / 4,
+             max_vec = jitc_cuda_supports_256bit() ? 8 : 4;
+
+    // Declare temp registers
+    fmt("    .reg .b32 $v_pack_<$u>;", v, nwords);
+
+    // Phase 1: emit vector loads, greedy largest-first
+    uint32_t pos = 0;
+    while (pos < nwords) {
+        uint32_t count = max_vec;
+        while (count > nwords - pos)
+            count >>= 1;
+
+        fmt("    ld.weak.global.$s ", vec_prefix[count >> 1]);
+        if (count == 1) {
+            fmt("$v_pack_$u\n", v, pos);
+        } else {
+            put("{");
+            for (uint32_t k = 0; k < count; k++)
+                fmt(k ? ", $v_pack_$u" : "$v_pack_$u", v, pos + k);
+            put("}");
+        }
+        fmt(", [$v_data+$u];\n", v, pos * 4);
+
+        pos += count;
+    }
+
+    // Phase 2: unpack 32-bit words into output registers
+    uint32_t wi = 0;
+    for (uint32_t i = 0; i < n;) {
+        uint32_t tsize = type_size[(int) vt[i]];
+        if (tsize == 4) {
+            fmt("    mov.b32 $v_out_$u, $v_pack_$u;\n", v, i, v, wi);
+            i += 1;
+        } else if (tsize == 2) {
+            if (i + 1 >= n || type_size[(int) vt[i + 1]] != 2)
+                jitc_fail("jitc_cuda_packet_load(): 16-bit variables must be paired!");
+            fmt("    mov.b32 {$v_out_$u, $v_out_$u}, $v_pack_$u;\n",
+                v, i, v, i + 1, v, wi);
+            i += 2;
+        } else {
+            jitc_fail("jitc_cuda_packet_load(): unsupported type size %u!", tsize);
+        }
+        wi++;
+    }
+}
+
+/**
+ * Emit an optimal sequence of PTX vector stores to write 'n' contiguous
+ * variables (given by 'indices') to the address in %data.
+ *
+ * Assumes: total size is >= 4 bytes and a multiple of 4, 16-bit
+ * variables appear in consecutive pairs, and %data is suitably aligned.
+ */
+void jitc_cuda_packet_store(const Variable *v, uint32_t n, const uint32_t *indices) {
+    uint32_t nbytes = 0;
+    for (uint32_t i = 0; i < n; i++)
+        nbytes += type_size[jitc_var(indices[i])->type];
+
+    if (nbytes % 4)
+        jitc_fail("jitc_cuda_packet_store(%u): packet write must store a multiple of 4 bytes!", nbytes);
+
+    uint32_t nwords  = nbytes / 4,
+             max_vec = jitc_cuda_supports_256bit() ? 8 : 4;
+
+    // Declare temp registers
+    fmt("    .reg .b32 $v_pack_<$u>;", v, nwords);
+
+    // Phase 1: pack variables into 32-bit word registers
+    uint32_t wi = 0;
+    for (uint32_t i = 0; i < n;) {
+        const Variable *vi = jitc_var(indices[i]);
+        uint32_t tsize = type_size[vi->type];
+        if (tsize == 4) {
+            fmt("    mov.b32 $v_pack_$u, $v;", v, wi, vi);
+            i += 1;
+        } else if (tsize == 2) {
+            const Variable *vi1 = jitc_var(indices[i + 1]);
+            if (i + 1 >= n || type_size[vi1->type] != 2)
+                jitc_fail("jitc_cuda_packet_store(): 16-bit variables must be paired!");
+            fmt("    mov.b32 $v_pack_$u, {$v, $v};", v, wi, vi, vi1);
+            i += 2;
+        } else {
+            jitc_fail("jitc_cuda_packet_store(): unsupported type size %u!", tsize);
+        }
+        wi++;
+    }
+
+    // Phase 2: emit vector stores, greedy largest-first
+    uint32_t pos = 0;
+    while (pos < nwords) {
+        uint32_t count = max_vec;
+        while (count > nwords - pos)
+            count >>= 1;
+
+        fmt("    st.weak.global.$s [$v_data+$u], ", vec_prefix[count >> 1], v, pos * 4);
+        if (count == 1) {
+            fmt("$v_pack_$u;\n", v, pos);
+        } else {
+            put("{");
+            for (uint32_t k = 0; k < count; k++)
+                fmt(k ? ", $v_pack_$u" : "$v_pack_$u", v, pos + k);
+            put("};\n");
+        }
+
+        pos += count;
+    }
 }
 
 void jitc_cuda_render_queue_send(Variable *v,
@@ -139,6 +283,7 @@ void jitc_cuda_render_queue_send(Variable *v,
              data_offset  = state_offset + state_size * (qsd->msg_types + uint32_t(logical_queue));
 
     // ================================================================
+
     fmt("\n"
         "    // Enqueue message: msg_types=$u, batches=$u [$u bits], batch_size=$u [$u bits]\n",
         qsd->msg_types, qsd->batches, batches_bits, qsd->batch_size, batch_size_bits);
@@ -146,9 +291,7 @@ void jitc_cuda_render_queue_send(Variable *v,
     fmt( "    // 1. Mask for opportunistic warp-level cooporation\n"
         "    .reg.b32 $v_active, $v_peers;\n"
         "    activemask.b32 $v_active;\n",
-        v,
-        v,
-        v
+        v, v, v
     );
 
     // ================================================================
@@ -182,7 +325,7 @@ void jitc_cuda_render_queue_send(Variable *v,
         v, v, v
     );
 
-    elect(v, "leader_id", "leader_mask", "peers");
+    jitc_cuda_elect(v, "leader_id", "leader_mask", "peers");
     fmt("    popc.b32 $v_count, $v_$s;\n",
         v, v, "peers");
 
@@ -220,7 +363,7 @@ void jitc_cuda_render_queue_send(Variable *v,
         "    shr.u32 $v_log_batch, $v_offset, $u;\n" // logical batch index
         "    and.b32 $v_log_batch, $v_log_batch, 0x$x;\n"
         "    and.b32 $v_log_gen, $v_offset, 0x$x;\n"
-        "    and.b32 $v_offset, $v_offset, 0x$x;\n",   // offset within batch (logical + physical)
+        "    and.b32 $v_offset, $v_offset, 0x$x;\n",   // offset within batch (logical/physical)
         v, v,
         v, v, batch_size_bits,
         v, v, batch_mask,
@@ -248,7 +391,7 @@ void jitc_cuda_render_queue_send(Variable *v,
         v, v
     );
 
-    elect(v, "leader_id", "leader_mask", "peers");
+    jitc_cuda_elect(v, "leader_id", "leader_mask", "peers");
 
 
     // ================================================================
@@ -257,20 +400,20 @@ void jitc_cuda_render_queue_send(Variable *v,
         "    // 9. Ensure that the previous message batch was fully processed.\n"
         "    .reg.b32 $v_state, $v_exp_state;\n"
         "    .reg.pred $v_ready;\n"
-        "    shr.b32 $v_exp_state, $v_log_gen, $u;\n" // generation ID at bit position batch_bits+1
+        "    shr.b32 $v_exp_state, $v_log_gen, $u;\n" // exp_state = 4*N*BatchSize = log_gen >> (batches_bits-2)
         "    @!$v_leader_mask bra l$u_sync;\n"
         "\n"
         "l$u_wait_phy:\n"
         "    ld.relaxed.gpu.global.b32 $v_state, [$v_phy_p+$u];\n"
         "    and.b32 $v_state, $v_state, 0x$x;\n"
-        "    setp.eq.u32 $v_ready, $v_state, $v_log_gen;\n"
+        "    setp.eq.u32 $v_ready, $v_state, $v_exp_state;\n"
         "    @!$v_ready bra l$u_wait_phy;\n"
         "\n"
         "l$u_sync:\n"
-        "    bar.warp.sync $v_active;\n", // wait for other threads
+        "    bar.warp.sync $v_active;\n",
         v, v,
         v,
-        v, v, batches_bits-1,
+        v, v, batches_bits - 2,
         v, v->reg_index,
         v->reg_index,
         v, v, state_offset,
@@ -279,7 +422,34 @@ void jitc_cuda_render_queue_send(Variable *v,
         v, v->reg_index,
         v->reg_index, v);
 
-    fmt("    // 10. Inform the server that the message has been written\n"
+    // ================================================================
+
+    fmt("\n"
+        "    // 10. Compute the precise position for reading/writing our message\n"
+        "    .reg.b32 $v_data_offset;\n"
+        "    .reg.b64 $v_data;\n"
+        "    mad.lo.u32 $v_data_offset, $v_phy_batch, $u, $u;\n"
+        "    mad.lo.u32 $v_data_offset, $v_log_offset, $u, $v_data_offset;\n"
+        "    cvt.u64.u32 $v_data, $v_data_offset;\n"
+        "    add.u64 $v_data, $v_data, $v;\n",
+        v,
+        v,
+        v, v, qsd->msg_max_size*qsd->batch_size, data_offset,
+        v, v, qsd->msg_max_size, v,
+        v, v,
+        v, v, queue_buffer);
+
+    put("\n"
+        "    // 11. Write the message to the queue\n");
+    jitc_cuda_packet_store(
+        v,
+        (uint32_t) qsd->indices.size(),
+        qsd->indices.data()
+    );
+
+    // ================================================================
+
+    fmt("    // 12. Inform the server that the message has been written\n"
         "    @$v_leader_mask red.release.gpu.global.add.u32 [$v_phy_p+$u], $v_count;\n",
         v, v, state_offset, v);
 
@@ -290,6 +460,10 @@ void jitc_cuda_render_queue_recv(Variable *vr,
                                  Variable *v) {
     const QueueSendData *qsd = (const QueueSendData *) jitc_var_extra(v)->callback_data;
     const QueueRecvData *qrd = (const QueueRecvData *) jitc_var_extra(vr)->callback_data;
+
+    bool logical_queue = false;
+    uint32_t state_offset = (qsd->msg_types + uint32_t(logical_queue)) * CounterStride,
+             batch_size_mask = qsd->batch_size - 1;
 
     const std::vector<VarType> &vt = qrd->vt;
     uint32_t n = (uint32_t) vt.size();
@@ -305,4 +479,42 @@ void jitc_cuda_render_queue_recv(Variable *vr,
         for (uint32_t i = 0; i < n; i++)
             fmt("    .reg.b$u $v_out_$u;\n", type_size[(int) vt[i]] * 8, vr, i);
     }
+
+    // ================================================================
+
+    fmt("\n"
+        "    // 13. Wait for the server's response\n"
+        "    .reg.b32 $v_recv_exp;\n"
+        "    add.u32 $v_recv_exp, $v_exp_state, $u;\n" // recv_exp = exp_state + 3*BatchSize (gen mod 4 == 3)
+        "\n"
+        "l$u_wait_response:\n"
+        "    ld.relaxed.gpu.global.b32 $v_state, [$v_phy_p+$u];\n"
+        "    and.b32 $v_state, $v_state, 0x$x;\n"
+        "    setp.ge.u32 $v_ready, $v_state, $v_recv_exp;\n"
+        "    @!$v_ready bra l$u_wait_response;\n",
+        vr,
+        vr, v, 3 * qsd->batch_size,
+        vr->reg_index,
+        v, v, state_offset,
+        v, v, ~batch_size_mask,
+        v, v, vr,
+        v, vr->reg_index);
+
+    // ================================================================
+
+    put("\n"
+        "    // 14. Load the response from the queue\n");
+
+    jitc_cuda_packet_load(
+        v,
+        (uint32_t) vt.size(),
+        vt.data()
+    );
+
+    // ================================================================
+
+    fmt("\n"
+        "    // 15. Signal that responses have been consumed\n"
+        "    @$v_leader_mask red.release.gpu.global.add.u32 [$v_phy_p+$u], $v_count;\n",
+        v, v, state_offset, v);
 }

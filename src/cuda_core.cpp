@@ -1,4 +1,5 @@
 #include "cuda.h"
+#include "eval.h"
 #include "log.h"
 #include "var.h"
 #include "util.h"
@@ -13,6 +14,14 @@ CUresult jitc_cuda_cuinit_result = CUDA_ERROR_NOT_INITIALIZED;
 int jitc_cuda_version_major = 0;
 int jitc_cuda_version_minor = 0;
 uint32_t jitc_cuda_arg_limit = 0;
+
+bool jitc_cuda_supports_256bit() {
+    // 256-bit operations require CC 12.0+, and for OptiX: CUDA driver 13.2+
+    return thread_state_cuda->compute_capability >= 120 &&
+           (!uses_optix ||
+            (jitc_cuda_version_major > 13 ||
+             (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2)));
+}
 
 // Dr.Jit kernel functions
 static CUmodule *jitc_cuda_module = nullptr;

@@ -8,6 +8,7 @@
     license that can be found in the LICENSE file.
 */
 
+#include "cuda.h"
 #include "eval.h"
 #include "cuda_eval.h"
 #include "var.h"
@@ -26,16 +27,6 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
     uint32_t count = (uint32_t) v->literal,
              tsize = type_size[v->type],
              total_bytes = count * tsize;
-
-    // Get compute capability for current device
-    const ThreadState *ts = thread_state_cuda;
-    uint32_t compute_capability = state.devices[ts->device].compute_capability;
-
-    // 256-bit operations require CC 12.0+, and for OptiX: CUDA driver 13.2+
-    bool supports_256bit = compute_capability >= 120 &&
-                          (!uses_optix ||
-                           (jitc_cuda_version_major > 13 ||
-                            (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2)));
 
     fmt("    mad.wide.$t %rd3, $v, $u, $v;\n"
         "    .reg.$t $v_out_<$u>;\n",
@@ -77,7 +68,7 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
 
     // Try to load 256b/iteration if supported, otherwise 128b/iteration
     // Potentially reduce if the total size of the load isn't divisible
-    uint32_t bytes_per_it = supports_256bit ? 32 : 16;
+    uint32_t bytes_per_it = jitc_cuda_supports_256bit() ? 32 : 16;
     while ((total_bytes & (bytes_per_it - 1)) != 0)
         bytes_per_it /= 2;
     uint32_t regs_per_it = (bytes_per_it * 8) / dst_bits;
@@ -320,16 +311,6 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
         return;
     }
 
-    // Get compute capability for current device
-    const ThreadState *ts = thread_state_cuda;
-    uint32_t compute_capability = state.devices[ts->device].compute_capability;
-
-    // 256-bit operations require CC 12.0+, and for OptiX: CUDA driver 13.2+
-    bool supports_256bit = compute_capability >= 120 &&
-                          (!uses_optix ||
-                           (jitc_cuda_version_major > 13 ||
-                            (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2)));
-
     uint32_t count = (uint32_t) values.size(),
              tsize = type_size[v0->type],
              total_bytes = count * tsize;
@@ -355,7 +336,7 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
         var_bits, v, var_count);
 
     // Try to store 256b/iteration if supported, otherwise 128b/iteration
-    uint32_t bytes_per_it = supports_256bit ? 32 : 16;
+    uint32_t bytes_per_it = jitc_cuda_supports_256bit() ? 32 : 16;
 
     // Potentially reduce if the total size of the store isn't divisible
     while ((total_bytes & (bytes_per_it - 1)) != 0)

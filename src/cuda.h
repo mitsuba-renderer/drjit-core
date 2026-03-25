@@ -95,6 +95,9 @@ extern CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
 extern CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count];
 extern CUfunction *jitc_cuda_aggregate;
 
+/// Check if the current CUDA device supports 256-bit (32-byte) vector operations
+extern bool jitc_cuda_supports_256bit();
+
 /// Event API functions for CUDA backend
 typedef struct JitEvent_* JitEvent;
 extern JitEvent jitc_cuda_event_create(bool enable_timing);
