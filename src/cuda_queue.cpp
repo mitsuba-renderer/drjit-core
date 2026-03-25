@@ -145,7 +145,8 @@ static const char *vec_prefix[] = { "b32", "v2.b32", "v4.b32", nullptr, "v8.b32"
  * Assumes: total size is >= 4 bytes and a multiple of 4, 16-bit
  * variables appear in consecutive pairs, and %data is suitably aligned.
  */
-void jitc_cuda_packet_load(const Variable *v, uint32_t n, const VarType *vt) {
+void jitc_cuda_packet_load(const Variable *v, const Variable *data,
+                           uint32_t n, const VarType *vt) {
     uint32_t nbytes = 0;
     for (uint32_t i = 0; i < n; i++)
         nbytes += type_size[(int) vt[i]];
@@ -175,7 +176,7 @@ void jitc_cuda_packet_load(const Variable *v, uint32_t n, const VarType *vt) {
                 fmt(k ? ", $v_unpack_$u" : "$v_unpack_$u", v, pos + k);
             put("}");
         }
-        fmt(", [$v_data+$u];\n", v, pos * 4);
+        fmt(", [$v_data+$u];\n", data, pos * 4);
 
         pos += count;
     }
@@ -473,10 +474,10 @@ void jitc_cuda_render_queue_recv(Variable *vr,
         uniform_tp &= value == vt[0];
 
     if (uniform_tp) {
-        fmt("    .reg.b$u $v_out_<$u>;\n", type_size[(int) vt[0]] * 8, v, n);
+        fmt("    .reg.b$u $v_out_<$u>;\n", type_size[(int) vt[0]] * 8, vr, n);
     } else {
         for (uint32_t i = 0; i < n; i++)
-            fmt("    .reg.b$u $v_out_$u;\n", type_size[(int) vt[i]] * 8, v, i);
+            fmt("    .reg.b$u $v_out_$u;\n", type_size[(int) vt[i]] * 8, vr, i);
     }
 
     // ================================================================
@@ -505,7 +506,7 @@ void jitc_cuda_render_queue_recv(Variable *vr,
         "    // 14. Load the response from the queue\n");
 
     jitc_cuda_packet_load(
-        v,
+        vr, v,
         (uint32_t) vt.size(),
         vt.data()
     );
