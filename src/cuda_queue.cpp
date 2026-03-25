@@ -120,11 +120,10 @@ void jitc_device_printf(const char *str, const Variable *v,
         "    }\n");
 }
 
-/// Sjitc_cuda_elect a single thread from a mask, returns the ID and a predicate
+/// Select a single thread from a mask, returns the ID and a predicate
 void jitc_cuda_elect(const Variable *v, const char *dst_id, const char *dst_mask, const char *peers) {
 #if 1
-    // Use 'jitc_cuda_elect.sync' if available
-    fmt("    jitc_cuda_elect.sync $v_$s|$v_$s, $v_$s;\n", v, dst_id, v, dst_mask, v, peers);
+    fmt("    elect.sync $v_$s|$v_$s, $v_$s;\n", v, dst_id, v, dst_mask, v, peers);
 #else
     fmt(
         "    bfind.u32 $v_$s, $v_$s;\n"
@@ -158,7 +157,7 @@ void jitc_cuda_packet_load(const Variable *v, uint32_t n, const VarType *vt) {
              max_vec = jitc_cuda_supports_256bit() ? 8 : 4;
 
     // Declare temp registers
-    fmt("    .reg .b32 $v_pack_<$u>;", v, nwords);
+    fmt("    .reg .b32 $v_unpack_<$u>;", v, nwords);
 
     // Phase 1: emit vector loads, greedy largest-first
     uint32_t pos = 0;
@@ -169,11 +168,11 @@ void jitc_cuda_packet_load(const Variable *v, uint32_t n, const VarType *vt) {
 
         fmt("    ld.weak.global.$s ", vec_prefix[count >> 1]);
         if (count == 1) {
-            fmt("$v_pack_$u\n", v, pos);
+            fmt("$v_unpack_$u\n", v, pos);
         } else {
             put("{");
             for (uint32_t k = 0; k < count; k++)
-                fmt(k ? ", $v_pack_$u" : "$v_pack_$u", v, pos + k);
+                fmt(k ? ", $v_unpack_$u" : "$v_unpack_$u", v, pos + k);
             put("}");
         }
         fmt(", [$v_data+$u];\n", v, pos * 4);
@@ -186,12 +185,12 @@ void jitc_cuda_packet_load(const Variable *v, uint32_t n, const VarType *vt) {
     for (uint32_t i = 0; i < n;) {
         uint32_t tsize = type_size[(int) vt[i]];
         if (tsize == 4) {
-            fmt("    mov.b32 $v_out_$u, $v_pack_$u;\n", v, i, v, wi);
+            fmt("    mov.b32 $v_out_$u, $v_unpack_$u;\n", v, i, v, wi);
             i += 1;
         } else if (tsize == 2) {
             if (i + 1 >= n || type_size[(int) vt[i + 1]] != 2)
                 jitc_fail("jitc_cuda_packet_load(): 16-bit variables must be paired!");
-            fmt("    mov.b32 {$v_out_$u, $v_out_$u}, $v_pack_$u;\n",
+            fmt("    mov.b32 {$v_out_$u, $v_out_$u}, $v_unpack_$u;\n",
                 v, i, v, i + 1, v, wi);
             i += 2;
         } else {
@@ -376,12 +375,12 @@ void jitc_cuda_render_queue_send(Variable *v,
         "    // 7. Simple case: there is no difference between logical/physical queues\n"
         "    .reg.b32 $v_phy_batch;\n"
         "    .reg.b64 $v_phy_p;\n"
-        "    mad.wide.u32 $v_phy_p, $v_phy_batch, 4, $v;\n"
-        "    mov.b32 $v_phy_batch, $v_log_batch;\n",
+        "    mov.b32 $v_phy_batch, $v_log_batch;\n"
+        "    mad.wide.u32 $v_phy_p, $v_phy_batch, 4, $v;\n",
         v,
         v,
-        v, v, queue_buffer,
-        v, v);
+        v, v,
+        v, v, queue_buffer);
 
     fmt("\n"
         "    // 8. Designate a new leader based on the physical batch ID\n"
@@ -429,7 +428,7 @@ void jitc_cuda_render_queue_send(Variable *v,
         "    .reg.b32 $v_data_offset;\n"
         "    .reg.b64 $v_data;\n"
         "    mad.lo.u32 $v_data_offset, $v_phy_batch, $u, $u;\n"
-        "    mad.lo.u32 $v_data_offset, $v_log_offset, $u, $v_data_offset;\n"
+        "    mad.lo.u32 $v_data_offset, $v_offset, $u, $v_data_offset;\n"
         "    cvt.u64.u32 $v_data, $v_data_offset;\n"
         "    add.u64 $v_data, $v_data, $v;\n",
         v,
@@ -474,10 +473,10 @@ void jitc_cuda_render_queue_recv(Variable *vr,
         uniform_tp &= value == vt[0];
 
     if (uniform_tp) {
-        fmt("    .reg.b$u $v_out_<$u>;\n", type_size[(int) vt[0]] * 8, vr, n);
+        fmt("    .reg.b$u $v_out_<$u>;\n", type_size[(int) vt[0]] * 8, v, n);
     } else {
         for (uint32_t i = 0; i < n; i++)
-            fmt("    .reg.b$u $v_out_$u;\n", type_size[(int) vt[i]] * 8, vr, i);
+            fmt("    .reg.b$u $v_out_$u;\n", type_size[(int) vt[i]] * 8, v, i);
     }
 
     // ================================================================
@@ -492,13 +491,13 @@ void jitc_cuda_render_queue_recv(Variable *vr,
         "    and.b32 $v_state, $v_state, 0x$x;\n"
         "    setp.ge.u32 $v_ready, $v_state, $v_recv_exp;\n"
         "    @!$v_ready bra l$u_wait_response;\n",
-        vr,
-        vr, v, 3 * qsd->batch_size,
-        vr->reg_index,
+        v,
+        v, v, 3 * qsd->batch_size,
+        v->reg_index,
         v, v, state_offset,
         v, v, ~batch_size_mask,
-        v, v, vr,
-        v, vr->reg_index);
+        v, v, v,
+        v, v->reg_index);
 
     // ================================================================
 
