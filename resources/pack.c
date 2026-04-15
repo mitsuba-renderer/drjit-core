@@ -87,15 +87,14 @@ int main(int argc, char **argv) {
     fprintf(f, "extern \"C\" {\n");
     fprintf(f, "#endif\n\n");
 
-    pack(f, "kernels_dict", "kernels_dict",    "kernels_dict.lz4", NULL, 0);
-    pack(f, "kernels_50", "kernels_50.ptx",  "kernels_50.lz4", kernels_dict, kernels_dict_size);
-    pack(f, "kernels_70", "kernels_70.ptx",  "kernels_70.lz4", kernels_dict, kernels_dict_size);
+    pack(f, "kernels_dict", "kernels_dict",  "kernels_dict.lz4", NULL, 0);
+    pack(f, "kernels_75",   "kernels_75.ptx", "kernels_75.lz4",  kernels_dict, kernels_dict_size);
 
-    size_t kernels_70_size;
-    char *kernels_70 = read_file("kernels_70.ptx", &kernels_70_size);
+    size_t kernels_ptx_size;
+    char *kernels_ptx = read_file("kernels_75.ptx", &kernels_ptx_size);
 
     fprintf(f, "static const char *kernels_list =");
-    char *ptr = kernels_70;
+    char *ptr = kernels_ptx;
     while (ptr) {
         ptr = strstr(ptr, ".entry ");
         if (!ptr)
@@ -119,7 +118,7 @@ int main(int argc, char **argv) {
     fprintf(f, "#  pragma GCC diagnostic pop\n");
     fprintf(f, "#endif\n\n");
     free(kernels_dict);
-    free(kernels_70);
+    free(kernels_ptx);
     fclose(f);
 
     return EXIT_SUCCESS;

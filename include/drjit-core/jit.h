@@ -2141,6 +2141,105 @@ extern JIT_EXPORT void jit_block_reduce(JIT_ENUM JitBackend backend,
                                         const void *in,
                                         void *out);
 
+/// Maximum number of batch dimensions supported by ``jit_batched_gemm``.
+/// This bounds the sum ``n_bdims + n_rdims`` (not each independently).
+#define DRJIT_GEMM_MAX_BDIMS 6
+
+/**
+ * \brief Batched GEMM specification.
+ *
+ * Describes the batch layout of a ``jit_batched_gemm()`` call. Batch dims are
+ * partitioned into two groups:
+ *
+ *   - ``n_bdims`` **grid dims**, iterated across the kernel launch (one output
+ *     matrix per point in the grid batch space). ``extent[0..n_bdims)`` are
+ *     the grid extents; the output buffer is contiguous in batch-major order
+ *     over them.
+ *
+ *   - ``n_rdims`` **reduce dims**, iterated inside the kernel. For each point
+ *     in the grid batch space, the kernel sums the per-reduce-index products
+ *     into the same output tile (accumulator stays in registers / L1). This
+ *     is how broadcast-operand gradients fold their sum-over-batch into the
+ *     GEMM's contraction.
+ *
+ * Indexing: ``d = 0`` is innermost (varies fastest). Grid dims occupy slots
+ * ``[0, n_bdims)``; reduce dims occupy ``[n_bdims, n_bdims + n_rdims)``. Grid
+ * points are enumerated by a single linearized index that decomposes into
+ * per-dim positions as ``idx[0] = lin % extent[0]``, ``lin /= extent[0]``,
+ * etc.; reduce points are enumerated the same way over
+ * ``extent[n_bdims..n_bdims + n_rdims)``. ``a_stride[d]`` / ``b_stride[d]`` is
+ * the per-element pointer offset when ``idx[d]`` increments by one, or ``0``
+ * if the operand is broadcast along that dim. The output ``C`` advances
+ * only along the grid dims (implicit stride ``M * N`` per grid step).
+ *
+ * ``n_bdims == n_rdims == 0`` means a single matrix (no batching).
+ * ``n_bdims + n_rdims`` must not exceed ``DRJIT_GEMM_MAX_BDIMS``.
+ */
+struct GemmBatch {
+    uint32_t n_bdims;
+    uint32_t n_rdims;
+    uint32_t extent[DRJIT_GEMM_MAX_BDIMS];
+    uint32_t a_stride[DRJIT_GEMM_MAX_BDIMS];
+    uint32_t b_stride[DRJIT_GEMM_MAX_BDIMS];
+};
+
+/**
+ * \brief Matrix multiplication: ``C = op_A(A) @ op_B(B)``
+ *
+ * Multiplies two row-major matrices with optional per-operand transposes. The
+ * logical shapes after applying ``At`` / ``Bt`` are ``A : (M, K)``,
+ * ``B : (K, N)`` and ``C : (M, N)``; i.e. ``A`` must be stored as ``(K, M)``
+ * when ``At`` is set, and ``B`` as ``(N, K)`` when ``Bt`` is set.
+ *
+ * If ``batch`` is non-null and ``batch->n_bdims + batch->n_rdims > 0``, the
+ * operation is batched. The output buffer has size
+ * ``prod(batch->extent[0..n_bdims)) * M * N``, laid out contiguously in
+ * batch-major order over the grid dims (one output matrix per grid point).
+ * ``A`` and ``B`` may broadcast along any batch dim by setting the
+ * corresponding stride to zero.
+ *
+ * The remaining reduce dims (``[n_bdims, n_bdims + n_rdims)``) address the
+ * following use case: the reverse-mode derivative of a matrix multiplication
+ * with a broadcast operand needs to sum the per-batch gradient contributions
+ * before (or, equivalently, while) contracting along ``K``. Reduce dims let
+ * the caller declare that inner loop directly: for each grid point, the
+ * kernel iterates over the Cartesian product of ``extent[n_bdims..n_bdims +
+ * n_rdims)``, evaluates ``op_A(A) @ op_B(B)`` for each combination, and
+ * accumulates the sum into the same output tile. This keeps the accumulator
+ * in registers / L1 and avoids materializing a full expanded intermediate
+ * tensor that a subsequent pass would have to reduce away.
+ *
+ * The supported element types are ``Float16``, ``Float32``, ``Float64``,
+ * ``Int32`` and ``UInt32``. Half-precision inputs are accumulated in single
+ * precision and truncated on write-back. Both the CUDA and LLVM (CPU)
+ * backends implement this operation; the CPU path uses nanothread to
+ * parallelize across output tiles.
+ */
+extern JIT_EXPORT void jit_batched_gemm(JIT_ENUM JitBackend backend,
+                                        JIT_ENUM VarType type, int At, int Bt,
+                                        uint32_t M, uint32_t N, uint32_t K,
+                                        const struct GemmBatch *batch,
+                                        const void *A, const void *B, void *C);
+
+/**
+ * \brief Variable-level matrix multiplication: ``C = op_A(A) @ op_B(B)``
+ *
+ * Variant of ``jit_batched_gemm()`` that operates on JIT variable indices rather
+ * than raw device pointers. The function forces evaluation of the two
+ * operand variables, allocates storage for the output, dispatches the
+ * underlying GEMM kernel, and returns a new variable index that owns the
+ * result. Backend and element type are inferred from ``A`` (which must
+ * match those of ``B``).
+ *
+ * See \ref jit_batched_gemm for transpose semantics, supported types, the shape
+ * convention, and the meaning of the optional ``batch`` argument.
+ */
+extern JIT_EXPORT uint32_t jit_var_batched_gemm(uint32_t A, uint32_t B,
+                                                int At, int Bt,
+                                                uint32_t M, uint32_t N,
+                                                uint32_t K,
+                                                const struct GemmBatch *batch);
+
 /**
  * \brief Prefix-reduce elements within blocks of the given input array
  *

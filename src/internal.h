@@ -713,6 +713,30 @@ struct ThreadState : public ThreadStateBase {
                             const void *ptr_2,
                             uint32_t size, void *out) = 0;
 
+    /**
+     * \brief Compute ``C = op_A(A) @ op_B(B)`` for row-major matrices.
+     *
+     * ``op_X`` is the identity or the transpose, selected by the ``At`` /
+     * ``Bt`` flags. Logical shapes after applying the flags are
+     * ``A : (M, K)``, ``B : (K, N)``, ``C : (M, N)``. The element type is
+     * given by ``type`` (one of ``Float16``, ``Float32``, ``Float64``,
+     * ``Int32``, ``UInt32``); half-precision inputs accumulate in single
+     * precision.
+     *
+     * If ``batch`` is non-null and describes a non-empty batch
+     * (``n_bdims + n_rdims > 0``), the call is dispatched as a batched
+     * GEMM: the first ``n_bdims`` batch dims iterate across distinct
+     * output tiles (grid dims), while the remaining ``n_rdims`` dims are
+     * contracted into the same output tile (reduce dims). Zero strides in
+     * ``a_stride`` / ``b_stride`` encode broadcasts of the corresponding
+     * operand. See \ref GemmBatch for a detailed description of the
+     * indexing convention.
+     */
+    virtual void batched_gemm(VarType type, bool At, bool Bt,
+                              uint32_t M, uint32_t N, uint32_t K,
+                              const GemmBatch *batch,
+                              const void *A, const void *B, void *C);
+
     /// Mask compression
     virtual uint32_t compress(const uint8_t *in, uint32_t size,
                               uint32_t *out) = 0;

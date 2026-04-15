@@ -5,7 +5,7 @@
 
 set(OUT_FILE ${CMAKE_CURRENT_BINARY_DIR}/kernels.c)
 set(GENERATE FALSE)
-set(KERNEL_FILES kernels_dict kernels_50 kernels_70)
+set(KERNEL_FILES kernels_dict kernels_75)
 
 foreach(NAME ${KERNEL_FILES})
   if ("${CMAKE_CURRENT_SOURCE_DIR}/${NAME}.lz4" IS_NEWER_THAN "${OUT_FILE}")
