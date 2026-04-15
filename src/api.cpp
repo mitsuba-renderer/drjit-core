@@ -1012,6 +1012,21 @@ void jit_block_reduce(JitBackend backend, VarType type, ReduceOp op,
     jitc_block_reduce(backend, type, op, size, block_size, in, out);
 }
 
+void jit_batched_gemm(JitBackend backend, VarType type, int At, int Bt,
+                uint32_t M, uint32_t N, uint32_t K,
+                const GemmBatch *batch,
+                const void *A, const void *B, void *C) {
+    lock_guard guard(state.lock);
+    jitc_batched_gemm(backend, type, At != 0, Bt != 0, M, N, K, batch, A, B, C);
+}
+
+uint32_t jit_var_batched_gemm(uint32_t A, uint32_t B, int At, int Bt,
+                        uint32_t M, uint32_t N, uint32_t K,
+                        const GemmBatch *batch) {
+    lock_guard guard(state.lock);
+    return jitc_var_batched_gemm(A, B, At != 0, Bt != 0, M, N, K, batch);
+}
+
 void jit_block_prefix_reduce(JitBackend backend, VarType type, ReduceOp op,
                              uint32_t block_size, uint32_t size, int exclusive,
                              int reverse, const void *in, void *out) {

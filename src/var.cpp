@@ -2497,6 +2497,58 @@ uint32_t jitc_var_reduce_dot(uint32_t index_1, uint32_t index_2) {
     }
 }
 
+uint32_t jitc_var_batched_gemm(uint32_t index_A, uint32_t index_B,
+                         bool At, bool Bt,
+                         uint32_t M, uint32_t N, uint32_t K,
+                         const GemmBatch *batch) {
+    if (index_A == 0 || index_B == 0)
+        jitc_raise("jitc_var_batched_gemm(): operands must be non-empty!");
+
+    const Variable *vA = jitc_var(index_A),
+                   *vB = jitc_var(index_B);
+
+    if (vA->backend != vB->backend)
+        jitc_raise("jitc_var_batched_gemm(): operand backends do not match!");
+    if (vA->type != vB->type)
+        jitc_raise("jitc_var_batched_gemm(): operand types do not match!");
+
+    JitBackend backend = (JitBackend) vA->backend;
+    VarType vt = (VarType) vA->type;
+
+    // Output only has grid dims; reduce dims are summed inside the kernel.
+    // Validate up-front so a malformed batch fails before we allocate.
+    if (batch && batch->n_bdims + batch->n_rdims > DRJIT_GEMM_MAX_BDIMS)
+        jitc_raise("jitc_var_batched_gemm(): n_bdims + n_rdims exceeds "
+                   "DRJIT_GEMM_MAX_BDIMS.");
+    uint32_t grid_count, reduce_count;
+    jitc_gemm_batch_counts(batch, grid_count, reduce_count);
+    (void) reduce_count;
+
+    // Force evaluation of both operands and retrieve device pointers.
+    void *ptr_A = nullptr, *ptr_B = nullptr;
+    Ref A_ev = steal(jitc_var_data(index_A, true, &ptr_A));
+    Ref B_ev = steal(jitc_var_data(index_B, true, &ptr_B));
+
+    // Allocate output storage and immediately wrap it in a variable that
+    // owns the buffer, so a throw from jitc_batched_gemm below does not leak it.
+    // JIT variable sizes are 32-bit; reject outputs that wouldn't fit rather
+    // than truncating silently inside jitc_var_mem_map().
+    size_t out_size = (size_t) grid_count * M * N;
+    if (out_size > (size_t) UINT32_MAX)
+        jitc_raise("jitc_var_batched_gemm(): output element count %zu "
+                   "exceeds the maximum JIT variable size (2^32 - 1). "
+                   "Split the batch into smaller chunks.", out_size);
+    AllocType alloc_type = (backend == JitBackend::CUDA)
+                               ? AllocType::Device
+                               : AllocType::HostAsync;
+    void *ptr_C = jitc_malloc(alloc_type, out_size * type_size[(int) vt]);
+    Ref C = steal(jitc_var_mem_map(backend, vt, ptr_C, out_size, 1));
+
+    jitc_batched_gemm(backend, vt, At, Bt, M, N, K, batch, ptr_A, ptr_B, ptr_C);
+
+    return C.release();
+}
+
 uint32_t jitc_var_block_prefix_reduce(ReduceOp op,
                                       uint32_t index,
                                       uint32_t block_size,

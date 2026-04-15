@@ -139,8 +139,9 @@
 const char *op_type_name[(int) OpType::Count]{
     "Barrier",        "KernelLaunch",      "MemsetAsync",          "Expand",
     "ReduceExpanded", "Compress",          "MemcpyAsync",          "Mkperm",
-    "BlockReduce",    "BlockPrefixReduce", "ReduceDot",            "Aggregate",
-    "OpaqueWidth",    "InitUndefined",     "BoolReduceBoolAsync4", "Free"
+    "BlockReduce",    "BlockPrefixReduce", "ReduceDot",            "BatchedGemm",
+    "Aggregate",      "OpaqueWidth",       "InitUndefined",
+    "BoolReduceBoolAsync4", "Free"
 };
 
 /// Indicating, that we are replaying in dry-run mode. In this mode,
@@ -295,6 +296,7 @@ static ProfilerRegion pr_mkperm("Mkperm");
 static ProfilerRegion pr_block_reduce("BlockReduce");
 static ProfilerRegion pr_block_prefix_reduce("BlockPrefixReduce");
 static ProfilerRegion pr_reduce_dot("ReduceDot");
+static ProfilerRegion pr_batched_gemm("BatchedGemm");
 static ProfilerRegion pr_aggregate("Aggregate");
 static ProfilerRegion pr_free("Free");
 static ProfilerRegion pr_output("Output");
@@ -385,6 +387,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 break;
             case OpType::ReduceDot:
                 if (!replay_reduce_dot(op))
+                    return false;
+                break;
+            case OpType::BatchedGemm:
+                if (!replay_batched_gemm(op))
                     return false;
                 break;
             case OpType::Aggregate:
@@ -1842,6 +1848,135 @@ int Recording::replay_reduce_dot(Operation &op) {
     if (!dry_run)
         ts->reduce_dot(out_info.vtype, ptr_1_var.data, ptr_2_var.data, size1,
                        out_var.data);
+
+    return true;
+}
+
+void RecordThreadState::batched_gemm(VarType type, bool At, bool Bt, uint32_t M,
+                               uint32_t N, uint32_t K, const GemmBatch *batch,
+                               const void *A, const void *B, void *C) {
+    if (!paused()) {
+        try {
+            record_batched_gemm(type, At, Bt, M, N, K, batch, A, B, C);
+        } catch (...) {
+            record_exception();
+        }
+    }
+    pause_scope pause(this);
+    return m_internal->batched_gemm(type, At, Bt, M, N, K, batch, A, B, C);
+}
+
+void RecordThreadState::record_batched_gemm(VarType type, bool At, bool Bt,
+                                      uint32_t M, uint32_t N, uint32_t K,
+                                      const GemmBatch *batch,
+                                      const void *A, const void *B, void *C) {
+    ProfilerPhase profiler(pr_batched_gemm);
+
+    uint32_t grid_count, reduce_count;
+    if (!jitc_gemm_batch_counts(batch, grid_count, reduce_count))
+        return;  // empty batch -> no-op, do not record
+
+    jitc_log(LogLevel::Debug,
+             "record(): batched_gemm(type=%s, At=%i, Bt=%i, M=%u, N=%u, K=%u, "
+             "grid=%u, reduce=%u, A=%p, B=%p, C=%p)",
+             type_name[(uint32_t) type], (int) At, (int) Bt, M, N, K,
+             grid_count, reduce_count, A, B, C);
+
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
+    add_out_param(C, type);
+    add_in_param(A, type);
+    add_in_param(B, type);
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
+
+    // Side-allocate the ``GemmBatch`` spec to keep ``Operation`` compact;
+    // see the field's declaration in ``record_ts.h``.
+    uint32_t batch_idx = (uint32_t) m_recording.gemm_batches.size();
+    m_recording.gemm_batches.push_back(batch ? *batch : GemmBatch{});
+
+    Operation op;
+    op.type             = OpType::BatchedGemm;
+    op.dependency_range = std::pair(start, end);
+    op.size             = (size_t) grid_count * M * N;
+    op.batched_gemm.M         = M;
+    op.batched_gemm.N         = N;
+    op.batched_gemm.K         = K;
+    op.batched_gemm.At        = At;
+    op.batched_gemm.Bt        = Bt;
+    op.batched_gemm.batch_idx = batch_idx;
+    m_recording.operations.push_back(op);
+
+    // The kernel launch bakes in ``M``, ``N``, ``K`` and the full batch
+    // spec, but the frozen-function input key only hashes the inner
+    // shape of tensors (dim 0 is reconstructed from width). A replay
+    // with a different batch dim would reuse this recording with stale
+    // extents. Require a dry run so ``replay_batched_gemm`` can detect
+    // operand-size divergence and trigger a re-record.
+    m_recording.requires_dry_run = true;
+}
+
+int Recording::replay_batched_gemm(Operation &op) {
+    ProfilerPhase profiler(pr_batched_gemm);
+
+    uint32_t dependency_index = op.dependency_range.first;
+    AccessInfo out_info   = dependencies[dependency_index];
+    AccessInfo ptr_A_info = dependencies[dependency_index + 1];
+    AccessInfo ptr_B_info = dependencies[dependency_index + 2];
+
+    ReplayVariable &out_var   = replay_variables[out_info.slot];
+    ReplayVariable &ptr_A_var = replay_variables[ptr_A_info.slot];
+    ReplayVariable &ptr_B_var = replay_variables[ptr_B_info.slot];
+
+    uint32_t M = op.batched_gemm.M,
+             N = op.batched_gemm.N,
+             K = op.batched_gemm.K;
+    const GemmBatch &batch = gemm_batches[op.batched_gemm.batch_idx];
+
+    uint32_t grid_count, reduce_count;
+    jitc_gemm_batch_counts(&batch, grid_count, reduce_count);
+
+    // Operand storage size = product of extents along dims with non-zero
+    // stride (i.e. excluding broadcast dims) times the per-matrix size.
+    uint32_t min_a = M * K, min_b = K * N;
+    uint32_t n_total = batch.n_bdims + batch.n_rdims;
+    for (uint32_t d = 0; d < n_total; ++d) {
+        if (batch.a_stride[d] != 0) min_a *= batch.extent[d];
+        if (batch.b_stride[d] != 0) min_b *= batch.extent[d];
+    }
+
+    // The GEMM kernel launches with fixed ``M``, ``N``, ``K`` and batch
+    // spec; if the operand allocations have diverged from the recorded
+    // shape the recording must be re-traced. ``record_batched_gemm``
+    // sets ``requires_dry_run``, so in normal usage the mismatch is
+    // caught here in the dry-run pass and the recording is re-traced.
+    // The ``jitc_fail`` branch is a defensive check for replay paths
+    // that bypass dry-run.
+    if (ptr_A_var.size(ptr_A_info.vtype) != min_a ||
+        ptr_B_var.size(ptr_B_info.vtype) != min_b) {
+        if (dry_run)
+            return false;
+        jitc_fail("replay(): batched_gemm operand size mismatch "
+                  "(A: got %u, expected %u; B: got %u, expected %u)",
+                  ptr_A_var.size(ptr_A_info.vtype), min_a,
+                  ptr_B_var.size(ptr_B_info.vtype), min_b);
+    }
+
+    out_var.alloc(backend, (size_t) grid_count * M * N *
+                               type_size[(int) out_info.vtype]);
+
+    jitc_log(LogLevel::Debug,
+             "replay(): batched_gemm(type=%s, At=%i, Bt=%i, M=%u, N=%u, K=%u, "
+             "grid=%u, reduce=%u, A=%p, B=%p, C=%p)",
+             type_name[(uint32_t) out_info.vtype], (int) op.batched_gemm.At,
+             (int) op.batched_gemm.Bt, M, N, K, grid_count, reduce_count,
+             ptr_A_var.data, ptr_B_var.data, out_var.data);
+
+    if (!dry_run) {
+        const GemmBatch *batch_ptr =
+            (batch.n_bdims + batch.n_rdims) > 0 ? &batch : nullptr;
+        ts->batched_gemm(out_info.vtype, op.batched_gemm.At, op.batched_gemm.Bt,
+                         M, N, K, batch_ptr,
+                         ptr_A_var.data, ptr_B_var.data, out_var.data);
+    }
 
     return true;
 }

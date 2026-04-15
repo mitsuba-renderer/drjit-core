@@ -40,6 +40,40 @@ extern void jitc_reduce_dot(JitBackend backend, VarType type,
                             const void *ptr_1, const void *ptr_2,
                             uint32_t size, void *out);
 
+/// Matrix multiplication: ``C = op_A(A) @ op_B(B)`` for row-major
+/// (C-contiguous) matrices with optional per-operand transposes. The
+/// optional ``batch`` argument selects between a single GEMM
+/// (``batch == nullptr || batch->n_bdims == 0``) and a batched GEMM
+/// with independent per-operand broadcasting along each batch dim.
+extern void jitc_batched_gemm(JitBackend backend, VarType type, bool At, bool Bt,
+                        uint32_t M, uint32_t N, uint32_t K,
+                        const GemmBatch *batch,
+                        const void *A, const void *B, void *C);
+
+/// Compute the grid and reduce dimension products of a GemmBatch.
+/// ``batch == nullptr`` collapses to (1, 1). Returns ``false`` if any
+/// extent is zero, allowing callers to short-circuit on empty batches.
+inline bool jitc_gemm_batch_counts(const GemmBatch *batch,
+                                   uint32_t &grid_count,
+                                   uint32_t &reduce_count) {
+    grid_count = 1;
+    reduce_count = 1;
+    if (!batch)
+        return true;
+    for (uint32_t d = 0; d < batch->n_bdims; ++d) {
+        if (batch->extent[d] == 0)
+            return false;
+        grid_count *= batch->extent[d];
+    }
+    for (uint32_t d = 0; d < batch->n_rdims; ++d) {
+        uint32_t dd = batch->n_bdims + d;
+        if (batch->extent[dd] == 0)
+            return false;
+        reduce_count *= batch->extent[dd];
+    }
+    return true;
+}
+
 /// 'All' reduction for boolean arrays (synchronous)
 extern bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size);
 

@@ -38,6 +38,7 @@ CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
                                          [(int) VarType::Count][10] = { };
 CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count] = { };
 CUfunction *jitc_cuda_aggregate = nullptr;
+CUfunction *jitc_cuda_gemm[(int) VarType::Count][4] = { };
 
 std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf, bool release_state_lock) {
     const uintptr_t log_size = 16384;
@@ -155,11 +156,14 @@ bool jitc_cuda_init() {
     jitc_cuda_version_major = cuda_version / 1000;
     jitc_cuda_version_minor = (cuda_version % 1000) / 10;
 
-    if (jitc_cuda_version_major < 10) {
+    // The precompiled PTX shipped with Dr.Jit-core targets PTX ISA 8.2
+    // (built with CUDA 12.2), which requires driver R535 or newer.
+    if (jitc_cuda_version_major < 12 ||
+        (jitc_cuda_version_major == 12 && jitc_cuda_version_minor < 2)) {
         jitc_cuda_api_shutdown();
         jitc_log(Warn,
                 "jit_cuda_init(): your version of CUDA is too old (found %i.%i, "
-                "at least 10.x is required) -- disabling CUDA backend!",
+                "at least 12.2 / driver R535 is required) -- disabling CUDA backend!",
                 jitc_cuda_version_major, jitc_cuda_version_minor);
         return false;
     }
@@ -186,6 +190,8 @@ bool jitc_cuda_init() {
             jitc_cuda_block_reduce_vec[j][k] = (CUfunction *) malloc_check_zero(asize);
         }
         jitc_cuda_reduce_dot[k] = (CUfunction *) malloc_check_zero(asize);
+        for (int l = 0; l < 4; ++l)
+            jitc_cuda_gemm[k][l] = (CUfunction *) malloc_check_zero(asize);
     }
 
     jitc_cuda_module =
@@ -244,34 +250,27 @@ bool jitc_cuda_init() {
             continue;
         }
 
-        if (cc < 50) {
-            jitc_log(Warn, " - Warning: compute capability of device too low, skipping ..");
+        if (cc < 75) {
+            jitc_log(Warn, " - Warning: compute capability of device too low (need >= 7.5), skipping ..");
             cuda_check(cuDevicePrimaryCtxRelease(i));
             continue;
         }
 
-        // Choose an appropriate set of builtin kernels
-        const char *kernels           = cc >= 70 ? kernels_70 : kernels_50;
-        int kernels_size_uncompressed = cc >= 70 ? kernels_70_size_uncompressed
-                                                 : kernels_50_size_uncompressed;
-        int kernels_size_compressed   = cc >= 70 ? kernels_70_size_compressed
-                                                 : kernels_50_size_compressed;
-
         // Decompress the supplemental PTX content
         char *uncompressed =
-            (char *) malloc_check(size_t(kernels_size_uncompressed) + jitc_lz4_dict_size + 1);
+            (char *) malloc_check(kernels_75_size_uncompressed + jitc_lz4_dict_size + 1);
         memcpy(uncompressed, jitc_lz4_dict, jitc_lz4_dict_size);
         char *uncompressed_ptx = uncompressed + jitc_lz4_dict_size;
 
         int uncompressed_size_actual = LZ4_decompress_safe_usingDict(
-            kernels, uncompressed_ptx, kernels_size_compressed,
-            kernels_size_uncompressed, uncompressed, jitc_lz4_dict_size);
-        if (uncompressed_size_actual != kernels_size_uncompressed)
+            kernels_75, uncompressed_ptx, (int) kernels_75_size_compressed,
+            (int) kernels_75_size_uncompressed, uncompressed, jitc_lz4_dict_size);
+        if ((size_t) uncompressed_size_actual != kernels_75_size_uncompressed)
             jitc_fail("jit_cuda_init(): decompression of builtin kernels failed!"
-                      " Expected %d bytes (negative value indicates an error), got %d.",
-                      kernels_size_uncompressed, uncompressed_size_actual);
+                      " Expected %zu bytes (negative value indicates an error), got %d.",
+                      kernels_75_size_uncompressed, uncompressed_size_actual);
 
-        uncompressed_ptx[kernels_size_uncompressed] = '\0';
+        uncompressed_ptx[kernels_75_size_uncompressed] = '\0';
 
         CUmodule m = jitc_cuda_compile(uncompressed_ptx, /* release_state_lock */ false).first;
         jitc_cuda_module[i] = m;
@@ -348,6 +347,18 @@ bool jitc_cuda_init() {
             if (strstr(kernels_list, name)) {
                 cuda_check(cuModuleGetFunction(&func, m, name));
                 jitc_cuda_reduce_dot[k][i] = func;
+            }
+
+            // GEMM kernels: tile 0->BM=8, 1->BM=16, 2->BM=32, 3->BM=64.
+            // Transpose flags are passed as runtime kernel args.
+            for (int l = 0; l < 4; ++l) {
+                uint32_t bm = 8u << l;
+                snprintf(name, sizeof(name), "gemm_%s_%u",
+                         type_name_short[k], bm);
+                if (strstr(kernels_list, name)) {
+                    cuda_check(cuModuleGetFunction(&func, m, name));
+                    jitc_cuda_gemm[k][l][i] = func;
+                }
             }
         }
 
@@ -465,6 +476,8 @@ void jitc_cuda_shutdown() {
             }
         }
         Z(jitc_cuda_reduce_dot[k]);
+        for (int l = 0; l < 4; ++l)
+            Z(jitc_cuda_gemm[k][l]);
     }
 
     jitc_cuda_api_shutdown();

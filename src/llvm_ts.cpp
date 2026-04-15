@@ -6,6 +6,7 @@
 #include "profile.h"
 #include "util.h"
 #include "llvm_red.h"
+#include "llvm_gemm.h"
 
 /// Helper function: enqueue parallel CPU task (synchronous or asynchronous)
 template <typename Func>
@@ -489,6 +490,81 @@ void LLVMThreadState::reduce_dot(VarType type, const void *ptr_1,
         block_reduce(type, ReduceOp::Add, blocks, blocks, target, out);
         jitc_free(target);
     }
+}
+
+void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
+                             uint32_t N, uint32_t K, const GemmBatch *batch,
+                             const void *A, const void *B, void *C) {
+    // The kernels below do not handle ``At == Bt == true``; the Python
+    // caller reduces that case to a single-transpose call via
+    // ``A^T @ B^T = (B @ A)^T`` before reaching this point.
+    if (At && Bt)
+        jitc_raise("jit_batched_gemm(): internal error -- At=Bt=True "
+                   "should have been rewritten by the caller.");
+
+    GemmBlockFn fn = gemm_block_dispatch(vt, At, Bt);
+    if (!fn)
+        jitc_raise("jit_batched_gemm(): unsupported element type '%s'.",
+                   type_name[(int) vt]);
+
+    uint32_t grid_count, reduce_count;
+    if (!jitc_gemm_batch_counts(batch, grid_count, reduce_count))
+        return;
+
+    GemmBatch batch_eff = batch ? *batch : GemmBatch{};
+
+    uint32_t m_blocks = ceil_div(M, GEMM_MB);
+    uint32_t n_blocks = ceil_div(N, GEMM_NB);
+    uint32_t mn_blocks = m_blocks * n_blocks;
+    uint32_t tsize = type_size[(int) vt];
+    size_t c_batch_stride = (size_t) M * N;
+
+    jitc_log(Debug,
+             "jit_batched_gemm(" DRJIT_PTR ", " DRJIT_PTR " -> " DRJIT_PTR
+             ", type=%s, At=%i, Bt=%i, M=%u, N=%u, K=%u, grid=%u, "
+             "reduce=%u, tiles=%ux%u).",
+             (uintptr_t) A, (uintptr_t) B, (uintptr_t) C,
+             type_name[(int) vt], (int) At, (int) Bt, M, N, K, grid_count,
+             reduce_count, n_blocks, m_blocks);
+
+    submit_cpu(
+        KernelType::Other,
+        this->recording_mode,
+        [fn, A, B, C, M, N, K, n_blocks, mn_blocks,
+         tsize, c_batch_stride, reduce_count, batch_eff](uint32_t index) {
+            uint32_t b     = index / mn_blocks;
+            uint32_t tile  = index % mn_blocks;
+            uint32_t mi    = tile / n_blocks;
+            uint32_t ni    = tile % n_blocks;
+            uint32_t m0 = mi * GEMM_MB, m1 = std::min(m0 + GEMM_MB, M);
+            uint32_t n0 = ni * GEMM_NB, n1 = std::min(n0 + GEMM_NB, N);
+
+            // Grid-dim decode: advance A/B pointers by per-grid-point
+            // offsets. Reduce-dim iteration happens inside ``gemm_block``
+            // using the shared ``GemmReduce`` spec below.
+            size_t a_off = 0, b_off = 0;
+            uint32_t z = b;
+            for (uint32_t d = 0; d < batch_eff.n_bdims; ++d) {
+                uint32_t idx = z % batch_eff.extent[d];
+                z /= batch_eff.extent[d];
+                a_off += (size_t) idx * batch_eff.a_stride[d];
+                b_off += (size_t) idx * batch_eff.b_stride[d];
+            }
+
+            const void *A_b = (const uint8_t *) A + a_off * tsize;
+            const void *B_b = (const uint8_t *) B + b_off * tsize;
+            void *C_b = (uint8_t *) C + (size_t) b * c_batch_stride * tsize;
+
+            GemmReduce reduce;
+            reduce.r_count  = reduce_count;
+            reduce.n_rdims  = batch_eff.n_rdims;
+            reduce.extent   = batch_eff.extent   + batch_eff.n_bdims;
+            reduce.a_stride = batch_eff.a_stride + batch_eff.n_bdims;
+            reduce.b_stride = batch_eff.b_stride + batch_eff.n_bdims;
+
+            fn(A_b, B_b, C_b, M, N, K, m0, m1, n0, n1, &reduce);
+        },
+        grid_count * M * N, grid_count * mn_blocks);
 }
 
 uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
