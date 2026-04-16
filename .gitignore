@@ -42,6 +42,5 @@ tests/test_record
 tests/triangle
 tests/microbenchmark
 /resources/pack
-/resources/kernels_50.ptx
-/resources/kernels_70.ptx
+/resources/kernels_75.ptx
 /resources/kernels.c

@@ -232,6 +232,16 @@ extern uint32_t jitc_var_reduce(JitBackend backend, VarType vt,
 extern uint32_t jitc_var_reduce_dot(uint32_t index_1,
                                     uint32_t index_2);
 
+/// Matrix multiplication: ``C = op_A(A) @ op_B(B)`` for row-major inputs
+/// with optional per-operand transposes. Allocates the output variable.
+/// If ``batch`` is non-null and ``batch->n_bdims > 0``, the operation is
+/// batched over ``prod(batch->extent)`` output matrices with per-operand
+/// broadcasting; the output variable has size ``batch_count * M * N``.
+extern uint32_t jitc_var_batched_gemm(uint32_t index_A, uint32_t index_B,
+                                bool At, bool Bt,
+                                uint32_t M, uint32_t N, uint32_t K,
+                                const GemmBatch *batch);
+
 /// Reduce a variable over blocks
 extern uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, int symbolic);
 

@@ -13,3 +13,4 @@
 #include "block_reduce.cuh"
 #include "block_prefix_reduce.cuh"
 #include "reduce_2.cuh"
+#include "gemm.cuh"

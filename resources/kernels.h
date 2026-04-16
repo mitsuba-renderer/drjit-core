@@ -17,13 +17,9 @@ extern const char kernels_dict[];
 static const size_t kernels_dict_size_uncompressed = 65536;
 static const size_t kernels_dict_size_compressed = 19638;
 
-extern const char kernels_50[];
-static const size_t kernels_50_size_uncompressed = 1825664;
-static const size_t kernels_50_size_compressed = 192540;
-
-extern const char kernels_70[];
-static const size_t kernels_70_size_uncompressed = 1821757;
-static const size_t kernels_70_size_compressed = 191691;
+extern const char kernels_75[];
+static const size_t kernels_75_size_uncompressed = 3998734;
+static const size_t kernels_75_size_compressed = 733169;
 
 static const char *kernels_list =
     "compress_small,"
@@ -635,7 +631,23 @@ static const char *kernels_list =
     "block_prefix_reduce_and_u64_2,"
     "reduce_dot_f16,"
     "reduce_dot_f32,"
-    "reduce_dot_f64,";
+    "reduce_dot_f64,"
+    "gemm_f16_8,"
+    "gemm_f16_16,"
+    "gemm_f16_32,"
+    "gemm_f16_64,"
+    "gemm_f32_8,"
+    "gemm_f32_16,"
+    "gemm_f32_32,"
+    "gemm_f32_64,"
+    "gemm_f64_8,"
+    "gemm_f64_16,"
+    "gemm_f64_32,"
+    "gemm_f64_64,"
+    "gemm_u32_8,"
+    "gemm_u32_16,"
+    "gemm_u32_32,"
+    "gemm_u32_64,";
 
 #ifdef __cplusplus
 }

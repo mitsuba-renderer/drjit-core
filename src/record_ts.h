@@ -49,6 +49,7 @@ enum class OpType {
     BlockReduce,
     BlockPrefixReduce,
     ReduceDot,
+    BatchedGemm,
     Aggregate,
     OpaqueWidth,
     InitUndefined,
@@ -94,6 +95,20 @@ struct Operation {
         /// re-recorded when the bucket count changes. Therefore this should not
         /// depend on the width of any variable.
         uint32_t bucket_count;
+
+        /// Matrix dimensions and transpose flags for a ``BatchedGemm``
+        /// operation. ``batch_idx`` indexes into ``Recording::gemm_batches``
+        /// (the batch spec is side-allocated to keep the union small; most
+        /// ops don't need one). The replay step verifies that the operand
+        /// buffer sizes are still consistent with the recorded layout.
+        struct {
+            uint32_t M;
+            uint32_t N;
+            uint32_t K;
+            bool At;
+            bool Bt;
+            uint32_t batch_idx;
+        } batched_gemm;
 
         /// Additional data such as the source of memset
         uint64_t data;
@@ -277,6 +292,11 @@ struct Recording {
     /// Operation struct contains a pair that indexes into this vector.
     std::vector<AccessInfo> dependencies;
 
+    /// Side-allocated ``GemmBatch`` specs referenced by ``BatchedGemm`` ops
+    /// via ``Operation::batched_gemm.batch_idx``. Kept out of the
+    /// ``Operation`` union to avoid inflating every op by ~80 bytes.
+    std::vector<GemmBatch> gemm_batches;
+
     /// The backend, which was used while recording.
     JitBackend backend;
 
@@ -320,6 +340,8 @@ struct Recording {
     int replay_block_prefix_reduce(Operation &op);
 
     int replay_reduce_dot(Operation &op);
+
+    int replay_batched_gemm(Operation &op);
 
     int replay_aggregate(Operation &op);
 
@@ -439,6 +461,11 @@ public:
     /// Compute a dot product of two equal-sized arrays
     void reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
                     uint32_t size, void *out) override;
+
+    /// Matrix multiplication of two row-major matrices (optionally batched)
+    void batched_gemm(VarType type, bool At, bool Bt, uint32_t M, uint32_t N,
+                uint32_t K, const GemmBatch *batch,
+                const void *A, const void *B, void *C) override;
 
     /// Asynchronously update a single element in memory
     /// Recording of this function is currently not supported, and the function
@@ -588,6 +615,9 @@ public:
                                     bool reverse, const void *in, void *out);
     void record_reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
                            uint32_t size, void *out);
+    void record_batched_gemm(VarType type, bool At, bool Bt, uint32_t M, uint32_t N,
+                       uint32_t K, const GemmBatch *batch,
+                       const void *A, const void *B, void *C);
     void record_aggregate(void *dst, AggregationEntry *agg, uint32_t size);
     void record_reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                                 uint32_t exp, uint32_t size);

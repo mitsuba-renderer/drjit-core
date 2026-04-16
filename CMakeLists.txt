@@ -150,6 +150,7 @@ add_library(
   src/llvm_eval.h
   src/llvm_eval.cpp
   src/llvm_red.h
+  src/llvm_gemm.h
   src/llvm_ts.h
   src/llvm_ts.cpp
   src/llvm_scatter.h
@@ -217,6 +218,12 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
   # GCC static analysis incorrectly warns about free() application to Variable::stmt
   target_compile_options(drjit-core PRIVATE -Wno-free-nonheap-object)
   target_link_options(drjit-core PRIVATE -Wno-free-nonheap-object)
+endif()
+
+# The following compiler flag is needed for Clang/GCC to autovectorize the
+# batched GEMM
+if (NOT MSVC)
+  set_source_files_properties(src/llvm_ts.cpp PROPERTIES COMPILE_OPTIONS "-ffast-math")
 endif()
 
 target_compile_definitions(drjit-core PRIVATE -DLZ4LIB_VISIBILITY=)

@@ -70,6 +70,18 @@ void jitc_reduce_dot(JitBackend backend, VarType type,
     thread_state(backend)->reduce_dot(type, ptr_1, ptr_2, size, out);
 }
 
+void jitc_batched_gemm(JitBackend backend, VarType type, bool At, bool Bt,
+                 uint32_t M, uint32_t N, uint32_t K,
+                 const GemmBatch *batch,
+                 const void *A, const void *B, void *C) {
+    if (M == 0 || N == 0 || K == 0)
+        return;
+    if (batch && batch->n_bdims + batch->n_rdims > DRJIT_GEMM_MAX_BDIMS)
+        jitc_raise("jit_batched_gemm(): n_bdims + n_rdims exceeds "
+                   "DRJIT_GEMM_MAX_BDIMS.");
+    thread_state(backend)->batched_gemm(type, At, Bt, M, N, K, batch, A, B, C);
+}
+
 /// 'All' reduction for boolean arrays (internal)
 void jitc_all_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
     thread_state(backend)->block_reduce_bool(values, size, out, ReduceOp::And);

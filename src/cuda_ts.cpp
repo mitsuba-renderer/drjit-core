@@ -13,7 +13,8 @@ static void submit_gpu(KernelType type, KernelRecordingMode recording_mode,
                        CUfunction kernel, uint32_t block_count_x,
                        uint32_t thread_count, uint32_t shared_mem_bytes,
                        CUstream stream, void **args, void **extra,
-                       uint32_t width, uint32_t block_count_y = 1) {
+                       uint32_t width, uint32_t block_count_y = 1,
+                       uint32_t block_count_z = 1) {
 
     KernelHistoryEntry entry = {};
 
@@ -25,9 +26,9 @@ static void submit_gpu(KernelType type, KernelRecordingMode recording_mode,
         cuda_check(cuEventRecord((CUevent) entry.event_start, stream));
     }
 
-    cuda_check(cuLaunchKernel(kernel, block_count_x, block_count_y, 1,
-                              thread_count, 1, 1, shared_mem_bytes,
-                              stream, args, extra));
+    cuda_check(cuLaunchKernel(kernel, block_count_x, block_count_y,
+                              block_count_z, thread_count, 1, 1,
+                              shared_mem_bytes, stream, args, extra));
 
     if (unlikely(flags & (uint32_t) JitFlag::LaunchBlocking))
         cuda_check(cuStreamSynchronize(stream));
@@ -396,6 +397,123 @@ void CUDAThreadState::reduce_dot(VarType vt, const void *ptr_1,
 
         jitc_free(temp);
     }
+}
+
+void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
+                             uint32_t N, uint32_t K, const GemmBatch *batch,
+                             const void *A, const void *B, void *C) {
+    // See 'resources/gemm.cuh' for the underlying kernel and its tile layout.
+    // ``grid_count`` is the gridDim.z extent; ``reduce_count`` is summed
+    // inside the kernel body. ``jitc_gemm_batch_counts`` returns false on
+    // any zero extent (empty batch -> no kernel launch).
+
+    bool type_ok = (vt == VarType::Float16 || vt == VarType::Float32 ||
+                    vt == VarType::Float64 || vt == VarType::Int32   ||
+                    vt == VarType::UInt32);
+    if (!type_ok)
+        jitc_raise("jit_batched_gemm(): unsupported element type '%s'.",
+                   type_name[(int) vt]);
+
+    // The kernels below do not handle ``At == Bt == true``; the Python
+    // caller reduces that case to a single-transpose call via
+    // ``A^T @ B^T = (B @ A)^T`` before reaching this point.
+    if (At && Bt)
+        jitc_raise("jit_batched_gemm(): internal error -- At=Bt=True "
+                   "should have been rewritten by the caller.");
+
+    uint32_t grid_count, reduce_count;
+    if (!jitc_gemm_batch_counts(batch, grid_count, reduce_count))
+        return;
+
+    // Effective batch spec: a zero-initialized struct represents the
+    // no-batch case (n_bdims == n_rdims == 0), used when ``batch`` is null.
+    GemmBatch batch_eff = batch ? *batch : GemmBatch{};
+
+    // int32 reuses the u32 kernel (identical two's-complement bit pattern
+    // for mul/add).
+    VarType vt_kernel = (vt == VarType::Int32) ? VarType::UInt32 : vt;
+
+    uint32_t tsize = type_size[(int) vt];
+
+    // Vector width of the BM tile: V = min(BM/8, 16/sizeof(T)).
+    auto vec_width = [tsize](uint32_t bm) -> uint32_t {
+        uint32_t tm   = bm / 8;
+        uint32_t vmax = 16u / tsize;
+        return tm < vmax ? tm : vmax;
+    };
+
+    // Alignment requirements. Vector loads need both operands' inner
+    // (contiguous) strides divisible by V; the vector output store needs
+    // ``N`` divisible by V.
+    uint32_t a_inner = At ? M : K;
+    uint32_t b_inner = Bt ? K : N;
+
+    const Device &dev = state.devices[device];
+
+    // Size-aware tile selection: largest BM whose alignment holds, whose
+    // tile is at least partly covered along one output axis, and whose
+    // grid covers at least one SM wave. BM=8 (V=1) is always alignment-
+    // compatible and serves as the last-resort fallback for tiny or
+    // odd-shaped problems.
+    const uint32_t target_blocks = dev.sm_count;
+
+    uint32_t bm = 8, tile_idx = 0;
+    for (int l = 3; l >= 0; --l) {
+        uint32_t bm_try = 8u << l;  // 64, 32, 16, 8
+        uint32_t v = vec_width(bm_try);
+        if (a_inner % v || b_inner % v || (N % v))
+            continue;
+
+        // Skip tiles where both output dims are smaller than the tile:
+        // the block then wastes most of its compute on the non-interior
+        // (bounds-checked) path, and a smaller BM with higher coverage
+        // is strictly better.
+        if (M < bm_try && N < bm_try)
+            continue;
+
+        uint32_t grid = ceil_div(M, bm_try) * ceil_div(N, bm_try) *
+                        grid_count;
+        if (grid >= target_blocks || bm_try == 8) {
+            bm = bm_try;
+            tile_idx = (uint32_t) l;
+            break;
+        }
+    }
+
+    CUfunction func = jitc_cuda_gemm[(int) vt_kernel][tile_idx][dev.id];
+    if (!func)
+        jitc_raise("jit_batched_gemm(): missing kernel for type=%s, "
+                   "BM=%u.", type_name[(int) vt], bm);
+
+    uint32_t grid_x = ceil_div(N, bm);
+    uint32_t grid_y = ceil_div(M, bm);
+
+    // CUDA caps gridDim.z at 65535.
+    if (grid_count > 65535u)
+        jitc_raise("jit_batched_gemm(): grid batch count %u exceeds CUDA's "
+                   "gridDim.z limit of 65535.", grid_count);
+
+    jitc_log(Debug,
+             "jit_batched_gemm(" DRJIT_PTR ", " DRJIT_PTR " -> " DRJIT_PTR
+             ", type=%s, At=%i, Bt=%i, M=%u, N=%u, K=%u, grid=%u, "
+             "reduce=%u, tile=%ux%u, launch=%ux%ux%u).",
+             (uintptr_t) A, (uintptr_t) B, (uintptr_t) C,
+             type_name[(int) vt], (int) At, (int) Bt, M, N, K, grid_count,
+             reduce_count, bm, bm, grid_x, grid_y, grid_count);
+
+    uint32_t At_arg = (uint32_t) At, Bt_arg = (uint32_t) Bt;
+    void *args[] = { (void *) &A, (void *) &B, &C,
+                     &M, &N, &K, &At_arg, &Bt_arg, (void *) &batch_eff };
+
+    scoped_set_context guard(context);
+    // The kernel is launched as a flat group of 64 threads that internally
+    // derives an 8 x 8 layout from ``threadIdx.x``. gridDim.z walks the
+    // grid batch; the reduce batch is iterated inside the kernel body.
+    submit_gpu(KernelType::Other, this->recording_mode, func, grid_x,
+               /* thread_count */ 64, /* shared_mem_bytes */ 0, stream, args,
+               nullptr, /* width */ grid_count * M * N,
+               /* block_count_y */ grid_y,
+               /* block_count_z */ grid_count);
 }
 
 void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,

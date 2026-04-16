@@ -24,6 +24,12 @@ struct CUDAThreadState : ThreadState {
     void reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
                     uint32_t size, void *out) override;
 
+    /// Row-major GEMM. See \ref ThreadState::batched_gemm for the signature.
+    void batched_gemm(VarType vt, bool At, bool Bt,
+                      uint32_t M, uint32_t N, uint32_t K,
+                      const GemmBatch *batch,
+                      const void *A, const void *B, void *C) override;
+
     /// Mask compression
     uint32_t compress(const uint8_t *in, uint32_t size, uint32_t *out) override;
 
