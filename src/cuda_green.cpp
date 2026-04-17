@@ -66,10 +66,14 @@ CUDAGreenContext *jitc_cuda_green_context_make(uint32_t sm_count_requested,
     CUdevResource primary_res = {}, extra_res = {};
     unsigned int nb_groups = 1;
     // Step 3: split the SM resource into (primary, extra)
-    cuda_check(cuDevSmResourceSplitByCount(&primary_res, &nb_groups,
-                                           &sm_resource, &extra_res,
-                                           CU_DEV_SM_RESOURCE_SPLIT_IGNORE_SM_COSCHEDULING,
-                                           rounded));
+    CUresult split_rc = cuDevSmResourceSplitByCount(
+        &primary_res, &nb_groups, &sm_resource, &extra_res,
+        CU_DEV_SM_RESOURCE_SPLIT_IGNORE_SM_COSCHEDULING, rounded);
+    if (split_rc == CUDA_ERROR_INVALID_RESOURCE_CONFIGURATION)
+        jitc_raise("jit_cuda_green_context_make(): cuDevSmResourceSplitByCount() "
+                   "returned CUDA_ERROR_INVALID_RESOURCE_CONFIGURATION. Green "
+                   "contexts are not supported by this device or driver.");
+    cuda_check(split_rc);
     if (nb_groups == 0)
         jitc_raise("jit_cuda_green_context_make(): split operation returned no groups.");
 

@@ -79,6 +79,7 @@ extern CUresult (*cuStreamWaitEvent_ptsz)(CUstream, CUevent, unsigned int);
 #  define CUDA_ERROR_INVALID_GRAPHICS_CONTEXT 219
 #  define CUDA_ERROR_PEER_ACCESS_ALREADY_ENABLED 704
 #  define CUDA_ERROR_NOT_READY 600
+#  define CUDA_ERROR_INVALID_RESOURCE_CONFIGURATION 915
 #  define CUDA_SUCCESS 0
 
 #define CU_RESOURCE_TYPE_ARRAY 0

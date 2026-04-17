@@ -109,8 +109,21 @@ template <typename T> struct GemmTile {
 // FMAs. The MSVC fallback uses a POD struct with elementwise operators
 // and defers codegen to the compiler's auto-vectorizer.
 #if defined(__GNUC__) || defined(__clang__)
+// Per-scalar specialisations so ``vector_size`` is applied at a
+// non-dependent declaration -- GCC silently strips the attribute otherwise.
+template <typename T, uint32_t V> struct GemmVecImpl;
+
+#define DRJIT_DECLARE_GEMM_VEC(T_)                                             \
+    template <uint32_t V> struct GemmVecImpl<T_, V> {                          \
+        typedef T_ type __attribute__((vector_size(V * sizeof(T_))));          \
+    };
+DRJIT_DECLARE_GEMM_VEC(float)
+DRJIT_DECLARE_GEMM_VEC(double)
+DRJIT_DECLARE_GEMM_VEC(uint32_t)
+#undef DRJIT_DECLARE_GEMM_VEC
+
 template <typename T, uint32_t V>
-using GemmVec = T __attribute__((vector_size(V * sizeof(T))));
+using GemmVec = typename GemmVecImpl<T, V>::type;
 #else
 template <typename T, uint32_t V> struct GemmVec {
     T d[V];
