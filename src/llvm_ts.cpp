@@ -112,7 +112,9 @@ LLVMThreadState::launch(Kernel kernel, KernelKey * /*key*/,
         blocks = packets;
         block_size = packet_size;
     } else if (size <= desired_block_size * cores * 2) {
-        blocks = cores;
+        // Create more work items than cores to mitigate latency arising from
+        // slow/preempted worker threads.
+        blocks = 2 * cores;
         block_size = (packets + blocks - 1) / blocks * packet_size;
     } else {
         block_size = desired_block_size;
@@ -492,6 +494,15 @@ void LLVMThreadState::reduce_dot(VarType type, const void *ptr_1,
     }
 }
 
+// Slice the reduce-dim portion of a ``GemmBatch``. The returned
+// struct holds pointers into ``be`` and stays valid for the lifetime
+// of ``be``.
+static inline GemmReduce gemm_reduce_slice(const GemmBatch &be,
+                                           uint32_t r_count) {
+    return { r_count, be.n_rdims, be.extent + be.n_bdims,
+             be.a_stride + be.n_bdims, be.b_stride + be.n_bdims };
+}
+
 void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
                              uint32_t N, uint32_t K, const GemmBatch *batch,
                              const void *A, const void *B, void *C) {
@@ -502,69 +513,136 @@ void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
         jitc_raise("jit_batched_gemm(): internal error -- At=Bt=True "
                    "should have been rewritten by the caller.");
 
-    GemmBlockFn fn = gemm_block_dispatch(vt, At, Bt);
-    if (!fn)
+    GemmDispatch d = gemm_dispatch(vt, At, Bt);
+    if (!d.row_sweep)
         jitc_raise("jit_batched_gemm(): unsupported element type '%s'.",
                    type_name[(int) vt]);
 
     uint32_t grid_count, reduce_count;
     if (!jitc_gemm_batch_counts(batch, grid_count, reduce_count))
         return;
+    if (M == 0 || N == 0)
+        return;
 
     GemmBatch batch_eff = batch ? *batch : GemmBatch{};
-
-    uint32_t m_blocks = ceil_div(M, GEMM_MB);
-    uint32_t n_blocks = ceil_div(N, GEMM_NB);
-    uint32_t mn_blocks = m_blocks * n_blocks;
     uint32_t tsize = type_size[(int) vt];
     size_t c_batch_stride = (size_t) M * N;
+
+    const uint32_t MR = d.MR;
+    const uint32_t NR = d.NR;
+    const uint32_t KC = GEMM_KC;
+    const uint32_t acc_size = d.acc_size;
+
+    // Slab counts include any trailing partial slab — zero-padding in
+    // the pack step lets the microkernel run on every tile without a
+    // separate edge path.
+    const uint32_t row_slabs = (M + MR - 1) / MR;
+    const uint32_t col_slabs = (N + NR - 1) / NR;
+
+    // ``NC`` caps the column-panel width in the shared ``packed_B``
+    // buffer (always a multiple of NR). Rounding up keeps the
+    // trailing panel fitting even when ``N`` is not a multiple of NR.
+    const uint32_t NC = std::min<uint32_t>(col_slabs, (GEMM_NC + NR - 1) / NR) * NR;
 
     jitc_log(Debug,
              "jit_batched_gemm(" DRJIT_PTR ", " DRJIT_PTR " -> " DRJIT_PTR
              ", type=%s, At=%i, Bt=%i, M=%u, N=%u, K=%u, grid=%u, "
-             "reduce=%u, tiles=%ux%u).",
+             "reduce=%u, MRxNR=%ux%u, KC=%u, NC=%u).",
              (uintptr_t) A, (uintptr_t) B, (uintptr_t) C,
              type_name[(int) vt], (int) At, (int) Bt, M, N, K, grid_count,
-             reduce_count, n_blocks, m_blocks);
+             reduce_count, MR, NR, KC, NC);
 
-    submit_cpu(
-        KernelType::Other,
-        this->recording_mode,
-        [fn, A, B, C, M, N, K, n_blocks, mn_blocks,
-         tsize, c_batch_stride, reduce_count, batch_eff](uint32_t index) {
-            uint32_t b     = index / mn_blocks;
-            uint32_t tile  = index % mn_blocks;
-            uint32_t mi    = tile / n_blocks;
-            uint32_t ni    = tile % n_blocks;
-            uint32_t m0 = mi * GEMM_MB, m1 = std::min(m0 + GEMM_MB, M);
-            uint32_t n0 = ni * GEMM_NB, n1 = std::min(n0 + GEMM_NB, N);
+    // Degenerate K == 0: output is the zero matrix.
+    if (K == 0) {
+        size_t n_bytes = (size_t) grid_count * M * N * tsize;
+        submit_cpu(
+            KernelType::Other, this->recording_mode,
+            [C, n_bytes](uint32_t) { memset(C, 0, n_bytes); },
+            (uint32_t) std::min<size_t>(n_bytes, UINT32_MAX), 1);
+        return;
+    }
 
-            // Grid-dim decode: advance A/B pointers by per-grid-point
-            // offsets. Reduce-dim iteration happens inside ``gemm_block``
-            // using the shared ``GemmReduce`` spec below.
-            size_t a_off = 0, b_off = 0;
+    // One shared ``packed_B`` scratch holds a ``KC x NC`` column
+    // panel (including tail padding); every (grid, reduce, jc, pc)
+    // iteration reuses it. ``jitc_free`` on HostAsync memory defers
+    // until the submitted tasks complete.
+    size_t pb_bytes = (size_t) KC * NC * acc_size;
+    void *packed_B = jitc_malloc(AllocType::HostAsync, pb_bytes);
+
+    for (uint32_t b = 0; b < grid_count; ++b) {
+        // Decode grid index into per-operand byte offsets for A / B.
+        size_t a_off = 0, b_off = 0;
+        {
             uint32_t z = b;
-            for (uint32_t d = 0; d < batch_eff.n_bdims; ++d) {
-                uint32_t idx = z % batch_eff.extent[d];
-                z /= batch_eff.extent[d];
-                a_off += (size_t) idx * batch_eff.a_stride[d];
-                b_off += (size_t) idx * batch_eff.b_stride[d];
+            for (uint32_t dim = 0; dim < batch_eff.n_bdims; ++dim) {
+                uint32_t idx = z % batch_eff.extent[dim];
+                z /= batch_eff.extent[dim];
+                a_off += (size_t) idx * batch_eff.a_stride[dim];
+                b_off += (size_t) idx * batch_eff.b_stride[dim];
             }
+        }
+        const void *A_b = (const uint8_t *) A + a_off * tsize;
+        const void *B_b = (const uint8_t *) B + b_off * tsize;
+        void *C_b = (uint8_t *) C + (size_t) b * c_batch_stride * tsize;
 
-            const void *A_b = (const uint8_t *) A + a_off * tsize;
-            const void *B_b = (const uint8_t *) B + b_off * tsize;
-            void *C_b = (uint8_t *) C + (size_t) b * c_batch_stride * tsize;
+        // Two-phase sweep per K segment:
+        //   (1) parallel pack of B slabs into the shared ``packed_B``;
+        //   (2) parallel row-slab compute that packs its own A strip
+        //       and sweeps all column slabs (bulk + edge) in one go.
+        //
+        // Ordering: reduce (outermost) -> jc panel -> pc K-segment.
+        // The launcher decodes reduce-dim offsets here, so the
+        // lambdas capture already-offset ``A_r`` / ``B_r`` pointers.
+        GemmReduce reduce_base = gemm_reduce_slice(batch_eff, reduce_count);
 
-            GemmReduce reduce;
-            reduce.r_count  = reduce_count;
-            reduce.n_rdims  = batch_eff.n_rdims;
-            reduce.extent   = batch_eff.extent   + batch_eff.n_bdims;
-            reduce.a_stride = batch_eff.a_stride + batch_eff.n_bdims;
-            reduce.b_stride = batch_eff.b_stride + batch_eff.n_bdims;
+        for (uint32_t rb = 0; rb < reduce_count; ++rb) {
+            size_t ra_off = 0, rb_off = 0;
+            gemm_reduce_decode(reduce_base, rb, ra_off, rb_off);
+            const void *A_r = (const uint8_t *) A_b + ra_off * tsize;
+            const void *B_r = (const uint8_t *) B_b + rb_off * tsize;
 
-            fn(A_b, B_b, C_b, M, N, K, m0, m1, n0, n1, &reduce);
-        },
-        grid_count * M * N, grid_count * mn_blocks);
+            for (uint32_t jc = 0; jc < N; jc += NC) {
+                const uint32_t n_panel = std::min(NC, N - jc);
+                const uint32_t panel_slabs = (n_panel + NR - 1) / NR;
+                const uint32_t panel_tail  = n_panel % NR;
+
+                for (uint32_t pc = 0; pc < K; pc += KC) {
+                    const uint32_t kc_len = std::min(KC, K - pc);
+                    const bool first = (rb == 0 && pc == 0);
+
+                    // Phase 1: parallel pack of B slabs into packed_B.
+                    GemmPackBFn fn_pack_b = d.pack_b;
+                    submit_cpu(
+                        KernelType::Other, this->recording_mode,
+                        [fn_pack_b, B_r, packed_B, N, K, jc, pc, kc_len,
+                         NR, acc_size, panel_slabs, panel_tail](uint32_t idx) {
+                            uint32_t n_valid = (panel_tail > 0 && idx == panel_slabs - 1)
+                                                   ? panel_tail : NR;
+                            void *slab = (uint8_t *) packed_B +
+                                         (size_t) idx * GEMM_KC * NR * acc_size;
+                            fn_pack_b(B_r, slab, N, K,
+                                      jc + idx * NR, pc, kc_len, n_valid);
+                        },
+                        panel_slabs * kc_len * NR, panel_slabs);
+
+                    // Phase 2: parallel microtile-row sweep (bulk + edge).
+                    GemmRowSweepFn fn_row = d.row_sweep;
+                    submit_cpu(
+                        KernelType::Other, this->recording_mode,
+                        [fn_row, A_r, packed_B, C_b, M, N, K, jc, pc,
+                         kc_len, panel_slabs, panel_tail, first, MR]
+                        (uint32_t idx) {
+                            fn_row(A_r, packed_B, C_b, M, N, K,
+                                   idx * MR, jc, pc, kc_len,
+                                   panel_slabs, panel_tail, first);
+                        },
+                        row_slabs * panel_slabs * MR * NR, row_slabs);
+                }
+            }
+        }
+    }
+
+    jitc_free(packed_B);
 }
 
 uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,

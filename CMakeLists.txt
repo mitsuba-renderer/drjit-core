@@ -223,7 +223,7 @@ endif()
 # The following compiler flag is needed for Clang/GCC to autovectorize the
 # batched GEMM
 if (NOT MSVC)
-  set_source_files_properties(src/llvm_ts.cpp PROPERTIES COMPILE_OPTIONS "-ffast-math")
+  set_source_files_properties(src/llvm_ts.cpp PROPERTIES COMPILE_OPTIONS "-fassociative-math")
 endif()
 
 target_compile_definitions(drjit-core PRIVATE -DLZ4LIB_VISIBILITY=)
