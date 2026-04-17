@@ -11,6 +11,7 @@
 
 #include "internal.h"
 #include <drjit-core/half.h>
+#include <cstring>
 #include <type_traits>
 
 /*
@@ -68,15 +69,68 @@ using GemmAcc = std::conditional_t<std::is_same_v<T, drjit::half>, float, T>;
     #define GEMM_SIMD_BYTES 16
 #endif
 
-// Microtile dimensions. ``NR = simd_width / sizeof(Acc)`` gives one
-// SIMD register per row accumulator, so ``MR`` accumulators plus one
-// broadcast and one B-load fit in the vector register file (16 ymm
-// on AVX2, 32 zmm on AVX-512, 32 v-regs on NEON). ``MR = 6`` is the
-// BLIS sweet spot across all three ISAs.
+// Microtile dimensions. ``NR = NR_VECS * simd_width / sizeof(Acc)``
+// packs ``NR_VECS`` SIMD registers along the column axis per row,
+// for ``MR * NR_VECS`` independent accumulator chains per tile.
+//
+// ``MR = 6`` is fixed. ``NR_VECS`` is then picked so that:
+//   (1) Live state -- ``MR * NR_VECS`` accumulators, ``NR_VECS``
+//       B-loads, one A broadcast -- fits the vector register file.
+//   (2) ``MR * NR_VECS`` chains cover the FMA pipeline depth
+//       (issue width x latency) to keep the pipes busy.
+//
+//     ISA         SIMD   lanes f32   vec regs   FMA pipes
+//     AVX-512      512        16         32         2
+//     AVX / AVX2   256         8         16         2
+//     NEON         128         4         32       2 to 4
+//
+//  - AVX(+)/AVX2/AVX-512: ``NR_VECS = 1``. Two FMA pipes ~8 deep, so
+//    ``MR = 6`` chains roughly cover the pipeline; live state is
+//    6 + 1 + 1 = 8 ymm / zmm registers, fitting 16 / 32.
+//  - NEON: ``NR_VECS = 4``. Sized for 4-pipe implementations like
+//    Apple M-series (pipeline ~12 deep): ``6 * 4 = 24`` chains,
+//    live state is 24 + 4 = 28 of 32 v-regs. Some ARM reference
+//    cores have only 2 FMA pipes, where this is wider than strictly
+//    needed but still fits.
 template <typename T> struct GemmTile {
+    static constexpr uint32_t NR_VECS =
+#if defined(__AVX512F__) || defined(__AVX2__) || defined(__AVX__)
+        1;
+#else
+        4;
+#endif
     static constexpr uint32_t MR = 6;
-    static constexpr uint32_t NR = GEMM_SIMD_BYTES / sizeof(GemmAcc<T>);
+    static constexpr uint32_t NR =
+        NR_VECS * (GEMM_SIMD_BYTES / sizeof(GemmAcc<T>));
 };
+
+// Fixed-width SIMD vector type used by ``gemm_micro``. The GCC/Clang
+// path uses vector extensions so arithmetic lowers directly to SIMD
+// FMAs. The MSVC fallback uses a POD struct with elementwise operators
+// and defers codegen to the compiler's auto-vectorizer.
+#if defined(__GNUC__) || defined(__clang__)
+template <typename T, uint32_t V>
+using GemmVec = T __attribute__((vector_size(V * sizeof(T))));
+#else
+template <typename T, uint32_t V> struct GemmVec {
+    T d[V];
+    T  operator[](uint32_t i) const { return d[i]; }
+    T &operator[](uint32_t i)       { return d[i]; }
+};
+template <typename T, uint32_t V>
+static inline GemmVec<T, V> operator+(const GemmVec<T, V> &a,
+                                      const GemmVec<T, V> &b) {
+    GemmVec<T, V> r;
+    for (uint32_t i = 0; i < V; ++i) r.d[i] = a.d[i] + b.d[i];
+    return r;
+}
+template <typename T, uint32_t V>
+static inline GemmVec<T, V> operator*(T s, const GemmVec<T, V> &v) {
+    GemmVec<T, V> r;
+    for (uint32_t i = 0; i < V; ++i) r.d[i] = s * v.d[i];
+    return r;
+}
+#endif
 
 /// K-segment depth. Chosen so the per-task ``MR x KC`` pack of ``A``
 /// stays L1-resident (``MR * KC * sizeof(Acc)`` = 24 KB for f32) and
@@ -187,10 +241,9 @@ static inline void pack_b(const T *B, GemmAcc<T> *packed,
 
 // MR x NR microkernel. ``first`` toggles zero-init vs RMW against
 // ``C_tile``, so successive K segments and reduce iterations fold
-// into the same output tile. The six accumulators expand into named
-// ``NR``-wide arrays so a vectorizing compiler keeps them in
-// registers across the full ``kc_len`` sweep; the inner ``b`` loop
-// vectorizes into ``NR``-wide SIMD.
+// into the same output tile. Per k-step we load ``NR_VECS`` B-vectors
+// and one broadcast A-scalar per row, yielding ``MR * NR_VECS`` vector
+// FMAs that feed an ``MR x NR_VECS`` tile of accumulator registers.
 // JIT_NO_UBSAN: i32 reuses the u32 kernel body; wraparound mul/add is intended.
 template <typename T> JIT_NO_UBSAN
 static inline void gemm_micro(const GemmAcc<T> *packed_A,
@@ -200,51 +253,50 @@ static inline void gemm_micro(const GemmAcc<T> *packed_A,
     using Acc = GemmAcc<T>;
     constexpr uint32_t MR = GemmTile<T>::MR;
     constexpr uint32_t NR = GemmTile<T>::NR;
-    static_assert(MR == 6, "gemm_micro: inner kernel is manually unrolled for MR=6.");
+    constexpr uint32_t NR_VECS = GemmTile<T>::NR_VECS;
+    constexpr uint32_t V = NR / NR_VECS;
+    static_assert(NR == NR_VECS * V, "NR must be a multiple of the SIMD lane count.");
 
-    Acc r0[NR], r1[NR], r2[NR], r3[NR], r4[NR], r5[NR];
+    using Vec = GemmVec<Acc, V>;
+
+    Vec r[MR][NR_VECS];
 
     if (first) {
-        for (uint32_t b = 0; b < NR; ++b) {
-            r0[b] = Acc(0); r1[b] = Acc(0); r2[b] = Acc(0);
-            r3[b] = Acc(0); r4[b] = Acc(0); r5[b] = Acc(0);
-        }
+        for (uint32_t m = 0; m < MR; ++m)
+            for (uint32_t v = 0; v < NR_VECS; ++v)
+                r[m][v] = Vec{};
+    } else if constexpr (std::is_same_v<T, Acc>) {
+        for (uint32_t m = 0; m < MR; ++m)
+            for (uint32_t v = 0; v < NR_VECS; ++v)
+                std::memcpy(&r[m][v], &C_tile[m * ldc + v * V], sizeof(Vec));
     } else {
-        for (uint32_t b = 0; b < NR; ++b) {
-            r0[b] = (Acc) C_tile[0 * ldc + b];
-            r1[b] = (Acc) C_tile[1 * ldc + b];
-            r2[b] = (Acc) C_tile[2 * ldc + b];
-            r3[b] = (Acc) C_tile[3 * ldc + b];
-            r4[b] = (Acc) C_tile[4 * ldc + b];
-            r5[b] = (Acc) C_tile[5 * ldc + b];
-        }
+        // Narrower-storage path (e.g. T=half, Acc=float): widen per-lane.
+        for (uint32_t m = 0; m < MR; ++m)
+            for (uint32_t v = 0; v < NR_VECS; ++v)
+                for (uint32_t i = 0; i < V; ++i)
+                    r[m][v][i] = (Acc) C_tile[m * ldc + v * V + i];
     }
 
     for (uint32_t k = 0; k < kc_len; ++k) {
-        Acc av0 = packed_A[k * MR + 0];
-        Acc av1 = packed_A[k * MR + 1];
-        Acc av2 = packed_A[k * MR + 2];
-        Acc av3 = packed_A[k * MR + 3];
-        Acc av4 = packed_A[k * MR + 4];
-        Acc av5 = packed_A[k * MR + 5];
-        for (uint32_t b = 0; b < NR; ++b) {
-            Acc bv = packed_B[k * NR + b];
-            r0[b] += av0 * bv;
-            r1[b] += av1 * bv;
-            r2[b] += av2 * bv;
-            r3[b] += av3 * bv;
-            r4[b] += av4 * bv;
-            r5[b] += av5 * bv;
+        Vec bv[NR_VECS];
+        for (uint32_t v = 0; v < NR_VECS; ++v)
+            std::memcpy(&bv[v], &packed_B[k * NR + v * V], sizeof(Vec));
+        for (uint32_t m = 0; m < MR; ++m) {
+            Acc av = packed_A[k * MR + m];
+            for (uint32_t v = 0; v < NR_VECS; ++v)
+                r[m][v] = r[m][v] + av * bv[v];
         }
     }
 
-    for (uint32_t b = 0; b < NR; ++b) {
-        C_tile[0 * ldc + b] = (T) r0[b];
-        C_tile[1 * ldc + b] = (T) r1[b];
-        C_tile[2 * ldc + b] = (T) r2[b];
-        C_tile[3 * ldc + b] = (T) r3[b];
-        C_tile[4 * ldc + b] = (T) r4[b];
-        C_tile[5 * ldc + b] = (T) r5[b];
+    if constexpr (std::is_same_v<T, Acc>) {
+        for (uint32_t m = 0; m < MR; ++m)
+            for (uint32_t v = 0; v < NR_VECS; ++v)
+                std::memcpy(&C_tile[m * ldc + v * V], &r[m][v], sizeof(Vec));
+    } else {
+        for (uint32_t m = 0; m < MR; ++m)
+            for (uint32_t v = 0; v < NR_VECS; ++v)
+                for (uint32_t i = 0; i < V; ++i)
+                    C_tile[m * ldc + v * V + i] = (T) r[m][v][i];
     }
 }
 
