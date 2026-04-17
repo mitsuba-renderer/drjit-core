@@ -1230,7 +1230,7 @@ int Recording::replay_reduce_expanded(Operation &op) {
     ReduceOp rop     = op.rtype;
     uint32_t size    = data_var.size(vt);
     uint32_t tsize   = type_size[(uint32_t) vt];
-    uint32_t workers = pool_size() + 1;
+    uint32_t workers = pool_size();
 
     uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u;
 

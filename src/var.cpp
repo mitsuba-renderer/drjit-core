@@ -2672,7 +2672,7 @@ void jitc_var_reduce_expanded(uint32_t index) {
     if ((ReduceOp) v->reduce_op == ReduceOp::Identity)
         return;
 
-    uint32_t workers = pool_size() + 1,
+    uint32_t workers = pool_size(),
              tsize = type_size[v->type],
              size = v->size;
 

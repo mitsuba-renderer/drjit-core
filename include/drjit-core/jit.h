@@ -261,10 +261,25 @@ extern JIT_EXPORT void jit_llvm_version(int *major, int *minor, int *patch);
 /// Get the vector width of the LLVM backend
 extern JIT_EXPORT uint32_t jit_llvm_vector_width();
 
-/// Specify the number of threads that are used to parallelize the computation
+/**
+ * \brief Specify the number of threads that are used to parallelize the computation
+ *
+ * The calling thread will generally also participate in parallel execution
+ * (e.g. while blocked inside a synchronization call), and it implicitly counts
+ * as one of the threads. Passing \c size therefore spawns <tt>size - 1</tt>
+ * worker threads; the values \c 0 and \c 1 both disable worker threads
+ * entirely, in which case all parallel work runs on the calling thread.
+ */
 extern JIT_EXPORT void jit_llvm_set_thread_count(uint32_t size);
 
-/// Return the number of threads that are used to parallelize the computation
+/**
+ * \brief Return the number of threads that are used to parallelize the computation
+ *
+ * The returned count includes the calling thread, which participates in task
+ * execution while blocked inside a synchronization call. A return value of
+ * \c 1 means that no worker threads have been spawned and all parallel work
+ * runs on the calling thread.
+ */
 extern JIT_EXPORT uint32_t jit_llvm_thread_count();
 
 /// Specify the number of SIMD packets that form one parallel work item
