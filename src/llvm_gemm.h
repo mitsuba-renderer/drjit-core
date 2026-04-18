@@ -84,9 +84,16 @@ using GemmAcc = std::conditional_t<std::is_same_v<T, drjit::half>, float, T>;
 //     AVX / AVX2   256         8         16         2
 //     NEON         128         4         32       2 to 4
 //
-//  - AVX(+)/AVX2/AVX-512: ``NR_VECS = 1``. Two FMA pipes ~8 deep, so
-//    ``MR = 6`` chains roughly cover the pipeline; live state is
-//    6 + 1 + 1 = 8 ymm / zmm registers, fitting 16 / 32.
+//  - AVX-512: ``NR_VECS = 1``. One 512-bit FMA covers two 256-bit
+//    lanes of work, so ``MR = 6`` zmm chains behave like 12 ymm
+//    chains — comfortably above the 2 pipes x ~4-cycle latency
+//    (~8 chains) needed to saturate the FMAs. Live state is
+//    6 + 1 + 1 = 8 zmm registers in 32.
+//  - AVX / AVX2: ``NR_VECS = 2``. ``MR * NR_VECS = 12`` ymm chains
+//    fully cover the 2-pipe, ~4-cycle FMA pipeline; live state is
+//    12 + 2 + 1 = 15 ymm registers, fitting the 16-register file
+//    with one spare. ``NR_VECS = 1`` underfills the pipeline on
+//    this ISA and leaves half the register file unused.
 //  - NEON: ``NR_VECS = 4``. Sized for 4-pipe implementations like
 //    Apple M-series (pipeline ~12 deep): ``6 * 4 = 24`` chains,
 //    live state is 24 + 4 = 28 of 32 v-regs. Some ARM reference
@@ -94,8 +101,10 @@ using GemmAcc = std::conditional_t<std::is_same_v<T, drjit::half>, float, T>;
 //    needed but still fits.
 template <typename T> struct GemmTile {
     static constexpr uint32_t NR_VECS =
-#if defined(__AVX512F__) || defined(__AVX2__) || defined(__AVX__)
+#if defined(__AVX512F__)
         1;
+#elif defined(__AVX2__) || defined(__AVX__)
+        2;
 #else
         4;
 #endif
