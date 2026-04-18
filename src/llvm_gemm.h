@@ -266,11 +266,14 @@ static inline void pack_b(const T *B, GemmAcc<T> *packed,
 // into the same output tile. Per k-step we load ``NR_VECS`` B-vectors
 // and one broadcast A-scalar per row, yielding ``MR * NR_VECS`` vector
 // FMAs that feed an ``MR x NR_VECS`` tile of accumulator registers.
+//
+// ``C_tile`` is always in accumulator precision; the launcher handles
+// any narrowing once the full reduction is done.
 // JIT_NO_UBSAN: i32 reuses the u32 kernel body; wraparound mul/add is intended.
 template <typename T> JIT_NO_UBSAN
 static inline void gemm_micro(const GemmAcc<T> *packed_A,
                               const GemmAcc<T> *packed_B,
-                              T *C_tile, uint32_t ldc,
+                              GemmAcc<T> *C_tile, uint32_t ldc,
                               uint32_t kc_len, bool first) {
     using Acc = GemmAcc<T>;
     constexpr uint32_t MR = GemmTile<T>::MR;
@@ -287,16 +290,10 @@ static inline void gemm_micro(const GemmAcc<T> *packed_A,
         for (uint32_t m = 0; m < MR; ++m)
             for (uint32_t v = 0; v < NR_VECS; ++v)
                 r[m][v] = Vec{};
-    } else if constexpr (std::is_same_v<T, Acc>) {
+    } else {
         for (uint32_t m = 0; m < MR; ++m)
             for (uint32_t v = 0; v < NR_VECS; ++v)
                 std::memcpy(&r[m][v], &C_tile[m * ldc + v * V], sizeof(Vec));
-    } else {
-        // Narrower-storage path (e.g. T=half, Acc=float): widen per-lane.
-        for (uint32_t m = 0; m < MR; ++m)
-            for (uint32_t v = 0; v < NR_VECS; ++v)
-                for (uint32_t i = 0; i < V; ++i)
-                    r[m][v][i] = (Acc) C_tile[m * ldc + v * V + i];
     }
 
     for (uint32_t k = 0; k < kc_len; ++k) {
@@ -310,59 +307,73 @@ static inline void gemm_micro(const GemmAcc<T> *packed_A,
         }
     }
 
-    if constexpr (std::is_same_v<T, Acc>) {
-        for (uint32_t m = 0; m < MR; ++m)
-            for (uint32_t v = 0; v < NR_VECS; ++v)
-                std::memcpy(&C_tile[m * ldc + v * V], &r[m][v], sizeof(Vec));
-    } else {
-        for (uint32_t m = 0; m < MR; ++m)
-            for (uint32_t v = 0; v < NR_VECS; ++v)
-                for (uint32_t i = 0; i < V; ++i)
-                    C_tile[m * ldc + v * V + i] = (T) r[m][v][i];
-    }
+    for (uint32_t m = 0; m < MR; ++m)
+        for (uint32_t v = 0; v < NR_VECS; ++v)
+            std::memcpy(&C_tile[m * ldc + v * V], &r[m][v], sizeof(Vec));
 }
 
-// Sweep one MR-row slab across all column slabs in the panel
-// ``[jc, jc + n_slabs * NR)``. Bulk tiles (full MR rows, full NR
-// cols) write directly to ``C``; edge tiles accumulate through a
-// small scratch buffer and copy back only the valid cells. Zero-
-// padding in the packed buffers lets the microkernel run unchanged
-// on every tile. A nonzero ``n_tail`` marks the last slab as partial
-// with ``n_tail`` valid columns out of ``NR``.
+// Sweep one MR-row slab across the ``[s_lo, s_hi)`` sub-range of
+// column slabs in the panel ``[jc, jc + n_slabs * NR)``. Bulk tiles
+// (full MR rows, full NR cols) write directly to ``C``; edge tiles
+// go through a small per-tile scratch and copy back only the valid
+// cells. Zero-padding in the packed buffers lets the microkernel
+// run unchanged on every tile. A nonzero ``n_tail`` marks the last
+// slab as partial with ``n_tail`` valid columns.
+//
+// On the final accumulation pass of the half -> float widen path,
+// ``narrow_store`` casts the result to ``T`` and writes it straight
+// to ``C_final`` instead of updating ``C`` in place. For other
+// types the flag is forced to a compile-time false and the narrow
+// branch is elided.
 // JIT_NO_UBSAN: i32 reuses the u32 kernel body; wraparound mul/add is intended.
 template <typename T, bool At> JIT_NO_UBSAN
 static inline void gemm_row_sweep(const T *A, const GemmAcc<T> *packed_B,
-                                  T *C, uint32_t M, uint32_t N, uint32_t K,
+                                  GemmAcc<T> *C, T *C_final,
+                                  uint32_t M, uint32_t N, uint32_t K,
                                   uint32_t i_abs, uint32_t jc,
                                   uint32_t pc, uint32_t kc_len,
                                   uint32_t n_slabs, uint32_t n_tail,
-                                  bool first) {
+                                  uint32_t s_lo, uint32_t s_hi,
+                                  bool first, bool narrow_store_) {
     using Acc = GemmAcc<T>;
     constexpr uint32_t MR = GemmTile<T>::MR;
     constexpr uint32_t NR = GemmTile<T>::NR;
     constexpr uint32_t KC = GEMM_KC;
+    const bool narrow_store = !std::is_same_v<T, Acc> && narrow_store_;
 
     uint32_t m_valid = std::min(MR, M - i_abs);
 
     alignas(64) Acc packed_A[KC * MR];
     pack_a<T, At>(A, packed_A, M, K, i_abs, pc, kc_len, m_valid);
 
-    T *c_row = C + (size_t) i_abs * N + jc;
-    for (uint32_t s = 0; s < n_slabs; ++s) {
+    // The launcher passes ``C == nullptr`` for single-pass half
+    // matmuls, where every tile has ``first && narrow_store`` and
+    // the kernel writes only to ``C_final``.
+    Acc *c_row     = C ? (C + (size_t) i_abs * N + jc) : nullptr;
+    T   *c_row_out = C_final + (size_t) i_abs * N + jc;
+    for (uint32_t s = s_lo; s < s_hi; ++s) {
         uint32_t n_valid = (n_tail > 0 && s == n_slabs - 1) ? n_tail : NR;
         const Acc *pb = packed_B + (size_t) s * KC * NR;
-        T *c_tile = c_row + s * NR;
+        Acc *c_tile     = c_row ? (c_row + s * NR) : nullptr;
+        T   *c_tile_out = c_row_out + s * NR;
 
-        if (m_valid == MR && n_valid == NR) {
+        bool bulk = (m_valid == MR && n_valid == NR);
+        if (bulk && !narrow_store) {
             gemm_micro<T>(packed_A, pb, c_tile, N, kc_len, first);
         } else {
-            alignas(64) T scratch[MR * NR];
+            alignas(64) Acc scratch[MR * NR];
             if (!first) {
                 for (uint32_t r = 0; r < m_valid; ++r)
                     for (uint32_t b = 0; b < n_valid; ++b)
                         scratch[r * NR + b] = c_tile[r * N + b];
             }
             gemm_micro<T>(packed_A, pb, scratch, NR, kc_len, first);
+            if (narrow_store) {
+                for (uint32_t r = 0; r < m_valid; ++r)
+                    for (uint32_t b = 0; b < n_valid; ++b)
+                        c_tile_out[r * N + b] = (T) scratch[r * NR + b];
+                continue;
+            }
             for (uint32_t r = 0; r < m_valid; ++r)
                 for (uint32_t b = 0; b < n_valid; ++b)
                     c_tile[r * N + b] = scratch[r * NR + b];
@@ -377,11 +388,14 @@ using GemmPackBFn = void (*)(const void *B, void *packed,
                              uint32_t N, uint32_t K, uint32_t jr_abs,
                              uint32_t pc, uint32_t kc_len, uint32_t n_valid);
 
-using GemmRowSweepFn = void (*)(const void *A, const void *packed_B, void *C,
+using GemmRowSweepFn = void (*)(const void *A, const void *packed_B,
+                                void *C, void *C_final,
                                 uint32_t M, uint32_t N, uint32_t K,
                                 uint32_t i_abs, uint32_t jc,
                                 uint32_t pc, uint32_t kc_len,
-                                uint32_t n_slabs, uint32_t n_tail, bool first);
+                                uint32_t n_slabs, uint32_t n_tail,
+                                uint32_t s_lo, uint32_t s_hi,
+                                bool first, bool narrow_store);
 
 struct GemmDispatch {
     uint32_t MR;        // microtile row count
@@ -389,7 +403,7 @@ struct GemmDispatch {
     uint32_t acc_size;  // sizeof(GemmAcc<T>) (4 or 8)
 
     GemmPackBFn    pack_b;     // pack one NR-wide slab of B (zero-padded at tail)
-    GemmRowSweepFn row_sweep;  // pack MR rows of A + sweep all column slabs
+    GemmRowSweepFn row_sweep;  // pack MR rows of A + sweep a column-slab range
 };
 
 template <typename T, bool Bt>
@@ -403,14 +417,17 @@ static void gemm_pack_b_trampoline(const void *B, void *packed,
 
 template <typename T, bool At>
 static void gemm_row_sweep_trampoline(const void *A, const void *packed_B,
-                                      void *C, uint32_t M, uint32_t N,
-                                      uint32_t K, uint32_t i_abs,
-                                      uint32_t jc, uint32_t pc,
+                                      void *C, void *C_final,
+                                      uint32_t M, uint32_t N, uint32_t K,
+                                      uint32_t i_abs, uint32_t jc, uint32_t pc,
                                       uint32_t kc_len, uint32_t n_slabs,
-                                      uint32_t n_tail, bool first) {
+                                      uint32_t n_tail, uint32_t s_lo,
+                                      uint32_t s_hi, bool first,
+                                      bool narrow_store) {
     gemm_row_sweep<T, At>((const T *) A, (const GemmAcc<T> *) packed_B,
-                          (T *) C, M, N, K, i_abs, jc, pc, kc_len,
-                          n_slabs, n_tail, first);
+                          (GemmAcc<T> *) C, (T *) C_final,
+                          M, N, K, i_abs, jc, pc, kc_len,
+                          n_slabs, n_tail, s_lo, s_hi, first, narrow_store);
 }
 
 template <typename T, bool At, bool Bt>

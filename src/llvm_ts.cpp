@@ -569,6 +569,21 @@ void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
     size_t pb_bytes = (size_t) KC * NC * acc_size;
     void *packed_B = jitc_malloc(AllocType::HostAsync, pb_bytes);
 
+    // Half inputs reduce in float. The float ``C_scratch`` holds
+    // partial sums between task dispatches, so it is only needed when
+    // the reduction spans multiple dispatches (``K > KC`` or
+    // ``reduce_count > 1``). A single-pass reduction keeps its float
+    // accumulator on the worker's stack and narrows straight into
+    // the user's ``C``; the kernel is passed a null ``C_b`` and
+    // never dereferences it.
+    const bool widen_c = acc_size != tsize;
+    const bool needs_c_scratch = widen_c && (K > KC || reduce_count > 1);
+    void *C_scratch = needs_c_scratch
+        ? jitc_malloc(AllocType::HostAsync, (size_t) M * N * acc_size)
+        : nullptr;
+
+    const uint32_t cores = pool_size();
+
     for (uint32_t b = 0; b < grid_count; ++b) {
         // Decode grid index into per-operand byte offsets for A / B.
         size_t a_off = 0, b_off = 0;
@@ -583,32 +598,43 @@ void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
         }
         const void *A_b = (const uint8_t *) A + a_off * tsize;
         const void *B_b = (const uint8_t *) B + b_off * tsize;
-        void *C_b = (uint8_t *) C + (size_t) b * c_batch_stride * tsize;
+        void *C_b_final = (uint8_t *) C + (size_t) b * c_batch_stride * tsize;
+        // Kernel target for partial sums: the float scratch for the
+        // multi-pass half case (reused across grid elements since
+        // ``first=(rb==0 && pc==0)`` zero-inits the tile), ``nullptr``
+        // for the single-pass half case (the kernel keeps the float
+        // accumulator on the stack), and ``C`` itself otherwise.
+        void *C_b = widen_c ? C_scratch : C_b_final;
 
-        // Two-phase sweep per K segment:
-        //   (1) parallel pack of B slabs into the shared ``packed_B``;
-        //   (2) parallel row-slab compute that packs its own A strip
-        //       and sweeps all column slabs (bulk + edge) in one go.
-        //
-        // Ordering: reduce (outermost) -> jc panel -> pc K-segment.
-        // The launcher decodes reduce-dim offsets here, so the
-        // lambdas capture already-offset ``A_r`` / ``B_r`` pointers.
+        // Phase 2 shards over both row slabs and column chunks so
+        // small-M shapes still keep every core busy. With ``jc``
+        // outermost, the last ``(rb, pc)`` pass of each panel is
+        // the tile's final write, which the widen path narrows
+        // directly into ``C_b_final``.
         GemmReduce reduce_base = gemm_reduce_slice(batch_eff, reduce_count);
 
-        for (uint32_t rb = 0; rb < reduce_count; ++rb) {
-            size_t ra_off = 0, rb_off = 0;
-            gemm_reduce_decode(reduce_base, rb, ra_off, rb_off);
-            const void *A_r = (const uint8_t *) A_b + ra_off * tsize;
-            const void *B_r = (const uint8_t *) B_b + rb_off * tsize;
+        for (uint32_t jc = 0; jc < N; jc += NC) {
+            const uint32_t n_panel = std::min(NC, N - jc);
+            const uint32_t panel_slabs = (n_panel + NR - 1) / NR;
+            const uint32_t panel_tail  = n_panel % NR;
 
-            for (uint32_t jc = 0; jc < N; jc += NC) {
-                const uint32_t n_panel = std::min(NC, N - jc);
-                const uint32_t panel_slabs = (n_panel + NR - 1) / NR;
-                const uint32_t panel_tail  = n_panel % NR;
+            const uint32_t j_chunks = std::min(
+                panel_slabs, (cores + row_slabs - 1) / row_slabs);
+            const uint32_t chunk_slabs =
+                (panel_slabs + j_chunks - 1) / j_chunks;
+
+            for (uint32_t rb = 0; rb < reduce_count; ++rb) {
+                size_t ra_off = 0, rb_off = 0;
+                gemm_reduce_decode(reduce_base, rb, ra_off, rb_off);
+                const void *A_r = (const uint8_t *) A_b + ra_off * tsize;
+                const void *B_r = (const uint8_t *) B_b + rb_off * tsize;
+                const bool last_rb = (rb + 1 == reduce_count);
 
                 for (uint32_t pc = 0; pc < K; pc += KC) {
                     const uint32_t kc_len = std::min(KC, K - pc);
                     const bool first = (rb == 0 && pc == 0);
+                    const bool last_pc = (pc + kc_len == K);
+                    const bool narrow_store = widen_c && last_rb && last_pc;
 
                     // Phase 1: parallel pack of B slabs into packed_B.
                     GemmPackBFn fn_pack_b = d.pack_b;
@@ -625,24 +651,38 @@ void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
                         },
                         panel_slabs * kc_len * NR, panel_slabs);
 
-                    // Phase 2: parallel microtile-row sweep (bulk + edge).
+                    // Phase 2: parallel microtile-row sweep, sharded
+                    // over ``(row_slab, col_chunk)``. Empty tail
+                    // chunks (``s_lo >= s_hi``) short-circuit out.
                     GemmRowSweepFn fn_row = d.row_sweep;
                     submit_cpu(
                         KernelType::Other, this->recording_mode,
-                        [fn_row, A_r, packed_B, C_b, M, N, K, jc, pc,
-                         kc_len, panel_slabs, panel_tail, first, MR]
+                        [fn_row, A_r, packed_B, C_b, C_b_final, M, N, K,
+                         jc, pc, kc_len, panel_slabs, panel_tail,
+                         chunk_slabs, j_chunks, first, narrow_store, MR]
                         (uint32_t idx) {
-                            fn_row(A_r, packed_B, C_b, M, N, K,
-                                   idx * MR, jc, pc, kc_len,
-                                   panel_slabs, panel_tail, first);
+                            uint32_t r = idx / j_chunks;
+                            uint32_t c = idx % j_chunks;
+                            uint32_t s_lo = c * chunk_slabs;
+                            uint32_t s_hi = std::min(s_lo + chunk_slabs,
+                                                     panel_slabs);
+                            if (s_lo >= s_hi)
+                                return;
+                            fn_row(A_r, packed_B, C_b, C_b_final, M, N, K,
+                                   r * MR, jc, pc, kc_len,
+                                   panel_slabs, panel_tail,
+                                   s_lo, s_hi, first, narrow_store);
                         },
-                        row_slabs * panel_slabs * MR * NR, row_slabs);
+                        row_slabs * panel_slabs * MR * NR,
+                        row_slabs * j_chunks);
                 }
             }
         }
     }
 
     jitc_free(packed_B);
+    if (needs_c_scratch)
+        jitc_free(C_scratch);
 }
 
 uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
