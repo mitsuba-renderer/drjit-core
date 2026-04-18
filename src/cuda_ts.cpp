@@ -450,35 +450,46 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
 
     const Device &dev = state.devices[device];
 
-    // Size-aware tile selection: largest BM whose alignment holds, whose
-    // tile is at least partly covered along one output axis, and whose
-    // grid covers at least one SM wave. BM=8 (V=1) is always alignment-
-    // compatible and serves as the last-resort fallback for tiny or
-    // odd-shaped problems.
+    // Iterate BM from smallest to largest. A value of BM is valid if
+    // alignment holds and grid_y fits within CUDA's gridDim.y cap. The
+    // smallest valid value of BM serves as the fallback. Among valid
+    // values we prefer a larger BM, but only when BM stays below twice
+    // the smaller of M and N. Otherwise the per-block tile covers
+    // mostly zero-padded lanes on the short axis and wastes compute.
+    // We also require the grid to contain at least one block per SM,
+    // though several blocks per SM are generally preferable for
+    // occupancy.
     const uint32_t target_blocks = dev.sm_count;
+    const uint32_t grid_y_cap    = 65535u;
 
-    uint32_t bm = 8, tile_idx = 0;
-    for (int l = 3; l >= 0; --l) {
-        uint32_t bm_try = 8u << l;  // 64, 32, 16, 8
-        uint32_t v = vec_width(bm_try);
+    uint32_t bm = 0, tile_idx = 0;
+    for (int l = 0; l <= 3; ++l) {
+        uint32_t bm_try = 8u << l;  // 8, 16, 32, 64
+        uint32_t v      = vec_width(bm_try);
         if (a_inner % v || b_inner % v || (N % v))
             continue;
-
-        // Skip tiles where both output dims are smaller than the tile:
-        // the block then wastes most of its compute on the non-interior
-        // (bounds-checked) path, and a smaller BM with higher coverage
-        // is strictly better.
-        if (M < bm_try && N < bm_try)
+        if (ceil_div(M, bm_try) > grid_y_cap)
             continue;
 
-        uint32_t grid = ceil_div(M, bm_try) * ceil_div(N, bm_try) *
-                        grid_count;
-        if (grid >= target_blocks || bm_try == 8) {
+        if (bm == 0) {
             bm = bm_try;
             tile_idx = (uint32_t) l;
-            break;
+        }
+
+        uint32_t small_dim = M < N ? M : N;
+        bool oversized = bm_try >= 2 * small_dim;
+        uint64_t grid  = (uint64_t) ceil_div(M, bm_try) *
+                         ceil_div(N, bm_try) * grid_count;
+        if (!oversized && grid >= target_blocks) {
+            bm = bm_try;
+            tile_idx = (uint32_t) l;
         }
     }
+
+    if (bm == 0)
+        jitc_raise("jit_batched_gemm(): no compatible tile for M=%u, N=%u: "
+                   "alignment or gridDim.y cap (%u) cannot be satisfied.",
+                   M, N, grid_y_cap);
 
     CUfunction func = jitc_cuda_gemm[(int) vt_kernel][tile_idx][dev.id];
     if (!func)
