@@ -79,7 +79,70 @@ void jitc_batched_gemm(JitBackend backend, VarType type, bool At, bool Bt,
     if (batch && batch->n_bdims + batch->n_rdims > DRJIT_GEMM_MAX_BDIMS)
         jitc_raise("jit_batched_gemm(): n_bdims + n_rdims exceeds "
                    "DRJIT_GEMM_MAX_BDIMS.");
-    thread_state(backend)->batched_gemm(type, At, Bt, M, N, K, batch, A, B, C);
+
+    // Beyond pruning trivial (``extent == 1``) dimensions, some batch
+    // shapes are mathematically equivalent to a non-batched (or
+    // less-batched) GEMM whose ``M`` or ``K`` dimension has been
+    // enlarged: the per-batch matrices already lie in memory as if
+    // they were a single larger matrix, so the batch dimension can be
+    // folded away by adjusting ``M`` or ``K``.
+    //
+    // Two folds are valid:
+    //
+    // (1) Fold a grid dimension into ``M``, available when ``At`` is
+    //     false. Required: ``b_stride == 0`` (the same ``B`` is reused
+    //     for every grid step) and ``a_stride == M*K`` (per-step ``A``
+    //     matrices are contiguous, concatenated along their first
+    //     axis). Output ``C`` is already laid out as ``E`` consecutive
+    //     ``(M, N)`` blocks in memory, which is bit-identical to a
+    //     single ``(E*M, N)`` matrix in row-major order, so no data
+    //     has to move.
+    //
+    // (2) Fold a reduce dimension into ``K``, available when ``At`` is
+    //     true and ``Bt`` is false. Required: ``a_stride == K*M`` and
+    //     ``b_stride == K*N`` (each per-reduce slab is the contiguous
+    //     ``(K, M)`` / ``(K, N)`` slab the kernel expects). The
+    //     reduce-dim sum ``sum_r A[r]^T @ B[r]`` then equals one
+    //     larger GEMM whose operands have been concatenated along the
+    //     ``K`` axis.
+    //
+    // Mirrored folds (folding a grid dim into ``N``, or folding a
+    // reduce dim under ``At == false``) are not performed: the output
+    // layout always concatenates along the outermost batch axis, which
+    // lines up with ``M`` but not ``N``, and the reduce-fold geometry
+    // only works when ``A``'s ``K`` axis is contiguous in memory.
+    GemmBatch b = batch ? *batch : GemmBatch{};
+    auto drop = [&](uint32_t d) {
+        for (uint32_t i = d; i + 1 < b.n_bdims + b.n_rdims; ++i) {
+            b.extent[i]   = b.extent[i + 1];
+            b.a_stride[i] = b.a_stride[i + 1];
+            b.b_stride[i] = b.b_stride[i + 1];
+        }
+        if (d < b.n_bdims) b.n_bdims--;
+        else               b.n_rdims--;
+    };
+
+    for (uint32_t d = 0; d < b.n_bdims + b.n_rdims; )
+        if (b.extent[d] == 1) drop(d); else ++d;
+
+    while (!At && b.n_bdims > 0 &&
+           b.b_stride[0] == 0 &&
+           (uint64_t) b.a_stride[0] == (uint64_t) M * K &&
+           (uint64_t) M * b.extent[0] <= UINT32_MAX) {
+        M *= b.extent[0];
+        drop(0);
+    }
+
+    while (At && !Bt && b.n_rdims > 0 &&
+           (uint64_t) b.a_stride[b.n_bdims] == (uint64_t) K * M &&
+           (uint64_t) b.b_stride[b.n_bdims] == (uint64_t) K * N &&
+           (uint64_t) K * b.extent[b.n_bdims] <= UINT32_MAX) {
+        K *= b.extent[b.n_bdims];
+        drop(b.n_bdims);
+    }
+
+    const GemmBatch *b_eff = (b.n_bdims || b.n_rdims) ? &b : nullptr;
+    thread_state(backend)->batched_gemm(type, At, Bt, M, N, K, b_eff, A, B, C);
 }
 
 /// 'All' reduction for boolean arrays (internal)
