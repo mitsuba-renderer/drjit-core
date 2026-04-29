@@ -453,7 +453,7 @@ void jitc_cuda_set_device(int device_id) {
     }
 }
 
-void jitc_sync_thread(ThreadState *ts) {
+void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
     if (!ts)
         return;
 
@@ -464,8 +464,12 @@ void jitc_sync_thread(ThreadState *ts) {
     if (ts->backend == JitBackend::CUDA) {
         scoped_set_context guard(ts->context);
         CUstream stream = ts->stream;
-        unlock_guard guard_2(state.lock);
-        cuda_check(cuStreamSynchronize(stream));
+        if (hold_lock) {
+            cuda_check(cuStreamSynchronize(stream));
+        } else {
+            unlock_guard guard_2(state.lock);
+            cuda_check(cuStreamSynchronize(stream));
+        }
     } else {
         Task *task = jitc_task;
         if (!task)
@@ -479,7 +483,9 @@ void jitc_sync_thread(ThreadState *ts) {
          * be shared across these tasks
          */
         scoped_reset_thread_state ts_guard(ts);
-        {
+        if (hold_lock) {
+            task_wait(task);
+        } else {
             unlock_guard guard(state.lock);
             task_wait(task);
         }
@@ -492,9 +498,9 @@ void jitc_sync_thread(ThreadState *ts) {
 }
 
 /// Wait for all computation on the current stream to finish
-void jitc_sync_thread() {
-    jitc_sync_thread(thread_state_cuda);
-    jitc_sync_thread(thread_state_llvm);
+void jitc_sync_thread(bool hold_lock) {
+    jitc_sync_thread(thread_state_cuda, hold_lock);
+    jitc_sync_thread(thread_state_llvm, hold_lock);
 }
 
 /// Wait for all computation on the current device to finish

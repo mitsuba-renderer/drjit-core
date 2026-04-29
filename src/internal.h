@@ -1018,11 +1018,11 @@ extern void jitc_shutdown(int light);
 /// Set the currently active device & stream
 extern void jitc_cuda_set_device(int device);
 
-/// Wait for all computation on the current stream to finish
-extern void jitc_sync_thread();
-
-/// Wait for all computation on the current stream to finish
-extern void jitc_sync_thread(ThreadState *stream);
+/// Wait for all computation on the current stream to finish. If \c hold_lock
+/// is true, \c state.lock is kept through the wait, preventing other threads
+/// from enqueuing new work in the meantime.
+extern void jitc_sync_thread(bool hold_lock = false);
+extern void jitc_sync_thread(ThreadState *stream, bool hold_lock = false);
 
 /// Wait for all computation on the current device to finish
 extern void jitc_sync_device();
