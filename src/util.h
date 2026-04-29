@@ -91,9 +91,10 @@ extern uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t si
                               uint32_t *out);
 
 /// Compute a permutation to reorder an integer array into discrete groups
-extern uint32_t jitc_mkperm(JitBackend backend, const uint32_t *values, uint32_t size,
-                            uint32_t bucket_count, uint32_t *perm,
-                            uint32_t *offsets);
+extern uint32_t jitc_block_mkperm(JitBackend backend, const uint32_t *values,
+                                    uint32_t size, uint32_t block_size,
+                                    uint32_t bucket_count, uint32_t *perm,
+                                    uint32_t *offsets);
 
 /// Perform a synchronous copy operation
 extern void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size);

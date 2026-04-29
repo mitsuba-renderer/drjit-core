@@ -18,13 +18,13 @@ uint32_t jitc_cuda_arg_limit = 0;
 static CUmodule *jitc_cuda_module = nullptr;
 
 CUfunction *jitc_cuda_fill_64 = nullptr;
-CUfunction *jitc_cuda_mkperm_phase_1_tiny = nullptr;
-CUfunction *jitc_cuda_mkperm_phase_1_small = nullptr;
-CUfunction *jitc_cuda_mkperm_phase_1_large = nullptr;
-CUfunction *jitc_cuda_mkperm_phase_3 = nullptr;
-CUfunction *jitc_cuda_mkperm_phase_4_tiny = nullptr;
-CUfunction *jitc_cuda_mkperm_phase_4_small = nullptr;
-CUfunction *jitc_cuda_mkperm_phase_4_large = nullptr;
+CUfunction *jitc_cuda_block_mkperm_phase_1_tiny = nullptr;
+CUfunction *jitc_cuda_block_mkperm_phase_1_small = nullptr;
+CUfunction *jitc_cuda_block_mkperm_phase_1_large = nullptr;
+CUfunction *jitc_cuda_block_mkperm_phase_3 = nullptr;
+CUfunction *jitc_cuda_block_mkperm_phase_4_tiny = nullptr;
+CUfunction *jitc_cuda_block_mkperm_phase_4_small = nullptr;
+CUfunction *jitc_cuda_block_mkperm_phase_4_large = nullptr;
 CUfunction *jitc_cuda_transpose = nullptr;
 CUfunction *jitc_cuda_compress_small = nullptr;
 CUfunction *jitc_cuda_compress_large = nullptr;
@@ -283,13 +283,13 @@ bool jitc_cuda_init() {
             cuda_check(cuModuleGetFunction(&jitc_cuda_##name[i], m, #name))
 
         LOAD(fill_64);
-        LOAD(mkperm_phase_1_tiny);
-        LOAD(mkperm_phase_1_small);
-        LOAD(mkperm_phase_1_large);
-        LOAD(mkperm_phase_3);
-        LOAD(mkperm_phase_4_tiny);
-        LOAD(mkperm_phase_4_small);
-        LOAD(mkperm_phase_4_large);
+        LOAD(block_mkperm_phase_1_tiny);
+        LOAD(block_mkperm_phase_1_small);
+        LOAD(block_mkperm_phase_1_large);
+        LOAD(block_mkperm_phase_3);
+        LOAD(block_mkperm_phase_4_tiny);
+        LOAD(block_mkperm_phase_4_small);
+        LOAD(block_mkperm_phase_4_large);
         LOAD(transpose);
         LOAD(compress_small);
         LOAD(compress_large);
@@ -305,10 +305,10 @@ bool jitc_cuda_init() {
                 shared_memory_bytes))
 
         // Max out the amount of shared memory available to the following kernels
-        MAXIMIZE_SHARED(mkperm_phase_1_tiny);
-        MAXIMIZE_SHARED(mkperm_phase_1_small);
-        MAXIMIZE_SHARED(mkperm_phase_4_tiny);
-        MAXIMIZE_SHARED(mkperm_phase_4_small);
+        MAXIMIZE_SHARED(block_mkperm_phase_1_tiny);
+        MAXIMIZE_SHARED(block_mkperm_phase_1_small);
+        MAXIMIZE_SHARED(block_mkperm_phase_4_tiny);
+        MAXIMIZE_SHARED(block_mkperm_phase_4_small);
 
         #undef MAXIMIZE_SHARED
 
@@ -453,13 +453,13 @@ void jitc_cuda_shutdown() {
     #define Z(x) do { free(x); x = nullptr; } while (0)
 
     Z(jitc_cuda_fill_64);
-    Z(jitc_cuda_mkperm_phase_1_tiny);
-    Z(jitc_cuda_mkperm_phase_1_small);
-    Z(jitc_cuda_mkperm_phase_1_large);
-    Z(jitc_cuda_mkperm_phase_3);
-    Z(jitc_cuda_mkperm_phase_4_tiny);
-    Z(jitc_cuda_mkperm_phase_4_small);
-    Z(jitc_cuda_mkperm_phase_4_large);
+    Z(jitc_cuda_block_mkperm_phase_1_tiny);
+    Z(jitc_cuda_block_mkperm_phase_1_small);
+    Z(jitc_cuda_block_mkperm_phase_1_large);
+    Z(jitc_cuda_block_mkperm_phase_3);
+    Z(jitc_cuda_block_mkperm_phase_4_tiny);
+    Z(jitc_cuda_block_mkperm_phase_4_small);
+    Z(jitc_cuda_block_mkperm_phase_4_large);
     Z(jitc_cuda_transpose);
     Z(jitc_cuda_compress_small);
     Z(jitc_cuda_compress_large);

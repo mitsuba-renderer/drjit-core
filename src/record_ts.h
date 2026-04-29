@@ -45,7 +45,7 @@ enum class OpType {
     ReduceExpanded,
     Compress,
     MemcpyAsync,
-    Mkperm,
+    BlockMkperm,
     BlockReduce,
     BlockPrefixReduce,
     ReduceDot,
@@ -91,10 +91,12 @@ struct Operation {
             bool reverse;
         } prefix_reduce;
 
-        /// Bucket count for the mkperm operation. The function has to be
-        /// re-recorded when the bucket count changes. Therefore this should not
+        /// Parameters for the block_mkperm operation. These must not
         /// depend on the width of any variable.
-        uint32_t bucket_count;
+        struct {
+            uint32_t bucket_count;
+            uint32_t block_size;
+        } block_mkperm;
 
         /// Matrix dimensions and transpose flags for a ``BatchedGemm``
         /// operation. ``batch_idx`` indexes into ``Recording::gemm_batches``
@@ -333,7 +335,7 @@ struct Recording {
 
     int replay_memcpy_async(Operation &op);
 
-    int replay_mkperm(Operation &op);
+    int replay_block_mkperm(Operation &op);
 
     int replay_block_reduce(Operation &op);
 
@@ -440,9 +442,9 @@ public:
                       uint32_t *out) override;
 
     /// Compute a permutation to reorder an integer array into discrete groups
-    uint32_t mkperm(const uint32_t *values, uint32_t size,
-                    uint32_t bucket_count, uint32_t *perm,
-                    uint32_t *offsets) override;
+    uint32_t block_mkperm(const uint32_t *values, uint32_t size,
+                            uint32_t block_size, uint32_t bucket_count,
+                            uint32_t *perm, uint32_t *offsets) override;
 
     /// Perform a synchronous copy operation
     void memcpy(void *dst, const void *src, size_t size) override;
@@ -605,9 +607,9 @@ public:
     void record_memset_async(void *ptr, uint32_t size, uint32_t isize,
                              const void *src);
     void record_compress(const uint8_t *in, uint32_t size, uint32_t *out);
-    void record_mkperm(const uint32_t *values, uint32_t size,
-                       uint32_t bucket_count, uint32_t *perm,
-                       uint32_t *offsets);
+    void record_block_mkperm(const uint32_t *values, uint32_t size,
+                               uint32_t block_size, uint32_t bucket_count,
+                               uint32_t *perm, uint32_t *offsets);
     void record_block_reduce(VarType vt, ReduceOp op, uint32_t size,
                              uint32_t block_size, const void *in, void *out);
     void record_block_prefix_reduce(VarType vt, ReduceOp op, uint32_t size,

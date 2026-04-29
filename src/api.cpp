@@ -1066,10 +1066,13 @@ uint32_t jit_compress(JitBackend backend, const uint8_t *in, uint32_t size, uint
     return jitc_compress(backend, in, size, out);
 }
 
-uint32_t jit_mkperm(JitBackend backend, const uint32_t *values, uint32_t size,
-                    uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
+uint32_t jit_block_mkperm(JitBackend backend, const uint32_t *values,
+                           uint32_t size, uint32_t block_size,
+                           uint32_t bucket_count, uint32_t *perm,
+                           uint32_t *offsets) {
     lock_guard guard(state.lock);
-    return jitc_mkperm(backend, values, size, bucket_count, perm, offsets);
+    return jitc_block_mkperm(backend, values, size, block_size, bucket_count,
+                               perm, offsets);
 }
 
 uint32_t jit_registry_put(const char *variant, const char *domain, void *ptr) {

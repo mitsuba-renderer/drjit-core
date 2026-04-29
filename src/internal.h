@@ -742,9 +742,9 @@ struct ThreadState : public ThreadStateBase {
                               uint32_t *out) = 0;
 
     /// Compute a permutation to reorder an integer array into discrete groups
-    virtual uint32_t mkperm(const uint32_t *values, uint32_t size,
-                            uint32_t bucket_count, uint32_t *perm,
-                            uint32_t *offsets) = 0;
+    virtual uint32_t block_mkperm(const uint32_t *values, uint32_t size,
+                                    uint32_t block_size, uint32_t bucket_count,
+                                    uint32_t *perm, uint32_t *offsets) = 0;
 
     /// Perform a synchronous copy operation
     virtual void memcpy(void *dst, const void *src, size_t size) = 0;

@@ -761,85 +761,111 @@ uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
     return count_out;
 }
 
-static ProfilerRegion profiler_region_mkperm_phase_1("jit_mkperm_phase_1");
-static ProfilerRegion profiler_region_mkperm_phase_2("jit_mkperm_phase_2");
+static ProfilerRegion profiler_region_block_mkperm_phase_1("jit_block_mkperm_phase_1");
+static ProfilerRegion profiler_region_block_mkperm_phase_2("jit_block_mkperm_phase_2");
 
-uint32_t LLVMThreadState::mkperm(const uint32_t *ptr, uint32_t size,
-                                 uint32_t bucket_count, uint32_t *perm,
-                                 uint32_t *offsets) {
+uint32_t LLVMThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
+                                         uint32_t block_size,
+                                         uint32_t bucket_count, uint32_t *perm,
+                                         uint32_t *offsets) {
     if (size == 0)
         return 0;
     else if (unlikely(bucket_count == 0))
-        jitc_fail("jit_mkperm(): bucket_count cannot be zero!");
+        jitc_fail("jit_block_mkperm(): bucket_count cannot be zero!");
 
-    uint32_t blocks = 1, block_size = size, pool_size = ::pool_size();
+    // Number of independent sorting groups
+    uint32_t n_blocks = ceil_div(size, block_size);
 
-    if (pool_size > 1) {
+    // Split each sorting group into CPU tasks for parallelism
+    uint32_t tasks_per_group = 1,
+             task_size = block_size,
+             ps = ::pool_size();
+
+    if (ps > 1) {
         // Try to spread out uniformly over cores
-        blocks = pool_size * 4;
-        block_size = (size + blocks - 1) / blocks;
+        tasks_per_group = ps * 4;
+        task_size = (block_size + tasks_per_group - 1) / tasks_per_group;
 
-        // But don't make the blocks too small
-        block_size = std::max(jitc_llvm_block_size, block_size);
+        // But don't make the tasks too small
+        task_size = std::max(jitc_llvm_block_size, task_size);
 
-        // Finally re-adjust block count given the selected block size
-        blocks = (size + block_size - 1) / block_size;
+        // Re-adjust task count given the selected task size
+        tasks_per_group = (block_size + task_size - 1) / task_size;
     }
 
+    uint32_t total_tasks = n_blocks * tasks_per_group;
+
     jitc_log(Debug,
-            "jit_mkperm(" DRJIT_PTR
-            ", size=%u, bucket_count=%u, block_size=%u, blocks=%u)",
-            (uintptr_t) ptr, size, bucket_count, block_size, blocks);
+            "jit_block_mkperm(" DRJIT_PTR
+            ", size=%u, block_size=%u, bucket_count=%u, n_blocks=%u, "
+            "tasks_per_group=%u)",
+            (uintptr_t) ptr, size, block_size, bucket_count, n_blocks,
+            tasks_per_group);
 
     uint32_t **buckets =
-        (uint32_t **) jitc_malloc(AllocType::HostAsync, sizeof(uint32_t *) * blocks);
+        (uint32_t **) jitc_malloc(AllocType::HostAsync,
+                                  sizeof(uint32_t *) * total_tasks);
 
     uint32_t unique_count = 0;
 
-    // Phase 1
+    // Phase 1: build per-task histograms
     submit_cpu(
         KernelType::CallReduce,
         this->recording_mode,
-        [block_size, size, buckets, bucket_count, ptr](uint32_t index) {
-            ProfilerPhase profiler(profiler_region_mkperm_phase_1);
-            uint32_t start = index * block_size,
-                     end = std::min(start + block_size, size);
+        [task_size, block_size, size, buckets, bucket_count, ptr,
+         tasks_per_group](uint32_t index) {
+            ProfilerPhase profiler(profiler_region_block_mkperm_phase_1);
+
+            uint32_t group = index / tasks_per_group;
+            uint32_t task_in_group = index % tasks_per_group;
+            uint32_t group_start = group * block_size;
+            uint32_t start = group_start + task_in_group * task_size;
+            uint32_t end = std::min(start + task_size,
+                           std::min(group_start + block_size, size));
 
             size_t bsize = sizeof(uint32_t) * (size_t) bucket_count;
             uint32_t *buckets_local = (uint32_t *) malloc_check(bsize);
             memset(buckets_local, 0, bsize);
 
-             for (uint32_t i = start; i != end; ++i)
-                 buckets_local[ptr[i]]++;
+            for (uint32_t i = start; i != end; ++i)
+                buckets_local[ptr[i]]++;
 
-             buckets[index] = buckets_local;
+            buckets[index] = buckets_local;
         },
 
-        size, blocks
+        size, total_tasks
     );
 
-    // Local accumulation step
+    // Accumulation step: prefix sum the per-task histograms within each
+    // sorting group and (optionally) collect non-empty bucket offsets.
     submit_cpu(
         KernelType::CallReduce,
         this->recording_mode,
-        [bucket_count, blocks, buckets, offsets, &unique_count](uint32_t) {
-            uint32_t sum = 0, unique_count_local = 0;
-            for (uint32_t i = 0; i < bucket_count; ++i) {
-                uint32_t sum_local = 0;
-                for (uint32_t j = 0; j < blocks; ++j) {
-                    uint32_t value = buckets[j][i];
-                    buckets[j][i] = sum + sum_local;
-                    sum_local += value;
-                }
-                if (sum_local > 0) {
-                    if (offsets) {
+        [bucket_count, n_blocks, tasks_per_group, block_size, size, buckets,
+         offsets, &unique_count](uint32_t) {
+            uint32_t unique_count_local = 0;
+
+            for (uint32_t g = 0; g < n_blocks; ++g) {
+                uint32_t group_offset = 0;
+                bool single_group = (n_blocks == 1);
+                uint32_t group_start = g * block_size;
+
+                for (uint32_t i = 0; i < bucket_count; ++i) {
+                    uint32_t sum_local = 0;
+                    for (uint32_t j = 0; j < tasks_per_group; ++j) {
+                        uint32_t *bl = buckets[g * tasks_per_group + j];
+                        uint32_t value = bl[i];
+                        bl[i] = group_start + group_offset + sum_local;
+                        sum_local += value;
+                    }
+                    if (single_group && sum_local > 0 && offsets) {
                         offsets[unique_count_local*4] = i;
-                        offsets[unique_count_local*4 + 1] = sum;
+                        offsets[unique_count_local*4 + 1] = group_offset;
                         offsets[unique_count_local*4 + 2] = sum_local;
                         offsets[unique_count_local*4 + 3] = 0;
+                        unique_count_local++;
                     }
-                    unique_count_local++;
-                    sum += sum_local;
+                    group_offset += sum_local;
                 }
             }
 
@@ -852,15 +878,20 @@ uint32_t LLVMThreadState::mkperm(const uint32_t *ptr, uint32_t size,
     Task *local_task = jitc_task;
     task_retain(local_task);
 
-    // Phase 2
+    // Phase 2: write out permutation
     submit_cpu(
         KernelType::CallReduce,
         this->recording_mode,
-        [block_size, size, buckets, perm, ptr](uint32_t index) {
-            ProfilerPhase profiler(profiler_region_mkperm_phase_2);
+        [task_size, block_size, size, buckets, perm, ptr,
+         tasks_per_group](uint32_t index) {
+            ProfilerPhase profiler(profiler_region_block_mkperm_phase_2);
 
-            uint32_t start = index * block_size,
-                     end = std::min(start + block_size, size);
+            uint32_t group = index / tasks_per_group;
+            uint32_t task_in_group = index % tasks_per_group;
+            uint32_t group_start = group * block_size;
+            uint32_t start = group_start + task_in_group * task_size;
+            uint32_t end = std::min(start + task_size,
+                           std::min(group_start + block_size, size));
 
             uint32_t *buckets_local = buckets[index];
 
@@ -872,7 +903,7 @@ uint32_t LLVMThreadState::mkperm(const uint32_t *ptr, uint32_t size,
             free(buckets_local);
         },
 
-        size, blocks
+        size, total_tasks
     );
 
     // Free memory (happens asynchronously after the above stmt.)

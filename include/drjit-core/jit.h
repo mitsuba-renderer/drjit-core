@@ -2324,10 +2324,16 @@ extern JIT_EXPORT uint32_t jit_compress(JIT_ENUM JitBackend backend, const uint8
  *
  * Given an unsigned integer array \c values of size \c size with entries in
  * the range <tt>0 .. bucket_count - 1</tt>, compute a permutation that can be
- * used to reorder the inputs into a sorted (but non-stable) configuration.
- * When <tt>bucket_count</tt> is relatively small (e.g. < 10K), the
- * implementation is much more efficient than the alternative of actually
- * sorting the array.
+ * used to reorder the inputs into a sorted configuration.
+ *
+ * The operation independently sorts each contiguous group of \c block_size
+ * elements. The last group may be smaller if \c size is not a multiple of
+ * \c block_size. Pass <tt>block_size == size</tt> to sort the entire array
+ * as a single group.
+ *
+ * The "tiny" variant (bucket_count * warps_per_block fits in shared memory)
+ * produces a stable permutation. Other variants are stable within groups of
+ * 32 elements.
  *
  * \param perm
  *     The permutation is written to \c perm, which must point to a buffer in
@@ -2341,14 +2347,19 @@ extern JIT_EXPORT uint32_t jit_compress(JIT_ENUM JitBackend backend, const uint8
  *     quadruples <tt>(index, start, size, unused)<tt> where \c index is the
  *     bucket index, and \c start and \c end specify the associated entries of
  *     the \c perm array. The 'unused' field is padding for 16 byte alignment.
+ *     Only valid when <tt>block_size == size</tt>.
  *
  * \return
  *     When \c offsets != NULL, the function returns the number of unique
  *     values found in \c values. Otherwise, it returns zero.
  */
-extern JIT_EXPORT uint32_t jit_mkperm(JIT_ENUM JitBackend backend, const uint32_t *values,
-                                      uint32_t size, uint32_t bucket_count,
-                                      uint32_t *perm, uint32_t *offsets);
+extern JIT_EXPORT uint32_t jit_block_mkperm(JIT_ENUM JitBackend backend,
+                                              const uint32_t *values,
+                                              uint32_t size,
+                                              uint32_t block_size,
+                                              uint32_t bucket_count,
+                                              uint32_t *perm,
+                                              uint32_t *offsets);
 
 /// Helper data structure used to initialize the data block consumed by a vcall
 struct AggregationEntry {
@@ -2400,7 +2411,7 @@ struct CallBucket {
  * This function expects an array of integers, whose entries correspond to
  * pointers that have previously been registered by calling \ref
  * jit_registry_put() with domain \c (variant, domain).
- * It then invokes \ref jit_mkperm() to compute a permutation that reorders
+ * It then invokes \ref jit_block_mkperm() to compute a permutation that reorders
  * the array into coherent buckets. The buckets are returned using an array
  * of type \ref CallBucket, which contains both the resolved pointer address
  * (obtained via \ref jit_registry_get_ptr()) and the variable index of an
@@ -2486,7 +2497,7 @@ enum KernelType : uint32_t {
     /// Kernel responsible for a horizontal reduction operation (e.g. hsum)
     Reduce,
 
-    /// Permutation kernel produced by \ref jit_mkperm()
+    /// Permutation kernel produced by \ref jit_block_mkperm()
     CallReduce,
 
     /// Any other kernel
