@@ -138,7 +138,7 @@
 
 const char *op_type_name[(int) OpType::Count]{
     "Barrier",        "KernelLaunch",      "MemsetAsync",          "Expand",
-    "ReduceExpanded", "Compress",          "MemcpyAsync",          "Mkperm",
+    "ReduceExpanded", "Compress",          "MemcpyAsync",          "BlockMkperm",
     "BlockReduce",    "BlockPrefixReduce", "ReduceDot",            "BatchedGemm",
     "Aggregate",      "OpaqueWidth",       "InitUndefined",
     "BoolReduceBoolAsync4", "Free"
@@ -292,7 +292,7 @@ static ProfilerRegion pr_reduce_expanded("ReduceExpanded");
 static ProfilerRegion pr_expand("Expand");
 static ProfilerRegion pr_compress("Compress");
 static ProfilerRegion pr_memcpy_async("MemcpyAsync");
-static ProfilerRegion pr_mkperm("Mkperm");
+static ProfilerRegion pr_block_mkperm("BlockMkperm");
 static ProfilerRegion pr_block_reduce("BlockReduce");
 static ProfilerRegion pr_block_prefix_reduce("BlockPrefixReduce");
 static ProfilerRegion pr_reduce_dot("ReduceDot");
@@ -373,8 +373,8 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 if (!replay_memcpy_async(op))
                     return false;
                 break;
-            case OpType::Mkperm:
-                if (!replay_mkperm(op))
+            case OpType::BlockMkperm:
+                if (!replay_block_mkperm(op))
                     return false;
                 break;
             case OpType::BlockReduce:
@@ -1540,28 +1540,34 @@ int Recording::replay_compress(Operation &op) {
 }
 
 /// Compute a permutation to reorder an integer array into discrete groups
-uint32_t RecordThreadState::mkperm(const uint32_t *values, uint32_t size,
-                                   uint32_t bucket_count, uint32_t *perm,
-                                   uint32_t *offsets) {
+uint32_t RecordThreadState::block_mkperm(const uint32_t *values,
+                                           uint32_t size, uint32_t block_size,
+                                           uint32_t bucket_count,
+                                           uint32_t *perm, uint32_t *offsets) {
     if (!paused()) {
         try {
-            record_mkperm(values, size, bucket_count, perm, offsets);
+            record_block_mkperm(values, size, block_size, bucket_count,
+                                  perm, offsets);
         } catch (...) {
             record_exception();
         }
     }
     pause_scope pause(this);
-    return m_internal->mkperm(values, size, bucket_count, perm, offsets);
+    return m_internal->block_mkperm(values, size, block_size, bucket_count,
+                                      perm, offsets);
 }
 
-void RecordThreadState::record_mkperm(const uint32_t *values, uint32_t size,
-                                      uint32_t bucket_count, uint32_t *perm,
-                                      uint32_t *offsets) {
+void RecordThreadState::record_block_mkperm(const uint32_t *values,
+                                              uint32_t size,
+                                              uint32_t block_size,
+                                              uint32_t bucket_count,
+                                              uint32_t *perm,
+                                              uint32_t *offsets) {
     if (has_variable(values)) {
         jitc_log(LogLevel::Debug,
-                 "record(): mkperm(values=%p, size=%u, "
-                 "bucket_count=%u, perm=%p, offsets=%p)",
-                 values, size, bucket_count, perm, offsets);
+                 "record(): block_mkperm(values=%p, size=%u, "
+                 "block_size=%u, bucket_count=%u, perm=%p, offsets=%p)",
+                 values, size, block_size, bucket_count, perm, offsets);
 
         uint32_t start = (uint32_t) m_recording.dependencies.size();
         add_in_param(values);
@@ -1570,16 +1576,16 @@ void RecordThreadState::record_mkperm(const uint32_t *values, uint32_t size,
         uint32_t end = (uint32_t) m_recording.dependencies.size();
 
         Operation op;
-        op.type             = OpType::Mkperm;
+        op.type             = OpType::BlockMkperm;
         op.dependency_range = std::pair(start, end);
         op.size             = size;
-        op.bucket_count     = bucket_count;
+        op.block_mkperm   = { bucket_count, block_size };
         m_recording.operations.push_back(op);
     }
 }
 
-int Recording::replay_mkperm(Operation &op) {
-    ProfilerPhase profiler(pr_mkperm);
+int Recording::replay_block_mkperm(Operation &op) {
+    ProfilerPhase profiler(pr_block_mkperm);
 
     uint32_t dependency_index = op.dependency_range.first;
     AccessInfo values_info     = dependencies[dependency_index];
@@ -1591,21 +1597,23 @@ int Recording::replay_mkperm(Operation &op) {
     ReplayVariable &offsets_var = replay_variables[offsets_info.slot];
 
     uint32_t size         = values_var.size(values_info.vtype);
-    uint32_t bucket_count = op.bucket_count;
+    uint32_t bucket_count = op.block_mkperm.bucket_count;
+    uint32_t block_size   = op.block_mkperm.block_size;
 
     perm_var.alloc(backend, size, perm_info.vtype);
 
     offsets_var.alloc(backend, bucket_count * 4 + 1, offsets_info.vtype);
 
     jitc_log(LogLevel::Debug,
-             "replay(): mkperm(values=%p, size=%u, "
-             "bucket_count=%u, perm=%p, offsets=%p)",
-             values_var.data, size, bucket_count, perm_var.data,
+             "replay(): block_mkperm(values=%p, size=%u, "
+             "block_size=%u, bucket_count=%u, perm=%p, offsets=%p)",
+             values_var.data, size, block_size, bucket_count, perm_var.data,
              offsets_var.data);
 
     if (!dry_run)
-        ts->mkperm((uint32_t *) values_var.data, size, bucket_count,
-                   (uint32_t *) perm_var.data, (uint32_t *) offsets_var.data);
+        ts->block_mkperm((uint32_t *) values_var.data, size, block_size,
+                           bucket_count, (uint32_t *) perm_var.data,
+                           (uint32_t *) offsets_var.data);
 
     return true;
 }
@@ -2601,9 +2609,9 @@ struct DisabledThreadState : ThreadState {
         record_exception();
         return 0;
     }
-    uint32_t mkperm(const uint32_t * /*values*/, uint32_t /*size*/,
-                    uint32_t /*bucket_count*/, uint32_t * /*perm*/,
-                    uint32_t * /*offsets*/) override {
+    uint32_t block_mkperm(const uint32_t * /*values*/, uint32_t /*size*/,
+                            uint32_t /*block_size*/, uint32_t /*bucket_count*/,
+                            uint32_t * /*perm*/, uint32_t * /*offsets*/) override {
         record_exception();
         return 0;
     }

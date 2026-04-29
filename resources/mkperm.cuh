@@ -1,6 +1,6 @@
 /*
-    kernels/mkperm.cuh -- Efficient CUDA kernels for sorting arrays
-    with low-valued entries
+    kernels/mkperm.cuh -- Efficient CUDA kernels for permuting arrays
+    into groups of identical values
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -90,47 +90,58 @@ inline __device__ uint32_t reduce_atomic(uint32_t active, uint32_t value, uint32
 /**
  * \brief Generate a histogram of values in the range (0 .. bucket_count - 1).
  *
- * "Tiny" variant, which uses shared memory atomics to produce a stable
- * permutation. Handles up to 512 buckets with 64KiB of shared memory. Should be
- * combined with \ref mkperm_phase_4_tiny.
+ * "Tiny" variant, which uses per-warp shared memory histograms to produce a
+ * stable permutation. Handles up to 512 buckets with 64KiB of shared memory.
+ * Should be combined with \ref block_mkperm_phase_4_tiny.
+ *
+ * Each warp processes a contiguous range of elements so that warp ordering in
+ * the subsequent prefix sum matches element ordering (required for stability).
  */
-KERNEL void mkperm_phase_1_tiny(const uint32_t *values,
-                                uint32_t *buckets,
-                                uint32_t size,
-                                uint32_t size_per_block,
-                                uint32_t bucket_count) {
+KERNEL void block_mkperm_phase_1_tiny(const uint32_t *values,
+                                        uint32_t *buckets,
+                                        uint32_t size,
+                                        uint32_t size_per_block,
+                                        uint32_t bucket_count,
+                                        uint32_t block_size,
+                                        uint32_t blocks_per_group) {
     uint32_t *shared = SharedMemory<uint32_t>::get();
 
     uint32_t thread_id    = threadIdx.x,
              thread_count = blockDim.x,
-             block_start  = blockIdx.x * size_per_block,
-             block_end    = block_start + size_per_block,
              warp_count   = thread_count / warpSize,
-             warp_id      = thread_id / warpSize;
+             warp_id      = thread_id / warpSize,
+             lane_id      = thread_id & (warpSize - 1);
+
+    // 2D grid: blockIdx.x = sorting group, blockIdx.y = sub-block within group
+    uint32_t flat_block_idx = blockIdx.x * blocks_per_group + blockIdx.y,
+             block_start    = blockIdx.x * block_size + blockIdx.y * size_per_block,
+             block_end      = min(block_start + size_per_block,
+                                  min((blockIdx.x + 1) * block_size, size));
 
     for (uint32_t i = thread_id; i < bucket_count * warp_count; i += thread_count)
         shared[i] = 0;
-
     __syncthreads();
 
     uint32_t *shared_warp = shared + warp_id * bucket_count;
 
-    for (uint32_t i = block_start + thread_id; i < block_end; i += thread_count) {
-        bool active = i < size;
+    // Warp-aligned range: all 32 lanes must enter __ballot_sync together
+    uint32_t total = block_end > block_start ? block_end - block_start : 0u;
+    uint32_t elems_per_warp = ((total + warp_count - 1) / warp_count
+                                + warpSize - 1) & ~(warpSize - 1);
+    uint32_t warp_start = block_start + warp_id * elems_per_warp;
+    uint32_t warp_end   = min(warp_start + elems_per_warp, block_end);
 
-        /* This assumes that the whole warp does an iteration or exits
-           (i.e. size_per_block must be a multiple of 32) */
+    for (uint32_t i = warp_start + lane_id; i < warp_start + elems_per_warp;
+         i += warpSize) {
+        bool active = (i < warp_end) && (i < size);
         uint32_t active_mask = __ballot_sync(0xFFFFFFFF, active);
-
         if (active)
             reduce(active_mask, values[i], shared_warp);
-
         __syncwarp();
     }
-
     __syncthreads();
 
-    uint32_t *out = buckets + blockIdx.x * bucket_count * warp_count;
+    uint32_t *out = buckets + flat_block_idx * bucket_count * warp_count;
     for (uint32_t i = thread_id; i < bucket_count * warp_count; i += thread_count)
         out[i] = shared[i];
 }
@@ -143,39 +154,42 @@ KERNEL void mkperm_phase_1_tiny(const uint32_t *values,
  * unstable due to scheduling variations when performing atomic operations
  * (although some effort is made to keep it stable within each group of 32
  * elements by performing an intra-warp reduction.) Should be combined with
- * \ref mkperm_phase_4_small.
+ * \ref block_mkperm_phase_4_small.
  */
-KERNEL void mkperm_phase_1_small(const uint32_t *values,
-                                 uint32_t *buckets,
-                                 uint32_t size,
-                                 uint32_t size_per_block,
-                                 uint32_t bucket_count) {
+KERNEL void block_mkperm_phase_1_small(const uint32_t *values,
+                                         uint32_t *buckets,
+                                         uint32_t size,
+                                         uint32_t size_per_block,
+                                         uint32_t bucket_count,
+                                         uint32_t block_size,
+                                         uint32_t blocks_per_group) {
     uint32_t *shared = SharedMemory<uint32_t>::get();
-
     uint32_t thread_id    = threadIdx.x,
-             thread_count = blockDim.x,
-             block_start  = blockIdx.x * size_per_block,
-             block_end    = block_start + size_per_block;
+             thread_count = blockDim.x;
+
+    uint32_t flat_block_idx = blockIdx.x * blocks_per_group + blockIdx.y,
+             block_start    = blockIdx.x * block_size + blockIdx.y * size_per_block,
+             block_end      = min(block_start + size_per_block,
+                                  min((blockIdx.x + 1) * block_size, size));
 
     for (uint32_t i = thread_id; i < bucket_count; i += thread_count)
         shared[i] = 0;
-
     __syncthreads();
 
-    for (uint32_t i = block_start + thread_id; i < block_end; i += thread_count) {
-        bool active = i < size;
-
-        /* This assumes that the whole warp does an iteration or exits
-           (i.e. size_per_block must be a multiple of 32) */
+    // Warp-aligned loop bound: all 32 lanes must enter __ballot_sync together
+    uint32_t total = block_end > block_start ? block_end - block_start : 0u;
+    uint32_t block_end_aligned = block_start
+                               + ((total + warpSize - 1) & ~(warpSize - 1));
+    for (uint32_t i = block_start + thread_id; i < block_end_aligned;
+         i += thread_count) {
+        bool active = (i < block_end) && (i < size);
         uint32_t active_mask = __ballot_sync(0xFFFFFFFF, active);
-
         if (active)
             reduce_atomic(active_mask, values[i], shared);
     }
-
     __syncthreads();
 
-    uint32_t *out = buckets + blockIdx.x * bucket_count;
+    uint32_t *out = buckets + flat_block_idx * bucket_count;
     for (uint32_t i = thread_id; i < bucket_count; i += thread_count)
         out[i] = shared[i];
 }
@@ -188,37 +202,43 @@ KERNEL void mkperm_phase_1_small(const uint32_t *values,
  * memory variants). The permutation can be somewhat unstable due to scheduling
  * variations when performing atomic operations (although some effort is made
  * to keep it stable within each group of 32 elements by performing an
- * intra-warp reduction.) Should be combined with \ref mkperm_phase_4_large.
+ * intra-warp reduction.) Should be combined with \ref block_mkperm_phase_4_large.
  */
-KERNEL void mkperm_phase_1_large(const uint32_t *values,
-                                 uint32_t *buckets_, uint32_t size,
-                                 uint32_t size_per_block, uint32_t bucket_count) {
+KERNEL void block_mkperm_phase_1_large(const uint32_t *values,
+                                         uint32_t *buckets_, uint32_t size,
+                                         uint32_t size_per_block,
+                                         uint32_t bucket_count,
+                                         uint32_t block_size,
+                                         uint32_t blocks_per_group) {
     uint32_t thread_id    = threadIdx.x,
-             thread_count = blockDim.x,
-             block_start  = blockIdx.x * size_per_block,
-             block_end    = block_start + size_per_block;
+             thread_count = blockDim.x;
 
-    uint32_t *buckets = buckets_ + blockIdx.x * bucket_count;
+    uint32_t flat_block_idx = blockIdx.x * blocks_per_group + blockIdx.y,
+             block_start    = blockIdx.x * block_size + blockIdx.y * size_per_block,
+             block_end      = min(block_start + size_per_block,
+                                  min((blockIdx.x + 1) * block_size, size));
 
-    for (uint32_t i = block_start + thread_id; i < block_end; i += thread_count) {
-        bool active = i < size;
+    uint32_t *buckets = buckets_ + flat_block_idx * bucket_count;
 
-        /* This assumes that the whole warp does an iteration or exits
-           (i.e. size_per_block must be a multiple of 32) */
+    uint32_t total = block_end > block_start ? block_end - block_start : 0u;
+    uint32_t block_end_aligned = block_start
+                               + ((total + warpSize - 1) & ~(warpSize - 1));
+    for (uint32_t i = block_start + thread_id; i < block_end_aligned;
+         i += thread_count) {
+        bool active = (i < block_end) && (i < size);
         uint32_t active_mask = __ballot_sync(0xFFFFFFFF, active);
-
         if (active)
             reduce_atomic(active_mask, values[i], buckets);
     }
 }
 
 /// Detect non-empty buckets and record their offsets
-KERNEL void mkperm_phase_3(uint32_t *buckets,
-                           uint32_t bucket_count,
-                           uint32_t bucket_count_rounded,
-                           uint32_t perm_size,
-                           uint32_t *counter,
-                           uint4 *offsets) {
+KERNEL void block_mkperm_phase_3(uint32_t *buckets,
+                                   uint32_t bucket_count,
+                                   uint32_t bucket_count_rounded,
+                                   uint32_t perm_size,
+                                   uint32_t *counter,
+                                   uint4 *offsets) {
     uint32_t *shared = SharedMemory<uint32_t>::get();
 
     // Thread's position within warp
@@ -264,102 +284,132 @@ KERNEL void mkperm_phase_3(uint32_t *buckets,
     }
 }
 
-/// Generate a sorting permutation based on offsets generated by \ref mkperm_phase_1_tiny()
-KERNEL void mkperm_phase_4_tiny(const uint32_t *values,
-                                const uint32_t *buckets_,
-                                uint32_t *perm,
-                                uint32_t size,
-                                uint32_t size_per_block,
-                                uint32_t bucket_count) {
+/**
+ * \brief Generate a sorting permutation based on offsets generated by
+ * \ref block_mkperm_phase_1_tiny().
+ *
+ * Each warp processes a contiguous range of elements for stable ordering.
+ */
+KERNEL void block_mkperm_phase_4_tiny(const uint32_t *values,
+                                        const uint32_t *buckets_,
+                                        uint32_t *perm,
+                                        uint32_t size,
+                                        uint32_t size_per_block,
+                                        uint32_t bucket_count,
+                                        uint32_t block_size,
+                                        uint32_t blocks_per_group) {
     uint32_t *shared = SharedMemory<uint32_t>::get();
 
-    uint32_t thread_id    = threadIdx.x,
-             thread_count = blockDim.x,
-             block_start  = blockIdx.x * size_per_block,
-             block_end    = block_start + size_per_block,
-             warp_count   = thread_count / warpSize,
-             warp_id      = thread_id / warpSize;
+    uint32_t thread_id       = threadIdx.x,
+             thread_count    = blockDim.x,
+             warp_count      = thread_count / warpSize,
+             warp_id         = thread_id / warpSize,
+             lane_id         = thread_id & (warpSize - 1);
 
-    const uint32_t *buckets = buckets_ + blockIdx.x * bucket_count * warp_count;
+    uint32_t flat_block_idx  = blockIdx.x * blocks_per_group + blockIdx.y,
+             user_block_start = blockIdx.x * block_size,
+             block_start     = user_block_start + blockIdx.y * size_per_block,
+             block_end       = min(block_start + size_per_block,
+                                   min(user_block_start + block_size, size));
+
+    const uint32_t *buckets = buckets_ + flat_block_idx * bucket_count * warp_count;
     for (uint32_t i = thread_id; i < bucket_count * warp_count; i += thread_count)
         shared[i] = buckets[i];
-
     __syncthreads();
 
     uint32_t *shared_warp = shared + warp_id * bucket_count;
 
-    for (uint32_t i = block_start + thread_id; i < block_end; i += thread_count) {
-        bool active = i < size;
+    uint32_t total = block_end > block_start ? block_end - block_start : 0u;
+    uint32_t elems_per_warp = ((total + warp_count - 1) / warp_count
+                                + warpSize - 1) & ~(warpSize - 1);
+    uint32_t warp_start = block_start + warp_id * elems_per_warp;
+    uint32_t warp_end   = min(warp_start + elems_per_warp, block_end);
 
-        /* This assumes that the whole warp does an iteration or exits
-           (i.e. size_per_block must be a multiple of 32) */
+    for (uint32_t i = warp_start + lane_id; i < warp_start + elems_per_warp;
+         i += warpSize) {
+        bool active = (i < warp_end) && (i < size);
         uint32_t active_mask = __ballot_sync(0xFFFFFFFF, active);
-
         if (active) {
             uint32_t offset = reduce(active_mask, values[i], shared_warp);
-            perm[offset] = i;
+            perm[user_block_start + offset] = i;
         }
     }
 }
 
-/// Generate a sorting permutation based on offsets generated by \ref mkperm_phase_1_small()
-KERNEL void mkperm_phase_4_small(const uint32_t *values,
-                                 const uint32_t *buckets_,
-                                 uint32_t *perm,
-                                 uint32_t size,
-                                 uint32_t size_per_block,
-                                 uint32_t bucket_count) {
+/**
+ * \brief Generate a sorting permutation based on offsets generated by
+ * \ref block_mkperm_phase_1_small().
+ */
+KERNEL void block_mkperm_phase_4_small(const uint32_t *values,
+                                         const uint32_t *buckets_,
+                                         uint32_t *perm,
+                                         uint32_t size,
+                                         uint32_t size_per_block,
+                                         uint32_t bucket_count,
+                                         uint32_t block_size,
+                                         uint32_t blocks_per_group) {
     uint32_t *shared = SharedMemory<uint32_t>::get();
+    uint32_t thread_id       = threadIdx.x,
+             thread_count    = blockDim.x;
 
-    uint32_t thread_id    = threadIdx.x,
-             thread_count = blockDim.x,
-             block_start  = blockIdx.x * size_per_block,
-             block_end    = block_start + size_per_block;
+    uint32_t flat_block_idx  = blockIdx.x * blocks_per_group + blockIdx.y,
+             user_block_start = blockIdx.x * block_size,
+             block_start     = user_block_start + blockIdx.y * size_per_block,
+             block_end       = min(block_start + size_per_block,
+                                   min(user_block_start + block_size, size));
 
-    const uint32_t *buckets = buckets_ + blockIdx.x * bucket_count;
+    const uint32_t *buckets = buckets_ + flat_block_idx * bucket_count;
     for (uint32_t i = thread_id; i < bucket_count; i += thread_count)
         shared[i] = buckets[i];
-
     __syncthreads();
 
-    for (uint32_t i = block_start + thread_id; i < block_end; i += thread_count) {
-        bool active = i < size;
-
-        /* This assumes that the whole warp does an iteration or exits
-           (i.e. size_per_block must be a multiple of 32) */
+    uint32_t total = block_end > block_start ? block_end - block_start : 0u;
+    uint32_t block_end_aligned = block_start
+                               + ((total + warpSize - 1) & ~(warpSize - 1));
+    for (uint32_t i = block_start + thread_id; i < block_end_aligned;
+         i += thread_count) {
+        bool active = (i < block_end) && (i < size);
         uint32_t active_mask = __ballot_sync(0xFFFFFFFF, active);
-
         if (active) {
             uint32_t offset = reduce_atomic(active_mask, values[i], shared);
-            perm[offset] = i;
+            perm[user_block_start + offset] = i;
         }
     }
 }
 
-/// Generate a sorting permutation based on offsets generated by \ref mkperm_phase_1_large()
-KERNEL void mkperm_phase_4_large(const uint32_t *values,
-                                 uint32_t *buckets_,
-                                 uint32_t *perm,
-                                 uint32_t size,
-                                 uint32_t size_per_block,
-                                 uint32_t bucket_count) {
-    uint32_t thread_id    = threadIdx.x,
-             thread_count = blockDim.x,
-             block_start  = blockIdx.x * size_per_block,
-             block_end    = block_start + size_per_block;
+/**
+ * \brief Generate a sorting permutation based on offsets generated by
+ * \ref block_mkperm_phase_1_large().
+ */
+KERNEL void block_mkperm_phase_4_large(const uint32_t *values,
+                                         uint32_t *buckets_,
+                                         uint32_t *perm,
+                                         uint32_t size,
+                                         uint32_t size_per_block,
+                                         uint32_t bucket_count,
+                                         uint32_t block_size,
+                                         uint32_t blocks_per_group) {
+    uint32_t thread_id       = threadIdx.x,
+             thread_count    = blockDim.x;
 
-    uint32_t *buckets = buckets_ + blockIdx.x * bucket_count;
+    uint32_t flat_block_idx  = blockIdx.x * blocks_per_group + blockIdx.y,
+             user_block_start = blockIdx.x * block_size,
+             block_start     = user_block_start + blockIdx.y * size_per_block,
+             block_end       = min(block_start + size_per_block,
+                                   min(user_block_start + block_size, size));
 
-    for (uint32_t i = block_start + thread_id; i < block_end; i += thread_count) {
-        bool active = i < size;
+    uint32_t *buckets = buckets_ + flat_block_idx * bucket_count;
 
-        /* This assumes that the whole warp does an iteration or exits
-           (i.e. size_per_block must be a multiple of 32) */
+    uint32_t total = block_end > block_start ? block_end - block_start : 0u;
+    uint32_t block_end_aligned = block_start
+                               + ((total + warpSize - 1) & ~(warpSize - 1));
+    for (uint32_t i = block_start + thread_id; i < block_end_aligned;
+         i += thread_count) {
+        bool active = (i < block_end) && (i < size);
         uint32_t active_mask = __ballot_sync(0xFFFFFFFF, active);
-
         if (active) {
             uint32_t offset = reduce_atomic(active_mask, values[i], buckets);
-            perm[offset] = i;
+            perm[user_block_start + offset] = i;
         }
     }
 }
@@ -367,9 +417,14 @@ KERNEL void mkperm_phase_4_large(const uint32_t *values,
 KERNEL void transpose(const uint32_t *in,
                       uint32_t *out,
                       uint32_t i_rows,
-                      uint32_t i_cols) {
+                      uint32_t i_cols,
+                      uint32_t batch_stride) {
     uint32_t *shared = SharedMemory<uint32_t>::get();
     const uint32_t dim = 16;
+
+    uint32_t batch = batch_stride ? blockIdx.z : 0;
+    const uint32_t *in_b  = in  + batch * batch_stride;
+    uint32_t       *out_b = out + batch * batch_stride;
 
     uint32_t i_c = blockIdx.x * dim + threadIdx.x,
              i_r = blockIdx.y * dim + threadIdx.y;
@@ -377,7 +432,7 @@ KERNEL void transpose(const uint32_t *in,
     bool valid = i_r < i_rows && i_c < i_cols;
 
     if (valid)
-        shared[threadIdx.y * (dim + 1) + threadIdx.x] = in[i_r * i_cols + i_c];
+        shared[threadIdx.y * (dim + 1) + threadIdx.x] = in_b[i_r * i_cols + i_c];
 
     __syncthreads();
 
@@ -389,5 +444,5 @@ KERNEL void transpose(const uint32_t *in,
     valid = o_r < o_rows && o_c < o_cols;
 
     if (valid)
-        out[o_r * o_cols + o_c] = shared[threadIdx.x * (dim + 1) + threadIdx.y];
+        out_b[o_r * o_cols + o_c] = shared[threadIdx.x * (dim + 1) + threadIdx.y];
 }

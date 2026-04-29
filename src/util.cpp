@@ -208,14 +208,17 @@ uint32_t jitc_compress(JitBackend backend, const uint8_t *in, uint32_t size, uin
     return thread_state(backend)->compress(in, size, out);
 }
 
-static ProfilerRegion profiler_region_mkperm("jit_mkperm");
+static ProfilerRegion profiler_region_block_mkperm("jit_block_mkperm");
 
 /// Compute a permutation to reorder an integer array into a sorted configuration
-uint32_t jitc_mkperm(JitBackend backend, const uint32_t *ptr, uint32_t size,
-                     uint32_t bucket_count, uint32_t *perm, uint32_t *offsets) {
+uint32_t jitc_block_mkperm(JitBackend backend, const uint32_t *ptr,
+                             uint32_t size, uint32_t block_size,
+                             uint32_t bucket_count, uint32_t *perm,
+                             uint32_t *offsets) {
 
-    ProfilerPhase profiler(profiler_region_mkperm);
-    return thread_state(backend)->mkperm(ptr, size, bucket_count, perm, offsets);
+    ProfilerPhase profiler(profiler_region_block_mkperm);
+    return thread_state(backend)->block_mkperm(ptr, size, block_size,
+                                                 bucket_count, perm, offsets);
 }
 
 /// Asynchronously update a single element in memory

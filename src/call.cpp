@@ -777,8 +777,9 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
         backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, perm_size);
 
     // Compute permutation
-    uint32_t unique_count = jitc_mkperm(backend, (const uint32_t *) self, size,
-                                        bucket_count, perm, (uint32_t *) offsets),
+    uint32_t unique_count = jitc_block_mkperm(backend, (const uint32_t *) self,
+                                               size, size, bucket_count, perm,
+                                               (uint32_t *) offsets),
              unique_count_out = unique_count;
 
     // Register permutation variable with JIT backend and transfer ownership

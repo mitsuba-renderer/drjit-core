@@ -74,13 +74,13 @@ struct scoped_set_context_maybe {
 
 // Dr.Jit kernel functions
 extern CUfunction *jitc_cuda_fill_64;
-extern CUfunction *jitc_cuda_mkperm_phase_1_tiny;
-extern CUfunction *jitc_cuda_mkperm_phase_1_small;
-extern CUfunction *jitc_cuda_mkperm_phase_1_large;
-extern CUfunction *jitc_cuda_mkperm_phase_3;
-extern CUfunction *jitc_cuda_mkperm_phase_4_tiny;
-extern CUfunction *jitc_cuda_mkperm_phase_4_small;
-extern CUfunction *jitc_cuda_mkperm_phase_4_large;
+extern CUfunction *jitc_cuda_block_mkperm_phase_1_tiny;
+extern CUfunction *jitc_cuda_block_mkperm_phase_1_small;
+extern CUfunction *jitc_cuda_block_mkperm_phase_1_large;
+extern CUfunction *jitc_cuda_block_mkperm_phase_3;
+extern CUfunction *jitc_cuda_block_mkperm_phase_4_tiny;
+extern CUfunction *jitc_cuda_block_mkperm_phase_4_small;
+extern CUfunction *jitc_cuda_block_mkperm_phase_4_large;
 extern CUfunction *jitc_cuda_transpose;
 extern CUfunction *jitc_cuda_compress_small;
 extern CUfunction *jitc_cuda_compress_large;

@@ -18,20 +18,20 @@ static const size_t kernels_dict_size_uncompressed = 65536;
 static const size_t kernels_dict_size_compressed = 19638;
 
 extern const char kernels_75[];
-static const size_t kernels_75_size_uncompressed = 3998734;
-static const size_t kernels_75_size_compressed = 733169;
+static const size_t kernels_75_size_uncompressed = 4003983;
+static const size_t kernels_75_size_compressed = 734383;
 
 static const char *kernels_list =
     "compress_small,"
     "compress_large,"
     "compress_large_init,"
-    "mkperm_phase_1_tiny,"
-    "mkperm_phase_1_small,"
-    "mkperm_phase_1_large,"
-    "mkperm_phase_3,"
-    "mkperm_phase_4_tiny,"
-    "mkperm_phase_4_small,"
-    "mkperm_phase_4_large,"
+    "block_mkperm_phase_1_tiny,"
+    "block_mkperm_phase_1_small,"
+    "block_mkperm_phase_1_large,"
+    "block_mkperm_phase_3,"
+    "block_mkperm_phase_4_tiny,"
+    "block_mkperm_phase_4_small,"
+    "block_mkperm_phase_4_large,"
     "transpose,"
     "poke_u8,"
     "poke_u16,"

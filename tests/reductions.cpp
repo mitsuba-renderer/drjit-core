@@ -332,7 +332,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(13_mkperm) {
             }
 
             data = (uint32_t *) jit_malloc_migrate(data, Float::Backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host);
-            uint32_t num_unique = jit_mkperm(Float::Backend, data, size, n_buckets, perm, offsets);
+            uint32_t num_unique = jit_block_mkperm(Float::Backend, data, size, size, n_buckets, perm, offsets);
 
             perm = (uint32_t *) jit_malloc_migrate(perm, AllocType::Host);
             jit_sync_thread();
