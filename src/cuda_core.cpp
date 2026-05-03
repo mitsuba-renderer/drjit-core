@@ -95,10 +95,15 @@ std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf, bool release_state_
         }
     }
 
-    if (rv != CUDA_SUCCESS)
-        jitc_fail("jit_cuda_compile(): compilation failed. Please see the PTX "
-                  "assembly listing and error message below:\n\n%s\n\n%s",
-                  buf, error_log);
+    if (rv == CUDA_ERROR_INVALID_PTX ||
+        rv == CUDA_ERROR_UNSUPPORTED_PTX_VERSION ||
+        rv == CUDA_ERROR_INVALID_VALUE)
+        jitc_fail(
+            "jit_cuda_compile(): compilation failed. Please see the PTX "
+            "assembly listing and error message below:\n\n%s\n\n%s",
+            buf, error_log);
+    else
+        cuda_check(rv);
 
     bool cache_hit = info_log[0] == '\0';
     if (!cache_hit)
