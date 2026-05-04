@@ -38,7 +38,7 @@ CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
                                          [(int) VarType::Count][10] = { };
 CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count] = { };
 CUfunction *jitc_cuda_aggregate = nullptr;
-CUfunction *jitc_cuda_gemm[(int) VarType::Count][4] = { };
+CUfunction *jitc_cuda_gemm[(int) VarType::Count][4][3] = { };
 
 std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf, bool release_state_lock) {
     const uintptr_t log_size = 16384;
@@ -196,7 +196,8 @@ bool jitc_cuda_init() {
         }
         jitc_cuda_reduce_dot[k] = (CUfunction *) malloc_check_zero(asize);
         for (int l = 0; l < 4; ++l)
-            jitc_cuda_gemm[k][l] = (CUfunction *) malloc_check_zero(asize);
+            for (int t = 0; t < 3; ++t)
+                jitc_cuda_gemm[k][l][t] = (CUfunction *) malloc_check_zero(asize);
     }
 
     jitc_cuda_module =
@@ -354,15 +355,17 @@ bool jitc_cuda_init() {
                 jitc_cuda_reduce_dot[k][i] = func;
             }
 
-            // GEMM kernels: tile 0->BM=8, 1->BM=16, 2->BM=32, 3->BM=64.
-            // Transpose flags are passed as runtime kernel args.
+            // GEMM kernels: tile 0->BM=8..3->BM=64, transpose 0->nn,1->nt,2->tn.
+            static const char *gemm_suffix[3] = { "nn", "nt", "tn" };
             for (int l = 0; l < 4; ++l) {
                 uint32_t bm = 8u << l;
-                snprintf(name, sizeof(name), "gemm_%s_%u",
-                         type_name_short[k], bm);
-                if (strstr(kernels_list, name)) {
-                    cuda_check(cuModuleGetFunction(&func, m, name));
-                    jitc_cuda_gemm[k][l][i] = func;
+                for (int t = 0; t < 3; ++t) {
+                    snprintf(name, sizeof(name), "gemm_%s_%u_%s",
+                             type_name_short[k], bm, gemm_suffix[t]);
+                    if (strstr(kernels_list, name)) {
+                        cuda_check(cuModuleGetFunction(&func, m, name));
+                        jitc_cuda_gemm[k][l][t][i] = func;
+                    }
                 }
             }
         }
@@ -482,7 +485,8 @@ void jitc_cuda_shutdown() {
         }
         Z(jitc_cuda_reduce_dot[k]);
         for (int l = 0; l < 4; ++l)
-            Z(jitc_cuda_gemm[k][l]);
+            for (int t = 0; t < 3; ++t)
+                Z(jitc_cuda_gemm[k][l][t]);
     }
 
     jitc_cuda_api_shutdown();

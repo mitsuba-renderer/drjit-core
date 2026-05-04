@@ -18,8 +18,8 @@ static const size_t kernels_dict_size_uncompressed = 65536;
 static const size_t kernels_dict_size_compressed = 19638;
 
 extern const char kernels_75[];
-static const size_t kernels_75_size_uncompressed = 3998734;
-static const size_t kernels_75_size_compressed = 733169;
+static const size_t kernels_75_size_uncompressed = 5371039;
+static const size_t kernels_75_size_compressed = 1036364;
 
 static const char *kernels_list =
     "compress_small,"
@@ -632,22 +632,54 @@ static const char *kernels_list =
     "reduce_dot_f16,"
     "reduce_dot_f32,"
     "reduce_dot_f64,"
-    "gemm_f16_8,"
-    "gemm_f16_16,"
-    "gemm_f16_32,"
-    "gemm_f16_64,"
-    "gemm_f32_8,"
-    "gemm_f32_16,"
-    "gemm_f32_32,"
-    "gemm_f32_64,"
-    "gemm_f64_8,"
-    "gemm_f64_16,"
-    "gemm_f64_32,"
-    "gemm_f64_64,"
-    "gemm_u32_8,"
-    "gemm_u32_16,"
-    "gemm_u32_32,"
-    "gemm_u32_64,";
+    "gemm_f16_8_nn,"
+    "gemm_f16_8_nt,"
+    "gemm_f16_8_tn,"
+    "gemm_f16_16_nn,"
+    "gemm_f16_16_nt,"
+    "gemm_f16_16_tn,"
+    "gemm_f16_32_nn,"
+    "gemm_f16_32_nt,"
+    "gemm_f16_32_tn,"
+    "gemm_f16_64_nn,"
+    "gemm_f16_64_nt,"
+    "gemm_f16_64_tn,"
+    "gemm_f32_8_nn,"
+    "gemm_f32_8_nt,"
+    "gemm_f32_8_tn,"
+    "gemm_f32_16_nn,"
+    "gemm_f32_16_nt,"
+    "gemm_f32_16_tn,"
+    "gemm_f32_32_nn,"
+    "gemm_f32_32_nt,"
+    "gemm_f32_32_tn,"
+    "gemm_f32_64_nn,"
+    "gemm_f32_64_nt,"
+    "gemm_f32_64_tn,"
+    "gemm_f64_8_nn,"
+    "gemm_f64_8_nt,"
+    "gemm_f64_8_tn,"
+    "gemm_f64_16_nn,"
+    "gemm_f64_16_nt,"
+    "gemm_f64_16_tn,"
+    "gemm_f64_32_nn,"
+    "gemm_f64_32_nt,"
+    "gemm_f64_32_tn,"
+    "gemm_f64_64_nn,"
+    "gemm_f64_64_nt,"
+    "gemm_f64_64_tn,"
+    "gemm_u32_8_nn,"
+    "gemm_u32_8_nt,"
+    "gemm_u32_8_tn,"
+    "gemm_u32_16_nn,"
+    "gemm_u32_16_nt,"
+    "gemm_u32_16_tn,"
+    "gemm_u32_32_nn,"
+    "gemm_u32_32_nt,"
+    "gemm_u32_32_tn,"
+    "gemm_u32_64_nn,"
+    "gemm_u32_64_nt,"
+    "gemm_u32_64_tn,";
 
 #ifdef __cplusplus
 }

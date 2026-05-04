@@ -445,44 +445,62 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
     // Alignment requirements. Vector loads need both operands' inner
     // (contiguous) strides divisible by V; the vector output store needs
     // ``N`` divisible by V.
-    uint32_t a_inner = At ? M : K;
-    uint32_t b_inner = Bt ? K : N;
+    uint32_t a_inner = At ? M : K,
+             b_inner = Bt ? K : N;
 
     const Device &dev = state.devices[device];
 
-    // Iterate BM from smallest to largest. A value of BM is valid if
-    // alignment holds and grid_y fits within CUDA's gridDim.y cap. The
-    // smallest valid value of BM serves as the fallback. Among valid
-    // values we prefer a larger BM, but only when BM stays below twice
-    // the smaller of M and N. Otherwise the per-block tile covers
-    // mostly zero-padded lanes on the short axis and wastes compute.
-    // We also require the grid to contain at least one block per SM,
-    // though several blocks per SM are generally preferable for
-    // occupancy.
-    const uint32_t target_blocks = dev.sm_count;
-    const uint32_t grid_y_cap    = 65535u;
+    // Tile selection. Iterate BM from smallest to largest and overwrite
+    // the pick whenever a larger tile clears the wave gate; the
+    // smallest valid tile is kept as a fallback so alignment-restricted
+    // launches (fp16, fp64) still produce a kernel.
+    //
+    // Rejection criteria:
+    //  - Vector width must divide inner A/B strides and the output row
+    //    width (``N``), else loads/stores can't be vectorized.
+    //  - Row-tile count must fit CUDA's gridDim.y cap.
+    //  - ``BM`` must be smaller than 2x the shorter axis: anything past
+    //    that point spends most of the per-block work on zero-padded
+    //    lanes.
+    //  - At least one block per SM (three for BM=64). Below the gate
+    //    the grid leaves SMs idle even at full per-SM occupancy. BM=64
+    //    has the highest register pressure (TM=8 → 64 accumulator
+    //    regs) and a small cold-path spill on the transpose variants;
+    //    the extra factor keeps enough warps resident per SM to hide
+    //    it.
+    constexpr uint32_t grid_y_cap = 65535u;
 
-    uint32_t bm = 0, tile_idx = 0;
+    uint32_t small_dim = M < N ? M : N;
+    int t_idx = At ? 2 : (Bt ? 1 : 0); // 0=nn, 1=nt, 2=tn.
+    uint32_t bm = 0;
+    CUfunction func = nullptr;
+
     for (int l = 0; l <= 3; ++l) {
-        uint32_t bm_try = 8u << l;  // 8, 16, 32, 64
+        uint32_t bm_try = 8u << l;           // 8, 16, 32, 64.
         uint32_t v      = vec_width(bm_try);
+
         if (a_inner % v || b_inner % v || (N % v))
             continue;
         if (ceil_div(M, bm_try) > grid_y_cap)
             continue;
+        CUfunction f = jitc_cuda_gemm[(int) vt_kernel][l][t_idx][dev.id];
+        if (!f)
+            continue;
 
         if (bm == 0) {
             bm = bm_try;
-            tile_idx = (uint32_t) l;
+            func = f;
         }
 
-        uint32_t small_dim = M < N ? M : N;
-        bool oversized = bm_try >= 2 * small_dim;
-        uint64_t grid  = (uint64_t) ceil_div(M, bm_try) *
-                         ceil_div(N, bm_try) * grid_count;
-        if (!oversized && grid >= target_blocks) {
+        if (bm_try >= 2 * small_dim)
+            continue;
+
+        uint64_t grid = (uint64_t) ceil_div(M, bm_try) *
+                        ceil_div(N, bm_try) * grid_count;
+        uint64_t min_grid = (bm_try == 64) ? 3u * dev.sm_count : dev.sm_count;
+        if (grid >= min_grid) {
             bm = bm_try;
-            tile_idx = (uint32_t) l;
+            func = f;
         }
     }
 
@@ -490,11 +508,6 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
         jitc_raise("jit_batched_gemm(): no compatible tile for M=%u, N=%u: "
                    "alignment or gridDim.y cap (%u) cannot be satisfied.",
                    M, N, grid_y_cap);
-
-    CUfunction func = jitc_cuda_gemm[(int) vt_kernel][tile_idx][dev.id];
-    if (!func)
-        jitc_raise("jit_batched_gemm(): missing kernel for type=%s, "
-                   "BM=%u.", type_name[(int) vt], bm);
 
     uint32_t grid_x = ceil_div(N, bm);
     uint32_t grid_y = ceil_div(M, bm);
@@ -512,9 +525,8 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
              type_name[(int) vt], (int) At, (int) Bt, M, N, K, grid_count,
              reduce_count, bm, bm, grid_x, grid_y, grid_count);
 
-    uint32_t At_arg = (uint32_t) At, Bt_arg = (uint32_t) Bt;
     void *args[] = { (void *) &A, (void *) &B, &C,
-                     &M, &N, &K, &At_arg, &Bt_arg, (void *) &batch_eff };
+                     &M, &N, &K, (void *) &batch_eff };
 
     scoped_set_context guard(context);
     // The kernel is launched as a flat group of 64 threads that internally

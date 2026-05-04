@@ -32,21 +32,36 @@ struct GemmBatch {
   TM = BM / 8. Global loads are vectorized; half inputs accumulate in
   float, others in their native type.
 
-  Transpose handling: ``At`` / ``Bt`` are runtime kernel arguments.
-  ``gemm_load`` dispatches on them once per block into a pair of
-  template specializations. ``At == Bt == true`` is rewritten by the
-  Python caller via ``A^T @ B^T = (B @ A)^T`` and is not implemented here.
+  Transpose handling: ``At`` / ``Bt`` are compile-time template
+  parameters. Three kernel variants are instantiated per (type, tile)
+  pair: ``_nn``, ``_nt``, ``_tn``. The ``At == Bt == true`` case is
+  rewritten by the Python caller via ``A^T @ B^T = (B @ A)^T`` and is
+  not implemented here.
 
   Smem layout:
     sA[BM][BK+1]  -- +1 pad makes per-row bank offsets coprime with 32, so
                      scalar LDS in gemm_compute is bank-conflict-free.
-    sB[BK][BN]    -- natural stride; a cyclic thread-to-column mapping in
-                     gemm_compute spreads V-packet LDS across 32 banks.
+    sB[BK][SB_S]  -- SB_S = BN + V for BM>=32 (BN is a multiple of 32
+                     for those tiles, giving 4-way bank conflicts on
+                     the transposed-deposit path; the +V pad cuts that
+                     to 2-way while keeping V-element vector reads
+                     aligned). For BM<=16, SB_S = BN already gives a
+                     clean bank distribution -- the +V pad would
+                     wrap-around into already-used banks. Read pattern
+                     in gemm_compute is conflict-free in either case.
 
-  Bounds handling has two independent axes. M/N edges are captured by the
-  loop-invariant ``interior`` flag, which specializes the K loop into a
-  branch-free path and a per-lane checked path. The K tail runs as a
-  single extra iteration with K-axis checks that zero OOB lanes.
+  Bounds handling: edge blocks pay for per-lane M/N bounds checks in the
+  K-loop. The branch predictor handles interior blocks (where checks are
+  always true) at near-zero cost. The K tail runs as a single extra
+  iteration with K-axis checks that zero OOB lanes.
+
+  Register budget: each kernel is annotated with ``__launch_bounds__``
+  to target a specific register count derived from the formula
+  TM^2 + 4*TM + 32 (accumulators + ILP staging + misc), giving:
+    BM= 8 -> 37 regs (24 blocks/SM, hw max),
+    BM=16 -> 44 regs (23 blocks/SM),
+    BM=32 -> 64 regs (16 blocks/SM),
+    BM=64 -> 128 regs (8 blocks/SM).
 */
 
 // Aligned vector copy; V * sizeof(T) must be one of {2, 4, 8, 16}.
@@ -108,17 +123,19 @@ DEVICE FINLINE void gemm_load_slab(const T *src, T *smem, uint32_t tid,
     }
 }
 
-// Load one operand tile into ``smem``, absorbing its transpose flag. The
-// compute stage always sees a ``(BR, BC)``-shaped smem tile; when the
-// global operand is transposed, we load a ``(BC, BR)`` tile and
-// transpose-deposit instead.
+// Load one operand tile into ``smem``, absorbing the transpose flag at
+// compile time. The compute stage always sees a ``(BR, BC)``-shaped
+// smem tile; when the global operand is transposed, we load a
+// ``(BC, BR)`` slab and transpose-deposit instead. ``if constexpr``
+// prunes the dead path so only one ``gemm_load_slab`` instantiation
+// gets emitted per call site.
 template <typename T, uint32_t BR, uint32_t BC, uint32_t NT,
-          uint32_t SmemStride, uint32_t V, bool CheckR, bool CheckC>
-DEVICE FINLINE void gemm_load(bool transposed,
-                              const T *src, T *smem, uint32_t tid,
+          uint32_t SmemStride, uint32_t V,
+          bool CheckR, bool CheckC, bool Transpose>
+DEVICE FINLINE void gemm_load(const T *src, T *smem, uint32_t tid,
                               uint32_t r0, uint32_t c0,
                               uint32_t R, uint32_t C) {
-    if (!transposed)
+    if constexpr (!Transpose)
         gemm_load_slab<T, BR, BC, NT, SmemStride, V, CheckR, CheckC, false>(
             src, smem, tid, r0, c0, R, C);
     else
@@ -171,22 +188,25 @@ DEVICE FINLINE void gemm_compute(const T *sA, const T *sB,
 
 // -----------------------------------------------------------------------------
 
-template <typename T, uint32_t BM>
+template <typename T, uint32_t BM, bool At, bool Bt>
 DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
                               const T *__restrict__ B,
                               T *__restrict__ C,
                               uint32_t M, uint32_t N, uint32_t K,
-                              uint32_t At, uint32_t Bt,
-                              GemmBatch batch) {
+                              const GemmBatch &batch) {
     using Acc = std::conditional_t<std::is_same<T, half>::value, float, T>;
 
     // Per-block grid offset. ``blockIdx.z`` decomposes over the grid dims
     // ``[0, n_bdims)``. Broadcast along a grid dim is encoded by
     // ``a_stride[d] = 0`` or ``b_stride[d] = 0``. Output C advances along
     // grid dims only, with implicit stride ``M * N`` per grid step.
+    // ``#pragma unroll 1`` keeps the loop compact: NVCC would otherwise
+    // unroll it over ``DRJIT_GEMM_MAX_BDIMS=6`` predicated iterations,
+    // each with its own constant-memory loads.
     {
         uint32_t z = blockIdx.z;
         size_t a_off = 0, b_off = 0;
+        #pragma unroll 1
         for (uint32_t d = 0; d < batch.n_bdims; ++d) {
             uint32_t idx = z % batch.extent[d];
             z /= batch.extent[d];
@@ -206,6 +226,7 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
     // sum all contributions into the same accumulator tile. ``n_rdims == 0``
     // collapses to a single iteration that leaves A/B at their grid bases.
     uint32_t r_count = 1;
+    #pragma unroll 1
     for (uint32_t d = 0; d < batch.n_rdims; ++d)
         r_count *= batch.extent[batch.n_bdims + d];
 
@@ -223,7 +244,12 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
     static_assert((BM * BK) % (NT * V) == 0,
                   "Slab size must be divisible by NT*V (one load per thread).");
 
-    constexpr uint32_t SA_S = BK + 1, SB_S = BN;
+    // SB_S: +V pad for BM>=32 cuts transposed sB store conflicts from
+    // 4-way to 2-way and is neutral for non-transposed. For BM<=16 the
+    // unpadded BN gives a clean bank distribution, so adding the pad
+    // would actually introduce wrap-around conflicts; keep it natural.
+    constexpr uint32_t SA_S = BK + 1,
+                       SB_S = (BM <= 16) ? BN : BN + V;
     __shared__ T sA[BM * SA_S];
     __shared__ T sB[BK * SB_S];
 
@@ -248,6 +274,7 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
         } else {
             size_t a_off = 0, b_off = 0;
             uint32_t rz = r;
+            #pragma unroll 1
             for (uint32_t d = 0; d < batch.n_rdims; ++d) {
                 uint32_t dd  = batch.n_bdims + d;
                 uint32_t idx = rz % batch.extent[dd];
@@ -259,35 +286,20 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
             B = B_base + b_off;
         }
 
-        // Bulk K loop, specialized on whether the output tile lies fully
-        // inside the matrix bounds.
-        if (interior) {
-            for (uint32_t k0 = 0; k0 < K_bulk; k0 += BK) {
-                gemm_load<T, BM, BK, NT, SA_S, V, false, false>(At, A, sA, tid, m0, k0, M, K);
-                gemm_load<T, BK, BN, NT, SB_S, V, false, false>(Bt, B, sB, tid, k0, n0, K, N);
-                __syncthreads();
-                gemm_compute<T, Acc, BK, SA_S, SB_S, BN, TM, V>(sA, sB, tx, ty, acc);
-                __syncthreads();
-            }
-        } else {
-            for (uint32_t k0 = 0; k0 < K_bulk; k0 += BK) {
-                gemm_load<T, BM, BK, NT, SA_S, V, true,  false>(At, A, sA, tid, m0, k0, M, K);
-                gemm_load<T, BK, BN, NT, SB_S, V, false, true >(Bt, B, sB, tid, k0, n0, K, N);
-                __syncthreads();
-                gemm_compute<T, Acc, BK, SA_S, SB_S, BN, TM, V>(sA, sB, tx, ty, acc);
-                __syncthreads();
-            }
+        // Bulk K loop. Bounds checks always fire on the M/N axes; the
+        // branch predictor folds them to a no-op for interior blocks.
+        for (uint32_t k0 = 0; k0 < K_bulk; k0 += BK) {
+            gemm_load<T, BM, BK, NT, SA_S, V, true, false, At>(A, sA, tid, m0, k0, M, K);
+            gemm_load<T, BK, BN, NT, SB_S, V, false, true, Bt>(B, sB, tid, k0, n0, K, N);
+            __syncthreads();
+            gemm_compute<T, Acc, BK, SA_S, SB_S, BN, TM, V>(sA, sB, tx, ty, acc);
+            __syncthreads();
         }
 
         // K tail: at most one partial slab, always bounds-checked along K.
         if (K_bulk < K) {
-            if (interior) {
-                gemm_load<T, BM, BK, NT, SA_S, V, false, true >(At, A, sA, tid, m0, K_bulk, M, K);
-                gemm_load<T, BK, BN, NT, SB_S, V, true,  false>(Bt, B, sB, tid, K_bulk, n0, K, N);
-            } else {
-                gemm_load<T, BM, BK, NT, SA_S, V, true,  true >(At, A, sA, tid, m0, K_bulk, M, K);
-                gemm_load<T, BK, BN, NT, SB_S, V, true,  true >(Bt, B, sB, tid, K_bulk, n0, K, N);
-            }
+            gemm_load<T, BM, BK, NT, SA_S, V, true, true, At>(A, sA, tid, m0, K_bulk, M, K);
+            gemm_load<T, BK, BN, NT, SB_S, V, true, true, Bt>(B, sB, tid, K_bulk, n0, K, N);
             __syncthreads();
             gemm_compute<T, Acc, BK, SA_S, SB_S, BN, TM, V>(sA, sB, tx, ty, acc);
             __syncthreads();
@@ -296,22 +308,29 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
 
     // Write the register tile back to C (narrowing float -> half if
     // applicable). The cyclic column mapping matches gemm_compute's sB
-    // LDS, giving coalesced V-wide vector stores.
+    // LDS, giving coalesced V-wide vector stores. Interior blocks use
+    // vector writes; edge blocks fall back to scalar with N-axis bounds.
     constexpr uint32_t NT_n    = BN / TM;
     constexpr uint32_t StripeN = NT_n * V;
 
-    for (uint32_t i = 0; i < TM; ++i) {
-        uint32_t m_g = m0 + ty * TM + i;
-        if (!interior && m_g >= M)
-            continue;
-        for (uint32_t jv = 0; jv < TM; jv += V) {
-            uint32_t n_g = n0 + (jv / V) * StripeN + tx * V;
-            if (interior) {
+    if (interior) {
+        for (uint32_t i = 0; i < TM; ++i) {
+            uint32_t m_g = m0 + ty * TM + i;
+            for (uint32_t jv = 0; jv < TM; jv += V) {
+                uint32_t n_g = n0 + (jv / V) * StripeN + tx * V;
                 T out[V];
                 for (uint32_t v = 0; v < V; ++v)
                     out[v] = (T) acc[i][jv + v];
                 gemm_vec_load<V>(out, &C[m_g * N + n_g]);
-            } else {
+            }
+        }
+    } else {
+        for (uint32_t i = 0; i < TM; ++i) {
+            uint32_t m_g = m0 + ty * TM + i;
+            if (m_g >= M)
+                continue;
+            for (uint32_t jv = 0; jv < TM; jv += V) {
+                uint32_t n_g = n0 + (jv / V) * StripeN + tx * V;
                 for (uint32_t v = 0; v < V; ++v)
                     if (n_g + v < N)
                         C[m_g * N + n_g + v] = (T) acc[i][jv + v];
@@ -321,18 +340,36 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
 }
 
 // -----------------------------------------------------------------------------
-// Kernel instantiations: 4 types x 4 tile sizes = 16 kernels, named
-// ``gemm_<type>_<BM>`` (e.g. ``gemm_f32_16``). The launcher routes
-// int32 to the u32 kernel (same bit pattern under two's-complement
-// mul/add).
+// Kernel instantiations: 4 types x 4 tile sizes x 3 transpose variants
+// = 48 kernels, named ``gemm_<type>_<BM>_<tt>`` where ``<tt>`` is one of
+// ``nn``, ``nt``, ``tn``. The ``tt`` case (At=Bt=true) is rewritten by
+// the caller via ``A^T @ B^T = (B @ A)^T``. The launcher routes int32
+// to the u32 kernel (same bit pattern under two's-complement mul/add).
+//
+// ``__launch_bounds__(64, GEMM_BLOCKS(BM))`` caps registers at the
+// computed budget. With 65536 regs/SM and 64 threads/block, asking for
+// N blocks/SM tells ptxas to target 65536/(64*N) = 1024/N registers per
+// thread. Combined with ``__grid_constant__`` on the GemmBatch
+// parameter (eliminates the local-memory copy of the batch struct),
+// the resulting kernels hit:
+//   TM^2 + 4*TM + 32 = 37/44/64/128 regs for BM = 8/16/32/64.
 
-#define GEMM_TILE(T_, TName, BM_)                                              \
-    KERNEL void gemm_##TName##_##BM_(                                          \
+#define GEMM_REGS(BM)   ((BM/8)*(BM/8) + 4*(BM/8) + 32)
+#define GEMM_BLOCKS(BM) (1024u / GEMM_REGS(BM))
+
+#define GEMM_VARIANT(T_, TName, BM_, At_, Bt_, Suffix)                         \
+    KERNEL __launch_bounds__(64, GEMM_BLOCKS(BM_))                             \
+    void gemm_##TName##_##BM_##Suffix(                                         \
         const T_ *A, const T_ *B, T_ *C,                                       \
         uint32_t M, uint32_t N, uint32_t K,                                    \
-        uint32_t At, uint32_t Bt, GemmBatch batch) {                           \
-        gemm_impl<T_, BM_>(A, B, C, M, N, K, At, Bt, batch);                   \
+        const __grid_constant__ GemmBatch batch) {                             \
+        gemm_impl<T_, BM_, At_, Bt_>(A, B, C, M, N, K, batch);                 \
     }
+
+#define GEMM_TILE(T_, TName, BM_)                                              \
+    GEMM_VARIANT(T_, TName, BM_, false, false, _nn)                            \
+    GEMM_VARIANT(T_, TName, BM_, false, true,  _nt)                            \
+    GEMM_VARIANT(T_, TName, BM_, true,  false, _tn)
 
 #define GEMM_TYPE(T_, TName)                                                   \
     GEMM_TILE(T_, TName,  8)                                                   \

@@ -95,9 +95,10 @@ extern CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
 extern CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count];
 extern CUfunction *jitc_cuda_aggregate;
 
-// GEMM kernels, indexed by [value type][tile size].
+// GEMM kernels, indexed by [value type][tile size][transpose variant].
 // Tile: 0=BM=8, 1=BM=16, 2=BM=32, 3=BM=64.
-extern CUfunction *jitc_cuda_gemm[(int) VarType::Count][4];
+// Transpose: 0=nn, 1=nt, 2=tn.
+extern CUfunction *jitc_cuda_gemm[(int) VarType::Count][4][3];
 
 /// Check if the current CUDA device supports 256-bit (32-byte) vector operations
 extern bool jitc_cuda_supports_256bit();
