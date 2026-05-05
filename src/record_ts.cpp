@@ -578,7 +578,8 @@ int Recording::replay_init_undefined(Operation &op) {
  * and mapping from the pointer to it.
  */
 void RecordThreadState::notify_free(const void *ptr) {
-    if (has_variable(ptr)) {
+    auto it = ptr_to_slot.find(ptr);
+    if (it != ptr_to_slot.end()) {
         jitc_log(LogLevel::Debug, "record(): jitc_free(ptr=%p)", ptr);
 
         uint32_t start = (uint32_t) m_recording.dependencies.size();
@@ -592,7 +593,7 @@ void RecordThreadState::notify_free(const void *ptr) {
         /// Removes the pointer from the \c ptr_to_slot mapping. The next
         /// operation using this memory region will have to add it using \c
         /// add_variable.
-        ptr_to_slot.erase(ptr);
+        ptr_to_slot.erase_fast(it);
     }
 }
 

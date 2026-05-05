@@ -315,14 +315,16 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
 #ifndef NDEBUG
                 // This warning should never be thrown, except if we forgot to
                 // populate the mapping
-                if (!state.ptr_to_variable.contains(v->data))
+                auto it = state.ptr_to_variable.find(v->data);
+                if (it == state.ptr_to_variable.end()) {
                     jitc_log(
                         LogLevel::Warn,
                         "Pointr <%p> was mangaged by variable r%u, but this "
                         "was not recorded in the pointer to variable map!",
                         v->data, index);
-
-                state.ptr_to_variable.erase(v->data);
+                } else {
+                    state.ptr_to_variable.erase_fast(it);
+                }
 #endif
             }
         } else {

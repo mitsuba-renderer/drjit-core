@@ -56,6 +56,25 @@ struct VisitedKeyHash {
 
 /// Auxiliary data structure needed to compute 'schedule' and 'schedule_groups'
 static tsl::robin_set<VisitedKey, VisitedKeyHash> visited;
+static std::vector<VisitedKey> visited_keys;
+
+static bool jitc_visited_insert(uint32_t size, uint32_t index, uint32_t depth) {
+    VisitedKey key(size, index, depth);
+    auto [it, inserted] = visited.emplace(key);
+    (void) it;
+    if (inserted)
+        visited_keys.push_back(key);
+    return inserted;
+}
+
+static void jitc_visited_clear() {
+    for (const VisitedKey &key : visited_keys) {
+        auto it = visited.find(key);
+        if (likely(it != visited.end()))
+            visited.erase_fast(it);
+    }
+    visited_keys.clear();
+}
 
 /// Kernel parameter buffer and variable ids
 static std::vector<void *> kernel_params;
@@ -116,7 +135,7 @@ bool jitc_elide_scatter(uint32_t index, const Variable *v) {
 
 /// Recursively traverse the computation graph to find variables needed by a computation
 static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0) {
-    if (!visited.emplace(size, index, depth).second)
+    if (!jitc_visited_insert(size, index, depth))
         return;
 
     Variable *v = jitc_var(index);
@@ -258,7 +277,7 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
 
     if (depth == 0) {
         // If we're visiting this variable the first time regardless of size
-        if (visited.emplace(0, index, depth).second)
+        if (jitc_visited_insert(0, index, depth))
             v->output_flag = false;
         schedule.emplace_back(size, v->scope, index);
         jitc_var_inc_ref(index, v);
@@ -692,7 +711,7 @@ void jitc_eval(ThreadState *ts) {
 }
 
 void jitc_eval_impl(ThreadState *ts) {
-    visited.clear();
+    jitc_visited_clear();
     visit_later.clear();
     schedule.clear();
 
@@ -845,7 +864,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
                                  uint32_t out_size, uint32_t out_align) {
     ProfilerPhase profiler(profiler_region_assemble_func);
 
-    visited.clear();
+    jitc_visited_clear();
     visit_later.clear();
     schedule.clear();
     callable_depth++;
