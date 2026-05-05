@@ -165,6 +165,12 @@ public:
     void fmt_llvm(size_t nargs, const char *fmt, ...);
 
     /**
+     * \brief Metal-specific formatting routine. Its syntax is described at
+     * the top of metal_eval.cpp.
+     */
+    void fmt_metal(size_t nargs, const char *fmt, ...);
+
+    /**
      * \brief Append a formatted (printf-style) string to the buffer
      *
      * Warning: this goes through `vsnprintf`, which is known to be highly
@@ -220,4 +226,3 @@ extern StringBuffer buffer;
 template <typename... Ts> constexpr size_t count_args(const Ts &...) {
     return sizeof...(Ts);
 }
-

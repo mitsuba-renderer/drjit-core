@@ -5,3 +5,7 @@
 [submodule "ext/nanothread"]
     path = ext/nanothread
     url = https://github.com/mitsuba-renderer/nanothread
+[submodule "ext/metal-cpp"]
+	path = ext/metal-cpp
+	url = https://github.com/bkaradzic/metal-cpp.git
+	branch = metal-cpp_macOS15_iOS18

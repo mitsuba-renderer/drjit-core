@@ -23,6 +23,11 @@
 #include "array.h"
 #include <tsl/robin_set.h>
 
+#if defined(DRJIT_ENABLE_METAL)
+#  include "metal.h"
+#  include "metal_eval.h"
+#endif
+
 // ====================================================================
 //  The following data structures are temporarily used during program
 //  generation. They are declared as global variables to enable memory
@@ -97,6 +102,51 @@ static uint32_t n_ops_total = 0;
 
 /// Are we recording an OptiX kernel?
 bool uses_optix = false;
+
+/// Does this Metal kernel use ray tracing?
+bool uses_metal_rt = false;
+bool uses_simdgroup_matrix = false;
+uint32_t simdgroup_tgm_floats = 0;
+
+#if defined(DRJIT_ENABLE_METAL)
+#include "metal.h"
+
+std::vector<MetalScene *> metal_kernel_scenes;
+std::unordered_map<MetalScene *, uint32_t> metal_kernel_scene_slot;
+std::vector<int32_t> metal_kernel_ift_slot;
+uint32_t metal_kernel_buffer_count = 0;
+
+uint32_t metal_register_kernel_scene(MetalScene *scene) {
+    if (!scene)
+        return 0;
+    auto it = metal_kernel_scene_slot.find(scene);
+    if (it != metal_kernel_scene_slot.end())
+        return it->second;
+    uint32_t slot = (uint32_t) metal_kernel_scenes.size();
+    metal_kernel_scenes.push_back(scene);
+    metal_kernel_scene_slot.emplace(scene, slot);
+    return slot;
+}
+
+void jitc_metal_finalize_scene_layout() {
+    uint32_t n = (uint32_t) metal_kernel_scenes.size();
+    metal_kernel_ift_slot.assign(n, -1);
+    if (n == 0) {
+        metal_kernel_buffer_count = 0;
+        return;
+    }
+    // Layout: [[buffer(0)]] = params, [[buffer(1)]]..[[buffer(N)]] = accels,
+    // [[buffer(N+1)]]..[[buffer(N+M)]] = IFTs (only for scenes that have one).
+    uint32_t next = 1u + n;
+    for (uint32_t i = 0; i < n; ++i) {
+        if (metal_kernel_scenes[i] &&
+            metal_kernel_scenes[i]->intersection_fn_library) {
+            metal_kernel_ift_slot[i] = (int32_t) next++;
+        }
+    }
+    metal_kernel_buffer_count = next;
+}
+#endif
 
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 int32_t alloca_size = -1;
@@ -294,6 +344,15 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     alloca_size = alloca_align = -1;
     indirect_callable_count = 0;
     indirect_callable_count_unique = 0;
+    uses_metal_rt = false;
+    uses_simdgroup_matrix = false;
+    simdgroup_tgm_floats = 0;
+#if defined(DRJIT_ENABLE_METAL)
+    metal_kernel_scenes.clear();
+    metal_kernel_scene_slot.clear();
+    metal_kernel_ift_slot.clear();
+    metal_kernel_buffer_count = 0;
+#endif
     kernel_history_entry = { };
 
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -307,10 +366,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
              n_regs         = 0,
              width = jitc_llvm_vector_width;
 
-    if (backend == JitBackend::CUDA) {
+    if (backend == JitBackend::CUDA || backend == JitBackend::Metal) {
         kernel_params.push_back((void *) (uintptr_t) group.size);
 
-        // The first 3 variables are reserved on the CUDA backend
+        // The first 3 variables are reserved on the CUDA/Metal backend
         n_regs = 4;
     } else {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
@@ -395,8 +454,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                 dsize += 4 - isize;
 
             sv.data = jitc_malloc(
-                backend == JitBackend::CUDA ? AllocType::Device
-                                            : AllocType::HostAsync,
+                jitc_is_device_backend(backend) ? AllocType::Device
+                                                : AllocType::HostAsync,
                 dsize); // Note: unsafe to access 'v' after jitc_malloc().
 
             kernel_params.push_back(sv.data);
@@ -413,6 +472,34 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
             #if defined(DRJIT_ENABLE_OPTIX)
                 uses_optix |= v->optix;
+            #endif
+            #if defined(DRJIT_ENABLE_METAL)
+                if (backend == JitBackend::Metal &&
+                    ((VarKind) v->kind == VarKind::TraceRay ||
+                     (VarKind) v->kind == VarKind::Call))
+                    uses_metal_rt = true;
+
+                // Detect simdgroup_matrix-eligible matvecs and reserve the
+                // largest (rows + cols) of TGM in floats per SIMD lane.
+                // The fast path works for both transpose=false (out =
+                // A @ x) and transpose=true (out = Aᵀ @ x); the transpose
+                // is folded into ``simdgroup_load(... transpose_matrix=
+                // true ...)`` in metal_coop_vec.cpp. The TGM footprint is
+                // determined by the physical matrix dimensions, which are
+                // identical in both cases (rows + cols).
+                if (backend == JitBackend::Metal &&
+                    (VarKind) v->kind == VarKind::CoopVecMatVec &&
+                    (VarType) v->type == VarType::Float32 && v->dep[1]) {
+                    CoopVecMatVecData *d = (CoopVecMatVecData *) v->data;
+                    uint32_t rows = d->A_descr.rows,
+                             cols = d->A_descr.cols;
+                    if (rows % 8 == 0 && cols % 8 == 0) {
+                        uses_simdgroup_matrix = true;
+                        uint32_t need = rows + cols;
+                        if (need > simdgroup_tgm_floats)
+                            simdgroup_tgm_floats = need;
+                    }
+                }
             #endif
         }
     }
@@ -468,15 +555,30 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     buffer.clear();
     if (backend == JitBackend::CUDA)
         jitc_cuda_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
+#if defined(DRJIT_ENABLE_METAL)
+    else if (backend == JitBackend::Metal)
+        jitc_metal_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
+#endif
     else
         jitc_llvm_assemble(ts, group);
 
-    // Replace '^'s in '__raygen__^^^..' or 'drjit_^^^..' with hash
+    // Replace '^'s in '__raygen__^^^..' or 'drjit_^^^..' with hash.
+    // Search for the kernel-name marker rather than the first '^', because
+    // injected preamble code (e.g. metal_dd_preamble) may contain '^' in
+    // comments that must not be overwritten.
     kernel_hash = hash_kernel(buffer.get());
 
-    size_t hash_offset = strchr(buffer.get(), '^') - buffer.get(),
+    const char *needle =
+        (uses_optix && backend == JitBackend::CUDA) ? "__raygen__^"
+                                                    : "drjit_^";
+    const char *marker = strstr(buffer.get(), needle);
+    if (!marker)
+        jitc_fail("jitc_eval(): could not locate kernel-name placeholder "
+                  "(needle=\"%s\") in generated source.", needle);
+
+    size_t hash_offset = (marker - buffer.get()) + (strlen(needle) - 1),
            end_offset = buffer.size(),
-           prefix_len = uses_optix ? 10 : 6;
+           prefix_len = (uses_optix && backend == JitBackend::CUDA) ? 10 : 6;
 
     buffer.rewind_to(hash_offset);
     buffer.put_q64_unchecked(kernel_hash.high64);
@@ -562,6 +664,21 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 #endif
 
+#if defined(DRJIT_ENABLE_METAL)
+    // Mix the active scene's IFT identity into the cache key so different
+    // intersection-function configurations (per-scene blueprint) produce
+    // different cached pipelines. The active scene is determined by
+    // jitc_metal_assemble (schedule walk over TraceRay nodes).
+    if (ts->backend == JitBackend::Metal) {
+        MetalScene *scene = (MetalScene *) ts->metal_active_scene;
+        if (scene && scene->intersection_fn_library) {
+            flags ^= (uint64_t) (uintptr_t) scene->intersection_fn_library;
+            flags ^= (uint64_t) scene->intersection_fn_names.size() << 16;
+            flags ^= (uint64_t) scene->geometry_types_mask << 24;
+        }
+    }
+#endif
+
     KernelKey kernel_key((char *) buffer.get(), kernel_hash.high64, ts->device,
                          flags);
     auto it = state.kernel_cache.find(kernel_key);
@@ -584,7 +701,15 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                         ts, buffer.get(), buffer.size(), kernel_name, kernel);
                 #endif
             }
-        } else {
+        }
+#if defined(DRJIT_ENABLE_METAL)
+        else if (ts->backend == JitBackend::Metal) {
+            ProfilerPhase profiler(profiler_region_backend_compile);
+            cache_hit = jitc_metal_compile(buffer.get(), buffer.size(),
+                                           kernel_name, kernel);
+        }
+#endif
+        else {
             cache_hit = jitc_kernel_load(buffer.get(), (uint32_t) buffer.size(),
                                          ts->backend, kernel_hash, kernel);
 
@@ -596,6 +721,28 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                 jitc_llvm_disasm(kernel);
             }
         }
+
+#if defined(DRJIT_ENABLE_METAL)
+        if (ts->backend == JitBackend::Metal) {
+            // Persist the per-kernel ``MetalScene*`` list (populated by
+            // ``jitc_metal_assemble``'s pre-walk into ``metal_kernel_scenes``)
+            // into the cached ``Kernel`` so that frozen-function replay
+            // (which skips re-assemble) can still bind the right TLASes /
+            // IFTs at launch. Slot order is preserved — index ``i`` here
+            // is the same slot used by ``accel_<i>`` and (if applicable)
+            // ``ift_<i>`` in the generated MSL.
+            delete[] kernel.metal.scenes;
+            uint32_t n = (uint32_t) metal_kernel_scenes.size();
+            if (n > 0) {
+                kernel.metal.scenes = new void *[n];
+                for (uint32_t i = 0; i < n; ++i)
+                    kernel.metal.scenes[i] = metal_kernel_scenes[i];
+            } else {
+                kernel.metal.scenes = nullptr;
+            }
+            kernel.metal.scene_count = n;
+        }
+#endif
 
         if (ts->backend == JitBackend::CUDA && !uses_optix) {
             // Locate the kernel entry point
@@ -918,6 +1065,13 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
             jitc_cuda_assemble_func(call, inst, in_size, in_align, out_size,
                                     out_align, n_regs);
             break;
+
+#if defined(DRJIT_ENABLE_METAL)
+        case JitBackend::Metal:
+            jitc_metal_assemble_func(call, inst, in_size, in_align, out_size,
+                                     out_align, n_regs);
+            break;
+#endif
 
         default:
             jitc_fail("jitc_assemble_func(): unsupported backend!");

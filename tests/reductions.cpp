@@ -274,7 +274,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(12_compress) {
 
             jit_log(LogLevel::Info, "===== size=%u, ones=%u =====", size, n_ones);
             uint8_t *data      = (uint8_t *) jit_malloc(AllocType::Host, size);
-            uint32_t *perm     = (uint32_t *) jit_malloc(Float::Backend == JitBackend::CUDA ? AllocType::Device :
+            uint32_t *perm     = (uint32_t *) jit_malloc(Float::Backend != JitBackend::LLVM ? AllocType::Device :
                                                                           AllocType::Host,
                                                           size * sizeof(uint32_t)),
                      *perm_ref = (uint32_t *) jit_malloc(AllocType::Host, size * sizeof(uint32_t));
@@ -292,7 +292,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(12_compress) {
             }
 
             data = (uint8_t *) jit_malloc_migrate(
-                data, Float::Backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host);
+                data, Float::Backend != JitBackend::LLVM ? AllocType::Device : AllocType::Host);
 
             uint32_t count = jit_compress(Float::Backend, data, size, perm);
             perm = (uint32_t *) jit_malloc_migrate(perm, AllocType::Host);
@@ -331,7 +331,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(13_mkperm) {
                 ref[k] = (((uint64_t) value) << 32) | k;
             }
 
-            data = (uint32_t *) jit_malloc_migrate(data, Float::Backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host);
+            data = (uint32_t *) jit_malloc_migrate(data, Float::Backend != JitBackend::LLVM ? AllocType::Device : AllocType::Host);
             uint32_t num_unique = jit_block_mkperm(Float::Backend, data, size, size, n_buckets, perm, offsets);
 
             perm = (uint32_t *) jit_malloc_migrate(perm, AllocType::Host);

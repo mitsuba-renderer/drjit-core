@@ -51,13 +51,17 @@ enum class JitBackend : uint32_t {
     CUDA = (1 << 0),
 
     /// LLVM backend targeting the CPU (generates LLVM IR)
-    LLVM = (1 << 1)
+    LLVM = (1 << 1),
+
+    /// Metal backend (Apple Silicon GPUs, generates MSL source)
+    Metal = (1 << 2)
 };
 #else
 enum JitBackend {
     JitBackendNone = 0,
     JitBackendCUDA = (1 << 0),
-    JitBackendLLVM = (1 << 1)
+    JitBackendLLVM = (1 << 1),
+    JitBackendMetal = (1 << 2)
 };
 #endif
 
@@ -75,7 +79,8 @@ enum JitBackend {
  */
 extern JIT_EXPORT void
 jit_init(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
-                                   (uint32_t) JitBackend::LLVM));
+                                   (uint32_t) JitBackend::LLVM |
+                                   (uint32_t) JitBackend::Metal));
 
 /**
  * \brief Launch an asynchronous thread that will execute jit_init() and
@@ -96,7 +101,8 @@ jit_init(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
  */
 extern JIT_EXPORT void
 jit_init_async(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
-                                         (uint32_t) JitBackend::LLVM));
+                                         (uint32_t) JitBackend::LLVM |
+                                         (uint32_t) JitBackend::Metal));
 
 /// Check whether the LLVM backend was successfully initialized
 extern JIT_EXPORT int jit_has_backend(JIT_ENUM JitBackend backend);
@@ -287,6 +293,34 @@ extern JIT_EXPORT void jit_llvm_set_block_size(uint32_t size);
 
 /// Return the number of SIMD packets that form one parallel work item
 extern JIT_EXPORT uint32_t jit_llvm_block_size();
+
+// ====================================================================
+//                        Metal-specific functionality
+// ====================================================================
+
+/// Return the number of available Metal devices that are compatible with Dr.Jit.
+extern JIT_EXPORT int jit_metal_device_count();
+
+/**
+ * \brief Set the active Metal device.
+ *
+ * The argument must be between 0 and <tt>jit_metal_device_count() - 1</tt>.
+ * This is a per-thread property: independent threads can optionally issue
+ * computation to different GPUs.
+ */
+extern JIT_EXPORT void jit_metal_set_device(int device);
+
+/// Return the Metal device ID associated with the current thread
+extern JIT_EXPORT int jit_metal_device();
+
+/// Return the Metal device handle (MTLDevice*) for the current thread
+extern JIT_EXPORT void *jit_metal_device_handle();
+
+/// Return the Metal command queue handle (MTLCommandQueue*) for the current thread
+extern JIT_EXPORT void *jit_metal_queue();
+
+/// Return whether the current Metal device supports hardware ray tracing.
+extern JIT_EXPORT int jit_metal_supports_ray_tracing();
 
 // ====================================================================
 //                        Logging infrastructure
@@ -1693,6 +1727,14 @@ enum class JitFlag : uint32_t {
     /// Spill registers under pressure into shared memory
     SpillToSharedMemory = 1 << 24,
 
+    /// Emulate Float64 on the Metal backend using double-double (DD) arithmetic
+    /// (a pair of float32 values per scalar). When this flag is OFF (default),
+    /// Metal silently demotes Float64 to Float32 -- a one-shot warning is logged
+    /// the first time this happens. When ON, Float64 variables are preserved
+    /// and lowered to MSL via the DD helpers in metal_dd_preamble.h. Apple GPUs
+    /// have no hardware FP64; emulation is ~10x slower than native Float32.
+    MetalEmulateFloat64 = 1 << 25,
+
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
@@ -1737,7 +1779,8 @@ enum JitFlag {
     JitFlagFreezingScope = 1 << 21,
     JitFlagEnableObjectTraversal = 1 << 22,
     JitFlagShaderExecutionReordering = 1 << 23,
-    JitFlagSpillToSharedMemory = 1 << 24
+    JitFlagSpillToSharedMemory = 1 << 24,
+    JitFlagMetalEmulateFloat64 = 1 << 25
 };
 #endif
 

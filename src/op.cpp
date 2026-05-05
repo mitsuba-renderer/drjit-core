@@ -8,6 +8,9 @@
 #include "util.h"
 #include "op.h"
 #include "array.h"
+#if defined(DRJIT_ENABLE_METAL)
+#  include "metal.h"
+#endif
 
 #if defined(_MSC_VER)
 #  pragma warning (disable: 4702) // unreachable code
@@ -22,7 +25,7 @@ enum CheckFlags {
     IsIntOrBool = 4,
     IsNotVoid = 8,
     IsFloat = 16,
-    IsCUDA = 32,
+    IsGPU = 32,        // CUDA or Metal — used by hardware-intrinsic ops
     ArrayAllowed = 64,
     IgnoreTypes = 128
 };
@@ -128,9 +131,11 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
             }
         }
 
-        if constexpr (bool(Flags & IsCUDA)) {
-            if (unlikely((JitBackend) vi->backend != JitBackend::CUDA)) {
-                err = "operation is only supported on the CUDA backend";
+        if constexpr (bool(Flags & IsGPU)) {
+            JitBackend b = (JitBackend) vi->backend;
+            if (unlikely(b != JitBackend::CUDA && b != JitBackend::Metal)) {
+                err = "operation is only supported on GPU backends "
+                      "(CUDA or Metal)";
                 goto fail;
             }
         }
@@ -1552,7 +1557,7 @@ template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_sin(T) { jitc_fail("eval_sin(): unsupported operands!"); }
 
 uint32_t jitc_var_sin_intrinsic(uint32_t a0) {
-    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_sin", a0);
+    auto [info, v0] = jitc_var_check<IsFloat | IsGPU>("jit_var_sin", a0);
 
     uint32_t result = 0;
     if (info.simplify && info.literal)
@@ -1578,7 +1583,7 @@ template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_cos(T) { jitc_fail("eval_cos(): unsupported operands!"); }
 
 uint32_t jitc_var_cos_intrinsic(uint32_t a0) {
-    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_cos_intrinsic", a0);
+    auto [info, v0] = jitc_var_check<IsFloat | IsGPU>("jit_var_cos_intrinsic", a0);
 
     uint32_t result = 0;
     if (info.simplify && info.literal)
@@ -1604,7 +1609,7 @@ template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_exp2(T) { jitc_fail("eval_exp2(): unsupported operands!"); }
 
 uint32_t jitc_var_exp2_intrinsic(uint32_t a0) {
-    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_exp2_intrinsic", a0);
+    auto [info, v0] = jitc_var_check<IsFloat | IsGPU>("jit_var_exp2_intrinsic", a0);
 
     uint32_t result = 0;
     if (info.simplify && info.literal)
@@ -1630,7 +1635,7 @@ template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_log2(T) { jitc_fail("eval_log2(): unsupported operands!"); }
 
 uint32_t jitc_var_log2_intrinsic(uint32_t a0) {
-    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_log2_intrinsic", a0);
+    auto [info, v0] = jitc_var_check<IsFloat | IsGPU>("jit_var_log2_intrinsic", a0);
 
     uint32_t result = 0;
     if (info.simplify && info.literal)
@@ -1656,7 +1661,7 @@ template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
 T eval_tanh(T) { jitc_fail("eval_tanh(): unsupported operands!"); }
 
 uint32_t jitc_var_tanh_intrinsic(uint32_t a0) {
-    auto [info, v0] = jitc_var_check<IsFloat | IsCUDA>("jit_var_tanh_intrinsic", a0);
+    auto [info, v0] = jitc_var_check<IsFloat | IsGPU>("jit_var_tanh_intrinsic", a0);
 
     uint32_t result = 0;
     if (info.simplify && info.literal)
@@ -2054,7 +2059,8 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
             jitc_raise("jit_var_gather(): out-of-bounds read from position %zu "
                        "in an array of size %u.", pos, src_info.size);
 
-        AllocType atype = (JitBackend) src_info.backend == JitBackend::CUDA
+        AllocType atype = ((JitBackend) src_info.backend == JitBackend::CUDA ||
+                           (JitBackend) src_info.backend == JitBackend::Metal)
                               ? AllocType::Device
                               : AllocType::HostAsync;
 
@@ -2132,6 +2138,7 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
     /// Revert to separate gathers in special various cases
     if (src_v->symbolic || // This will likely fail, let jitc_var_gather() generate an error
         !(flags & (uint32_t) JitFlag::PacketOps) ||      // Packet gathers are disabled
+        var_info.backend == JitBackend::Metal ||            // Metal: no packet ops
         (mask_v->is_literal() && mask_v->literal == 0) ||   // Masked load
         src_v->size == 1 ||                                 // Scalar load
         (var_info.size == 1 && var_info.literal) ||         // Memcpy
@@ -2692,10 +2699,21 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
 
     bool is_llvm = backend == JitBackend::LLVM;
     bool is_cuda = backend == JitBackend::CUDA;
+    bool is_metal = backend == JitBackend::Metal;
 
     // LLVM prior to v15.0.0 lacks minimum/maximum atomic reduction intrinsics
     if (is_llvm && (op == ReduceOp::Min || op == ReduceOp::Max) &&
         jitc_llvm_version_major < 15)
+        return false;
+
+    // Metal does not support 64-bit atomics
+    if (is_metal && (vt == VarType::Int64 || vt == VarType::UInt64 ||
+                     vt == VarType::Float64))
+        return false;
+
+    // Metal: half-precision atomics use CAS on a 32-bit word, which
+    // is not reliably supported.
+    if (is_metal && vt == VarType::Float16)
         return false;
 
     size_t compute_capability = (size_t) -1;
@@ -2776,8 +2794,20 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             uint32_t tsize = jitc_var(target)->size;
             if (mode == ReduceMode::Auto && tsize <= llvm_expand_threshold)
                 mode = ReduceMode::Expand;
+#if defined(DRJIT_ENABLE_METAL)
+        } else if (backend == JitBackend::Metal) {
+            uint32_t tsize_v = jitc_var(target)->size;
+            uint32_t tsize_b = type_size[jitc_var(target)->type];
+            // Only auto-promote if the chosen factor would actually expand
+            // (small targets get factor=1, in which case Expand is a no-op
+            // and we'd just pay the bookkeeping cost).
+            if (mode == ReduceMode::Auto &&
+                tsize_v <= metal_expand_threshold &&
+                jitc_metal_expand_factor(tsize_v, tsize_b) > 1)
+                mode = ReduceMode::Expand;
+#endif
         } else {
-            // ReduceMode::Expand is only supported on the LLVM backend
+            // ReduceMode::Expand is only supported on the LLVM/Metal backends
             if (mode == ReduceMode::Expand)
                 mode = ReduceMode::Auto;
         }
@@ -2806,16 +2836,39 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             auto [target_i, expand_i] = jitc_var_expand(target, op);
             target = steal(target_i);
 
-            Variable v{};
-            v.kind = (uint32_t) VarKind::ThreadIndex;
-            v.type = (uint32_t) VarType::UInt32;
-            v.size = (uint32_t) size;
-            v.backend = (uint32_t) backend;
+#if defined(DRJIT_ENABLE_METAL)
+            if (backend == JitBackend::Metal) {
+                // Per-thread slot is ``thread_position_in_grid % factor``.
+                // ``jitc_metal_expand_factor`` always returns a power of 2,
+                // so we can use a bitwise AND with ``factor - 1`` instead
+                // of a (slow) modulo. We re-derive ``factor`` from the
+                // target's logical size + tsize so we agree with what
+                // ``jitc_var_expand`` allocated.
+                uint32_t target_size = jitc_var(target)->size;
+                uint32_t tsize_b = type_size[jitc_var(target)->type];
+                uint32_t factor = jitc_metal_expand_factor(target_size, tsize_b);
 
-            Ref expand = steal(jitc_var_u32(backend, expand_i)),
-                thread_idx = steal(jitc_var_new(v));
+                Ref counter   = steal(jitc_var_counter(backend, size, false));
+                Ref mask_v    = steal(jitc_var_u32(backend, factor - 1u));
+                Ref slot      = steal(jitc_var_and(counter, mask_v));
+                Ref size_var  = steal(jitc_var_u32(backend, target_size));
+                Ref slot_off  = steal(jitc_var_mul(slot, size_var));
+                index         = steal(jitc_var_add(slot_off, index));
+                (void) expand_i;
+            } else
+#endif
+            {
+                Variable v{};
+                v.kind = (uint32_t) VarKind::ThreadIndex;
+                v.type = (uint32_t) VarType::UInt32;
+                v.size = (uint32_t) size;
+                v.backend = (uint32_t) backend;
 
-            index = steal(jitc_var_fma(thread_idx, expand, index));
+                Ref expand = steal(jitc_var_u32(backend, expand_i)),
+                    thread_idx = steal(jitc_var_new(v));
+
+                index = steal(jitc_var_fma(thread_idx, expand, index));
+            }
 
             mode = ReduceMode::NoConflicts;
         }
@@ -3047,12 +3100,13 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     unwrap(target, target_v);
     target_ = target;
 
-    if (!jitc_can_scatter_reduce(backend, vt, op) && backend == JitBackend::CUDA)
+    if (!jitc_can_scatter_reduce(backend, vt, op))
         jitc_raise(
             "jit_var_scatter_packet(): the %s backend does not support the requested "
             "type of atomic reduction (%s) for variables of type (%s)",
-            backend == JitBackend::CUDA ? "CUDA" : "LLVM", red_name[(int) op],
-            type_name[(int) vt]);
+            backend == JitBackend::CUDA ? "CUDA" :
+            backend == JitBackend::Metal ? "Metal" : "LLVM",
+            red_name[(int) op], type_name[(int) vt]);
 
     if (target_v->symbolic)
         jitc_raise(
@@ -3110,7 +3164,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     bool use_packet_op = false;
 
     if (flags & (uint32_t) JitFlag::PacketOps) {
-        if (op == ReduceOp::Identity) {
+        if (op == ReduceOp::Identity && backend != JitBackend::Metal) {
             use_packet_op = mode == ReduceMode::Auto ||
                             mode == ReduceMode::Expand ||
                             mode == ReduceMode::Permute ||

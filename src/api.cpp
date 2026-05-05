@@ -35,6 +35,10 @@
 #  include "optix.h"
 #endif
 
+#if defined(DRJIT_ENABLE_METAL)
+#  include <drjit-core/metal.h>
+#endif
+
 #include <nanothread/nanothread.h>
 
 void jit_init(uint32_t backends) {
@@ -80,6 +84,13 @@ int jit_has_backend(JitBackend backend) {
             result = (state.backends & (uint32_t) JitBackend::CUDA)
                 && !state.devices.empty();
             break;
+
+#if defined(DRJIT_ENABLE_METAL)
+        case JitBackend::Metal:
+            result = (state.backends & (uint32_t) JitBackend::Metal)
+                && !state.metal_devices.empty();
+            break;
+#endif
 
         default:
             jitc_raise("jit_has_backend(): invalid input!");
@@ -334,6 +345,164 @@ uint32_t jit_llvm_block_size() {
 
 uint32_t jit_llvm_thread_count() {
     return pool_size(nullptr);
+}
+
+// ==========================================================================
+//                          Metal-specific API
+// ==========================================================================
+
+int jit_metal_device_count() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    return (int) state.metal_devices.size();
+#else
+    return 0;
+#endif
+}
+
+void jit_metal_set_device(int device) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    if (device < 0 || (size_t) device >= state.metal_devices.size())
+        jit_raise("jit_metal_set_device(%i): out of range (have %i devices).",
+                  device, (int) state.metal_devices.size());
+
+    ThreadState *ts = thread_state(JitBackend::Metal);
+    if (ts->device == device)
+        return;
+
+    MetalDevice &md = state.metal_devices[device];
+    ts->device = device;
+    ts->metal_device = md.device;
+    ts->metal_queue  = md.queue;
+    ts->metal_event  = md.event;
+    ts->metal_event_value = 0;
+    ts->metal_simd_width  = md.simd_width;
+    ts->metal_max_threads = md.max_threads_per_threadgroup;
+#else
+    (void) device;
+    jit_raise("jit_metal_set_device(): the Metal backend is not enabled in "
+              "this build of Dr.Jit.");
+#endif
+}
+
+int jit_metal_device() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    return thread_state(JitBackend::Metal)->device;
+#else
+    return -1;
+#endif
+}
+
+void *jit_metal_device_handle() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    return thread_state(JitBackend::Metal)->metal_device;
+#else
+    return nullptr;
+#endif
+}
+
+void *jit_metal_queue() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    return thread_state(JitBackend::Metal)->metal_queue;
+#else
+    return nullptr;
+#endif
+}
+
+int jit_metal_supports_ray_tracing() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    int dev = thread_state(JitBackend::Metal)->device;
+    if (dev < 0 || (size_t) dev >= state.metal_devices.size())
+        return 0;
+    return state.metal_devices[dev].supports_ray_tracing ? 1 : 0;
+#else
+    return 0;
+#endif
+}
+
+void *jit_metal_context() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    extern void *jitc_metal_context_impl();
+    return jitc_metal_context_impl();
+#else
+    return nullptr;
+#endif
+}
+
+void *jit_metal_command_queue() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    extern void *jitc_metal_command_queue_impl();
+    return jitc_metal_command_queue_impl();
+#else
+    return nullptr;
+#endif
+}
+
+uint32_t jit_metal_configure_scene(void *accel, void **resources,
+                                   uint32_t n_resources,
+                                   void *intersection_fn_library,
+                                   uint32_t n_ift_entries,
+                                   const char **ift_function_names,
+                                   void **ift_buffers,
+                                   const uint32_t *ift_buffer_slots,
+                                   const uint64_t *ift_buffer_offsets,
+                                   uint32_t geometry_types_mask) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    extern uint32_t jitc_metal_configure_scene(void *, void **, uint32_t,
+                                               void *, uint32_t,
+                                               const char **, void **,
+                                               const uint32_t *,
+                                               const uint64_t *,
+                                               uint32_t);
+    return jitc_metal_configure_scene(accel, resources, n_resources,
+                                      intersection_fn_library,
+                                      n_ift_entries,
+                                      ift_function_names,
+                                      ift_buffers,
+                                      ift_buffer_slots,
+                                      ift_buffer_offsets,
+                                      geometry_types_mask);
+#else
+    (void) accel; (void) resources; (void) n_resources;
+    (void) intersection_fn_library; (void) n_ift_entries;
+    (void) ift_function_names; (void) ift_buffers; (void) ift_buffer_slots;
+    (void) ift_buffer_offsets; (void) geometry_types_mask;
+    jit_raise("jit_metal_configure_scene(): Metal backend not enabled.");
+    return 0;
+#endif
+}
+
+void jit_metal_ray_trace(uint32_t n_args, uint32_t *args,
+                         uint32_t mask, uint32_t *out, uint32_t n_out,
+                         uint32_t scene) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_METAL)
+    extern void jitc_metal_ray_trace(uint32_t, uint32_t *, uint32_t,
+                                     uint32_t *, uint32_t, uint32_t);
+    jitc_metal_ray_trace(n_args, args, mask, out, n_out, scene);
+#else
+    (void) n_args; (void) args; (void) mask; (void) out; (void) n_out;
+    (void) scene;
+    jit_raise("jit_metal_ray_trace(): Metal backend not enabled.");
+#endif
+}
+
+void *jit_metal_lookup_buffer(void *ptr, size_t *offset) {
+#if defined(DRJIT_ENABLE_METAL)
+    extern void *jitc_metal_lookup_buffer_containing(void *ptr, size_t *offset);
+    return jitc_metal_lookup_buffer_containing(ptr, offset);
+#else
+    (void) ptr; (void) offset;
+    return nullptr;
+#endif
 }
 
 void jit_llvm_set_target(const char *target_cpu,
@@ -974,6 +1143,9 @@ void jit_eval() {
     lock_guard guard(state.lock);
     jitc_eval(thread_state_cuda);
     jitc_eval(thread_state_llvm);
+#if defined(DRJIT_ENABLE_METAL)
+    jitc_eval(thread_state_metal);
+#endif
 }
 
 int jit_var_eval(uint32_t index) {

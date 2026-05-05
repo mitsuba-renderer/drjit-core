@@ -11,9 +11,18 @@
 #include "log.h"
 #include "util.h"
 #include "profile.h"
+#if defined(DRJIT_ENABLE_METAL)
+#include "metal.h"
+#endif
 
 #if !defined(_WIN32)
 #  include <sys/mman.h>
+#endif
+
+#if defined(DRJIT_ENABLE_METAL)
+#  include "metal.h"
+#  include "metal_api.h"
+#  include <Metal/Metal.hpp>
 #endif
 
 // Try to use huge pages for allocations > 2M (only on Linux)
@@ -105,7 +114,7 @@ static void aligned_free(void *ptr, size_t size) {
 #endif
 }
 
-void* jitc_malloc(AllocType type, size_t size) {
+void* jitc_malloc(AllocType type, size_t size, JitBackend backend_hint) {
     if (size == 0)
         return nullptr;
 
@@ -123,10 +132,27 @@ void* jitc_malloc(AllocType type, size_t size) {
        can have to a manageable amount that facilitates re-use. */
     size = round_pow2(size);
 
-    JitBackend backend =
-        (type == AllocType::Device || type == AllocType::HostPinned)
-            ? JitBackend::CUDA
-            : JitBackend::LLVM;
+    JitBackend backend;
+    if (backend_hint != JitBackend::None) {
+        // Caller knows which backend the allocation belongs to — trust it.
+        backend = backend_hint;
+    } else {
+        // Legacy inference path: pick a backend from the AllocType plus the
+        // set of initialized backends. Ambiguous when both CUDA and Metal are
+        // compiled in and active simultaneously; new code should pass an
+        // explicit backend hint instead.
+        backend = (type == AllocType::Device || type == AllocType::HostPinned)
+                      ? JitBackend::CUDA
+                      : JitBackend::LLVM;
+#if defined(DRJIT_ENABLE_METAL)
+        if ((type == AllocType::Device || type == AllocType::HostPinned) &&
+            (state.backends & (uint32_t) JitBackend::CUDA) == 0 &&
+            (state.backends & (uint32_t) JitBackend::Metal) != 0) {
+            backend = JitBackend::Metal;
+        }
+#endif
+    }
+
     ThreadState *ts = nullptr;
 
     int device = 0;
@@ -134,6 +160,12 @@ void* jitc_malloc(AllocType type, size_t size) {
         ts = thread_state(backend);
         device = ts->device;
     }
+#if defined(DRJIT_ENABLE_METAL)
+    else if (backend == JitBackend::Metal) {
+        ts = thread_state(backend);
+        device = ts->device;
+    }
+#endif
 
     AllocInfo ai = alloc_info_encode(size, type, device);
     const char *descr = nullptr;
@@ -159,9 +191,37 @@ void* jitc_malloc(AllocType type, size_t size) {
             {
                 unlock_guard guard(state.lock);
                 /* Temporarily release the main lock */ {
-                    if (backend != JitBackend::CUDA) {
+                    if (backend == JitBackend::LLVM) {
                         ptr = aligned_malloc(size);
-                    } else {
+                    }
+#if defined(DRJIT_ENABLE_METAL)
+                    else if (backend == JitBackend::Metal) {
+                        DRJIT_METAL_SCOPED_POOL;
+                        auto *dev = (MTL::Device *) ts->metal_device;
+                        // ``HostPinned`` maps to shared-memory (CPU/GPU
+                        // visible) while ``Device`` maps to the more
+                        // performant private buffer.
+                        MTL::ResourceOptions opts =
+                            (type == AllocType::HostPinned)
+                                ? MTL::ResourceStorageModeShared
+                                : (MTL::ResourceStorageModePrivate |
+                                   MTL::ResourceHazardTrackingModeTracked);
+                        MTL::Buffer *buf = dev->newBuffer(size, opts);
+                        if (buf) {
+                            // For shared buffers we expose the CPU-visible
+                            // pointer; for private buffers we hand out the
+                            // GPU-virtual address (cast to void*).
+                            if (type == AllocType::HostPinned)
+                                ptr = buf->contents();
+                            else
+                                ptr = (void *) buf->gpuAddress();
+                            jitc_metal_register_buffer(ptr, buf);
+                        } else {
+                            ptr = nullptr;
+                        }
+                    }
+#endif
+                    else {
                         scoped_set_context guard_2(ts->context);
                         CUresult ret;
 
@@ -222,6 +282,10 @@ void jitc_free(void *ptr) {
         thread_state_cuda->notify_free(ptr);
     if (thread_state_llvm)
         thread_state_llvm->notify_free(ptr);
+#if defined(DRJIT_ENABLE_METAL)
+    if (thread_state_metal)
+        thread_state_metal->notify_free(ptr);
+#endif
 
     uintptr_t key = (uintptr_t) ptr;
     size_t hash = UInt64Hasher()(key);
@@ -292,10 +356,19 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
 
     auto [size, src_type, device] = alloc_info_decode(it->second);
 
-    JitBackend src_backend =
-        (src_type == AllocType::Device || src_type == AllocType::HostPinned)
-            ? JitBackend::CUDA
-            : JitBackend::LLVM;
+    JitBackend src_backend;
+    if (src_type == AllocType::Device || src_type == AllocType::HostPinned) {
+#if defined(DRJIT_ENABLE_METAL)
+        // Check if this allocation belongs to Metal
+        size_t off_tmp = 0;
+        if (jitc_metal_lookup_buffer_containing(ptr, &off_tmp))
+            src_backend = JitBackend::Metal;
+        else
+#endif
+            src_backend = JitBackend::CUDA;
+    } else {
+        src_backend = JitBackend::LLVM;
+    }
 
     // Maybe nothing needs to be done..
     if (src_type == dst_type &&
@@ -338,7 +411,17 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
                    "host-asynchronous memory are not supported.");
 
     /// At this point, source or destination is a GPU array, get assoc. state
-    ThreadState *ts = thread_state(JitBackend::CUDA);
+    JitBackend device_backend = src_backend;
+    if (device_backend == JitBackend::LLVM) {
+        // Source is host, destination must be a device type — detect backend
+#if defined(DRJIT_ENABLE_METAL)
+        if (jit_has_backend(JitBackend::Metal))
+            device_backend = JitBackend::Metal;
+        else
+#endif
+            device_backend = JitBackend::CUDA;
+    }
+    ThreadState *ts = thread_state(device_backend);
 
     if (dst_type == AllocType::Host) // Upgrade from host to host-pinned memory
         dst_type = AllocType::HostPinned;
@@ -349,6 +432,13 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
               alloc_type_name[(int) src_type],
               alloc_type_name[(int) dst_type]);
 
+#if defined(DRJIT_ENABLE_METAL)
+    if (device_backend == JitBackend::Metal) {
+        jitc_memcpy_async(JitBackend::Metal, ptr_new, ptr, size);
+        if (move) jitc_free(ptr);
+        return ptr_new;
+    }
+#endif
     scoped_set_context guard(ts->context);
     if (src_type == AllocType::Host) {
         // Host -> Device memory, create an intermediate host-pinned array
@@ -429,6 +519,18 @@ void jitc_flush_malloc_cache(bool warn) {
                                 cuda_check(cuMemFree((CUdeviceptr) ptr));
                         }
                     }
+#if defined(DRJIT_ENABLE_METAL)
+                    else if (state.backends & (uint32_t) JitBackend::Metal) {
+                        DRJIT_METAL_SCOPED_POOL;
+                        for (void *ptr : entries) {
+                            auto *buf = (MTL::Buffer *)
+                                jitc_metal_lookup_buffer(ptr);
+                            jitc_metal_unregister_buffer(ptr);
+                            if (buf)
+                                buf->release();
+                        }
+                    }
+#endif
                     break;
 
                 case AllocType::HostPinned:
@@ -438,6 +540,21 @@ void jitc_flush_malloc_cache(bool warn) {
                         for (void *ptr : entries)
                             cuda_check(cuMemFreeHost(ptr));
                     }
+#if defined(DRJIT_ENABLE_METAL)
+                    else if (state.backends & (uint32_t) JitBackend::Metal) {
+                        // Host-pinned on Metal == StorageModeShared. The
+                        // ``ptr`` is the buffer's CPU contents; we look up
+                        // the MTLBuffer via the same map and release it.
+                        DRJIT_METAL_SCOPED_POOL;
+                        for (void *ptr : entries) {
+                            auto *buf = (MTL::Buffer *)
+                                jitc_metal_lookup_buffer(ptr);
+                            jitc_metal_unregister_buffer(ptr);
+                            if (buf)
+                                buf->release();
+                        }
+                    }
+#endif
                     break;
 
                 case AllocType::Host:
