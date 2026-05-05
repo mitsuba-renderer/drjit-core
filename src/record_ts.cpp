@@ -135,6 +135,27 @@
 #include "profile.h"
 #include "util.h"
 #include "var.h"
+#if defined(DRJIT_ENABLE_METAL)
+#include "metal.h"
+#endif
+
+namespace {
+/// Compute the (replication_per_worker, workers) pair the live eval would
+/// have used for a Reduce-Expand region of `size` elements of `tsize` bytes
+/// on the given backend. Used to size the expand buffer / sweep parameters
+/// during frozen-function replay so that the buffer geometry matches what
+/// the recorded kernel was generated against.
+inline std::pair<uint32_t, uint32_t>
+expand_geometry(JitBackend backend, uint32_t size, uint32_t tsize) {
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        return { 1u, jitc_metal_expand_factor(size, tsize) };
+#else
+    (void) backend;
+#endif
+    return jitc_llvm_expand_replication_factor(size, tsize);
+}
+} // namespace
 
 const char *op_type_name[(int) OpType::Count]{
     "Barrier",        "KernelLaunch",      "MemsetAsync",          "Expand",
@@ -244,7 +265,7 @@ struct ReplayVariable {
      */
     void alloc(JitBackend backend, size_t dsize) {
         AllocType alloc_type =
-            backend == JitBackend::CUDA ? AllocType::Device : AllocType::Host;
+            jitc_is_device_backend(backend) ? AllocType::Device : AllocType::Host;
 
         if (!data) {
             alloc_size = dsize;
@@ -688,7 +709,8 @@ void RecordThreadState::record_launch(
     Kernel kernel, KernelKey *key, XXH128_hash_t hash, uint32_t size,
     std::vector<void *> *params,
     const std::vector<uint32_t> *kernel_param_ids) {
-    uint32_t kernel_param_offset = backend == JitBackend::CUDA ? 1 : 3;
+    uint32_t kernel_param_offset =
+        (backend == JitBackend::CUDA || backend == JitBackend::Metal) ? 1 : 3;
 
     // The size of the largest variable used by the kernel directly.
     size_t input_size = 0;
@@ -896,7 +918,7 @@ int Recording::replay_launch(Operation &op) {
     // when replaying.
     kernel_params.clear();
 
-    if (backend == JitBackend::CUDA) {
+    if (backend == JitBackend::CUDA || backend == JitBackend::Metal) {
         // First parameter contains kernel size. Assigned later.
         kernel_params.push_back(nullptr);
     } else {
@@ -1004,7 +1026,7 @@ int Recording::replay_launch(Operation &op) {
     }
 
     // Change kernel size in `kernel_params`
-    if (backend == JitBackend::CUDA)
+    if (backend == JitBackend::CUDA || backend == JitBackend::Metal)
         kernel_params[0] = (void *) (uintptr_t) launch_size;
 
     if (!dry_run) {
@@ -1147,8 +1169,12 @@ int Recording::replay_expand(Operation &op) {
     if (size != op.size)
         return false;
 
-    auto [workers, replication_per_worker] =
-        jitc_llvm_expand_replication_factor(size, tsize);
+    // Use the same expand geometry the live eval would have chosen for this
+    // backend. Recording stores `op.size = size`, but neither the workers nor
+    // replication factor — and they differ per-backend (LLVM uses
+    // pool_size() accumulators padded for false sharing; Metal uses a much
+    // larger power-of-two factor with a per-thread stride of just `size`).
+    auto [replication_per_worker, workers] = expand_geometry(backend, size, tsize);
 
     uint32_t new_size = size * replication_per_worker *  workers;
 
@@ -1231,19 +1257,22 @@ int Recording::replay_reduce_expanded(Operation &op) {
     ReduceOp rop     = op.rtype;
     uint32_t size    = data_var.size(vt);
     uint32_t tsize   = type_size[(uint32_t) vt];
-    uint32_t workers = pool_size();
 
-    uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u;
+    // Mirror `replay_expand`: pick the same factor the live eval would have
+    // used for this backend, so we sweep the matching number of expanded
+    // copies. Using the LLVM formula on Metal made `exp` come out as
+    // `pool_size()` instead of the much larger Metal factor, so part of the
+    // expanded buffer was never visited at reduction time.
+    auto [replication_per_worker, workers] = expand_geometry(backend, size, tsize);
+    uint32_t exp = replication_per_worker * workers;
 
     jitc_log(
         LogLevel::Debug,
         "replay(): reduce_expanded(vt=%s, op=%u, data=%p, exp=%u, size=%u)",
-        type_name[(uint32_t) vt], (uint32_t) rop, data_var.data,
-        replication_per_worker * workers, size);
+        type_name[(uint32_t) vt], (uint32_t) rop, data_var.data, exp, size);
 
     if (!dry_run)
-        ts->reduce_expanded(vt, rop, data_var.data,
-                            replication_per_worker * workers, size);
+        ts->reduce_expanded(vt, rop, data_var.data, exp, size);
 
     return true;
 }
@@ -2094,8 +2123,8 @@ int Recording::replay_aggregate(Operation &op) {
     // of this function.
     if (dry_run)
         agg = (AggregationEntry *) malloc_check(agg_size);
-    else if (backend == JitBackend::CUDA)
-        agg = (AggregationEntry *) jitc_malloc(AllocType::HostPinned, agg_size);
+    else if (backend == JitBackend::CUDA || backend == JitBackend::Metal)
+        agg = (AggregationEntry *) jitc_malloc(AllocType::HostPinned, agg_size, backend);
     else
         agg = (AggregationEntry *) malloc_check(agg_size);
 
@@ -2307,7 +2336,7 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
     uint32_t size = (uint32_t) dsize / type_size[(uint32_t) VarType::UInt64];
 
     AllocType atype =
-        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync;
+        jitc_is_device_backend(backend) ? AllocType::Device : AllocType::HostAsync;
     uint64_t *data = (uint64_t *) jitc_malloc(atype, dsize);
     jitc_memcpy(backend, data, ptr, dsize);
 
@@ -2701,9 +2730,23 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
     if (backend == JitBackend::CUDA) {
         thread_state_cuda = record_ts;
         set_disabled_thread_state(&thread_state_llvm, backend);
-    } else {
+#if defined(DRJIT_ENABLE_METAL)
+        set_disabled_thread_state(&thread_state_metal, backend);
+#endif
+    }
+#if defined(DRJIT_ENABLE_METAL)
+    else if (backend == JitBackend::Metal) {
+        thread_state_metal = record_ts;
+        set_disabled_thread_state(&thread_state_cuda, backend);
+        set_disabled_thread_state(&thread_state_llvm, backend);
+    }
+#endif
+    else {
         thread_state_llvm = record_ts;
         set_disabled_thread_state(&thread_state_cuda, backend);
+#if defined(DRJIT_ENABLE_METAL)
+        set_disabled_thread_state(&thread_state_metal, backend);
+#endif
     }
 
     for (uint32_t i = 0; i < n_inputs; ++i)
@@ -2740,9 +2783,23 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         if (backend == JitBackend::CUDA) {
             thread_state_cuda = internal;
             unset_disabled_thread_state(&thread_state_llvm);
-        } else {
+#if defined(DRJIT_ENABLE_METAL)
+            unset_disabled_thread_state(&thread_state_metal);
+#endif
+        }
+#if defined(DRJIT_ENABLE_METAL)
+        else if (backend == JitBackend::Metal) {
+            thread_state_metal = internal;
+            unset_disabled_thread_state(&thread_state_cuda);
+            unset_disabled_thread_state(&thread_state_llvm);
+        }
+#endif
+        else {
             thread_state_llvm = internal;
             unset_disabled_thread_state(&thread_state_cuda);
+#if defined(DRJIT_ENABLE_METAL)
+            unset_disabled_thread_state(&thread_state_metal);
+#endif
         }
         Recording *recording = new Recording(std::move(rts->m_recording));
         try{
@@ -2779,9 +2836,23 @@ void jitc_freeze_abort(JitBackend backend) {
         if (backend == JitBackend::CUDA) {
             thread_state_cuda = internal;
             unset_disabled_thread_state(&thread_state_llvm);
-        } else {
+#if defined(DRJIT_ENABLE_METAL)
+            unset_disabled_thread_state(&thread_state_metal);
+#endif
+        }
+#if defined(DRJIT_ENABLE_METAL)
+        else if (backend == JitBackend::Metal) {
+            thread_state_metal = internal;
+            unset_disabled_thread_state(&thread_state_cuda);
+            unset_disabled_thread_state(&thread_state_llvm);
+        }
+#endif
+        else {
             thread_state_llvm = internal;
             unset_disabled_thread_state(&thread_state_cuda);
+#if defined(DRJIT_ENABLE_METAL)
+            unset_disabled_thread_state(&thread_state_metal);
+#endif
         }
 
         delete rts;

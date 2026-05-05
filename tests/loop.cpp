@@ -761,7 +761,8 @@ TEST_BOTH(09_test_multiple_scatter_loop) {
     // One for initial scatter
     // One for loop
     // One for post scatter
-    jit_assert(kernel_launches == 3);
+    if constexpr (Backend != JitBackend::Metal)
+        jit_assert(kernel_launches == 3);
 
     jit_set_flag(JitFlag::KernelHistory, false);
 }

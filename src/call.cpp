@@ -241,7 +241,7 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
     call->offset_size = (inst_id_max + 1) * sizeof(uint64_t);
 
     AllocType at =
-        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync;
+        jitc_is_device_backend(backend) ? AllocType::Device : AllocType::HostAsync;
     call->offset = (uint64_t *) jitc_malloc(at, call->offset_size);
     uint8_t *data_d = (uint8_t *) jitc_malloc(at, data_size);
 
@@ -266,8 +266,8 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
         AggregationEntry *agg = nullptr;
         size_t agg_size = sizeof(AggregationEntry) * call->data_map.size();
 
-        if (backend == JitBackend::CUDA)
-            agg = (AggregationEntry *) jitc_malloc(AllocType::HostPinned, agg_size);
+        if (backend == JitBackend::CUDA || backend == JitBackend::Metal)
+            agg = (AggregationEntry *) jitc_malloc(AllocType::HostPinned, agg_size, backend);
         else
             agg = (AggregationEntry *) malloc_check(agg_size);
 
@@ -549,6 +549,12 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
     if (call->backend == JitBackend::LLVM)
         jitc_var_call_assemble_llvm(call, call_reg, self_reg, mask_reg,
                                     offset_reg, data_reg, out_size, out_align);
+#if defined(DRJIT_ENABLE_METAL)
+    else if (call->backend == JitBackend::Metal)
+        jitc_var_call_assemble_metal(call, call_reg, self_reg, mask_reg,
+                                     offset_reg, data_reg, in_size, in_align,
+                                     out_size, out_align);
+#endif
     else
         jitc_var_call_assemble_cuda(call, call_reg, self_reg, mask_reg,
                                     offset_reg, data_reg, in_size, in_align,
@@ -671,28 +677,40 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
 void jitc_call_upload(ThreadState *ts) {
     for (CallData *call : calls_assembled) {
         uint64_t *data;
-        if (ts->backend == JitBackend::CUDA)
-            data = (uint64_t *) jitc_malloc(AllocType::HostPinned, call->offset_size);
+        if (jitc_is_device_backend(ts->backend))
+            data = (uint64_t *) jitc_malloc(AllocType::HostPinned, call->offset_size,
+                                            (JitBackend) ts->backend);
         else
             data = (uint64_t *) malloc_check(call->offset_size);
 
         memset(data, 0, call->offset_size);
 
         for (uint32_t i = 0; i < call->n_inst; ++i) {
-            auto it = globals_map.find(GlobalKey(call->inst_hash[i], call->n_inst != 1 ? GlobalType::IndirectCallable : GlobalType::Callable));
-            if (it == globals_map.end())
-                jitc_fail("jitc_call_upload(): could not find callable!");
+            uint32_t callable_index;
+#if defined(DRJIT_ENABLE_METAL)
+            if (ts->backend == JitBackend::Metal) {
+                // Metal uses per-call 0-based indices (matching the switch-case
+                // labels emitted by jitc_var_call_assemble_metal)
+                callable_index = i;
+            } else
+#endif
+            {
+                auto it = globals_map.find(GlobalKey(call->inst_hash[i], call->n_inst != 1 ? GlobalType::IndirectCallable : GlobalType::Callable));
+                if (it == globals_map.end())
+                    jitc_fail("jitc_call_upload(): could not find callable!");
+                callable_index = it->second.callable_index;
+            }
 
             // high part: instance data offset, low part: callable index
             data[call->inst_id[i]] =
                 (((uint64_t) call->data_offset[i]) << 32) |
-                it->second.callable_index;
+                callable_index;
         }
 
         jitc_memcpy_async(ts->backend, call->offset, data, call->offset_size);
 
         // Free call offset table asynchronously
-        if (call->backend == JitBackend::CUDA) {
+        if (jitc_is_device_backend(call->backend)) {
             jitc_free(data);
         } else {
             Task *new_task = task_submit_dep(
@@ -772,9 +790,9 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
         perm_size += jitc_llvm_vector_width * sizeof(uint32_t);
 
     uint8_t *offsets = (uint8_t *) jitc_malloc(
-        backend == JitBackend::CUDA ? AllocType::HostPinned : AllocType::Host, offsets_size);
+        jitc_is_device_backend(backend) ? AllocType::HostPinned : AllocType::Host, offsets_size);
     uint32_t *perm = (uint32_t *) jitc_malloc(
-        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, perm_size);
+        jitc_is_device_backend(backend) ? AllocType::Device : AllocType::HostAsync, perm_size);
 
     // Compute permutation
     uint32_t unique_count = jitc_block_mkperm(backend, (const uint32_t *) self,

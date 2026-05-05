@@ -430,8 +430,10 @@ template <typename Array>
 Array empty(size_t size) {
     size_t byte_size = size * sizeof(typename Array::Value);
     void *ptr =
-        jit_malloc(Array::Backend == JitBackend::CUDA ? AllocType::Device
-                                                      : AllocType::HostAsync,
+        jit_malloc((Array::Backend == JitBackend::CUDA ||
+                    Array::Backend == JitBackend::Metal)
+                       ? AllocType::Device
+                       : AllocType::HostAsync,
                    byte_size);
     return Array::steal(
         jit_var_mem_map(Array::Backend, Array::Type, ptr, size, 1));
@@ -518,5 +520,6 @@ Array linspace(typename Array::Value min, typename Array::Value max, size_t size
 
 template <typename T> using CUDAArray = JitArray<JitBackend::CUDA, T>;
 template <typename T> using LLVMArray = JitArray<JitBackend::LLVM, T>;
+template <typename T> using MetalArray = JitArray<JitBackend::Metal, T>;
 
 NAMESPACE_END(drjit)

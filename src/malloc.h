@@ -38,8 +38,14 @@ extern uint32_t round_pow2(uint32_t x);
 extern const char *alloc_type_name[(int) AllocType::Count];
 extern const char *alloc_type_name_short[(int) AllocType::Count];
 
-/// Allocate the given flavor of memory
-extern void *jitc_malloc(AllocType type, size_t size) JIT_MALLOC;
+/// Allocate the given flavor of memory. When ``backend`` is left as
+/// ``JitBackend::None``, the implementation infers a target backend from
+/// ``type`` plus the set of initialized backends (legacy heuristic). Pass an
+/// explicit backend whenever the caller knows which backend the allocation
+/// belongs to — required to disambiguate Device / HostPinned allocations on
+/// systems where multiple GPU backends (CUDA + Metal) are compiled in.
+extern void *jitc_malloc(AllocType type, size_t size,
+                         JitBackend backend = JitBackend::None) JIT_MALLOC;
 
 /// Release the given pointer
 extern void jitc_free(void *ptr);

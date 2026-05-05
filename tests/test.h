@@ -31,6 +31,11 @@ using Int32L  = LLVMArray<int32_t>;
 using UInt32L = LLVMArray<uint32_t>;
 using MaskL   = LLVMArray<bool>;
 using HalfL   = LLVMArray<drjit::half>;
+using FloatM  = MetalArray<float>;
+using Int32M  = MetalArray<int32_t>;
+using UInt32M = MetalArray<uint32_t>;
+using MaskM   = MetalArray<bool>;
+using HalfM   = MetalArray<drjit::half>;
 
 #define TEST_REGISTER_CUDA(name, suffix, FloatType, ...)                       \
     int test##name##_##suffix =                                                \
@@ -51,6 +56,13 @@ using HalfL   = LLVMArray<drjit::half>;
         test_register("test" #name#suffix,                                     \
                       test##name<JitBackend::LLVM, FloatType, Int32L, UInt32L, \
                                  MaskL, LLVMArray>,                            \
+                      ##__VA_ARGS__);
+
+#define TEST_REGISTER_METAL(name, suffix, FloatType, ...)                      \
+    int test##name##_##suffix =                                                \
+        test_register("test" #name#suffix,                                     \
+                      test##name<JitBackend::Metal, FloatType, Int32M, UInt32M,\
+                                 MaskM, MetalArray>,                           \
                       ##__VA_ARGS__);
 
 #define TEST_CUDA(name, ...)                                                   \
@@ -85,6 +97,7 @@ using HalfL   = LLVMArray<drjit::half>;
     TEST_REGISTER_OPTIX(name,   _optix_fp16,    HalfC)                         \
     TEST_REGISTER_LLVM(name,    _llvm_fp32,     FloatL)                        \
     TEST_REGISTER_LLVM(name,    _llvm_fp16,     HalfL)                         \
+    TEST_REGISTER_METAL(name,   _metal_fp32,    FloatM)                        \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
@@ -96,6 +109,7 @@ using HalfL   = LLVMArray<drjit::half>;
     TEST_REGISTER_CUDA(name,    _cuda,     FloatC)                             \
     TEST_REGISTER_OPTIX(name,   _optix,    FloatC)                             \
     TEST_REGISTER_LLVM(name,    _llvm,     FloatL)                             \
+    TEST_REGISTER_METAL(name,   _metal,    FloatM)                             \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()

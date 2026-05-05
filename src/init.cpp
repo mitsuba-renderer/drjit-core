@@ -27,6 +27,11 @@
 #  include "optix.h"
 #endif
 
+#if defined(DRJIT_ENABLE_METAL)
+#  include "metal.h"
+#  include "metal_ts.h"
+#endif
+
 #if defined(_WIN32)
 #  include <windows.h>
 #  include <direct.h>
@@ -46,11 +51,17 @@ State state;
 #if defined(_MSC_VER)
   __declspec(thread) ThreadState* thread_state_cuda = nullptr;
   __declspec(thread) ThreadState* thread_state_llvm = nullptr;
+#if defined(DRJIT_ENABLE_METAL)
+  __declspec(thread) ThreadState* thread_state_metal = nullptr;
+#endif
   __declspec(thread) uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
   __declspec(thread) JitBackend default_backend = JitBackend::None;
 #else
   __thread ThreadState* thread_state_cuda = nullptr;
   __thread ThreadState* thread_state_llvm = nullptr;
+#if defined(DRJIT_ENABLE_METAL)
+  __thread ThreadState* thread_state_metal = nullptr;
+#endif
   __thread uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
   __thread JitBackend default_backend = JitBackend::None;
 #endif
@@ -78,6 +89,8 @@ void jitc_init(uint32_t backends) {
 
 #if defined(__APPLE__)
     backends &= ~(uint32_t) JitBackend::CUDA;
+#else
+    backends &= ~(uint32_t) JitBackend::Metal;
 #endif
 
     if ((backends & ~state.backends) == 0)
@@ -128,6 +141,11 @@ void jitc_init(uint32_t backends) {
     if ((backends & (uint32_t) JitBackend::CUDA) && jitc_cuda_init())
         state.backends |= (uint32_t) JitBackend::CUDA;
 
+#if defined(DRJIT_ENABLE_METAL)
+    if ((backends & (uint32_t) JitBackend::Metal) && jitc_metal_init())
+        state.backends |= (uint32_t) JitBackend::Metal;
+#endif
+
     state.variable_counter = 0;
     state.kernel_hard_misses = state.kernel_soft_misses = 0;
     state.kernel_hits = state.kernel_launches = 0;
@@ -160,6 +178,11 @@ void jitc_shutdown(int light) {
             scoped_set_context guard(ts->context);
             cuda_check(cuStreamSynchronize(ts->stream));
         }
+#if defined(DRJIT_ENABLE_METAL)
+        else if (ts->backend == JitBackend::Metal) {
+            jitc_metal_sync(ts);
+        }
+#endif
         if (!ts->mask_stack.empty() && state.leak_warnings)
             jitc_log(Warn, "jit_shutdown(): leaked %zu active masks!",
                      ts->mask_stack.size());
@@ -265,6 +288,9 @@ void jitc_shutdown(int light) {
 
     thread_state_llvm = nullptr;
     thread_state_cuda = nullptr;
+#if defined(DRJIT_ENABLE_METAL)
+    thread_state_metal = nullptr;
+#endif
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn &&
         state.leak_warnings) {
@@ -324,6 +350,9 @@ void jitc_shutdown(int light) {
 #if defined(DRJIT_ENABLE_OPTIX)
         jitc_optix_api_shutdown();
 #endif
+#if defined(DRJIT_ENABLE_METAL)
+        jitc_metal_shutdown();
+#endif
     }
 
     free(jitc_temp_path);
@@ -335,6 +364,41 @@ void jitc_shutdown(int light) {
 
 ThreadState *jitc_init_thread_state(JitBackend backend) {
     ThreadState *ts;
+
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal) {
+        ts = new MetalThreadState();
+        if ((state.backends & (uint32_t) JitBackend::Metal) == 0) {
+            delete ts;
+            jitc_raise(
+                "jit_init_thread_state(): the Metal backend has not been "
+                "initialized. Make sure to call jit_init(JitBackend::Metal) "
+                "first. The Metal backend is only available on macOS / "
+                "Apple Silicon (M1+).");
+        }
+
+        if (state.metal_devices.empty()) {
+            delete ts;
+            jitc_raise("jit_init_thread_state(): the Metal backend is "
+                       "inactive because no Metal-capable GPU was detected.");
+        }
+
+        MetalDevice &dev = state.metal_devices[0];
+        ts->device = 0;
+        ts->metal_device = dev.device;
+        ts->metal_queue  = dev.queue;
+        ts->metal_event  = dev.event;
+        ts->metal_event_value = 0;
+        ts->metal_simd_width  = dev.simd_width;
+        ts->metal_max_threads = dev.max_threads_per_threadgroup;
+        thread_state_metal = ts;
+
+        ts->backend = backend;
+        ts->scope = ++state.scope_ctr;
+        state.tss.push_back(ts);
+        return ts;
+    }
+#endif
 
     if (backend == JitBackend::CUDA) {
         ts = new CUDAThreadState();
@@ -470,7 +534,18 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
             unlock_guard guard_2(state.lock);
             cuda_check(cuStreamSynchronize(stream));
         }
-    } else {
+    }
+#if defined(DRJIT_ENABLE_METAL)
+    else if (ts->backend == JitBackend::Metal) {
+        if (hold_lock) {
+            jitc_metal_sync(ts);
+        } else {
+            unlock_guard guard(state.lock);
+            jitc_metal_sync(ts);
+        }
+    }
+#endif
+    else {
         Task *task = jitc_task;
         if (!task)
             return;
@@ -501,6 +576,9 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
 void jitc_sync_thread(bool hold_lock) {
     jitc_sync_thread(thread_state_cuda, hold_lock);
     jitc_sync_thread(thread_state_llvm, hold_lock);
+#if defined(DRJIT_ENABLE_METAL)
+    jitc_sync_thread(thread_state_metal, hold_lock);
+#endif
 }
 
 /// Wait for all computation on the current device to finish
@@ -725,6 +803,13 @@ KernelHistoryEntry *KernelHistory::get() {
             cuEventDestroy((CUevent) k.event_start);
             cuEventDestroy((CUevent) k.event_end);
             k.event_start = k.event_end = 0;
+#if defined(DRJIT_ENABLE_METAL)
+        } else if (k.backend == JitBackend::Metal) {
+            extern float jitc_metal_finalize_kernel_history_entry(void *);
+            k.execution_time =
+                jitc_metal_finalize_kernel_history_entry(k.task);
+            k.task = nullptr;
+#endif
         } else {
             task_wait((Task *) k.task);
             k.execution_time = (float) task_time((Task *) k.task);
@@ -748,6 +833,14 @@ void KernelHistory::clear() {
         if (k.backend == JitBackend::CUDA) {
             cuEventDestroy((CUevent) k.event_start);
             cuEventDestroy((CUevent) k.event_end);
+#if defined(DRJIT_ENABLE_METAL)
+        } else if (k.backend == JitBackend::Metal) {
+            // The Metal `task` slot holds an MTL::CommandBuffer*, not a
+            // nanothread Task. Reuse the finalize helper to wait + release.
+            extern float jitc_metal_finalize_kernel_history_entry(void *);
+            jitc_metal_finalize_kernel_history_entry(k.task);
+            k.task = nullptr;
+#endif
         } else {
             task_release((Task *) k.task);
         }
@@ -760,7 +853,8 @@ void KernelHistory::clear() {
 }
 
 /// Default implementations of ThreadState functions
-ThreadState::~ThreadState() { }
+ThreadState::~ThreadState() {
+}
 void ThreadState::barrier() { }
 void ThreadState::reset_state() {
     scheduled.clear();
@@ -776,6 +870,9 @@ void ThreadState::reset_state() {
 #if defined(DRJIT_ENABLE_OPTIX)
     optix_pipeline = nullptr;
     optix_sbt = nullptr;
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    metal_active_scene = nullptr;
 #endif
 }
 void ThreadState::notify_free(const void *) { }

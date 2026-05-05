@@ -109,3 +109,9 @@ extern void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
                                         uint32_t offset_reg, uint32_t data_reg,
                                         uint32_t in_size, uint32_t in_align,
                                         uint32_t out_size, uint32_t out_align);
+
+extern void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
+                                         uint32_t self_reg, uint32_t mask_reg,
+                                         uint32_t offset_reg, uint32_t data_reg,
+                                         uint32_t in_size, uint32_t in_align,
+                                         uint32_t out_size, uint32_t out_align);

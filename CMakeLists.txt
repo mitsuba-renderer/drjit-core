@@ -22,6 +22,10 @@ if (NOT APPLE)
   option(DRJIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
 endif()
 
+if (APPLE)
+  option(DRJIT_ENABLE_METAL "Enable the Metal GPU backend (Apple Silicon)?" ON)
+endif()
+
 if (NOT MSVC)
   option(DRJIT_SANITIZE_UBSAN   "Enable the address sanitizer (GCC, Clang)" OFF)
   option(DRJIT_SANITIZE_ASAN    "Enable the undefined behavior sanitizer (GCC, Clang)" OFF)
@@ -36,6 +40,14 @@ if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/nanothread/ext/cmake-defau
   message(FATAL_ERROR "The Dr.Jit-Core dependencies are missing! "
     "You probably did not clone the project with --recursive. It is possible to recover "
     "by invoking\n$ git submodule update --init --recursive")
+endif()
+
+if (APPLE AND DRJIT_ENABLE_METAL AND
+    NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/metal-cpp/Metal")
+  message(FATAL_ERROR "The metal-cpp dependency is missing under "
+    "ext/metal-cpp. Run\n$ git submodule update --init --recursive\n"
+    "to fetch it, or pass -DDRJIT_ENABLE_METAL=OFF to disable the Metal "
+    "backend.")
 endif()
 
 # ----------------------------------------------------------
@@ -68,6 +80,12 @@ if (NOT APPLE)
   endif()
 endif()
 
+if (APPLE AND DRJIT_ENABLE_METAL)
+  message(STATUS "Dr.Jit-Core: Metal GPU backend enabled.")
+elseif (APPLE)
+  message(STATUS "Dr.Jit-Core: Metal GPU backend disabled.")
+endif()
+
 # ----------------------------------------------------------
 #  Build the nanothread library
 # ----------------------------------------------------------
@@ -89,6 +107,28 @@ if (DRJIT_ENABLE_OPTIX)
     src/optix_coop_vec.h
     src/optix_coop_vec.cpp
     src/optix_core.cpp)
+endif()
+
+if (APPLE AND DRJIT_ENABLE_METAL)
+  set(DRJIT_METAL_FILES
+    include/drjit-core/metal.h
+    src/metal.h
+    src/metal_api.h
+    src/metal_api.cpp
+    src/metal_core.cpp
+    src/metal_eval.h
+    src/metal_eval.cpp
+    src/metal_ts.h
+    src/metal_ts.cpp
+    src/metal_scatter.h
+    src/metal_scatter.cpp
+    src/metal_array.h
+    src/metal_array.cpp
+    src/metal_coop_vec.h
+    src/metal_coop_vec.cpp
+    src/metal_stage_buffer.h
+    src/metal_stage_buffer.cpp
+    src/metal_mps.mm)
 endif()
 
 
@@ -140,6 +180,9 @@ add_library(
 
   # OptiX backend
   ${DRJIT_OPTIX_FILES}
+
+  # Metal backend (Apple only)
+  ${DRJIT_METAL_FILES}
 
   # LLVM backend
   src/llvm_api.h
@@ -261,6 +304,54 @@ if (DRJIT_ENABLE_OPTIX)
   if (WIN32)
     target_link_libraries(drjit-core PRIVATE Cfgmgr32)
   endif()
+endif()
+
+if (APPLE AND DRJIT_ENABLE_METAL)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_METAL=1)
+  # NOTE: ``DRJIT_METAL_KERNEL_SOURCE`` and the runtime ``fopen`` path are
+  # gone — the .metal source now lives inside the shared library as a C++
+  # raw string (see metal_kernels_src.h, generated below).
+  # Embed resources/metal_kernels.metal into the binary as a C++ raw string
+  # so that the runtime no longer depends on the source-tree file. The
+  # generator wraps the file content in `R"MSL(...)MSL"` and writes it to
+  # `metal_kernels_src.h` next to the rest of the build outputs.
+  set(METAL_KERNELS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/resources/metal_kernels.metal")
+  set(METAL_KERNELS_HDR "${CMAKE_CURRENT_BINARY_DIR}/metal_kernels_src.h")
+  add_custom_command(
+    OUTPUT  "${METAL_KERNELS_HDR}"
+    COMMAND ${CMAKE_COMMAND}
+      -DINPUT="${METAL_KERNELS_SRC}"
+      -DOUTPUT="${METAL_KERNELS_HDR}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_metal_kernels.cmake"
+    DEPENDS "${METAL_KERNELS_SRC}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_metal_kernels.cmake"
+    COMMENT "Embedding metal_kernels.metal as C++ raw string")
+  target_sources(drjit-core PRIVATE "${METAL_KERNELS_HDR}")
+  target_include_directories(drjit-core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+  target_include_directories(drjit-core PRIVATE ext/metal-cpp)
+  target_link_libraries(drjit-core PRIVATE
+    "-framework Foundation"
+    "-framework Metal"
+    "-framework MetalPerformanceShaders"
+    "-framework QuartzCore")
+  # The metal-cpp wrapper requires Objective-C++ for ARC; ensure C++17 +
+  # exceptions are enabled (they already are above) and add the file extension
+  # mapping if necessary.
+  set_source_files_properties(
+    src/metal_api.cpp
+    src/metal_core.cpp
+    src/metal_ts.cpp
+    src/metal_eval.cpp
+    src/metal_scatter.cpp
+    src/metal_array.cpp
+    src/metal_coop_vec.cpp
+    src/metal_stage_buffer.cpp
+    src/malloc.cpp
+    PROPERTIES COMPILE_FLAGS "-fno-objc-arc")
+  # metal_mps.mm needs Objective-C++ for the MPS API
+  set_source_files_properties(
+    src/metal_mps.mm
+    PROPERTIES COMPILE_FLAGS "-fno-objc-arc")
 endif()
 
 if (UNIX)
