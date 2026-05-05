@@ -44,3 +44,9 @@ tests/microbenchmark
 /resources/pack
 /resources/kernels_75.ptx
 /resources/kernels.c
+metal_kernel
+metal_smoke
+.claude/
+ext/metal-cpp/Foundation/
+ext/metal-cpp/Metal/
+ext/metal-cpp/QuartzCore/

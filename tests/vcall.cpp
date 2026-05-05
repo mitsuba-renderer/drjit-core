@@ -150,6 +150,8 @@ const char *backend_name(JitBackend backend) {
             return "CUDA";
         case JitBackend::LLVM:
             return "LLVM";
+        case JitBackend::Metal:
+            return "Metal";
         case JitBackend::None:
             return "None";
         default:
@@ -234,6 +236,8 @@ TEST_BOTH(02_calling_conventions) {
        avoid alignment issues, immediate copying of an input to an output.
        Finally, it runs twice: the second time with optimizations, which
        optimizes away all of the inputs */
+    if constexpr (Backend == JitBackend::Metal)
+        return; // Metal does not support float64
     using Double = Array<double>;
 
     struct Base {
@@ -467,6 +471,8 @@ TEST_BOTH(03_devirtualize) {
 
 
 TEST_BOTH(04_extra_data) {
+    if constexpr (Backend == JitBackend::Metal)
+        return; // Metal does not support float64
     using Double = Array<double>;
 
     /// Ensure that evaluated scalar fields in instances can be accessed
@@ -546,6 +552,7 @@ TEST_BOTH(04_extra_data) {
 
 
 TEST_BOTH_FP32(05_side_effects) {
+
     /*  This tests three things:
        - side effects in virtual functions
        - functions without inputs/outputs
@@ -614,6 +621,7 @@ TEST_BOTH_FP32(05_side_effects) {
 
 
 TEST_BOTH_FP32(06_side_effects_only_once) {
+
     /* This tests ensures that side effects baked into a function only happen
        once, even when that function is evaluated multiple times. */
 
@@ -910,6 +918,8 @@ TEST_BOTH(08_big) {
 
 
 TEST_BOTH(09_self) {
+    if constexpr (Backend == JitBackend::Metal)
+        return; // Uses jit_var_mask_default (DefaultMask) which is LLVM-only
     struct Base;
     using BasePtr = Array<Base *>;
 
@@ -962,6 +972,7 @@ TEST_BOTH(09_self) {
 
 
 TEST_BOTH(10_recursion) {
+
     struct Base1 {
         virtual ~Base1() = default;
         virtual Float f(const Float &x) = 0;
@@ -1170,6 +1181,7 @@ TEST_BOTH(11_recursion_with_local) {
 }
 
 TEST_BOTH_FP32(12_nested_with_side_effects) {
+
     struct Base {
         virtual ~Base() = default;
         virtual void f() = 0;
@@ -1264,6 +1276,7 @@ TEST_BOTH_FP32(12_nested_with_side_effects) {
 
 
 TEST_BOTH(13_load_bool_data) {
+
     struct Base {
         virtual ~Base() = default;
         virtual Float f() = 0;
@@ -1341,6 +1354,8 @@ TEST_BOTH(13_load_bool_data) {
  * nanobind::intrusive_base class.
  */
 TEST_BOTH(14_frozen_vcall) {
+    if constexpr (Backend == JitBackend::Metal)
+        return; // FrozenFunction recording not yet supported on Metal
     jit_set_flag(JitFlag::VCallOptimize, true);
     jit_set_flag(JitFlag::SymbolicCalls, true);
 

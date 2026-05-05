@@ -344,6 +344,8 @@ extern const char *type_name_llvm_big   [(int) VarType::Count];
 extern const char *type_name_ptx        [(int) VarType::Count];
 extern const char *type_name_ptx_bin    [(int) VarType::Count];
 extern const char *type_name_ptx_bin2   [(int) VarType::Count];
+extern const char *type_name_metal      [(int) VarType::Count];
+extern const char *type_name_metal_bin  [(int) VarType::Count];
 extern const char *type_prefix          [(int) VarType::Count];
 extern const char *type_size_str        [(int) VarType::Count];
 
@@ -365,5 +367,3 @@ template <typename T> uint32_t jitc_var_new_take_ownership(Variable &v, drjit::u
 
     return result;
 }
-
-

@@ -252,11 +252,13 @@ struct alignas(64) Variable {
     // Variable kind (IR statement / literal constant / data)
     uint32_t kind : 7;
 
-    /// Backend associated with this variable
-    uint32_t backend : 2;
+    /// Backend associated with this variable (3 bits to fit Metal=4 in
+    /// addition to CUDA=1 and LLVM=2)
+    uint32_t backend : 3;
 
-    /// Variable type (Bool/Int/Float/....)
-    uint32_t type : 5;
+    /// Variable type (Bool/Int/Float/....). 4 bits is enough for the 16
+    /// distinct VarType values (0..15).
+    uint32_t type : 4;
 
     /// Is this a pointer variable that is used to write to some array?
     uint32_t write_ptr : 1;
@@ -369,10 +371,9 @@ struct VariableKey {
     uint32_t size;
     uint32_t dep[4];
     uint32_t kind         : 8;
-    uint32_t backend      : 2;
+    uint32_t backend      : 3;
     uint32_t type         : 4;
     uint32_t write_ptr    : 1;
-    uint32_t unused       : 1;
     uint32_t array_length : 16;
     uint32_t scope;
     uint64_t literal;
@@ -387,7 +388,6 @@ struct VariableKey {
         backend = v.backend;
         type = v.type;
         write_ptr = v.write_ptr;
-        unused = 0;
         scope = v.scope;
         array_length = (v.is_array() || v.coop_vec) ? v.array_length : 0;
         literal = v.literal;
@@ -582,7 +582,74 @@ struct WeakRef {
         : index(index), counter(counter) { }
 };
 
+// ====================================================================
+// Backend index helpers
+//
+// Variable::backend uses a 2-bit field to store the backend tag while
+// keeping sizeof(Variable) at 64 bytes (one cache line). The JitBackend
+// enum is a bit-mask (1, 2, 4, ...) which doesn't fit in 2 bits once
+// Metal is included. We therefore use a sequential encoding internally
+// (CUDA = 0, LLVM = 1, Metal = 2) and convert to/from JitBackend.
+// ====================================================================
+
+inline uint32_t backend_to_index(JitBackend b) {
+    switch (b) {
+        case JitBackend::CUDA:  return 0;
+        case JitBackend::LLVM:  return 1;
+        case JitBackend::Metal: return 2;
+        default:                return 3; // None / unknown
+    }
+}
+
+inline JitBackend index_to_backend(uint32_t i) {
+    switch (i & 3) {
+        case 0: return JitBackend::CUDA;
+        case 1: return JitBackend::LLVM;
+        case 2: return JitBackend::Metal;
+        default: return JitBackend::None;
+    }
+}
+
 struct KernelKey;
+
+/// Caches basic information about a Metal device
+struct MetalDevice {
+    /// MTL::Device* (opaque pointer to avoid Objective-C/metal-cpp leakage in headers)
+    void *device = nullptr;
+
+    /// MTL::CommandQueue* used to submit work to the GPU
+    void *queue = nullptr;
+
+    /// MTL::SharedEvent* used for synchronization (CPU/GPU)
+    void *event = nullptr;
+
+    /// Monotonic counter associated with the shared event
+    uint64_t event_value = 0;
+
+    /// Optional MTL::BinaryArchive* used to cache compiled kernels on disk
+    void *binary_archive = nullptr;
+
+    /// Maximum number of threads per threadgroup (typically 1024)
+    uint32_t max_threads_per_threadgroup = 1024;
+
+    /// Maximum bytes of threadgroup memory available (typically 32768)
+    uint32_t max_threadgroup_memory = 32768;
+
+    /// SIMD execution width (32 on all current Apple Silicon GPUs)
+    uint32_t simd_width = 32;
+
+    /// True if the device supports Metal 3 (M1+ enforced as minimum)
+    bool supports_metal3 = false;
+
+    /// True if the device supports hardware ray tracing acceleration
+    bool supports_ray_tracing = false;
+
+    /// True if the device supports float atomic add (Metal 3.0+)
+    bool supports_float_atomics = false;
+
+    /// Cached human-readable device name (owned, freed at shutdown)
+    char *name = nullptr;
+};
 
 /// Represents a single stream of a parallel communication
 struct ThreadStateBase {
@@ -670,6 +737,39 @@ struct ThreadStateBase {
     /// OptiX pipeline associated with the next kernel launch
     OptixPipelineData *optix_pipeline = nullptr;
     OptixShaderBindingTable *optix_sbt = nullptr;
+#endif
+
+    /// ---------------------------- Metal-specific ----------------------------
+
+#if defined(DRJIT_ENABLE_METAL)
+    /// MTL::Device* — opaque to avoid leaking metal-cpp into shared headers
+    void *metal_device = nullptr;
+
+    /// MTL::CommandQueue* used to submit work to the GPU
+    void *metal_queue = nullptr;
+
+    /// MTL::SharedEvent* used for synchronization
+    void *metal_event = nullptr;
+
+    /// Monotonic counter incremented for every encoded signal/wait
+    uint64_t metal_event_value = 0;
+
+    /// Pending MTL::CommandBuffer* (current open command buffer)
+    void *metal_command_buffer = nullptr;
+
+    /// Active MetalScene (MetalScene*) for the kernel currently being
+    /// assembled / launched. Determined at `jitc_metal_assemble` time by
+    /// walking the schedule for a TraceRay node and reading its scene
+    /// dependency (dep[1]). Read by codegen, cache-key computation,
+    /// kernel compilation (for linked-function lists) and by
+    /// `MetalThreadState::launch` to bind the correct TLAS + IFT.
+    void *metal_active_scene = nullptr;
+
+    /// SIMD execution width (typically 32)
+    uint32_t metal_simd_width = 32;
+
+    /// Maximum threads per threadgroup
+    uint32_t metal_max_threads = 1024;
 #endif
 };
 
@@ -912,6 +1012,11 @@ struct State {
     /// Available devices and their CUDA IDs
     std::vector<Device> devices;
 
+#if defined(DRJIT_ENABLE_METAL)
+    /// Available Metal devices (Apple Silicon only)
+    std::vector<MetalDevice> metal_devices;
+#endif
+
     /// State associated with each DrJit thread
     std::vector<ThreadState *> tss;
 
@@ -981,17 +1086,36 @@ enum ParamType { Register, Input, Output };
 #if defined(_MSC_VER)
   extern __declspec(thread) ThreadState* thread_state_llvm;
   extern __declspec(thread) ThreadState* thread_state_cuda;
+#if defined(DRJIT_ENABLE_METAL)
+  extern __declspec(thread) ThreadState* thread_state_metal;
+#endif
   extern __declspec(thread) JitBackend default_backend;
 #else
   extern __thread ThreadState* thread_state_llvm;
   extern __thread ThreadState* thread_state_cuda;
+#if defined(DRJIT_ENABLE_METAL)
+  extern __thread ThreadState* thread_state_metal;
+#endif
   extern __thread JitBackend default_backend;
 #endif
 
 extern ThreadState *jitc_init_thread_state(JitBackend backend);
 
 inline ThreadState *thread_state(JitBackend backend) {
-    ThreadState *result = (backend == JitBackend::CUDA) ? thread_state_cuda : thread_state_llvm;
+    ThreadState *result;
+    switch (backend) {
+        case JitBackend::CUDA:
+            result = thread_state_cuda;
+            break;
+#if defined(DRJIT_ENABLE_METAL)
+        case JitBackend::Metal:
+            result = thread_state_metal;
+            break;
+#endif
+        default:
+            result = thread_state_llvm;
+            break;
+    }
     if (unlikely(!result))
         result = jitc_init_thread_state(backend);
     return result;
@@ -1029,6 +1153,11 @@ extern void jitc_sync_device();
 
 /// Wait for all computation on *all devices* to finish
 extern void jitc_sync_all_devices();
+
+/// Returns true if the given backend uses GPU device memory (CUDA or Metal)
+inline bool jitc_is_device_backend(JitBackend b) {
+    return b == JitBackend::CUDA || b == JitBackend::Metal;
+}
 
 /// Search for a shared library and dlopen it if possible
 void *jitc_find_library(const char *fname, const char *glob_pat,
@@ -1187,12 +1316,28 @@ struct EventData {
     union {
         CUevent cuda_event;
         Task* llvm_task;
+#if defined(DRJIT_ENABLE_METAL)
+        // For Metal we store a (MTL::SharedEvent*, value) pair encoded into
+        // two 64-bit slots. The pointer is held in metal_event and the
+        // monotonic counter associated with the recorded signal/wait is in
+        // metal_value.
+        struct {
+            void *metal_event;
+            uint64_t metal_value;
+        };
+#endif
     };
 
     EventData(JitBackend backend, bool enable_timing)
         : backend(backend), enable_timing(enable_timing), ts(nullptr) {
         if (backend == JitBackend::CUDA)
             cuda_event = nullptr;
+#if defined(DRJIT_ENABLE_METAL)
+        else if (backend == JitBackend::Metal) {
+            metal_event = nullptr;
+            metal_value = 0;
+        }
+#endif
         else
             llvm_task = nullptr;
     }

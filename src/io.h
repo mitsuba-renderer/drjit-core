@@ -59,6 +59,32 @@ struct Kernel {
             uint32_t pg_count;
         } optix;
 #endif
+
+#if defined(DRJIT_ENABLE_METAL)
+        struct {
+            /// Compiled MTL::ComputePipelineState* (kept opaque)
+            void *pipeline;
+
+            /// Owning MTL::Library* (released at kernel teardown)
+            void *library;
+
+            /// Recommended threadgroup size, queried via
+            /// ``threadExecutionWidth`` and capped at 1024
+            uint32_t block_size;
+
+            /// Ordered list of ``MetalScene*`` used at codegen time, captured
+            /// here so a frozen function replay (which skips re-assemble) can
+            /// still bind the correct TLASes / IFTs at launch. Slot index
+            /// ``i`` ↔ MSL kernel argument ``accel_<i>``. The pointers are
+            /// owned externally (refcounted via the scene_index JIT variables
+            /// held by the recording's input set), so this kernel struct is a
+            /// non-owning reference array. ``scenes == nullptr`` for kernels
+            /// that do not perform ray tracing. The array is heap-allocated
+            /// via ``new[]`` and released in ``jitc_metal_free``.
+            void **scenes;
+            uint32_t scene_count;
+        } metal;
+#endif
     };
 };
 
