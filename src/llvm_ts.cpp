@@ -841,7 +841,7 @@ uint32_t LLVMThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
     submit_cpu(
         KernelType::CallReduce,
         this->recording_mode,
-        [bucket_count, n_blocks, tasks_per_group, block_size, size, buckets,
+        [bucket_count, n_blocks, tasks_per_group, block_size, buckets,
          offsets, &unique_count](uint32_t) {
             uint32_t unique_count_local = 0;
 
