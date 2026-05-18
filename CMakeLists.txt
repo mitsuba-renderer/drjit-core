@@ -222,10 +222,11 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
   target_link_options(drjit-core PRIVATE -Wno-free-nonheap-object)
 endif()
 
-# The following compiler flag is needed for Clang/GCC to autovectorize the
+# The following compiler flags are needed for Clang/GCC to autovectorize the
 # batched GEMM
 if (NOT MSVC)
-  set_source_files_properties(src/llvm_ts.cpp PROPERTIES COMPILE_OPTIONS "-fassociative-math")
+  set_source_files_properties(src/llvm_ts.cpp PROPERTIES COMPILE_OPTIONS
+    "-fassociative-math;-fno-signed-zeros;-fno-trapping-math")
 endif()
 
 target_compile_definitions(drjit-core PRIVATE -DLZ4LIB_VISIBILITY=)
