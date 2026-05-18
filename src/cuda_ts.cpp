@@ -400,8 +400,8 @@ void CUDAThreadState::reduce_dot(VarType vt, const void *ptr_1,
 }
 
 void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
-                             uint32_t N, uint32_t K, const GemmBatch *batch,
-                             const void *A, const void *B, void *C) {
+                                   uint32_t N, uint32_t K, const GemmBatch *batch,
+                                   const void *A, const void *B, void *C) {
     // See 'resources/gemm.cuh' for the underlying kernel and its tile layout.
     // ``grid_count`` is the gridDim.z extent; ``reduce_count`` is summed
     // inside the kernel body. ``jitc_gemm_batch_counts`` returns false on
@@ -509,8 +509,8 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
                    "alignment or gridDim.y cap (%u) cannot be satisfied.",
                    M, N, grid_y_cap);
 
-    uint32_t grid_x = ceil_div(N, bm);
-    uint32_t grid_y = ceil_div(M, bm);
+    uint32_t grid_x = ceil_div(N, bm),
+             grid_y = ceil_div(M, bm);
 
     // CUDA caps gridDim.z at 65535.
     if (grid_count > 65535u)
@@ -529,6 +529,7 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
                      &M, &N, &K, (void *) &batch_eff };
 
     scoped_set_context guard(context);
+
     // The kernel is launched as a flat group of 64 threads that internally
     // derives an 8 x 8 layout from ``threadIdx.x``. gridDim.z walks the
     // grid batch; the reduce batch is iterated inside the kernel body.
@@ -897,12 +898,9 @@ uint32_t CUDAThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
         cuda_check(cuMemsetD8Async((CUdeviceptr) buckets_1, 0,
                                    bucket_size_all, stream));
 
-    /* Determine the amount of work to be done per GPU block, ensuring
-       alignment to both warp size and sorting group boundaries. */
+    // Divide each sorting group's elements evenly across its GPU blocks.
     uint32_t size_per_gpu_block =
         (block_size + gpu_blocks_per_group - 1) / gpu_blocks_per_group;
-    size_per_gpu_block =
-        (size_per_gpu_block + warp_size - 1) / warp_size * warp_size;
 
     jitc_log(Debug,
             "jit_block_mkperm(" DRJIT_PTR
