@@ -3143,6 +3143,8 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         } else if (backend == JitBackend::CUDA) {
             use_packet_op = (mode == ReduceMode::Permute ||
                              mode == ReduceMode::NoConflicts ||
+                             mode == ReduceMode::Local ||
+                             mode == ReduceMode::Direct ||
                              mode == ReduceMode::Auto);
         }
     }

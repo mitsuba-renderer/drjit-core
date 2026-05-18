@@ -18,6 +18,214 @@ static const char *reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
 };
 
+/// Packet analogue of \ref jitc_cuda_render_scatter_reduce_bfly_32:
+/// performs one butterfly reduction shared across all N packet channels,
+/// then the leader emits either `red.global.vM` vector atomics (when
+/// \c use_vector_atomic is set) or N scalar atomics otherwise.
+static void jitc_cuda_render_scatter_reduce_packet_bfly_32(const char *tp,
+                                                           const char *op,
+                                                           const char *op_ftz,
+                                                           uint32_t shiftamt,
+                                                           uint32_t n,
+                                                           uint32_t tsize,
+                                                           bool use_vector_atomic) {
+    size_t tmpoff = buffer.size();
+
+    const char *suffix = use_vector_atomic ? "_vatom" : "";
+    fmt(".func reduce_$s_$s_v$u$s(.param .u64 ptr",
+        op, tp, n, suffix);
+    for (uint32_t i = 0; i < n; ++i)
+        fmt(", .param .$s v$u", tp, i);
+    put(") {\n");
+
+    put("    .reg .b32 %active, %index, %mask_lt, %mask_gt, %peers,\n"
+        "              %peers_lt, %peers_rev, %rank, %rank_bit, %rank_ballot;\n"
+        "    .reg .b64 %ptr;\n");
+    fmt("    .reg .$s %q0_<$u>, %q1;\n", tp, n);
+    put("    .reg .pred %leader, %partial, %done, %valid, %rank_even, %unused;\n\n");
+
+    for (uint32_t i = 0; i < n; ++i)
+        fmt("    ld.param.$s %q0_$u, [v$u];\n", tp, i, i);
+    put("    ld.param.b64 %ptr, [ptr];\n");
+
+    put("    activemask.b32 %active;\n");
+    fmt("    {\n"
+        "        .reg .b64 %ptr_shift;\n"
+        "        shr.b64 %ptr_shift, %ptr, $u;\n"
+        "        cvt.u32.u64 %index, %ptr_shift;\n"
+        "    }\n",
+        shiftamt);
+    put("    match.any.sync.b32 %peers, %index, %active;\n"
+        "    setp.ne.s32 %partial, %peers, -1;\n"
+        "    @%partial bra.uni reduce_partial;\n\n");
+
+    put("reduce_full:\n"
+        "    mov.b32 %index, %laneid;\n"
+        "    setp.eq.u32 %leader, %index, 0;\n");
+    for (uint32_t delta : {1u, 2u, 4u, 8u, 16u}) {
+        for (uint32_t i = 0; i < n; ++i) {
+            fmt("    shfl.sync.bfly.b32 %q1|%unused, %q0_$u, $u, 31, %active;\n",
+                i, delta);
+            fmt("    $s.$s %q0_$u, %q0_$u, %q1;\n", op_ftz, tp, i, i);
+        }
+    }
+    put("    bra.uni do_write;\n\n");
+
+    put("reduce_partial:\n"
+        "    mov.u32 %mask_lt, %lanemask_lt;\n"
+        "    mov.u32 %mask_gt, %lanemask_gt;\n"
+        "    and.b32 %peers_lt, %peers, %mask_lt;\n"
+        "    popc.b32 %rank, %peers_lt;\n"
+        "    setp.eq.u32 %leader, %rank, 0;\n"
+        "    and.b32 %peers, %peers, %mask_gt;\n\n");
+
+    put("reduce_partial_loop:\n"
+        "    setp.eq.u32 %done, %peers, 0;\n"
+        "    vote.sync.all.pred %done, %done, %active;\n"
+        "    @%done bra.uni do_write;\n\n");
+
+    put("    brev.b32 %peers_rev, %peers;\n"
+        "    bfind.shiftamt.u32 %index, %peers_rev;\n"
+        "    setp.ne.s32 %valid, %index, -1;\n");
+    for (uint32_t i = 0; i < n; ++i) {
+        fmt("    shfl.sync.idx.b32 %q1|%unused, %q0_$u, %index, 31, %active;\n",
+            i);
+        fmt("    @%valid $s.$s %q0_$u, %q0_$u, %q1;\n",
+            op_ftz, tp, i, i);
+    }
+    put("    and.b32 %rank_bit, %rank, 1;\n"
+        "    setp.eq.u32 %rank_even, %rank_bit, 0;\n"
+        "    vote.sync.ballot.b32 %rank_ballot, %rank_even, %active;\n"
+        "    and.b32 %peers, %peers, %rank_ballot;\n"
+        "    shr.u32 %rank, %rank, 1;\n"
+        "    bra reduce_partial_loop;\n\n");
+
+    put("do_write:\n");
+    if (use_vector_atomic) {
+        // `red.global.vN.<tp>` caps at 128 bits per atomic.
+        uint32_t bytes_per_atomic = 16;
+        while ((n * tsize) % bytes_per_atomic != 0)
+            bytes_per_atomic /= 2;
+        uint32_t per_atomic = bytes_per_atomic / tsize;
+
+        for (uint32_t base = 0; base < n; base += per_atomic) {
+            if (per_atomic == 1) {
+                fmt("    @%leader red.global.$s.$s [%ptr+$u], %q0_$u;\n",
+                    op, tp, base * tsize, base);
+            } else {
+                fmt("    @%leader red.global.v$u.$s.$s [%ptr+$u], {",
+                    per_atomic, tp, op, base * tsize);
+                for (uint32_t i = 0; i < per_atomic; ++i)
+                    fmt("%q0_$u$s", base + i, i + 1 < per_atomic ? ", " : "");
+                put("};\n");
+            }
+        }
+    } else {
+        for (uint32_t i = 0; i < n; ++i)
+            fmt("    @%leader red.global.$s.$s [%ptr+$u], %q0_$u;\n",
+                op, tp, i * tsize, i);
+    }
+    put("    ret;\n"
+        "}");
+
+    jitc_register_global(buffer.get() + tmpoff);
+    buffer.rewind_to(tmpoff);
+}
+
+// Identical to the above, but perform each shuffle twice to move around 64
+// bit-sized values. The leader always emits N scalar atomics (PTX has no
+// 64-bit vector atomic).
+static void jitc_cuda_render_scatter_reduce_packet_bfly_64(const char *tp,
+                                                           const char *op,
+                                                           const char *op_ftz,
+                                                           uint32_t shiftamt,
+                                                           uint32_t n,
+                                                           uint32_t tsize) {
+    size_t tmpoff = buffer.size();
+
+    fmt(".func reduce_$s_$s_v$u(.param .u64 ptr", op, tp, n);
+    for (uint32_t i = 0; i < n; ++i)
+        fmt(", .param .$s v$u", tp, i);
+    put(") {\n");
+
+    put("    .reg .b32 %active, %index, %mask_lt, %mask_gt, %peers,\n"
+        "              %peers_lt, %peers_rev, %rank, %rank_bit, %rank_ballot;\n"
+        "    .reg .b64 %ptr;\n"
+        "    .reg .b32 %q0l, %q0h, %q1l, %q1h;\n");
+    fmt("    .reg .$s %q0_<$u>, %q1;\n", tp, n);
+    put("    .reg .pred %leader, %partial, %done, %valid, %rank_even, %unused;\n\n");
+
+    for (uint32_t i = 0; i < n; ++i)
+        fmt("    ld.param.$s %q0_$u, [v$u];\n", tp, i, i);
+    put("    ld.param.b64 %ptr, [ptr];\n");
+
+    put("    activemask.b32 %active;\n");
+    fmt("    {\n"
+        "        .reg .b64 %ptr_shift;\n"
+        "        shr.b64 %ptr_shift, %ptr, $u;\n"
+        "        cvt.u32.u64 %index, %ptr_shift;\n"
+        "    }\n",
+        shiftamt);
+    put("    match.any.sync.b32 %peers, %index, %active;\n"
+        "    setp.ne.s32 %partial, %peers, -1;\n"
+        "    @%partial bra.uni reduce_partial;\n\n");
+
+    put("reduce_full:\n"
+        "    mov.b32 %index, %laneid;\n"
+        "    setp.eq.u32 %leader, %index, 0;\n");
+    for (uint32_t delta : {1u, 2u, 4u, 8u, 16u}) {
+        for (uint32_t i = 0; i < n; ++i) {
+            fmt("    mov.b64 {%q0l, %q0h}, %q0_$u;\n"
+                "    shfl.sync.bfly.b32 %q1l|%unused, %q0l, $u, 31, %active;\n"
+                "    shfl.sync.bfly.b32 %q1h|%unused, %q0h, $u, 31, %active;\n"
+                "    mov.b64 %q1, {%q1l, %q1h};\n"
+                "    $s.$s %q0_$u, %q0_$u, %q1;\n",
+                i, delta, delta, op_ftz, tp, i, i);
+        }
+    }
+    put("    bra.uni do_write;\n\n");
+
+    put("reduce_partial:\n"
+        "    mov.u32 %mask_lt, %lanemask_lt;\n"
+        "    mov.u32 %mask_gt, %lanemask_gt;\n"
+        "    and.b32 %peers_lt, %peers, %mask_lt;\n"
+        "    popc.b32 %rank, %peers_lt;\n"
+        "    setp.eq.u32 %leader, %rank, 0;\n"
+        "    and.b32 %peers, %peers, %mask_gt;\n\n");
+
+    put("reduce_partial_loop:\n"
+        "    setp.eq.u32 %done, %peers, 0;\n"
+        "    vote.sync.all.pred %done, %done, %active;\n"
+        "    @%done bra.uni do_write;\n\n");
+
+    put("    brev.b32 %peers_rev, %peers;\n"
+        "    bfind.shiftamt.u32 %index, %peers_rev;\n"
+        "    setp.ne.s32 %valid, %index, -1;\n");
+    for (uint32_t i = 0; i < n; ++i)
+        fmt("    mov.b64 {%q0l, %q0h}, %q0_$u;\n"
+            "    shfl.sync.idx.b32 %q1l|%unused, %q0l, %index, 31, %active;\n"
+            "    shfl.sync.idx.b32 %q1h|%unused, %q0h, %index, 31, %active;\n"
+            "    mov.b64 %q1, {%q1l, %q1h};\n"
+            "    @%valid $s.$s %q0_$u, %q0_$u, %q1;\n",
+            i, op_ftz, tp, i, i);
+    put("    and.b32 %rank_bit, %rank, 1;\n"
+        "    setp.eq.u32 %rank_even, %rank_bit, 0;\n"
+        "    vote.sync.ballot.b32 %rank_ballot, %rank_even, %active;\n"
+        "    and.b32 %peers, %peers, %rank_ballot;\n"
+        "    shr.u32 %rank, %rank, 1;\n"
+        "    bra reduce_partial_loop;\n\n");
+
+    put("do_write:\n");
+    for (uint32_t i = 0; i < n; ++i)
+        fmt("    @%leader red.global.$s.$s [%ptr+$u], %q0_$u;\n",
+            op, tp, i * tsize, i);
+    put("    ret;\n"
+        "}");
+
+    jitc_register_global(buffer.get() + tmpoff);
+    buffer.rewind_to(tmpoff);
+}
+
 void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
                                     const Variable *index, const Variable *mask) {
     bool is_masked = !mask->is_literal() || mask->literal != 1,
@@ -207,6 +415,74 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
     // Actually OptiX packed half reduction for vector width > 2 is still broken atm :-(
     if (uses_optix && v0->type == (uint32_t) VarType::Float16)
         supports_vector_reduction = false;
+
+    // `match.any.sync` (used by the butterfly) requires PTX 6.3+ and sm_70+.
+    bool reduce_bfly_32 = ts->ptx_version >= 63 && ts->compute_capability >= 70 &&
+                          (v0->type == (uint32_t) VarType::UInt32 ||
+                           v0->type == (uint32_t) VarType::Int32 ||
+                           v0->type == (uint32_t) VarType::Float32),
+         reduce_bfly_64 = ts->ptx_version >= 63 && ts->compute_capability >= 70 &&
+                          (v0->type == (uint32_t) VarType::UInt64 ||
+                           v0->type == (uint32_t) VarType::Int64 ||
+                           v0->type == (uint32_t) VarType::Float64);
+
+    if (psd->mode == ReduceMode::Local && (reduce_bfly_32 || reduce_bfly_64)) {
+        VarType vt = (VarType) v0->type;
+        if (op == ReduceOp::Add) {
+            switch (vt) {
+                case VarType::Int32: vt = VarType::UInt32; break;
+                case VarType::Int64: vt = VarType::UInt64; break;
+                default: break;
+            }
+        }
+
+        const char *tp = type_name_ptx[(int) vt];
+        if (op == ReduceOp::And || op == ReduceOp::Or)
+            tp = type_name_ptx_bin[(int) vt];
+
+        const char *op_ftz = op_name;
+        if (op == ReduceOp::Add &&
+            (vt == VarType::Float32 || vt == VarType::Float16))
+            op_ftz = "add.ftz";
+
+        bool use_vector_atomic = reduce_bfly_32 &&
+                                 vt == VarType::Float32 &&
+                                 supports_vector_reduction;
+        const char *suffix = use_vector_atomic ? "_vatom" : "";
+
+        uint32_t shiftamt = log2i_ceil(type_size[(int) vt]);
+
+        if (reduce_bfly_32)
+            jitc_cuda_render_scatter_reduce_packet_bfly_32(
+                tp, op_name, op_ftz, shiftamt, count, tsize, use_vector_atomic);
+        else
+            jitc_cuda_render_scatter_reduce_packet_bfly_64(
+                tp, op_name, op_ftz, shiftamt, count, tsize);
+
+        fmt("    mad.wide.$t %rd3, $v, $u, $v;\n", index, index, tsize, ptr);
+
+        fmt("    {\n"
+            "        .func reduce_$s_$s_v$u$s(.param .u64 ptr",
+            op_name, tp, count, suffix);
+        for (uint32_t i = 0; i < count; ++i)
+            fmt(", .param .$s v$u", tp, i);
+        put(");\n");
+
+        if (is_masked)
+            fmt("        @!$v bra l_packet_bfly_done_$u;\n", mask, v->reg_index);
+
+        fmt("        call.uni reduce_$s_$s_v$u$s, (%rd3",
+            op_name, tp, count, suffix);
+        for (uint32_t i = 0; i < count; ++i)
+            fmt(", $v", jitc_var(values[i]));
+        put(");\n");
+
+        if (is_masked)
+            fmt("    l_packet_bfly_done_$u:\n", v->reg_index);
+
+        put("    }\n");
+        return;
+    }
 
     if (supports_vector_reduction &&
         (v0->type == (uint32_t) VarType::Float16 ||
