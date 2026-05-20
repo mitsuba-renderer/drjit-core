@@ -204,6 +204,10 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
                                      (jitc_cuda_version_major > 13 ||
                                       (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2)));
 
+    // Actually OptiX packed half reduction for vector width > 2 is still broken atm :-(
+    if (uses_optix && v0->type == (uint32_t) VarType::Float16)
+        supports_vector_reduction = false;
+
     if (supports_vector_reduction &&
         (v0->type == (uint32_t) VarType::Float16 ||
          v0->type == (uint32_t) VarType::Float32)) {
