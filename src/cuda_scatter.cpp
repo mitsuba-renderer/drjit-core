@@ -391,7 +391,7 @@ void jitc_cuda_render_scatter_inc(Variable *v, const Variable *ptr,
         ""
         "    ld.param.u64 %ptr, [ptr];\n"
         "    activemask.b32 %active;\n"
-        "    shl.b64 %ptr_shift, %ptr, 2;\n"
+        "    shr.b64 %ptr_shift, %ptr, 2;\n"
         "    cvt.u32.u64 %ptr_id, %ptr_shift;\n"
         "    match.any.sync.b32 %active_p, %ptr_id, %active;\n"
         "    brev.b32 %active_p_rev, %active_p;\n"
