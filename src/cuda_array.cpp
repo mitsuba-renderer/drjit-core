@@ -43,8 +43,17 @@ extern void jitc_cuda_render_array_init(Variable *v, Variable *pred, Variable *v
 
 void jitc_cuda_render_array_read(Variable *v, Variable *source, Variable *mask,
                                  Variable *offset) {
-    if (!mask->is_literal())
-        fmt("    mov.$b $v, 0;\n", v, v);
+    bool is_bool = v->type == (uint32_t) VarType::Bool;
+
+    if (!mask->is_literal()) {
+        if (is_bool)
+            fmt("    mov.b16 %w0, 0;\n");
+        else if ((VarType) v->type == VarType::UInt8 || (VarType) v->type == VarType::Int8)
+            // There is no `mov.b8`
+            fmt("    cvt.u8.u16 $v, 0;\n", v);
+        else
+            fmt("    mov.$b $v, 0;\n", v, v);
+    }
 
     put("    ");
 
@@ -58,7 +67,7 @@ void jitc_cuda_render_array_read(Variable *v, Variable *source, Variable *mask,
         fmt("ld.local.$B $V, arr_$u[$u];\n",
             v, v, source->reg_index, (uint32_t) v->literal);
 
-    if (v->type == (uint32_t) VarType::Bool)
+    if (is_bool)
         fmt("    setp.ne.u16 $v, %w0, 0;\n", v);
 }
 
