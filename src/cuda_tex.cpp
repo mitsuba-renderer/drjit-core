@@ -372,7 +372,7 @@ void jitc_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
         }
     } else {
         CUDA_MEMCPY3D op;
-        memset(&op, 0, sizeof(CUDA_MEMCPY2D));
+        memset(&op, 0, sizeof(CUDA_MEMCPY3D));
 
         for (size_t tex = 0; tex < dst_texture.n_textures; ++tex) {
             size_t pitch =
