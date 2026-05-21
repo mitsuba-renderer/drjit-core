@@ -185,7 +185,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
             thread_state(backend)->side_effects_symbolic;
         uint32_t se_idx = se_list.size();
         while (checkpoint < se_idx) {
-            uint32_t index = se_list.back();
+            uint32_t index = se_list[se_idx - 1];
             size = std::max(size, jitc_var(index)->size);
             se_idx--;
         }
