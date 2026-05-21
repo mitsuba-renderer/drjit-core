@@ -309,7 +309,7 @@ uint32_t jitc_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a
                    "incompatible size (%u, %u, and %u)!",
                    a0_v->array_length, a1_v->array_length, a2_v->array_length);
 
-    if (a0_v->type != a1_v->type || a0_v->type != a1_v->type)
+    if (a0_v->type != a1_v->type || a0_v->type != a2_v->type)
         jitc_raise("jit_coop_vec_ternary_op(): the cooperative vectors have "
                    "incompatible types (%s, %s, and %s)!",
                    type_name[a0_v->type], type_name[a1_v->type], type_name[a2_v->type]);
