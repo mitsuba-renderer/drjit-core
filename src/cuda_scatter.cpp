@@ -488,7 +488,7 @@ void jitc_cuda_render_scatter_exch(Variable *v,
                                    const Variable *mask) {
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
-    jitc_cuda_prepare_index(ptr, index, index);
+    jitc_cuda_prepare_index(ptr, index, value);
 
     fmt("    mov.$b $v, 0;\n"
         "    ",
@@ -510,7 +510,7 @@ void jitc_cuda_render_scatter_cas(Variable *v,
     Variable *mask = jitc_var(cas_data->mask);
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
-    jitc_cuda_prepare_index(ptr, index, index);
+    jitc_cuda_prepare_index(ptr, index, value);
 
     fmt("    .reg.$b $v_out_0;\n"
         "    mov.$b $v_out_0, 0;\n"
