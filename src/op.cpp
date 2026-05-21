@@ -1,5 +1,6 @@
 #include <drjit-core/nanostl.h>
 #include <drjit-core/half.h>
+#include <limits>
 #include "internal.h"
 #include "llvm.h"
 #include "var.h"
@@ -593,7 +594,19 @@ uint32_t jitc_var_mul(uint32_t a0, uint32_t a1) {
 
 // --------------------------------------------------------------------------
 
-template <typename T> T eval_div(T v0, T v1) { return v0 / v1; }
+template <typename T> T eval_div(T v0, T v1) {
+    if constexpr (std::is_integral_v<T>) {
+        // Guard against C++ UB; follow CUDA semantics.
+        if (v1 == T(0))
+            return T(-1);
+        if constexpr (drjit::detail::is_signed_v<T>) {
+            constexpr T min_v = std::numeric_limits<T>::min();
+            if (v0 == min_v && v1 == T(-1))
+                return min_v;
+        }
+    }
+    return v0 / v1;
+}
 
 static bool eval_div(bool, bool) { jitc_fail("eval_div(): unsupported operands!"); }
 
@@ -640,7 +653,17 @@ template <typename T, enable_if_t<!std::is_integral_v<T> || std::is_same_v<T, bo
 T eval_mod(T, T) { jitc_fail("eval_mod(): unsupported operands!"); }
 
 template <typename T, enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>> = 0>
-T eval_mod(T v0, T v1) { return v0 % v1; }
+T eval_mod(T v0, T v1) {
+    // Guard against C++ UB; follow CUDA semantics.
+    if (v1 == T(0))
+        return T(-1);
+    if constexpr (drjit::detail::is_signed_v<T>) {
+        constexpr T min_v = std::numeric_limits<T>::min();
+        if (v0 == min_v && v1 == T(-1))
+            return T(0);
+    }
+    return v0 % v1;
+}
 
 uint32_t jitc_var_mod(uint32_t a0, uint32_t a1) {
     auto [info, v0, v1] = jitc_var_check<IsIntOrBool>("jit_var_mod", a0, a1);
