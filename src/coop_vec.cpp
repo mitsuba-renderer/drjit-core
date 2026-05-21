@@ -331,7 +331,7 @@ uint32_t jitc_coop_vec_ternary_op(JitOp op, uint32_t a0, uint32_t a1, uint32_t a
             Ref result = steal(jitc_coop_vec_binary_op(JitOp::Add, a0, a2));
             return jitc_var_resize(result, max_size);
         }
-        if (jitc_is_any_zero(a1_v)) {
+        if (jitc_is_any_zero(a2_v)) {
             Ref result = steal(jitc_coop_vec_binary_op(JitOp::Mul, a0, a1));
             return jitc_var_resize(result, max_size);
         }
