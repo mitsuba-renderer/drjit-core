@@ -487,6 +487,10 @@ static bool jitc_int8_unsupported(VarKind kind) {
         case VarKind::Popc:
         case VarKind::Cast:
         case VarKind::Bitcast:
+        case VarKind::Min:
+        case VarKind::Max:
+        case VarKind::Div:
+        case VarKind::Mod:
             return true;
         default:
             return false;
