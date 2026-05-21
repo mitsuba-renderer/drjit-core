@@ -95,7 +95,7 @@ void jitc_llvm_render_array_read(Variable *v, Variable *source, Variable *mask,
 
     const char *ext = "";
     if (v->type == (uint32_t) VarType::Bool)
-        ext = "_e";
+        ext = "_r";
 
     if (!offset || offset->size == 1) {
         // Scalar/literal offset case: we can avoid a gather operation
@@ -125,9 +125,9 @@ void jitc_llvm_render_array_read(Variable *v, Variable *source, Variable *mask,
                 v, ext, v, v, v, v);
         } else {
             fmt("    $v_5 = load $M, $M* $v_{4|3}, align $A\n"
-                "    $v$s = select $V, $V_5, $M $z\n",
+                "    $v$s = select $V, $M $v_5, $M $z\n",
                 v, v, v, v, v,
-                v, ext, mask, v, v);
+                v, ext, mask, v, v, v);
         }
     } else if (jitc_llvm_vector_width >= 8 && DRJIT_LLVM_OPTIMIZE_ARRAY_ACCESSES) {
         // Check if the gather can be reduced to a packet load
@@ -171,9 +171,9 @@ void jitc_llvm_render_array_read(Variable *v, Variable *source, Variable *mask,
                 v, v, v, v, v);
         } else {
             fmt("    $v_10 = load $M, $M* $v_{9|8}, align $A\n"
-                "    $v_u = select $V, $V_10, $M $z\n",
+                "    $v_u = select $V, $M $v_10, $M $z\n",
                 v, v, v, v, v,
-                v, mask, v, v);
+                v, mask, v, v, v);
         }
         fmt("    br label %l_$u_done\n\n", v->reg_index);
 
@@ -211,7 +211,7 @@ void jitc_llvm_render_array_read(Variable *v, Variable *source, Variable *mask,
     }
 
     if (v->type == (uint32_t) VarType::Bool)
-        fmt("    $v = trunc $M $v_e to $T\n", v, v, v, v);
+        fmt("    $v = trunc $M $v_r to $T\n", v, v, v, v);
 }
 
 
