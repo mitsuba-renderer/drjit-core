@@ -414,7 +414,9 @@ void jitc_cuda_render_scatter_inc(Variable *v, const Variable *ptr,
     );
 
     if (!is_unmasked)
-        fmt("    @!$v bra l_$u_done;\n", mask, v->reg_index);
+        fmt("    mov.$b $v, 0;\n"
+            "    @!$v bra l_$u_done;\n",
+            v, v, mask, v->reg_index);
 
     jitc_cuda_prepare_index(ptr, index, index);
 
