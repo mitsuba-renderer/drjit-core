@@ -304,9 +304,14 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
 
         fmt("    mad.wide.$t %rd3, $v, $u, $v;\n",
             index, index, tsize, ptr);
-        for (uint32_t i = 0; i < count; i++)
-            fmt("    red.global.$s.$s$s [%rd3+$u], $v;\n",
+        for (uint32_t i = 0; i < count; i++){
+            if (is_masked)
+                fmt("    @$v ", mask);
+            else
+                put("        ");
+            fmt("red.global.$s.$s$s [%rd3+$u], $v;\n",
                 tp, op_name, qualifier, i * tsize, jitc_var(values[i]));
+        }
     }
 }
 
