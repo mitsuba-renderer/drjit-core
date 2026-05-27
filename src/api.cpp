@@ -497,8 +497,9 @@ void jit_metal_ray_trace(uint32_t n_args, uint32_t *args,
 
 void *jit_metal_lookup_buffer(void *ptr, size_t *offset) {
 #if defined(DRJIT_ENABLE_METAL)
-    extern void *jitc_metal_lookup_buffer_containing(void *ptr, size_t *offset);
-    return jitc_metal_lookup_buffer_containing(ptr, offset);
+    extern void *jitc_metal_find_buffer(void *ptr, size_t *offset);
+    lock_guard guard(state.lock);
+    return jitc_metal_find_buffer(ptr, offset);
 #else
     (void) ptr; (void) offset;
     return nullptr;

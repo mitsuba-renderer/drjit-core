@@ -10,6 +10,7 @@
 #pragma once
 
 #include "common.h"
+#include <inttypes.h>
 #include "malloc.h"
 #include "cuda.h"
 #include "llvm.h"
@@ -17,7 +18,6 @@
 #include "io.h"
 #include <queue>
 #include <string.h>
-#include <inttypes.h>
 #include <nanothread/nanothread.h>
 
 /// List of operations in Dr.Jit-Core's intermediate representation (see ``Variable::kind``)

@@ -25,7 +25,7 @@
 #include <Metal/Metal.hpp>
 #include <unordered_map>
 #include <unordered_set>
-#include <map>
+#include <vector>
 #include <mutex>
 #include <cstring>
 #include <cstdlib>
@@ -88,68 +88,62 @@ uint32_t jitc_metal_expand_factor(uint32_t size, uint32_t tsize) {
 //  etc.). We maintain a simple thread-safe hash map.
 // ============================================================================
 
-namespace {
-    std::mutex g_buffer_map_mutex;
-    // Primary hash map for exact-pointer lookups (jitc_metal_lookup_buffer).
-    std::unordered_map<void *, void *> g_buffer_map;
-    // Sorted-by-base auxiliary map for ``lookup_buffer_containing``: maps
-    // base address → MTLBuffer*. ``upper_bound`` + decrement gives the
-    // candidate buffer whose base is the largest <= the query, which is
-    // the only buffer that could contain ``ptr``. Reduces an O(N) linear
-    // scan over all live allocations to O(log N).
-    std::map<uintptr_t, void *> g_buffer_map_sorted;
+// Lazily-sorted flat vector of (base_addr, MTLBuffer*) entries.
+using BufferEntry = std::pair<uintptr_t, void *>;
+static std::vector<BufferEntry> metal_buffer_map;
+static bool metal_buffer_map_sorted = true;
+
+static void jitc_metal_ensure_sorted() {
+    if (likely(metal_buffer_map_sorted))
+        return;
+    metal_buffer_map.erase(
+        std::remove_if(metal_buffer_map.begin(), metal_buffer_map.end(),
+                       [](const BufferEntry &e) { return e.second == nullptr; }),
+        metal_buffer_map.end());
+    std::sort(metal_buffer_map.begin(), metal_buffer_map.end());
+    metal_buffer_map_sorted = true;
 }
 
 void jitc_metal_register_buffer(void *ptr, void *mtl_buffer) {
-    std::lock_guard<std::mutex> g(g_buffer_map_mutex);
-    g_buffer_map[ptr] = mtl_buffer;
-    g_buffer_map_sorted[(uintptr_t) ptr] = mtl_buffer;
+    metal_buffer_map.emplace_back((uintptr_t) ptr, mtl_buffer);
+    metal_buffer_map_sorted = false;
 }
 
-void *jitc_metal_lookup_buffer(void *ptr) {
-    std::lock_guard<std::mutex> g(g_buffer_map_mutex);
-    auto it = g_buffer_map.find(ptr);
-    return (it == g_buffer_map.end()) ? nullptr : it->second;
-}
+/// Look up a buffer that *contains* the given pointer and return the offset
+void *jitc_metal_find_buffer(void *ptr, size_t *offset_out) {
+    jitc_metal_ensure_sorted();
 
-/// Look up a buffer that *contains* the given pointer (which may be at an
-/// offset from the buffer's registered base address). Returns the
-/// ``MTL::Buffer*`` and, optionally, the byte offset from its start.
-void *jitc_metal_lookup_buffer_containing(void *ptr, size_t *offset_out) {
-    std::lock_guard<std::mutex> g(g_buffer_map_mutex);
-
-    // Fast path: exact match.
-    auto it = g_buffer_map.find(ptr);
-    if (it != g_buffer_map.end()) {
-        if (offset_out)
-            *offset_out = 0;
-        return it->second;
-    }
-
-    // O(log N) range-cover lookup via sorted base map: only the entry
-    // immediately preceding ``ptr`` can possibly contain it.
     uintptr_t addr = (uintptr_t) ptr;
-    auto it2 = g_buffer_map_sorted.upper_bound(addr);
-    if (it2 != g_buffer_map_sorted.begin()) {
-        --it2;
-        uintptr_t base = it2->first;
-        MTL::Buffer *buf = (MTL::Buffer *) it2->second;
+    auto it = std::upper_bound(
+        metal_buffer_map.begin(), metal_buffer_map.end(), addr,
+        [](uintptr_t a, const BufferEntry &b) { return a < b.first; });
+
+    if (it != metal_buffer_map.begin()) {
+        --it;
+        uintptr_t base = it->first;
+        MTL::Buffer *buf = (MTL::Buffer *) it->second;
         if (addr < base + buf->length()) {
-            if (offset_out)
-                *offset_out = (size_t) (addr - base);
+            *offset_out = (size_t) (addr - base);
             return buf;
         }
     }
 
-    if (offset_out)
-        *offset_out = 0;
+    *offset_out = 0;
     return nullptr;
 }
 
-void jitc_metal_unregister_buffer(void *ptr) {
-    std::lock_guard<std::mutex> g(g_buffer_map_mutex);
-    g_buffer_map.erase(ptr);
-    g_buffer_map_sorted.erase((uintptr_t) ptr);
+void *jitc_metal_unregister_buffer(void *ptr) {
+    jitc_metal_ensure_sorted();
+
+    uintptr_t addr = (uintptr_t) ptr;
+    auto it = std::lower_bound(
+        metal_buffer_map.begin(), metal_buffer_map.end(), addr,
+        [](const BufferEntry &e, uintptr_t a) { return e.first < a; });
+    if (it == metal_buffer_map.end() || it->first != addr)
+        return nullptr;
+    void *buf = it->second;
+    it->second = nullptr;
+    return buf;
 }
 
 // ============================================================================
@@ -447,11 +441,7 @@ void jitc_metal_shutdown() {
         std::free(d.name);
     }
     state.metal_devices.clear();
-
-    {
-        std::lock_guard<std::mutex> g(g_buffer_map_mutex);
-        g_buffer_map.clear();
-    }
+    metal_buffer_map.clear();
 
     jitc_metal_api_shutdown();
 }

@@ -55,18 +55,16 @@ extern const char *jitc_metal_device_name(int device_id);
 /// pointer) for ``useResource()`` calls, ``gpuAddress()``, etc.
 extern void jitc_metal_register_buffer(void *ptr, void *mtl_buffer);
 
-/// Look up the ``MTLBuffer*`` previously registered for a pointer.
-/// Returns nullptr if the pointer is not a registered Metal allocation.
-extern void *jitc_metal_lookup_buffer(void *ptr);
+/// Look up the ``MTLBuffer*`` for a pointer that may lie at an offset
+/// from a registered allocation's base. Returns the ``MTL::Buffer*`` and,
+/// optionally, the byte offset from its start. Returns nullptr if no
+/// registered allocation contains ``ptr``.
+extern void *jitc_metal_find_buffer(void *ptr, size_t *offset_out);
 
-/// Like ``jitc_metal_lookup_buffer`` but also matches interior pointers
-/// (i.e. pointers within a registered buffer's address range). Returns
-/// the ``MTL::Buffer*`` and, optionally, the byte offset from its start.
-extern void *jitc_metal_lookup_buffer_containing(void *ptr,
-                                                  size_t *offset_out);
-
-/// Forget a previously registered pointer ↔ buffer mapping
-extern void jitc_metal_unregister_buffer(void *ptr);
+/// Forget a previously registered pointer ↔ buffer mapping, returning
+/// the ``MTL::Buffer*`` that was associated with it (or nullptr if the
+/// pointer was not registered).
+extern void *jitc_metal_unregister_buffer(void *ptr);
 
 /// Retrieve a precompiled compute pipeline state from the utility kernel
 /// library by kernel name (e.g. "block_reduce_add_f32_1024"). Returns
