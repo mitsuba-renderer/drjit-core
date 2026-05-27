@@ -14,7 +14,7 @@ using namespace drjit;
 
 int main() {
     jit_set_log_level_stderr(LogLevel::Trace);
-    jit_init((uint32_t) JitBackend::Metal);
+    jit_init(1u << (uint32_t) JitBackend::Metal);
 
     if (!jit_has_backend(JitBackend::Metal)) {
         std::fprintf(stderr, "Metal backend was not initialized!\n");

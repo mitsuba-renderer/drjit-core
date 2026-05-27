@@ -252,13 +252,11 @@ struct alignas(64) Variable {
     // Variable kind (IR statement / literal constant / data)
     uint32_t kind : 7;
 
-    /// Backend associated with this variable (3 bits to fit Metal=4 in
-    /// addition to CUDA=1 and LLVM=2)
-    uint32_t backend : 3;
+    /// Backend associated with this variable
+    uint32_t backend : 2;
 
-    /// Variable type (Bool/Int/Float/....). 4 bits is enough for the 16
-    /// distinct VarType values (0..15).
-    uint32_t type : 4;
+    /// Variable type (Bool/Int/Float/....)
+    uint32_t type : 5;
 
     /// Is this a pointer variable that is used to write to some array?
     uint32_t write_ptr : 1;
@@ -371,9 +369,10 @@ struct VariableKey {
     uint32_t size;
     uint32_t dep[4];
     uint32_t kind         : 8;
-    uint32_t backend      : 3;
+    uint32_t backend      : 2;
     uint32_t type         : 4;
     uint32_t write_ptr    : 1;
+    uint32_t unused       : 1;
     uint32_t array_length : 16;
     uint32_t scope;
     uint64_t literal;
@@ -388,6 +387,7 @@ struct VariableKey {
         backend = v.backend;
         type = v.type;
         write_ptr = v.write_ptr;
+        unused = 0;
         scope = v.scope;
         array_length = (v.is_array() || v.coop_vec) ? v.array_length : 0;
         literal = v.literal;
@@ -581,34 +581,6 @@ struct WeakRef {
     WeakRef(uint32_t index, uint32_t counter)
         : index(index), counter(counter) { }
 };
-
-// ====================================================================
-// Backend index helpers
-//
-// Variable::backend uses a 2-bit field to store the backend tag while
-// keeping sizeof(Variable) at 64 bytes (one cache line). The JitBackend
-// enum is a bit-mask (1, 2, 4, ...) which doesn't fit in 2 bits once
-// Metal is included. We therefore use a sequential encoding internally
-// (CUDA = 0, LLVM = 1, Metal = 2) and convert to/from JitBackend.
-// ====================================================================
-
-inline uint32_t backend_to_index(JitBackend b) {
-    switch (b) {
-        case JitBackend::CUDA:  return 0;
-        case JitBackend::LLVM:  return 1;
-        case JitBackend::Metal: return 2;
-        default:                return 3; // None / unknown
-    }
-}
-
-inline JitBackend index_to_backend(uint32_t i) {
-    switch (i & 3) {
-        case 0: return JitBackend::CUDA;
-        case 1: return JitBackend::LLVM;
-        case 2: return JitBackend::Metal;
-        default: return JitBackend::None;
-    }
-}
 
 struct KernelKey;
 

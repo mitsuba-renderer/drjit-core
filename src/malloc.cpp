@@ -146,8 +146,8 @@ void* jitc_malloc(AllocType type, size_t size, JitBackend backend_hint) {
                       : JitBackend::LLVM;
 #if defined(DRJIT_ENABLE_METAL)
         if ((type == AllocType::Device || type == AllocType::HostPinned) &&
-            (state.backends & (uint32_t) JitBackend::CUDA) == 0 &&
-            (state.backends & (uint32_t) JitBackend::Metal) != 0) {
+            (state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0 &&
+            (state.backends & (1u << (uint32_t) JitBackend::Metal)) != 0) {
             backend = JitBackend::Metal;
         }
 #endif
@@ -508,7 +508,7 @@ void jitc_flush_malloc_cache(bool warn) {
 
             switch ((AllocType) type) {
                 case AllocType::Device:
-                    if (state.backends & (uint32_t) JitBackend::CUDA) {
+                    if (state.backends & (1u << (uint32_t) JitBackend::CUDA)) {
                         const Device &dev = state.devices[device];
                         scoped_set_context guard2(dev.context);
                         if (dev.memory_pool) {
@@ -520,7 +520,7 @@ void jitc_flush_malloc_cache(bool warn) {
                         }
                     }
 #if defined(DRJIT_ENABLE_METAL)
-                    else if (state.backends & (uint32_t) JitBackend::Metal) {
+                    else if (state.backends & (1u << (uint32_t) JitBackend::Metal)) {
                         DRJIT_METAL_SCOPED_POOL;
                         for (void *ptr : entries) {
                             auto *buf = (MTL::Buffer *)
@@ -534,14 +534,14 @@ void jitc_flush_malloc_cache(bool warn) {
                     break;
 
                 case AllocType::HostPinned:
-                    if (state.backends & (uint32_t) JitBackend::CUDA) {
+                    if (state.backends & (1u << (uint32_t) JitBackend::CUDA)) {
                         const Device &dev = state.devices[device];
                         scoped_set_context guard2(dev.context);
                         for (void *ptr : entries)
                             cuda_check(cuMemFreeHost(ptr));
                     }
 #if defined(DRJIT_ENABLE_METAL)
-                    else if (state.backends & (uint32_t) JitBackend::Metal) {
+                    else if (state.backends & (1u << (uint32_t) JitBackend::Metal)) {
                         // Host-pinned on Metal == StorageModeShared. The
                         // ``ptr`` is the buffer's CPU contents; we look up
                         // the MTLBuffer via the same map and release it.

@@ -282,7 +282,7 @@ void demo() {
 }
 
 int main(int, char **) {
-    jit_init((int) JitBackend::CUDA);
+    jit_init(1u << (uint32_t) JitBackend::CUDA);
     // jit_set_log_level_stderr(LogLevel::Trace);
     init_optix_api();
     demo();
