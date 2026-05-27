@@ -198,7 +198,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
             //   a0 = matrix buffer pointer
             //   a1 = input vector x (coopvec, n elements)
             //   a2 = mask (ignored; per-thread MSL code is naturally
-            //        masked downstream via Mitsuba's active flag)
+            //        masked downstream by the caller's active flag)
             //   a3 = bias vector b (optional, may be null)
             //
             // The mat-vec is unrolled into m * n FMAs that reference
