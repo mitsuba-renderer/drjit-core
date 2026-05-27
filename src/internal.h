@@ -1057,14 +1057,18 @@ enum ParamType { Register, Input, Output };
 /// State specific to threads
 #if defined(_MSC_VER)
   extern __declspec(thread) ThreadState* thread_state_llvm;
+#if defined(DRJIT_ENABLE_CUDA)
   extern __declspec(thread) ThreadState* thread_state_cuda;
+#endif
 #if defined(DRJIT_ENABLE_METAL)
   extern __declspec(thread) ThreadState* thread_state_metal;
 #endif
   extern __declspec(thread) JitBackend default_backend;
 #else
   extern __thread ThreadState* thread_state_llvm;
+#if defined(DRJIT_ENABLE_CUDA)
   extern __thread ThreadState* thread_state_cuda;
+#endif
 #if defined(DRJIT_ENABLE_METAL)
   extern __thread ThreadState* thread_state_metal;
 #endif
@@ -1076,9 +1080,11 @@ extern ThreadState *jitc_init_thread_state(JitBackend backend);
 inline ThreadState *thread_state(JitBackend backend) {
     ThreadState *result;
     switch (backend) {
+#if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             result = thread_state_cuda;
             break;
+#endif
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:
             result = thread_state_metal;
@@ -1111,8 +1117,10 @@ extern void jitc_init(uint32_t backends);
 /// Release all resources used by the JIT compiler, and report reference leaks.
 extern void jitc_shutdown(int light);
 
+#if defined(DRJIT_ENABLE_CUDA)
 /// Set the currently active device & stream
 extern void jitc_cuda_set_device(int device);
+#endif
 
 /// Wait for all computation on the current stream to finish. If \c hold_lock
 /// is true, \c state.lock is kept through the wait, preventing other threads
@@ -1135,6 +1143,7 @@ inline bool jitc_is_device_backend(JitBackend b) {
 void *jitc_find_library(const char *fname, const char *glob_pat,
                         const char *env_var);
 
+#if defined(DRJIT_ENABLE_CUDA)
 /// Return a pointer to the CUDA stream associated with the currently active device
 extern void* jitc_cuda_stream();
 
@@ -1146,6 +1155,7 @@ extern void jitc_cuda_push_context(void *);
 
 /// Pop the current CUDA context and return it
 extern void* jitc_cuda_pop_context();
+#endif
 
 extern void jitc_set_flags(uint32_t flags);
 

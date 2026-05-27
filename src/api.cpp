@@ -14,8 +14,10 @@
 #include "util.h"
 #include "registry.h"
 #include "llvm.h"
-#include "cuda_tex.h"
-#include "cuda_green.h"
+#if defined(DRJIT_ENABLE_CUDA)
+#  include "cuda_tex.h"
+#  include "cuda_green.h"
+#endif
 #include "op.h"
 #include "call.h"
 #include "loop.h"
@@ -81,16 +83,22 @@ int jit_has_backend(JitBackend backend) {
             break;
 
         case JitBackend::CUDA:
+#if defined(DRJIT_ENABLE_CUDA)
             result = (state.backends & (1u << (uint32_t) JitBackend::CUDA))
                 && !state.devices.empty();
+#else
+            result = false;
+#endif
             break;
 
-#if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:
+#if defined(DRJIT_ENABLE_METAL)
             result = (state.backends & (1u << (uint32_t) JitBackend::Metal))
                 && !state.metal_devices.empty();
-            break;
+#else
+            result = false;
 #endif
+            break;
 
         default:
             jitc_raise("jit_has_backend(): invalid input!");
@@ -244,6 +252,7 @@ void jit_record_end(JitBackend backend, uint32_t value, int cleanup) {
     }
 }
 
+#if defined(DRJIT_ENABLE_CUDA)
 void* jit_cuda_stream() {
     lock_guard guard(state.lock);
     return jitc_cuda_stream();
@@ -327,6 +336,30 @@ void jit_cuda_sync_stream(uintptr_t stream) {
     // Only using thread-local state so no shared JIT state synchronization needed
     return jitc_cuda_sync_stream(stream);
 }
+#else
+static void jit_cuda_unavailable() {
+    jitc_raise("The Dr.Jit CUDA backend is unavailable: Dr.Jit was compiled "
+               "without CUDA support.");
+}
+void* jit_cuda_stream() { jit_cuda_unavailable(); return nullptr; }
+void* jit_cuda_context() { jit_cuda_unavailable(); return nullptr; }
+void jit_cuda_push_context(void*) { jit_cuda_unavailable(); }
+void* jit_cuda_pop_context() { jit_cuda_unavailable(); return nullptr; }
+CUDAGreenContext *jit_cuda_green_context_make(uint32_t, uint32_t *, void **) {
+    jit_cuda_unavailable(); return nullptr;
+}
+void jit_cuda_green_context_release(CUDAGreenContext *) { jit_cuda_unavailable(); }
+void *jit_cuda_green_context_enter(CUDAGreenContext *) { jit_cuda_unavailable(); return nullptr; }
+void jit_cuda_green_context_leave(void *) { jit_cuda_unavailable(); }
+int jit_cuda_device_count() { return 0; }
+void jit_cuda_set_device(int) { jit_cuda_unavailable(); }
+int jit_cuda_device() { jit_cuda_unavailable(); return -1; }
+int jit_cuda_device_raw() { jit_cuda_unavailable(); return -1; }
+int jit_cuda_compute_capability() { jit_cuda_unavailable(); return 0; }
+void jit_cuda_set_target(uint32_t, uint32_t) { jit_cuda_unavailable(); }
+void *jit_cuda_lookup(const char *) { jit_cuda_unavailable(); return nullptr; }
+void jit_cuda_sync_stream(uintptr_t) { jit_cuda_unavailable(); }
+#endif
 
 void jit_llvm_set_thread_count(uint32_t size) {
     pool_set_size(nullptr, size);
@@ -535,10 +568,17 @@ void jit_llvm_version(int *major, int *minor, int *patch) {
 
 void jit_cuda_version(int *major, int *minor) {
     lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_CUDA)
     if (major)
         *major = jitc_cuda_version_major;
     if (minor)
         *minor = jitc_cuda_version_minor;
+#else
+    if (major)
+        *major = 0;
+    if (minor)
+        *minor = 0;
+#endif
 }
 
 uint32_t jit_llvm_vector_width() {
@@ -1142,7 +1182,9 @@ uint32_t jit_var_write(uint32_t index, size_t offset, const void *src) {
 
 void jit_eval() {
     lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_CUDA)
     jitc_eval(thread_state_cuda);
+#endif
     jitc_eval(thread_state_llvm);
 #if defined(DRJIT_ENABLE_METAL)
     jitc_eval(thread_state_metal);
@@ -1400,6 +1442,7 @@ void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
     jitc_llvm_ray_trace(func, scene, shadow_ray, in, out);
 }
 
+#if defined(DRJIT_ENABLE_CUDA)
 void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                           int format, int filter_mode, int wrap_mode) {
     lock_guard guard(state.lock);
@@ -1446,6 +1489,26 @@ void jit_cuda_tex_destroy(void *texture) {
     lock_guard guard(state.lock);
     jitc_cuda_tex_destroy(texture);
 }
+#else
+void *jit_cuda_tex_create(size_t, const size_t *, size_t, int, int, int) {
+    jit_cuda_unavailable(); return nullptr;
+}
+void jit_cuda_tex_get_shape(size_t, const void *, size_t *) { jit_cuda_unavailable(); }
+void jit_cuda_tex_get_indices(const void *, uint32_t *) { jit_cuda_unavailable(); }
+void jit_cuda_tex_memcpy_d2t(size_t, const size_t *, const void *, void *) {
+    jit_cuda_unavailable();
+}
+void jit_cuda_tex_memcpy_t2d(size_t, const size_t *, const void *, void *) {
+    jit_cuda_unavailable();
+}
+void jit_cuda_tex_lookup(size_t, const void *, const uint32_t *, uint32_t, uint32_t *) {
+    jit_cuda_unavailable();
+}
+void jit_cuda_tex_bilerp_fetch(size_t, const void *, const uint32_t *, uint32_t, uint32_t *) {
+    jit_cuda_unavailable();
+}
+void jit_cuda_tex_destroy(void *) { jit_cuda_unavailable(); }
+#endif
 
 uint32_t jit_var_neg(uint32_t a0) {
     lock_guard guard(state.lock);
@@ -1899,21 +1962,25 @@ void jit_freeze_destroy(Recording *recording) {
 
 void jit_profile_start() {
     lock_guard guard(state.lock);
-#if defined(DRJIT_DYNAMIC_CUDA)
+#if defined(DRJIT_ENABLE_CUDA)
+#  if defined(DRJIT_DYNAMIC_CUDA)
     if (cuProfilerStart)
         cuProfilerStart();
-#else
+#  else
     cuProfilerStart();
+#  endif
 #endif
 }
 
 void jit_profile_stop() {
     lock_guard guard(state.lock);
-#if defined(DRJIT_DYNAMIC_CUDA)
+#if defined(DRJIT_ENABLE_CUDA)
+#  if defined(DRJIT_DYNAMIC_CUDA)
     if (cuProfilerStop)
         cuProfilerStop();
-#else
+#  else
     cuProfilerStop();
+#  endif
 #endif
 }
 
@@ -2017,8 +2084,10 @@ JitEvent jit_event_create(JitBackend backend, int enable_timing) {
         jitc_raise("jit_event_create(): events cannot be used while recording a frozen function");
 
     switch (backend) {
+#if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             return jitc_cuda_event_create(enable_timing);
+#endif
         case JitBackend::LLVM:
             return jitc_llvm_event_create(enable_timing);
         default:
@@ -2035,9 +2104,11 @@ void jit_event_destroy(JitEvent event) {
     EventData* e = (EventData*)event;
 
     switch (e->backend) {
+#if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             jitc_cuda_event_destroy(event);
             break;
+#endif
         case JitBackend::LLVM:
             jitc_llvm_event_destroy(event);
             break;
@@ -2054,9 +2125,11 @@ void jit_event_record(JitEvent event) {
     EventData* e = (EventData*)event;
 
     switch (e->backend) {
+#if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             jitc_cuda_event_record(event);
             break;
+#endif
         case JitBackend::LLVM:
             jitc_llvm_event_record(event);
             break;
@@ -2073,8 +2146,10 @@ int jit_event_query(JitEvent event) {
     EventData* e = (EventData*)event;
 
     switch (e->backend) {
+#if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             return jitc_cuda_event_query(event);
+#endif
         case JitBackend::LLVM:
             return jitc_llvm_event_query(event);
         default:
@@ -2091,9 +2166,11 @@ void jit_event_wait(JitEvent event) {
     EventData* e = (EventData*)event;
 
     switch (e->backend) {
+#if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             jitc_cuda_event_wait(event);
             break;
+#endif
         case JitBackend::LLVM:
             jitc_llvm_event_wait(event);
             break;
@@ -2114,8 +2191,10 @@ float jit_event_elapsed_time(JitEvent start, JitEvent end) {
         jitc_raise("jit_event_elapsed_time(): events must be from the same backend");
 
     switch (s->backend) {
+#if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             return jitc_cuda_event_elapsed_time(start, end);
+#endif
         case JitBackend::LLVM:
             return jitc_llvm_event_elapsed_time(start, end);
         default:
@@ -2132,8 +2211,10 @@ void* jit_event_handle(JitEvent event) {
     EventData* e = (EventData*)event;
 
     switch (e->backend) {
+#if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             return (void*)e->cuda_event;
+#endif
         case JitBackend::LLVM:
             return (void*)e->llvm_task;
         default:

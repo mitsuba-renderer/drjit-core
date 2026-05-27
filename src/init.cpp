@@ -9,7 +9,9 @@
 
 #include "drjit-core/jit.h"
 #include "internal.h"
-#include "cuda_ts.h"
+#if defined(DRJIT_ENABLE_CUDA)
+#  include "cuda_ts.h"
+#endif
 #include "llvm_ts.h"
 #include "malloc.h"
 #include "internal.h"
@@ -49,7 +51,9 @@ State state;
 #endif
 
 #if defined(_MSC_VER)
+#if defined(DRJIT_ENABLE_CUDA)
   __declspec(thread) ThreadState* thread_state_cuda = nullptr;
+#endif
   __declspec(thread) ThreadState* thread_state_llvm = nullptr;
 #if defined(DRJIT_ENABLE_METAL)
   __declspec(thread) ThreadState* thread_state_metal = nullptr;
@@ -57,7 +61,9 @@ State state;
   __declspec(thread) uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
   __declspec(thread) JitBackend default_backend = JitBackend::None;
 #else
+#if defined(DRJIT_ENABLE_CUDA)
   __thread ThreadState* thread_state_cuda = nullptr;
+#endif
   __thread ThreadState* thread_state_llvm = nullptr;
 #if defined(DRJIT_ENABLE_METAL)
   __thread ThreadState* thread_state_metal = nullptr;
@@ -138,8 +144,10 @@ void jitc_init(uint32_t backends) {
     if ((backends & (1u << (uint32_t) JitBackend::LLVM)) && jitc_llvm_init())
         state.backends |= 1u << (uint32_t) JitBackend::LLVM;
 
+#if defined(DRJIT_ENABLE_CUDA)
     if ((backends & (1u << (uint32_t) JitBackend::CUDA)) && jitc_cuda_init())
         state.backends |= 1u << (uint32_t) JitBackend::CUDA;
+#endif
 
 #if defined(DRJIT_ENABLE_METAL)
     if ((backends & (1u << (uint32_t) JitBackend::Metal)) && jitc_metal_init())
@@ -152,6 +160,7 @@ void jitc_init(uint32_t backends) {
     jitc_nvtx_init();
 }
 
+#if defined(DRJIT_ENABLE_CUDA)
 void* jitc_cuda_stream() {
     return (void*) thread_state(JitBackend::CUDA)->stream;
 }
@@ -169,17 +178,20 @@ void* jitc_cuda_pop_context() {
     cuda_check(cuCtxPopCurrent(&out));
     return out;
 }
+#endif
 
 /// Release all resources used by the JIT compiler, and report reference leaks.
 void jitc_shutdown(int light) {
     // Synchronize with everything
     for (ThreadState *ts : state.tss) {
+#if defined(DRJIT_ENABLE_CUDA)
         if (ts->backend == JitBackend::CUDA) {
             scoped_set_context guard(ts->context);
             cuda_check(cuStreamSynchronize(ts->stream));
         }
+#endif
 #if defined(DRJIT_ENABLE_METAL)
-        else if (ts->backend == JitBackend::Metal) {
+        if (ts->backend == JitBackend::Metal) {
             jitc_metal_sync(ts);
         }
 #endif
@@ -212,6 +224,7 @@ void jitc_shutdown(int light) {
 
     state.kernel_history.clear();
 
+#if defined(DRJIT_ENABLE_CUDA)
     // CUDA: Try to already free some memory asynchronously (faster)
     if (thread_state_cuda && thread_state_cuda->memory_pool) {
         ThreadState *ts = thread_state_cuda;
@@ -233,6 +246,7 @@ void jitc_shutdown(int light) {
                 cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, ts->stream));
         }
     }
+#endif
 
 #if defined(DRJIT_ENABLE_OPTIX)
     // Free the default OptiX shader binding table and pipeline (ref counting)
@@ -250,10 +264,12 @@ void jitc_shutdown(int light) {
             for (uint32_t index : ts->side_effects)
                 jitc_var_dec_ref(index);
 
+#if defined(DRJIT_ENABLE_CUDA)
             if (ts->backend == JitBackend::CUDA && ts->stream) {
                 scoped_set_context guard(ts->context);
                 cuda_check(cuStreamSynchronize(ts->stream));
             }
+#endif
 
             if (!ts->prefix_stack.empty()) {
                 for (char *s : ts->prefix_stack)
@@ -287,7 +303,9 @@ void jitc_shutdown(int light) {
     }
 
     thread_state_llvm = nullptr;
+#if defined(DRJIT_ENABLE_CUDA)
     thread_state_cuda = nullptr;
+#endif
 #if defined(DRJIT_ENABLE_METAL)
     thread_state_metal = nullptr;
 #endif
@@ -346,7 +364,9 @@ void jitc_shutdown(int light) {
 
     if (light == 0) {
         jitc_llvm_shutdown();
+#if defined(DRJIT_ENABLE_CUDA)
         jitc_cuda_shutdown();
+#endif
 #if defined(DRJIT_ENABLE_OPTIX)
         jitc_optix_api_shutdown();
 #endif
@@ -401,6 +421,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
 #endif
 
     if (backend == JitBackend::CUDA) {
+#if defined(DRJIT_ENABLE_CUDA)
         ts = new CUDAThreadState();
         if ((state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0) {
             delete ts;
@@ -459,6 +480,10 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->event = device.event;
         ts->sync_stream_event = device.sync_stream_event;
         thread_state_cuda = ts;
+#else
+        jitc_raise("jit_init_thread_state(): the CUDA backend is unavailable "
+                   "because Dr.Jit was compiled without CUDA support.");
+#endif
     } else {
         ts = new LLVMThreadState();
         if ((state.backends & (1u << (uint32_t) JitBackend::LLVM)) == 0) {
@@ -487,6 +512,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
     return ts;
 }
 
+#if defined(DRJIT_ENABLE_CUDA)
 void jitc_cuda_set_device(int device_id) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     if (ts->device == device_id)
@@ -516,6 +542,7 @@ void jitc_cuda_set_device(int device_id) {
         ts->sync_stream_event = device.sync_stream_event;
     }
 }
+#endif
 
 void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
     if (!ts)
@@ -525,6 +552,7 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
         jitc_raise("Attempted to synchronize in a context, where "
                    "synchronization was explicitly forbidden!");
 
+#if defined(DRJIT_ENABLE_CUDA)
     if (ts->backend == JitBackend::CUDA) {
         scoped_set_context guard(ts->context);
         CUstream stream = ts->stream;
@@ -534,18 +562,21 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
             unlock_guard guard_2(state.lock);
             cuda_check(cuStreamSynchronize(stream));
         }
+        return;
     }
+#endif
 #if defined(DRJIT_ENABLE_METAL)
-    else if (ts->backend == JitBackend::Metal) {
+    if (ts->backend == JitBackend::Metal) {
         if (hold_lock) {
             jitc_metal_sync(ts);
         } else {
             unlock_guard guard(state.lock);
             jitc_metal_sync(ts);
         }
+        return;
     }
 #endif
-    else {
+    {
         Task *task = jitc_task;
         if (!task)
             return;
@@ -574,7 +605,9 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
 
 /// Wait for all computation on the current stream to finish
 void jitc_sync_thread(bool hold_lock) {
+#if defined(DRJIT_ENABLE_CUDA)
     jitc_sync_thread(thread_state_cuda, hold_lock);
+#endif
     jitc_sync_thread(thread_state_llvm, hold_lock);
 #if defined(DRJIT_ENABLE_METAL)
     jitc_sync_thread(thread_state_metal, hold_lock);
@@ -583,6 +616,7 @@ void jitc_sync_thread(bool hold_lock) {
 
 /// Wait for all computation on the current device to finish
 void jitc_sync_device() {
+#if defined(DRJIT_ENABLE_CUDA)
     ThreadState *ts = thread_state_cuda;
     if (ts) {
         /* Release lock while synchronizing */ {
@@ -591,6 +625,7 @@ void jitc_sync_device() {
             cuda_check(cuCtxSynchronize());
         }
     }
+#endif
 
     if (thread_state_llvm) {
         std::vector<ThreadState *> tss = state.tss;
@@ -796,6 +831,7 @@ KernelHistoryEntry *KernelHistory::get() {
 
     for (size_t i = 0; i < m_size; i++) {
         KernelHistoryEntry &k = data[i];
+#if defined(DRJIT_ENABLE_CUDA)
         if (k.backend == JitBackend::CUDA) {
             cuEventElapsedTime(&k.execution_time,
                                (CUevent) k.event_start,
@@ -803,14 +839,17 @@ KernelHistoryEntry *KernelHistory::get() {
             cuEventDestroy((CUevent) k.event_start);
             cuEventDestroy((CUevent) k.event_end);
             k.event_start = k.event_end = 0;
+        } else
+#endif
 #if defined(DRJIT_ENABLE_METAL)
-        } else if (k.backend == JitBackend::Metal) {
+        if (k.backend == JitBackend::Metal) {
             extern float jitc_metal_finalize_kernel_history_entry(void *);
             k.execution_time =
                 jitc_metal_finalize_kernel_history_entry(k.task);
             k.task = nullptr;
+        } else
 #endif
-        } else {
+        {
             task_wait((Task *) k.task);
             k.execution_time = (float) task_time((Task *) k.task);
             task_release((Task *) k.task);
@@ -830,18 +869,22 @@ void KernelHistory::clear() {
 
     for (size_t i = 0; i < m_size; i++) {
         KernelHistoryEntry &k = m_data[i];
+#if defined(DRJIT_ENABLE_CUDA)
         if (k.backend == JitBackend::CUDA) {
             cuEventDestroy((CUevent) k.event_start);
             cuEventDestroy((CUevent) k.event_end);
+        } else
+#endif
 #if defined(DRJIT_ENABLE_METAL)
-        } else if (k.backend == JitBackend::Metal) {
+        if (k.backend == JitBackend::Metal) {
             // The Metal `task` slot holds an MTL::CommandBuffer*, not a
             // nanothread Task. Reuse the finalize helper to wait + release.
             extern float jitc_metal_finalize_kernel_history_entry(void *);
             jitc_metal_finalize_kernel_history_entry(k.task);
             k.task = nullptr;
+        } else
 #endif
-        } else {
+        {
             task_release((Task *) k.task);
         }
         free(k.ir);
