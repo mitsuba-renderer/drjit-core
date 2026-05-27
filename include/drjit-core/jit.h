@@ -48,20 +48,20 @@ enum class JitBackend : uint32_t {
     None = 0,
 
     /// CUDA backend (requires CUDA >= 10, generates PTX instructions)
-    CUDA = (1 << 0),
+    CUDA = 1,
 
     /// LLVM backend targeting the CPU (generates LLVM IR)
-    LLVM = (1 << 1),
+    LLVM = 2,
 
     /// Metal backend (Apple Silicon GPUs, generates MSL source)
-    Metal = (1 << 2)
+    Metal = 3
 };
 #else
 enum JitBackend {
     JitBackendNone = 0,
-    JitBackendCUDA = (1 << 0),
-    JitBackendLLVM = (1 << 1),
-    JitBackendMetal = (1 << 2)
+    JitBackendCUDA = 1,
+    JitBackendLLVM = 2,
+    JitBackendMetal = 3
 };
 #endif
 
@@ -69,8 +69,8 @@ enum JitBackend {
  * \brief Initialize a JIT compiler backend
  *
  * The function <tt>jit_init()</tt> must be called before using the JIT
- * compiler. It takes a bit-wise OR of elements of the \ref JitBackend
- * enumeration and tries to initialize each specified backend. Query \ref
+ * compiler. It takes a bit-wise OR of ``1u << (uint32_t) JitBackend::X``
+ * shifted values and tries to initialize each specified backend. Query \ref
  * jit_has_backend() following this operation to check if a backend was
  * initialized successfully. This function does nothing when initialization has
  * already occurred. It is possible to re-initialize the JIT following a call
@@ -78,9 +78,9 @@ enum JitBackend {
  * testcases.
  */
 extern JIT_EXPORT void
-jit_init(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
-                                   (uint32_t) JitBackend::LLVM |
-                                   (uint32_t) JitBackend::Metal));
+jit_init(uint32_t backends JIT_DEF((1u << (uint32_t) JitBackend::CUDA) |
+                                   (1u << (uint32_t) JitBackend::LLVM) |
+                                   (1u << (uint32_t) JitBackend::Metal)));
 
 /**
  * \brief Launch an asynchronous thread that will execute jit_init() and
@@ -100,9 +100,9 @@ jit_init(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
  * internal data structures.
  */
 extern JIT_EXPORT void
-jit_init_async(uint32_t backends JIT_DEF((uint32_t) JitBackend::CUDA |
-                                         (uint32_t) JitBackend::LLVM |
-                                         (uint32_t) JitBackend::Metal));
+jit_init_async(uint32_t backends JIT_DEF((1u << (uint32_t) JitBackend::CUDA) |
+                                         (1u << (uint32_t) JitBackend::LLVM) |
+                                         (1u << (uint32_t) JitBackend::Metal)));
 
 /// Check whether the LLVM backend was successfully initialized
 extern JIT_EXPORT int jit_has_backend(JIT_ENUM JitBackend backend);

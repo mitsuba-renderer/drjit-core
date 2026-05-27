@@ -11,7 +11,7 @@ using namespace drjit;
 
 int main() {
     jit_set_log_level_stderr(LogLevel::Info);
-    jit_init((uint32_t) JitBackend::Metal);
+    jit_init(1u << (uint32_t) JitBackend::Metal);
 
     if (!jit_has_backend(JitBackend::Metal)) {
         fprintf(stderr, "Metal backend not available\n");

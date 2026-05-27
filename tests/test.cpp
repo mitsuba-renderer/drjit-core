@@ -331,9 +331,9 @@ int main(int argc, char **argv) {
 
     try {
         jit_set_log_level_stderr((LogLevel) log_level_stderr);
-        jit_init((test_llvm ? (uint32_t) JitBackend::LLVM : 0) |
-                 ((test_cuda || test_optix) ? (uint32_t) JitBackend::CUDA : 0) |
-                 (test_metal ? (uint32_t) JitBackend::Metal : 0));
+        jit_init((test_llvm ? (1u << (uint32_t) JitBackend::LLVM) : 0u) |
+                 ((test_cuda || test_optix) ? (1u << (uint32_t) JitBackend::CUDA) : 0u) |
+                 (test_metal ? (1u << (uint32_t) JitBackend::Metal) : 0u));
         fprintf(stdout, "\n");
 
         test_cuda &= (bool) jit_has_backend(JitBackend::CUDA);
@@ -376,9 +376,9 @@ int main(int argc, char **argv) {
 
             fflush(stdout);
             log_value.clear();
-            jit_init((uint32_t)(is_metal ? JitBackend::Metal
-                                         : (is_cuda || is_optix) ? JitBackend::CUDA
-                                                                  : JitBackend::LLVM));
+            jit_init(1u << (uint32_t)(is_metal ? JitBackend::Metal
+                                              : (is_cuda || is_optix) ? JitBackend::CUDA
+                                                                      : JitBackend::LLVM));
 #if defined(DRJIT_ENABLE_OPTIX)
             jit_set_flag(JitFlag::ForceOptiX, is_optix);
             if (is_optix)
