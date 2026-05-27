@@ -152,7 +152,7 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey * /*key*/,
                 continue;
             size_t offset = 0;
             auto *buf = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing(ptr, &offset);
+                jitc_metal_find_buffer(ptr, &offset);
             if (buf)
                 enc->useResource(buf, MTL::ResourceUsageRead |
                                           MTL::ResourceUsageWrite);
@@ -165,7 +165,7 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey * /*key*/,
         if (!ptr) continue;
         size_t off = 0;
         auto *buf = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing(ptr, &off);
+            jitc_metal_find_buffer(ptr, &off);
         if (buf)
             enc->useResource(buf, MTL::ResourceUsageRead |
                                       MTL::ResourceUsageWrite);
@@ -336,7 +336,7 @@ void MetalThreadState::memset_async(void *ptr, uint32_t size, uint32_t isize,
     DRJIT_METAL_SCOPED_POOL;
     size_t offset = 0;
     auto *buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing(ptr, &offset);
+        jitc_metal_find_buffer(ptr, &offset);
     if (!buf)
         jitc_raise("MetalThreadState::memset_async(): unknown pointer.");
 
@@ -383,9 +383,9 @@ void MetalThreadState::memcpy(void *dst, const void *src, size_t size) {
 
     size_t src_offset = 0, dst_offset = 0;
     auto *src_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing((void *) src, &src_offset);
+        jitc_metal_find_buffer((void *) src, &src_offset);
     auto *dst_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing(dst, &dst_offset);
+        jitc_metal_find_buffer(dst, &dst_offset);
 
     if (src_buf && !dst_buf) {
         // GPU → CPU readback (synchronous)
@@ -434,9 +434,9 @@ void MetalThreadState::memcpy_async(void *dst, const void *src, size_t size) {
 
     size_t src_offset = 0, dst_offset = 0;
     auto *src_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing((void *) src, &src_offset);
+        jitc_metal_find_buffer((void *) src, &src_offset);
     auto *dst_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing(dst, &dst_offset);
+        jitc_metal_find_buffer(dst, &dst_offset);
 
     if (src_buf && dst_buf) {
         // GPU → GPU blit
@@ -485,7 +485,7 @@ void MetalThreadState::poke(void *dst, const void *src, uint32_t size) {
     jitc_log(Debug, "jit_poke(" DRJIT_PTR ", size=%u)", (uintptr_t) dst, size);
     size_t offset = 0;
     auto *buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing(dst, &offset);
+        jitc_metal_find_buffer(dst, &offset);
     if (buf && buf->storageMode() == MTL::StorageModeShared) {
         std::memcpy((uint8_t *) buf->contents() + offset, src, size);
     } else {
@@ -602,7 +602,7 @@ void MetalThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
         // For HostPinned (shared) buffers, we need the GPU address
         size_t out_off = 0;
         auto *ob = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing(out, &out_off);
+            jitc_metal_find_buffer(out, &out_off);
         if (ob && ob->storageMode() == MTL::StorageModeShared)
             params.out = ob->gpuAddress() + out_off;
         else
@@ -630,12 +630,12 @@ void MetalThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
     // Mark input/output buffers as resident
     size_t offset = 0;
     auto *in_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing((void *) in, &offset);
+        jitc_metal_find_buffer((void *) in, &offset);
     if (in_buf)
         enc->useResource(in_buf, MTL::ResourceUsageRead);
 
     auto *out_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing(
+        jitc_metal_find_buffer(
             need_recursive ? temp_out : out, &offset);
     if (out_buf)
         enc->useResource(out_buf, MTL::ResourceUsageWrite);
@@ -755,8 +755,8 @@ void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
             enc->setThreadgroupMemoryLength(tpg * tsize, 0);
 
             size_t off = 0;
-            auto *ib = (MTL::Buffer *) jitc_metal_lookup_buffer_containing((void*) in, &off);
-            auto *ob = (MTL::Buffer *) jitc_metal_lookup_buffer_containing(p1_out, &off);
+            auto *ib = (MTL::Buffer *) jitc_metal_find_buffer((void*) in, &off);
+            auto *ob = (MTL::Buffer *) jitc_metal_find_buffer(p1_out, &off);
             if (ib) enc->useResource(ib, MTL::ResourceUsageRead);
             if (ob) enc->useResource(ob, MTL::ResourceUsageWrite);
 
@@ -807,9 +807,9 @@ void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
 
             size_t off = 0;
             auto *ib = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing(p1_out, &off);
+                jitc_metal_find_buffer(p1_out, &off);
             auto *ob = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing(chunk_totals_d, &off);
+                jitc_metal_find_buffer(chunk_totals_d, &off);
             if (ib) enc->useResource(ib, MTL::ResourceUsageRead);
             if (ob) enc->useResource(ob, MTL::ResourceUsageWrite);
 
@@ -863,14 +863,14 @@ void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
 
     size_t off = 0;
     auto *in_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing((void *) in, &off);
+        jitc_metal_find_buffer((void *) in, &off);
     auto *out_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing(out, &off);
+        jitc_metal_find_buffer(out, &off);
     if (in_buf) enc->useResource(in_buf, MTL::ResourceUsageRead);
     if (out_buf) enc->useResource(out_buf, MTL::ResourceUsageWrite);
     if (offsets_ptr) {
         auto *off_buf = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing(offsets_ptr, &off);
+            jitc_metal_find_buffer(offsets_ptr, &off);
         if (off_buf) enc->useResource(off_buf, MTL::ResourceUsageRead);
     }
 
@@ -940,9 +940,9 @@ void MetalThreadState::reduce_dot(VarType vt, const void *ptr_1,
     enc->setThreadgroupMemoryLength(thread_count * tsize, 0);
 
     size_t off = 0;
-    auto *b1 = (MTL::Buffer *) jitc_metal_lookup_buffer_containing((void *) ptr_1, &off);
-    auto *b2 = (MTL::Buffer *) jitc_metal_lookup_buffer_containing((void *) ptr_2, &off);
-    auto *bo = (MTL::Buffer *) jitc_metal_lookup_buffer_containing(
+    auto *b1 = (MTL::Buffer *) jitc_metal_find_buffer((void *) ptr_1, &off);
+    auto *b2 = (MTL::Buffer *) jitc_metal_find_buffer((void *) ptr_2, &off);
+    auto *bo = (MTL::Buffer *) jitc_metal_find_buffer(
         block_count == 1 ? out : temp, &off);
     if (b1) enc->useResource(b1, MTL::ResourceUsageRead);
     if (b2) enc->useResource(b2, MTL::ResourceUsageRead);
@@ -1002,7 +1002,7 @@ void MetalThreadState::reduce_expanded(VarType vt, ReduceOp op, void *data,
 
     size_t off = 0;
     auto *buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing(data, &off);
+        jitc_metal_find_buffer(data, &off);
     if (buf)
         enc->useResource(buf,
                          MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
@@ -1074,11 +1074,11 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
 
     size_t a_buf_offset = 0, b_buf_offset = 0, c_buf_offset = 0;
     auto *a_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing((void *) A, &a_buf_offset);
+        jitc_metal_find_buffer((void *) A, &a_buf_offset);
     auto *b_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing((void *) B, &b_buf_offset);
+        jitc_metal_find_buffer((void *) B, &b_buf_offset);
     auto *c_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing(C, &c_buf_offset);
+        jitc_metal_find_buffer(C, &c_buf_offset);
 
     if (!a_buf || !b_buf || !c_buf)
         jitc_raise("MetalThreadState::batched_gemm(): could not resolve "
@@ -1192,9 +1192,9 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
 
         size_t off = 0;
         auto *in_buf = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing((void *) in, &off);
+            jitc_metal_find_buffer((void *) in, &off);
         auto *out_buf = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing((void *) out, &off);
+            jitc_metal_find_buffer((void *) out, &off);
         if (in_buf) enc->useResource(in_buf, MTL::ResourceUsageRead);
         if (out_buf) enc->useResource(out_buf, MTL::ResourceUsageWrite);
         enc->useResource(count_buf, MTL::ResourceUsageWrite);
@@ -1236,9 +1236,9 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
 
             size_t off = 0;
             auto *ib = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing((void *) in, &off);
+                jitc_metal_find_buffer((void *) in, &off);
             auto *sb = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing(scratch_ptr, &off);
+                jitc_metal_find_buffer(scratch_ptr, &off);
             if (ib) enc->useResource(ib, MTL::ResourceUsageRead);
             if (sb) enc->useResource(sb, MTL::ResourceUsageWrite);
 
@@ -1281,9 +1281,9 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
 
             size_t off = 0;
             auto *pb = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing(scratch_ptr, &off);
+                jitc_metal_find_buffer(scratch_ptr, &off);
             auto *cb_buf = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing(counts_copy, &off);
+                jitc_metal_find_buffer(counts_copy, &off);
             if (pb) enc->useResource(pb, MTL::ResourceUsageRead);
             if (cb_buf) enc->useResource(cb_buf, MTL::ResourceUsageRead);
             enc->useResource(count_buf, MTL::ResourceUsageWrite);
@@ -1303,11 +1303,11 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
 
             size_t off = 0;
             auto *ib = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing((void *) in, &off);
+                jitc_metal_find_buffer((void *) in, &off);
             auto *ob = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing((void *) out, &off);
+                jitc_metal_find_buffer((void *) out, &off);
             auto *sb = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing(scratch_ptr, &off);
+                jitc_metal_find_buffer(scratch_ptr, &off);
             if (ib) enc->useResource(ib, MTL::ResourceUsageRead);
             if (ob) enc->useResource(ob, MTL::ResourceUsageWrite);
             if (sb) enc->useResource(sb, MTL::ResourceUsageRead);
@@ -1346,7 +1346,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
     {
         size_t off = 0;
         auto *bb = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing(buckets, &off);
+            jitc_metal_find_buffer(buckets, &off);
         auto *enc = jitc_metal_acquire_blit_encoder(this);
         enc->fillBuffer(bb, NS::Range::Make(off, bucket_bytes), 0);
     }
@@ -1374,9 +1374,9 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
 
         size_t off = 0;
         auto *vb = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing((void *) values, &off);
+            jitc_metal_find_buffer((void *) values, &off);
         auto *bb = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing(buckets, &off);
+            jitc_metal_find_buffer(buckets, &off);
         if (vb) enc->useResource(vb, MTL::ResourceUsageRead);
         if (bb) enc->useResource(bb, MTL::ResourceUsageRead |
                                           MTL::ResourceUsageWrite);
@@ -1415,7 +1415,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
         // Shared buffer and copy the results back after the kernel runs.
         size_t off_off = 0;
         auto *ob_buf = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing((void *) offsets, &off_off);
+            jitc_metal_find_buffer((void *) offsets, &off_off);
         size_t offsets_bytes = (size_t) bucket_count * 4u * sizeof(uint32_t);
         MTL::Buffer *staging_buf = nullptr;
         uint64_t offsets_gpu_addr;
@@ -1443,7 +1443,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
 
         size_t off = 0;
         auto *bb = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing(buckets, &off);
+            jitc_metal_find_buffer(buckets, &off);
         if (bb) enc->useResource(bb, MTL::ResourceUsageRead);
         if (ob_buf)
             enc->useResource(ob_buf, MTL::ResourceUsageWrite);
@@ -1480,7 +1480,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
     auto *dev_mtl_perm = (MTL::Device *) metal_device;
     size_t perm_off = 0;
     auto *pb_caller = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing((void *) perm, &perm_off);
+        jitc_metal_find_buffer((void *) perm, &perm_off);
     MTL::Buffer *perm_staging = nullptr;
     uint64_t perm_gpu_addr;
     if (pb_caller) {
@@ -1502,9 +1502,9 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
 
         size_t off = 0;
         auto *vb = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing((void *) values, &off);
+            jitc_metal_find_buffer((void *) values, &off);
         auto *bb = (MTL::Buffer *)
-            jitc_metal_lookup_buffer_containing(buckets, &off);
+            jitc_metal_find_buffer(buckets, &off);
         if (vb) enc->useResource(vb, MTL::ResourceUsageRead);
         if (bb) enc->useResource(bb, MTL::ResourceUsageRead |
                                           MTL::ResourceUsageWrite);
@@ -1541,7 +1541,7 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
     // jit_malloc(AllocType::Device) → registered in the buffer map).
     size_t dst_off = 0;
     auto *dst_buf = (MTL::Buffer *)
-        jitc_metal_lookup_buffer_containing(dst, &dst_off);
+        jitc_metal_find_buffer(dst, &dst_off);
     if (!dst_buf)
         jitc_fail("MetalThreadState::aggregate(): unknown dst pointer.");
 
@@ -1577,7 +1577,7 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
         if (e.size < 0 && e.src) {
             size_t off = 0;
             auto *src_buf = (MTL::Buffer *)
-                jitc_metal_lookup_buffer_containing((void *) e.src, &off);
+                jitc_metal_find_buffer((void *) e.src, &off);
             if (src_buf)
                 enc->useResource(src_buf, MTL::ResourceUsageRead);
         }
