@@ -29,12 +29,15 @@ static uint32_t unwrap(uint32_t index) {
 }
 
 bool jitc_coop_vec_supported(JitBackend backend) {
+#if defined(DRJIT_ENABLE_CUDA)
     if (backend == JitBackend::CUDA)
         return (jitc_cuda_version_major == 12 &&
                 jitc_cuda_version_minor >= 8) ||
                jitc_cuda_version_major > 12;
-    else
-        return true;
+#else
+    (void) backend;
+#endif
+    return true;
 }
 
 uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {

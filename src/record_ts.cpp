@@ -339,7 +339,9 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
 #if defined(DRJIT_ENABLE_OPTIX)
     OptixShaderBindingTable *tmp_sbt = ts->optix_sbt;
 #endif
+#if defined(DRJIT_ENABLE_CUDA)
     scoped_set_context_maybe guard2(ts->context);
+#endif
 
     // Initialize replay_variables
     replay_variables.clear();
@@ -2727,23 +2729,29 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
     ThreadState *ts_             = thread_state(backend);
     RecordThreadState *record_ts = new RecordThreadState(ts_);
 
+#if defined(DRJIT_ENABLE_CUDA)
     if (backend == JitBackend::CUDA) {
         thread_state_cuda = record_ts;
         set_disabled_thread_state(&thread_state_llvm, backend);
 #if defined(DRJIT_ENABLE_METAL)
         set_disabled_thread_state(&thread_state_metal, backend);
 #endif
-    }
-#if defined(DRJIT_ENABLE_METAL)
-    else if (backend == JitBackend::Metal) {
-        thread_state_metal = record_ts;
-        set_disabled_thread_state(&thread_state_cuda, backend);
-        set_disabled_thread_state(&thread_state_llvm, backend);
-    }
+    } else
 #endif
-    else {
-        thread_state_llvm = record_ts;
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal) {
+        thread_state_metal = record_ts;
+#if defined(DRJIT_ENABLE_CUDA)
         set_disabled_thread_state(&thread_state_cuda, backend);
+#endif
+        set_disabled_thread_state(&thread_state_llvm, backend);
+    } else
+#endif
+    {
+        thread_state_llvm = record_ts;
+#if defined(DRJIT_ENABLE_CUDA)
+        set_disabled_thread_state(&thread_state_cuda, backend);
+#endif
 #if defined(DRJIT_ENABLE_METAL)
         set_disabled_thread_state(&thread_state_metal, backend);
 #endif
@@ -2780,23 +2788,29 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
             rts->add_output(outputs[i]);
         }
 
+#if defined(DRJIT_ENABLE_CUDA)
         if (backend == JitBackend::CUDA) {
             thread_state_cuda = internal;
             unset_disabled_thread_state(&thread_state_llvm);
 #if defined(DRJIT_ENABLE_METAL)
             unset_disabled_thread_state(&thread_state_metal);
 #endif
-        }
-#if defined(DRJIT_ENABLE_METAL)
-        else if (backend == JitBackend::Metal) {
-            thread_state_metal = internal;
-            unset_disabled_thread_state(&thread_state_cuda);
-            unset_disabled_thread_state(&thread_state_llvm);
-        }
+        } else
 #endif
-        else {
-            thread_state_llvm = internal;
+#if defined(DRJIT_ENABLE_METAL)
+        if (backend == JitBackend::Metal) {
+            thread_state_metal = internal;
+#if defined(DRJIT_ENABLE_CUDA)
             unset_disabled_thread_state(&thread_state_cuda);
+#endif
+            unset_disabled_thread_state(&thread_state_llvm);
+        } else
+#endif
+        {
+            thread_state_llvm = internal;
+#if defined(DRJIT_ENABLE_CUDA)
+            unset_disabled_thread_state(&thread_state_cuda);
+#endif
 #if defined(DRJIT_ENABLE_METAL)
             unset_disabled_thread_state(&thread_state_metal);
 #endif
@@ -2833,23 +2847,29 @@ void jitc_freeze_abort(JitBackend backend) {
         // variables
         internal->scope = rts->scope;
 
+#if defined(DRJIT_ENABLE_CUDA)
         if (backend == JitBackend::CUDA) {
             thread_state_cuda = internal;
             unset_disabled_thread_state(&thread_state_llvm);
 #if defined(DRJIT_ENABLE_METAL)
             unset_disabled_thread_state(&thread_state_metal);
 #endif
-        }
-#if defined(DRJIT_ENABLE_METAL)
-        else if (backend == JitBackend::Metal) {
-            thread_state_metal = internal;
-            unset_disabled_thread_state(&thread_state_cuda);
-            unset_disabled_thread_state(&thread_state_llvm);
-        }
+        } else
 #endif
-        else {
-            thread_state_llvm = internal;
+#if defined(DRJIT_ENABLE_METAL)
+        if (backend == JitBackend::Metal) {
+            thread_state_metal = internal;
+#if defined(DRJIT_ENABLE_CUDA)
             unset_disabled_thread_state(&thread_state_cuda);
+#endif
+            unset_disabled_thread_state(&thread_state_llvm);
+        } else
+#endif
+        {
+            thread_state_llvm = internal;
+#if defined(DRJIT_ENABLE_CUDA)
+            unset_disabled_thread_state(&thread_state_cuda);
+#endif
 #if defined(DRJIT_ENABLE_METAL)
             unset_disabled_thread_state(&thread_state_metal);
 #endif

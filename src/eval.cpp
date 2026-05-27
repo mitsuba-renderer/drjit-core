@@ -553,13 +553,16 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     }
 
     buffer.clear();
+#if defined(DRJIT_ENABLE_CUDA)
     if (backend == JitBackend::CUDA)
         jitc_cuda_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
-#if defined(DRJIT_ENABLE_METAL)
-    else if (backend == JitBackend::Metal)
-        jitc_metal_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
-#endif
     else
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        jitc_metal_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
+    else
+#endif
         jitc_llvm_assemble(ts, group);
 
     // Replace '^'s in '__raygen__^^^..' or 'drjit_^^^..' with hash.
@@ -689,6 +692,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     if (it == state.kernel_cache.end()) {
         bool cache_hit = false;
 
+#if defined(DRJIT_ENABLE_CUDA)
         if (ts->backend == JitBackend::CUDA) {
             ProfilerPhase profiler(profiler_region_backend_compile);
             if (!uses_optix) {
@@ -701,15 +705,16 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                         ts, buffer.get(), buffer.size(), kernel_name, kernel);
                 #endif
             }
-        }
+        } else
+#endif
 #if defined(DRJIT_ENABLE_METAL)
-        else if (ts->backend == JitBackend::Metal) {
+        if (ts->backend == JitBackend::Metal) {
             ProfilerPhase profiler(profiler_region_backend_compile);
             cache_hit = jitc_metal_compile(buffer.get(), buffer.size(),
                                            kernel_name, kernel);
-        }
+        } else
 #endif
-        else {
+        {
             cache_hit = jitc_kernel_load(buffer.get(), (uint32_t) buffer.size(),
                                          ts->backend, kernel_hash, kernel);
 
@@ -744,6 +749,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         }
 #endif
 
+#if defined(DRJIT_ENABLE_CUDA)
         if (ts->backend == JitBackend::CUDA && !uses_optix) {
             // Locate the kernel entry point
             size_t offset = buffer.size();
@@ -767,6 +773,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                 kernel.cuda.func, CU_FUNC_ATTRIBUTE_PREFERRED_SHARED_MEMORY_CARVEOUT,
                 CU_SHAREDMEM_CARVEOUT_MAX_L1));
         }
+#endif
 
         float link_time = timer();
         jitc_log(Info, "     cache %s, %s: %s, %s.",
@@ -936,7 +943,9 @@ void jitc_eval_impl(ThreadState *ts) {
             schedule_groups.size(),
             schedule_groups.size() == 1 ? "" : "s");
 
+#if defined(DRJIT_ENABLE_CUDA)
     scoped_set_context_maybe guard2(ts->context);
+#endif
 
     for (ScheduledGroup &group : schedule_groups) {
         jitc_assemble(ts, group);
@@ -1061,10 +1070,12 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
             jitc_llvm_assemble_func(call, inst);
             break;
 
+#if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             jitc_cuda_assemble_func(call, inst, in_size, in_align, out_size,
                                     out_align, n_regs);
             break;
+#endif
 
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:

@@ -11,9 +11,6 @@
 #include "log.h"
 #include "util.h"
 #include "profile.h"
-#if defined(DRJIT_ENABLE_METAL)
-#include "metal.h"
-#endif
 
 #if !defined(_WIN32)
 #  include <sys/mman.h>
@@ -134,34 +131,31 @@ void* jitc_malloc(AllocType type, size_t size, JitBackend backend_hint) {
 
     JitBackend backend;
     if (backend_hint != JitBackend::None) {
-        // Caller knows which backend the allocation belongs to — trust it.
         backend = backend_hint;
-    } else {
-        // Legacy inference path: pick a backend from the AllocType plus the
-        // set of initialized backends. Ambiguous when both CUDA and Metal are
-        // compiled in and active simultaneously; new code should pass an
-        // explicit backend hint instead.
-        backend = (type == AllocType::Device || type == AllocType::HostPinned)
-                      ? JitBackend::CUDA
-                      : JitBackend::LLVM;
+    } else if (type == AllocType::Device || type == AllocType::HostPinned) {
 #if defined(DRJIT_ENABLE_METAL)
-        if ((type == AllocType::Device || type == AllocType::HostPinned) &&
-            (state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0 &&
-            (state.backends & (1u << (uint32_t) JitBackend::Metal)) != 0) {
-            backend = JitBackend::Metal;
-        }
+        backend = JitBackend::Metal;
+#elif defined(DRJIT_ENABLE_CUDA)
+        backend = JitBackend::CUDA;
+#else
+        jitc_raise("jit_malloc(): no GPU backend active");
 #endif
+    } else {
+        backend = JitBackend::LLVM;
     }
 
     ThreadState *ts = nullptr;
 
     int device = 0;
+#if defined(DRJIT_ENABLE_CUDA)
     if (backend == JitBackend::CUDA) {
         ts = thread_state(backend);
         device = ts->device;
     }
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
-    else if (backend == JitBackend::Metal) {
+    if (backend == JitBackend::Metal) {
         ts = thread_state(backend);
         device = ts->device;
     }
@@ -214,6 +208,8 @@ void* jitc_malloc(AllocType type, size_t size, JitBackend backend_hint) {
                                 ptr = (void *) metal_buf->gpuAddress();
                         }
 #endif
+
+#if defined(DRJIT_ENABLE_CUDA)
                     } else if (backend == JitBackend::CUDA) {
                         scoped_set_context guard_2(ts->context);
                         CUresult ret;
@@ -227,6 +223,7 @@ void* jitc_malloc(AllocType type, size_t size, JitBackend backend_hint) {
 
                         if (ret)
                             ptr = nullptr;
+#endif
                     }
                 }
             }
@@ -278,10 +275,14 @@ void jitc_free(void *ptr) {
     if (!ptr)
         return;
 
-    if (thread_state_cuda)
-        thread_state_cuda->notify_free(ptr);
     if (thread_state_llvm)
         thread_state_llvm->notify_free(ptr);
+
+#if defined(DRJIT_ENABLE_CUDA)
+    if (thread_state_cuda)
+        thread_state_cuda->notify_free(ptr);
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
     if (thread_state_metal)
         thread_state_metal->notify_free(ptr);
@@ -303,6 +304,7 @@ void jitc_free(void *ptr) {
         lock_guard guard(state.alloc_free_lock);
         state.alloc_free[info].push_back(ptr);
     } else {
+#if defined(DRJIT_ENABLE_CUDA)
         /* Host-pinned memory is released asynchronously by inserting
            an event into the CUDA stream */
         struct ReleaseRecord {
@@ -330,6 +332,7 @@ void jitc_free(void *ptr) {
                 free(r2);
             },
             r));
+#endif
     }
 
     if (type == AllocType::Device || type == AllocType::HostPinned)
@@ -359,13 +362,12 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
     JitBackend src_backend;
     if (src_type == AllocType::Device || src_type == AllocType::HostPinned) {
 #if defined(DRJIT_ENABLE_METAL)
-        // Check if this allocation belongs to Metal
-        size_t off_tmp = 0;
-        if (jitc_metal_find_buffer(ptr, &off_tmp))
-            src_backend = JitBackend::Metal;
-        else
+        src_backend = JitBackend::Metal;
+#elif defined(DRJIT_ENABLE_CUDA)
+        src_backend = JitBackend::CUDA;
+#else
+        jitc_raise("jit_malloc(): no GPU backend active");
 #endif
-            src_backend = JitBackend::CUDA;
     } else {
         src_backend = JitBackend::LLVM;
     }
@@ -373,7 +375,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
     // Maybe nothing needs to be done..
     if (src_type == dst_type &&
         (dst_type != AllocType::Device ||
-         device == thread_state(JitBackend::CUDA)->device)) {
+         device == thread_state(src_backend)->device)) {
         if (move) {
             return ptr;
         } else {
@@ -413,15 +415,21 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
     /// At this point, source or destination is a GPU array, get assoc. state
     JitBackend device_backend = src_backend;
     if (device_backend == JitBackend::LLVM) {
-        // Source is host, destination must be a device type — detect backend
+        // Source is host, destination must be a device type — pick whichever
+        // GPU backend is initialized at runtime.
 #if defined(DRJIT_ENABLE_METAL)
-        if (jit_has_backend(JitBackend::Metal))
+        if (state.backends & (1u << (uint32_t) JitBackend::Metal))
             device_backend = JitBackend::Metal;
         else
 #endif
+#if defined(DRJIT_ENABLE_CUDA)
             device_backend = JitBackend::CUDA;
+#else
+            jitc_raise("jit_malloc_migrate(): no GPU backend active");
+#endif
     }
     ThreadState *ts = thread_state(device_backend);
+    (void) ts;
 
     if (dst_type == AllocType::Host) // Upgrade from host to host-pinned memory
         dst_type = AllocType::HostPinned;
@@ -439,6 +447,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
         return ptr_new;
     }
 #endif
+#if defined(DRJIT_ENABLE_CUDA)
     scoped_set_context guard(ts->context);
     if (src_type == AllocType::Host) {
         // Host -> Device memory, create an intermediate host-pinned array
@@ -453,6 +462,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
                                  (CUdeviceptr) ptr, size,
                                  ts->stream));
     }
+#endif
 
     if (move)
         jitc_free(ptr);
@@ -508,6 +518,7 @@ void jitc_flush_malloc_cache(bool warn) {
 
             switch ((AllocType) type) {
                 case AllocType::Device:
+#if defined(DRJIT_ENABLE_CUDA)
                     if (state.backends & (1u << (uint32_t) JitBackend::CUDA)) {
                         const Device &dev = state.devices[device];
                         scoped_set_context guard2(dev.context);
@@ -519,6 +530,7 @@ void jitc_flush_malloc_cache(bool warn) {
                                 cuda_check(cuMemFree((CUdeviceptr) ptr));
                         }
                     }
+#endif
 
 #if defined(DRJIT_ENABLE_METAL)
                     if (state.backends & (1u << (uint32_t) JitBackend::Metal)) {

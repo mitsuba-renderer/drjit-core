@@ -18,12 +18,13 @@ option(DRJIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 option(DRJIT_CORE_ENABLE_TESTS "Build Dr.Jit-Core test suite?" OFF)
 
 if (NOT APPLE)
+  option(DRJIT_ENABLE_CUDA  "Enable the NVIDIA CUDA backend?" ON)
   option(DRJIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
   option(DRJIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
 endif()
 
 if (APPLE)
-  option(DRJIT_ENABLE_METAL "Enable the Metal GPU backend (Apple Silicon)?" ON)
+  option(DRJIT_ENABLE_METAL "Enable the Apple Metal backend?" ON)
 endif()
 
 if (NOT MSVC)
@@ -42,7 +43,7 @@ if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/nanothread/ext/cmake-defau
     "by invoking\n$ git submodule update --init --recursive")
 endif()
 
-if (APPLE AND DRJIT_ENABLE_METAL AND
+if (DRJIT_ENABLE_METAL AND
     NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/metal-cpp/Metal")
   message(FATAL_ERROR "The metal-cpp dependency is missing under "
     "ext/metal-cpp. Run\n$ git submodule update --init --recursive\n"
@@ -66,7 +67,7 @@ else()
   message(STATUS "Dr.Jit-Core: linking against LLVM shared libraries.")
 endif()
 
-if (NOT APPLE)
+if (DRJIT_ENABLE_CUDA)
   if (DRJIT_DYNAMIC_CUDA)
     message(STATUS "Dr.Jit-Core: CUDA will be loaded dynamically at runtime.")
   else()
@@ -80,9 +81,9 @@ if (NOT APPLE)
   endif()
 endif()
 
-if (APPLE AND DRJIT_ENABLE_METAL)
+if (DRJIT_ENABLE_METAL)
   message(STATUS "Dr.Jit-Core: Metal GPU backend enabled.")
-elseif (APPLE)
+else()
   message(STATUS "Dr.Jit-Core: Metal GPU backend disabled.")
 endif()
 
@@ -99,6 +100,31 @@ mark_as_advanced(NANOTHREAD_ENABLE_TESTS NANOTHREAD_STATIC)
 #  Build Dr.Jit-Core
 # ----------------------------------------------------------
 
+if (DRJIT_ENABLE_CUDA)
+  set(DRJIT_CUDA_FILES
+    # CUDA backend
+    src/cuda_api.h
+    src/cuda_api.cpp
+    src/cuda_core.cpp
+    src/cuda_green.h
+    src/cuda_green.cpp
+    src/cuda_tex.h
+    src/cuda_tex.cpp
+    src/cuda_eval.cpp
+    src/cuda_ts.h
+    src/cuda_ts.cpp
+    src/cuda_scatter.h
+    src/cuda_scatter.cpp
+    src/cuda_packet.h
+    src/cuda_packet.cpp
+    src/cuda_array.h
+    src/cuda_array.cpp
+    # CUDA / OpenGL interop
+    include/drjit-core/gl_interop.h
+    src/gl_interop.cpp
+  )
+endif()
+
 if (DRJIT_ENABLE_OPTIX)
   set(DRJIT_OPTIX_FILES
     src/optix.h
@@ -109,7 +135,7 @@ if (DRJIT_ENABLE_OPTIX)
     src/optix_core.cpp)
 endif()
 
-if (APPLE AND DRJIT_ENABLE_METAL)
+if (DRJIT_ENABLE_METAL)
   set(DRJIT_METAL_FILES
     include/drjit-core/metal.h
     src/metal.h
@@ -157,31 +183,13 @@ add_library(
   src/coop_vec.h      src/coop_vec.cpp
   src/reorder.h       src/reorder.cpp
 
-  # CUDA backend
-  src/cuda_api.h
-  src/cuda_api.cpp
-  src/cuda_core.cpp
-  src/cuda_green.h
-  src/cuda_green.cpp
-  src/cuda_tex.h
-  src/cuda_tex.cpp
-  src/cuda_eval.cpp
-  src/cuda_ts.h
-  src/cuda_ts.cpp
-  src/cuda_scatter.h
-  src/cuda_scatter.cpp
-  src/cuda_packet.h
-  src/cuda_packet.cpp
-  src/cuda_array.h
-  src/cuda_array.cpp
-  # CUDA / OpenGL interop
-  include/drjit-core/gl_interop.h
-  src/gl_interop.cpp
+  # CUDA backend, if enabled
+  ${DRJIT_CUDA_FILES}
 
-  # OptiX backend
+  # OptiX backend, if enabled
   ${DRJIT_OPTIX_FILES}
 
-  # Metal backend (Apple only)
+  # Metal backend, if enabled
   ${DRJIT_METAL_FILES}
 
   # LLVM backend
@@ -305,15 +313,13 @@ if (DRJIT_ENABLE_OPTIX)
   endif()
 endif()
 
-if (APPLE AND DRJIT_ENABLE_METAL)
+
+if (DRJIT_ENABLE_CUDA)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_CUDA=1)
+endif()
+
+if (DRJIT_ENABLE_METAL)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_METAL=1)
-  # NOTE: ``DRJIT_METAL_KERNEL_SOURCE`` and the runtime ``fopen`` path are
-  # gone — the .metal source now lives inside the shared library as a C++
-  # raw string (see metal_kernels_src.h, generated below).
-  # Embed resources/metal_kernels.metal into the binary as a C++ raw string
-  # so that the runtime no longer depends on the source-tree file. The
-  # generator wraps the file content in `R"MSL(...)MSL"` and writes it to
-  # `metal_kernels_src.h` next to the rest of the build outputs.
   set(METAL_KERNELS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/resources/metal_kernels.metal")
   set(METAL_KERNELS_HDR "${CMAKE_CURRENT_BINARY_DIR}/metal_kernels_src.h")
   add_custom_command(
@@ -332,22 +338,9 @@ if (APPLE AND DRJIT_ENABLE_METAL)
     "-framework Foundation"
     "-framework Metal"
     "-framework MetalPerformanceShaders"
+    "-framework MetalPerformanceShadersGraph"
     "-framework QuartzCore")
-  # The metal-cpp wrapper requires Objective-C++ for ARC; ensure C++17 +
-  # exceptions are enabled (they already are above) and add the file extension
-  # mapping if necessary.
-  set_source_files_properties(
-    src/metal_api.cpp
-    src/metal_core.cpp
-    src/metal_ts.cpp
-    src/metal_eval.cpp
-    src/metal_scatter.cpp
-    src/metal_array.cpp
-    src/metal_coop_vec.cpp
-    src/metal_stage_buffer.cpp
-    src/malloc.cpp
-    PROPERTIES COMPILE_FLAGS "-fno-objc-arc")
-  # metal_mps.mm needs Objective-C++ for the MPS API
+
   set_source_files_properties(
     src/metal_mps.mm
     PROPERTIES COMPILE_FLAGS "-fno-objc-arc")
