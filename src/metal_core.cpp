@@ -58,7 +58,7 @@ uint32_t jitc_metal_expand_factor(uint32_t size, uint32_t tsize) {
     // per element regardless of how parallel the kernel looks. With the
     // smaller cap each Expand call costs ~3-4 ms instead, while still
     // providing enough per-output expansion to avoid ULP loss in the
-    // typical Mitsuba pixel-accumulation pattern (a few rays per pixel).
+    // typical pixel-accumulation pattern (a few rays per pixel).
     //
     // For workloads with much higher per-output contention (e.g. 64+ spp
     // path tracing) callers can override by explicitly passing
@@ -793,8 +793,8 @@ void jitc_metal_sync(ThreadState *ts) {
 // ============================================================================
 
 /// Build a MetalScene with the given configuration and wrap it in a JIT
-/// variable. Returns the variable index — Mitsuba stores it on its
-/// MetalAccelState and dec_refs it when the scene is destroyed.
+/// variable. Returns the variable index; the caller is expected to hold
+/// the reference for the scene's lifetime and dec_ref it on destruction.
 uint32_t jitc_metal_configure_scene(void *accel, void **resources,
                                     uint32_t n_resources,
                                     void *intersection_fn_library,
