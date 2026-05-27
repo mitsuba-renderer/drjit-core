@@ -66,7 +66,7 @@ struct DrJitCudaTexture {
      * not released.
      */
     bool release_texture(size_t index) {
-        if (state.backends & (uint32_t) JitBackend::CUDA) {
+        if (state.backends & (1u << (uint32_t) JitBackend::CUDA)) {
             // Only run the following code if the CUDA context is still alive
             ThreadState *ts = thread_state(JitBackend::CUDA);
             scoped_set_context guard(ts->context);

@@ -77,17 +77,17 @@ int jit_has_backend(JitBackend backend) {
     bool result;
     switch (backend) {
         case JitBackend::LLVM:
-            result = state.backends & (uint32_t) JitBackend::LLVM;
+            result = state.backends & (1u << (uint32_t) JitBackend::LLVM);
             break;
 
         case JitBackend::CUDA:
-            result = (state.backends & (uint32_t) JitBackend::CUDA)
+            result = (state.backends & (1u << (uint32_t) JitBackend::CUDA))
                 && !state.devices.empty();
             break;
 
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:
-            result = (state.backends & (uint32_t) JitBackend::Metal)
+            result = (state.backends & (1u << (uint32_t) JitBackend::Metal))
                 && !state.metal_devices.empty();
             break;
 #endif

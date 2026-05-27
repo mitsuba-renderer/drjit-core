@@ -88,9 +88,9 @@ void jitc_init(uint32_t backends) {
 #endif
 
 #if defined(__APPLE__)
-    backends &= ~(uint32_t) JitBackend::CUDA;
+    backends &= ~(1u << (uint32_t) JitBackend::CUDA);
 #else
-    backends &= ~(uint32_t) JitBackend::Metal;
+    backends &= ~(1u << (uint32_t) JitBackend::Metal);
 #endif
 
     if ((backends & ~state.backends) == 0)
@@ -135,15 +135,15 @@ void jitc_init(uint32_t backends) {
     if ((backends & ~state.backends) == 0)
         return;
 
-    if ((backends & (uint32_t) JitBackend::LLVM) && jitc_llvm_init())
-        state.backends |= (uint32_t) JitBackend::LLVM;
+    if ((backends & (1u << (uint32_t) JitBackend::LLVM)) && jitc_llvm_init())
+        state.backends |= 1u << (uint32_t) JitBackend::LLVM;
 
-    if ((backends & (uint32_t) JitBackend::CUDA) && jitc_cuda_init())
-        state.backends |= (uint32_t) JitBackend::CUDA;
+    if ((backends & (1u << (uint32_t) JitBackend::CUDA)) && jitc_cuda_init())
+        state.backends |= 1u << (uint32_t) JitBackend::CUDA;
 
 #if defined(DRJIT_ENABLE_METAL)
-    if ((backends & (uint32_t) JitBackend::Metal) && jitc_metal_init())
-        state.backends |= (uint32_t) JitBackend::Metal;
+    if ((backends & (1u << (uint32_t) JitBackend::Metal)) && jitc_metal_init())
+        state.backends |= 1u << (uint32_t) JitBackend::Metal;
 #endif
 
     state.variable_counter = 0;
@@ -368,7 +368,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
 #if defined(DRJIT_ENABLE_METAL)
     if (backend == JitBackend::Metal) {
         ts = new MetalThreadState();
-        if ((state.backends & (uint32_t) JitBackend::Metal) == 0) {
+        if ((state.backends & (1u << (uint32_t) JitBackend::Metal)) == 0) {
             delete ts;
             jitc_raise(
                 "jit_init_thread_state(): the Metal backend has not been "
@@ -402,7 +402,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
 
     if (backend == JitBackend::CUDA) {
         ts = new CUDAThreadState();
-        if ((state.backends & (uint32_t) JitBackend::CUDA) == 0) {
+        if ((state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0) {
             delete ts;
 
             if (jitc_cuda_cuinit_result == CUDA_ERROR_NOT_INITIALIZED) {
@@ -461,7 +461,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         thread_state_cuda = ts;
     } else {
         ts = new LLVMThreadState();
-        if ((state.backends & (uint32_t) JitBackend::LLVM) == 0) {
+        if ((state.backends & (1u << (uint32_t) JitBackend::LLVM)) == 0) {
             delete ts;
             #if defined(_WIN32)
                 const char *llvm_fname = "LLVM-C.dll";
