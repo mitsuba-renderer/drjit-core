@@ -157,6 +157,31 @@ extern MTL::IntersectionFunctionTable *
 jitc_metal_get_or_create_ift_for_scene(MetalScene *scene,
                                        MTL::ComputePipelineState *pso);
 
+/// Build a MetalScene with the given configuration and wrap it in a JIT
+/// variable. Returns the variable index; the caller is expected to hold
+/// the reference for the scene's lifetime and dec_ref it on destruction.
+extern uint32_t jitc_metal_configure_scene(void *accel, void **resources,
+                                           uint32_t n_resources,
+                                           void *intersection_fn_library,
+                                           uint32_t n_ift_entries,
+                                           const char **ift_function_names,
+                                           void **ift_buffers,
+                                           const uint32_t *ift_buffer_slots,
+                                           const uint64_t *ift_buffer_offsets,
+                                           uint32_t geometry_types_mask);
+
+/// Trace a batch of rays against the active scene. Mirrors the signature
+/// of the public ``jit_metal_ray_trace`` (see drjit-core/metal.h).
+extern void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
+                                 uint32_t mask, uint32_t *out,
+                                 uint32_t n_out, uint32_t scene);
+
+/// Return the active ``MTL::Device*`` for the current thread.
+extern void *jitc_metal_context_impl();
+
+/// Return the active ``MTL::CommandQueue*`` for the current thread.
+extern void *jitc_metal_command_queue_impl();
+
 /// Choose the per-target expansion factor for ``ReduceMode::Expand`` on
 /// Metal. The scatter target gets allocated as ``factor`` consecutive
 /// copies of ``size`` elements, and each GPU thread routes its update to
