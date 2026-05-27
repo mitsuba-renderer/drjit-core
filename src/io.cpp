@@ -462,6 +462,7 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
             return;
         }
 #endif
+#if defined(DRJIT_ENABLE_CUDA)
         const Device &device = state.devices.at(device_id);
         scoped_set_context guard(device.context);
         if (kernel.size) {
@@ -472,6 +473,10 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
             jitc_optix_free(kernel);
 #endif
         }
+#else
+        (void) device_id;
+        (void) kernel;
+#endif
     }
 }
 

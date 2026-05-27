@@ -1497,8 +1497,10 @@ uint32_t jitc_var_eval_force(uint32_t index, Variable &v_, void **ptr_out) {
         // initialized for recording.
         if (thread_state_llvm)
             thread_state_llvm->notify_init_undefined(result);
+#if defined(DRJIT_ENABLE_CUDA)
         if (thread_state_cuda)
             thread_state_cuda->notify_init_undefined(result);
+#endif
     }
 
     jitc_log(Debug,
@@ -2153,6 +2155,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
     if (unlikely(it == state.alloc_used.end())) {
         /* Cannot resolve pointer to allocation, it was likely
            likely created by another framework */
+#if defined(DRJIT_ENABLE_CUDA)
         if ((JitBackend) v->backend == JitBackend::CUDA) {
             int type;
             ThreadState *ts = thread_state(v->backend);
@@ -2163,7 +2166,9 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
                 src_type = AllocType::Host;
             else
                 src_type = AllocType::Device;
-        } else if ((JitBackend) v->backend == JitBackend::Metal) {
+        } else
+#endif
+        if ((JitBackend) v->backend == JitBackend::Metal) {
             src_type = AllocType::Device;
         } else {
             src_type = AllocType::Host;

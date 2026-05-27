@@ -555,10 +555,15 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
                                      offset_reg, data_reg, in_size, in_align,
                                      out_size, out_align);
 #endif
+#if defined(DRJIT_ENABLE_CUDA)
     else
         jitc_var_call_assemble_cuda(call, call_reg, self_reg, mask_reg,
                                     offset_reg, data_reg, in_size, in_align,
                                     out_size, out_align);
+#else
+    else
+        jitc_fail("jit_var_call_assemble(): CUDA backend is not available!");
+#endif
 
     // =====================================================
     // 4. Restore previously backed-up JIT state
