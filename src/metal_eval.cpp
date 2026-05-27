@@ -1256,8 +1256,7 @@ static void jitc_metal_render(Variable *v) {
             jitc_fail("jitc_metal_render(): texture lookup (VarKind::TexLookup) "
                       "is not yet implemented on the Metal backend. Metal "
                       "requires MTLTexture + sampler infrastructure (vs CUDA's "
-                      "CUtexObject). This is needed for Mitsuba's texture "
-                      "evaluation.");
+                      "CUtexObject).");
 
         case VarKind::TexFetchBilerp:
             jitc_fail("jitc_metal_render(): bilinear texel fetch "

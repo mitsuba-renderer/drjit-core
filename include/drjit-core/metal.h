@@ -28,11 +28,10 @@ extern JIT_EXPORT void *jit_metal_command_queue();
 /**
  * \brief Inform Dr.Jit about a per-scene Metal ray-tracing configuration.
  *
- * Each Mitsuba/application-side ``Scene`` calls this once to register its
- * acceleration structure (TLAS), the list of child resources the TLAS
- * references (BLAS handles, vertex/index buffers), and (optionally) a
- * library of custom intersection functions plus an intersection-function-
- * table specification.
+ * The application calls this once per scene to register its acceleration
+ * structure (TLAS), the list of child resources the TLAS references (BLAS
+ * handles, vertex/index buffers), and (optionally) a library of custom
+ * intersection functions plus an intersection-function-table specification.
  *
  * The function returns a JIT variable index that owns the lifetime of the
  * scene state on the drjit side. This index must be passed as the trailing

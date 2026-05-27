@@ -99,8 +99,7 @@ extern void *jitc_metal_last_live_scene();
 struct MetalScene {
     /// MTL::AccelerationStructure* (TLAS). Bound at [[buffer(1)]] for
     /// every kernel that traces against this scene. Not retained — the
-    /// caller (Mitsuba) owns the TLAS lifetime via its own
-    /// MetalAccelState.
+    /// caller owns the TLAS lifetime.
     void *tlas = nullptr;
 
     /// Resources referenced by the TLAS (BLAS handles, vertex/index
