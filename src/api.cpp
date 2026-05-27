@@ -39,6 +39,7 @@
 
 #if defined(DRJIT_ENABLE_METAL)
 #  include <drjit-core/metal.h>
+#  include "metal.h"
 #endif
 
 #include <nanothread/nanothread.h>
@@ -461,7 +462,6 @@ int jit_metal_supports_ray_tracing() {
 void *jit_metal_context() {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_METAL)
-    extern void *jitc_metal_context_impl();
     return jitc_metal_context_impl();
 #else
     return nullptr;
@@ -471,7 +471,6 @@ void *jit_metal_context() {
 void *jit_metal_command_queue() {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_METAL)
-    extern void *jitc_metal_command_queue_impl();
     return jitc_metal_command_queue_impl();
 #else
     return nullptr;
@@ -489,12 +488,6 @@ uint32_t jit_metal_configure_scene(void *accel, void **resources,
                                    uint32_t geometry_types_mask) {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_METAL)
-    extern uint32_t jitc_metal_configure_scene(void *, void **, uint32_t,
-                                               void *, uint32_t,
-                                               const char **, void **,
-                                               const uint32_t *,
-                                               const uint64_t *,
-                                               uint32_t);
     return jitc_metal_configure_scene(accel, resources, n_resources,
                                       intersection_fn_library,
                                       n_ift_entries,
@@ -518,8 +511,6 @@ void jit_metal_ray_trace(uint32_t n_args, uint32_t *args,
                          uint32_t scene) {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_METAL)
-    extern void jitc_metal_ray_trace(uint32_t, uint32_t *, uint32_t,
-                                     uint32_t *, uint32_t, uint32_t);
     jitc_metal_ray_trace(n_args, args, mask, out, n_out, scene);
 #else
     (void) n_args; (void) args; (void) mask; (void) out; (void) n_out;
@@ -530,7 +521,6 @@ void jit_metal_ray_trace(uint32_t n_args, uint32_t *args,
 
 void *jit_metal_lookup_buffer(void *ptr, size_t *offset) {
 #if defined(DRJIT_ENABLE_METAL)
-    extern void *jitc_metal_find_buffer(void *ptr, size_t *offset);
     lock_guard guard(state.lock);
     return jitc_metal_find_buffer(ptr, offset);
 #else
