@@ -187,41 +187,34 @@ void* jitc_malloc(AllocType type, size_t size, JitBackend backend_hint) {
 
     // Otherwise, allocate memory
     if (unlikely(!ptr)) {
+#if defined(DRJIT_ENABLE_METAL)
+        MTL::Buffer *metal_buf = nullptr;
+#endif
         for (int i = 0; i < 2; ++i) {
             {
                 unlock_guard guard(state.lock);
                 /* Temporarily release the main lock */ {
                     if (backend == JitBackend::LLVM) {
                         ptr = aligned_malloc(size);
-                    }
 #if defined(DRJIT_ENABLE_METAL)
-                    else if (backend == JitBackend::Metal) {
+                    } else if (backend == JitBackend::Metal) {
+                        // Min allocation size is 16 bytes (MPSGraph requirement)
+                        size_t alloc_size = std::max<size_t>(size, 16);
                         DRJIT_METAL_SCOPED_POOL;
                         auto *dev = (MTL::Device *) ts->metal_device;
-                        // ``HostPinned`` maps to shared-memory (CPU/GPU
-                        // visible) while ``Device`` maps to the more
-                        // performant private buffer.
                         MTL::ResourceOptions opts =
                             (type == AllocType::HostPinned)
                                 ? MTL::ResourceStorageModeShared
-                                : (MTL::ResourceStorageModePrivate |
-                                   MTL::ResourceHazardTrackingModeTracked);
-                        MTL::Buffer *buf = dev->newBuffer(size, opts);
-                        if (buf) {
-                            // For shared buffers we expose the CPU-visible
-                            // pointer; for private buffers we hand out the
-                            // GPU-virtual address (cast to void*).
+                                : MTL::ResourceStorageModePrivate;
+                        metal_buf = dev->newBuffer(alloc_size, opts);
+                        if (metal_buf) {
                             if (type == AllocType::HostPinned)
-                                ptr = buf->contents();
+                                ptr = metal_buf->contents();
                             else
-                                ptr = (void *) buf->gpuAddress();
-                            jitc_metal_register_buffer(ptr, buf);
-                        } else {
-                            ptr = nullptr;
+                                ptr = (void *) metal_buf->gpuAddress();
                         }
-                    }
 #endif
-                    else {
+                    } else if (backend == JitBackend::CUDA) {
                         scoped_set_context guard_2(ts->context);
                         CUresult ret;
 
@@ -242,6 +235,13 @@ void* jitc_malloc(AllocType type, size_t size, JitBackend backend_hint) {
             if (i == 0) // free memory, then retry
                 jitc_flush_malloc_cache(true);
         }
+
+#if defined(DRJIT_ENABLE_METAL)
+        // Register in a context where we're holding the JIT lock again
+        if (metal_buf)
+            jitc_metal_register_buffer(ptr, metal_buf);
+#endif
+
         descr = "new allocation";
 
         size_t &allocated = state.alloc_allocated[(int) type],
@@ -361,7 +361,7 @@ void* jitc_malloc_migrate(void *ptr, AllocType dst_type, int move) {
 #if defined(DRJIT_ENABLE_METAL)
         // Check if this allocation belongs to Metal
         size_t off_tmp = 0;
-        if (jitc_metal_lookup_buffer_containing(ptr, &off_tmp))
+        if (jitc_metal_find_buffer(ptr, &off_tmp))
             src_backend = JitBackend::Metal;
         else
 #endif
@@ -519,40 +519,48 @@ void jitc_flush_malloc_cache(bool warn) {
                                 cuda_check(cuMemFree((CUdeviceptr) ptr));
                         }
                     }
+
 #if defined(DRJIT_ENABLE_METAL)
-                    else if (state.backends & (1u << (uint32_t) JitBackend::Metal)) {
+                    if (state.backends & (1u << (uint32_t) JitBackend::Metal)) {
                         DRJIT_METAL_SCOPED_POOL;
-                        for (void *ptr : entries) {
-                            auto *buf = (MTL::Buffer *)
-                                jitc_metal_lookup_buffer(ptr);
-                            jitc_metal_unregister_buffer(ptr);
-                            if (buf)
-                                buf->release();
+                        std::vector<MTL::Buffer *> bufs(entries.size());
+                        {
+                            lock_guard guard_map(state.lock);
+                            for (size_t i = 0; i < entries.size(); ++i)
+                                bufs[i] = (MTL::Buffer *) jitc_metal_unregister_buffer(entries[i]);
                         }
+                        for (MTL::Buffer *buf : bufs)
+                            buf->release();
                     }
 #endif
                     break;
 
                 case AllocType::HostPinned:
+#if defined(DRJIT_ENABLE_CUDA)
                     if (state.backends & (1u << (uint32_t) JitBackend::CUDA)) {
                         const Device &dev = state.devices[device];
                         scoped_set_context guard2(dev.context);
                         for (void *ptr : entries)
                             cuda_check(cuMemFreeHost(ptr));
                     }
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
-                    else if (state.backends & (1u << (uint32_t) JitBackend::Metal)) {
+                    if (state.backends & (1u << (uint32_t) JitBackend::Metal)) {
                         // Host-pinned on Metal == StorageModeShared. The
                         // ``ptr`` is the buffer's CPU contents; we look up
                         // the MTLBuffer via the same map and release it.
                         DRJIT_METAL_SCOPED_POOL;
-                        for (void *ptr : entries) {
-                            auto *buf = (MTL::Buffer *)
-                                jitc_metal_lookup_buffer(ptr);
-                            jitc_metal_unregister_buffer(ptr);
+                        std::vector<MTL::Buffer *> bufs(entries.size());
+                        {
+                            lock_guard guard_map(state.lock);
+                            for (size_t i = 0; i < entries.size(); ++i)
+                                bufs[i] = (MTL::Buffer *)
+                                    jitc_metal_unregister_buffer(entries[i]);
+                        }
+                        for (MTL::Buffer *buf : bufs)
                             if (buf)
                                 buf->release();
-                        }
                     }
 #endif
                     break;
