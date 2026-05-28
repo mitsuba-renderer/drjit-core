@@ -18,7 +18,7 @@ UInt32 collatz(UInt32 x) {
 }
 
 int main(int, char **) {
-    jit_init((int) JitBackend::LLVM);
+    jit_init(1u << (uint32_t) JitBackend::LLVM);
 
     using namespace std::chrono;
 

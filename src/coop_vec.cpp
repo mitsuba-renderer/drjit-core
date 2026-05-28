@@ -29,12 +29,15 @@ static uint32_t unwrap(uint32_t index) {
 }
 
 bool jitc_coop_vec_supported(JitBackend backend) {
+#if defined(DRJIT_ENABLE_CUDA)
     if (backend == JitBackend::CUDA)
         return (jitc_cuda_version_major == 12 &&
                 jitc_cuda_version_minor >= 8) ||
                jitc_cuda_version_major > 12;
-    else
-        return true;
+#else
+    (void) backend;
+#endif
+    return true;
 }
 
 uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
@@ -526,17 +529,20 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
 
     cvmvd->transpose = transpose;
 
-    bool supported = false, is_llvm = backend == JitBackend::LLVM;
+    bool supported = false,
+         is_llvm  = backend == JitBackend::LLVM,
+         is_metal = backend == JitBackend::Metal;
     supported |= a_vt == VarType::Float16 && x_vt == VarType::Float16 &&
                  (b_vt == VarType::Void || b_vt == VarType::Float16);
-    supported |= is_llvm && (a_vt == VarType::Float32 && x_vt == VarType::Float32 &&
-                            (b_vt == VarType::Void || b_vt == VarType::Float32));
+    supported |= (is_llvm || is_metal) &&
+                 (a_vt == VarType::Float32 && x_vt == VarType::Float32 &&
+                 (b_vt == VarType::Void || b_vt == VarType::Float32));
 
     if (!supported)
         jitc_raise(
             "jit_coop_vec_matvec(): incompatible input types (currently, only "
-            "float16 is supported on the CUDA/OptiX backend. The LLVM backend"
-            "supports float16 and float32).");
+            "float16 is supported on the CUDA/OptiX backend. The LLVM and "
+            "Metal backends support float16 and float32).");
 
     Ref mask = steal(jitc_var_bool(backend, true));
     mask = steal(jitc_var_mask_apply(mask, size));

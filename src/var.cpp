@@ -17,6 +17,32 @@
 #include "coop_vec.h"
 #include "registry.h"
 #include "llvm.h"
+#if defined(DRJIT_ENABLE_METAL)
+#  include "metal.h"
+#endif
+
+#include <atomic>
+
+#if defined(DRJIT_ENABLE_METAL)
+/// Emit a one-shot warning the first time a Float64 variable is silently
+/// demoted to Float32 on the Metal backend. The warning points users at
+/// `JitFlag::MetalEmulateFloat64`, which preserves Float64 via double-double
+/// (DD) arithmetic emulation.
+static void jitc_metal_warn_float64_demotion_once() {
+    static std::atomic<bool> warned{false};
+    bool expected = false;
+    if (warned.compare_exchange_strong(expected, true)) {
+        jitc_log(LogLevel::Warn,
+                 "Metal backend: a Float64 variable was silently demoted "
+                 "to Float32 (Apple GPUs lack hardware FP64). To preserve "
+                 "double precision via double-double emulation, enable "
+                 "JitFlag::MetalEmulateFloat64 -- note this is ~10x slower "
+                 "than native Float32. To silence this warning, cast inputs "
+                 "to Float32 explicitly. (This warning is shown once per "
+                 "process.)");
+    }
+}
+#endif
 
 /// Descriptive names for the various variable types
 const char *type_name[(int) VarType::Count]{
@@ -53,6 +79,25 @@ const char *type_name_ptx_bin[(int) VarType::Count] {
 const char *type_name_llvm[(int) VarType::Count] {
     "???", "i1",  "???", "i8",  "i8",   "i16",   "i16",   "i32",
     "i32", "i64", "i64", "i64", "???", "half", "float", "double"
+};
+
+/// Metal Shading Language type names. Float64 is emulated via double-double
+/// (DD) arithmetic -- a `float2` pair (hi, lo). The MSL preamble injected by
+/// metal_eval defines `typedef float2 dd_t`. When DD emulation is OFF, Float64
+/// is silently demoted to Float32 in jitc_var_new() and never reaches codegen.
+/// Pointer is folded to ulong, matching how PTX uses u64.
+const char *type_name_metal[(int) VarType::Count] {
+    "void",  "bool",  "???",   "char",  "uchar", "short", "ushort", "int",
+    "uint",  "long",  "ulong", "ulong", "???",   "half",  "float",  "dd_t"
+};
+
+/// Metal Shading Language binary view (used for bitcasts and bit-wise ops).
+/// Bool is 1 byte but we treat it as ``uchar`` for binary access.
+/// Float64 / dd_t is two 32-bit words = 8 bytes; we map it to `ulong` for
+/// `as_type` round-tripping in the rare scatter/gather paths that need it.
+const char *type_name_metal_bin[(int) VarType::Count] {
+    "???",   "uchar", "???",   "uchar", "uchar", "ushort", "ushort", "uint",
+    "uint",  "ulong", "ulong", "ulong", "???",   "ushort", "uint",   "ulong"
 };
 
 /// Double size integer arrays for mul_hi()
@@ -659,6 +704,32 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     if (unlikely(v.backend == (uint32_t) JitBackend::None))
         v.backend = (uint32_t) default_backend;
 
+    // Metal has no hardware FP64. Two paths:
+    //  * MetalEmulateFloat64 OFF (default): silently demote lazy Float64 nodes
+    //    to Float32 and warn once per process so users know precision is lost.
+    //  * MetalEmulateFloat64 ON: keep Float64 and let metal_eval lower it via
+    //    double-double (DD) helpers; nothing to do here.
+#if defined(DRJIT_ENABLE_METAL)
+    if (v.backend == (uint32_t) JitBackend::Metal &&
+        v.type == (uint32_t) VarType::Float64 &&
+        !(jitc_flags() & (uint32_t) JitFlag::MetalEmulateFloat64)) {
+        jitc_metal_warn_float64_demotion_once();
+        if (v.is_literal()) {
+            double d;
+            memcpy(&d, &v.literal, sizeof(double));
+            float f = (float) d;
+            uint64_t new_lit = 0;
+            memcpy(&new_lit, &f, sizeof(float));
+            v.literal = new_lit;
+        }
+        // Only demote non-evaluated variables (lazy IR nodes).
+        // Evaluated variables have data buffers with float64 layout
+        // that can't be safely reinterpreted as float32.
+        if (!v.is_evaluated())
+            v.type = (uint32_t) VarType::Float32;
+    }
+#endif
+
     ThreadState *ts = thread_state(v.backend);
     uint32_t flags = jitc_flags();
 
@@ -815,6 +886,20 @@ uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
 
     jitc_check_size("jit_var_literal", size);
 
+    // Metal: demote Float64 literal to Float32 unless DD emulation is enabled.
+    float f32_value;
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal && type == VarType::Float64 &&
+        !(jitc_flags() & (uint32_t) JitFlag::MetalEmulateFloat64)) {
+        jitc_metal_warn_float64_demotion_once();
+        double d;
+        memcpy(&d, value, sizeof(double));
+        f32_value = (float) d;
+        value = &f32_value;
+        type = VarType::Float32;
+    }
+#endif
+
     if (!eval) {
         Variable v;
         memcpy(&v.literal, value, type_size[(uint32_t) type]);
@@ -826,10 +911,7 @@ uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
         return jitc_var_new(v);
     } else {
         uint32_t isize = type_size[(int) type];
-        void *data =
-            jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                    : AllocType::HostAsync,
-                        size * (size_t) isize);
+        void *data = jitc_malloc(backend, size * (size_t) isize);
         jitc_memset_async(backend, data, (uint32_t) size, isize, value);
         return jitc_var_mem_map(backend, type, data, size, 1);
     }
@@ -1149,17 +1231,6 @@ void jitc_var_set_callback(uint32_t index,
     extra->callback_internal = is_internal;
 }
 
-/// Query the current (or future, if not yet evaluated) allocation flavor of a variable
-AllocType jitc_var_alloc_type(uint32_t index) {
-    const Variable *v = jitc_var(index);
-
-    if (v->is_evaluated())
-        return jitc_malloc_type(v->data);
-
-    return (JitBackend) v->backend == JitBackend::CUDA ? AllocType::Device
-                                                       : AllocType::HostAsync;
-}
-
 /// Query the device associated with a variable
 int jitc_var_device(uint32_t index) {
     const Variable *v = jitc_var(index);
@@ -1349,26 +1420,67 @@ uint32_t jitc_var_eval_force(uint32_t index, Variable &v_, void **ptr_out) {
     Variable v = v_;
     uint32_t isize = type_size[v.type];
 
-    void *ptr = jitc_malloc((JitBackend) v.backend == JitBackend::CUDA
-                                ? AllocType::Device
-                                : AllocType::HostAsync,
-                            v.size * (size_t) isize);
+    void *ptr = jitc_malloc((JitBackend) v.backend, v.size * (size_t) isize);
 
     if (v.is_literal()) {
-        jitc_memset_async((JitBackend) v.backend, ptr, v.size, isize,
-                          &v.literal);
+#if defined(DRJIT_ENABLE_METAL)
+        // Metal DD: encode the IEEE 754 double literal as a (hi, lo) float
+        // pair and memset that 8-byte pattern. Otherwise memset_async would
+        // copy the raw double bits, which the kernel would then read as
+        // garbage float2.
+        if ((JitBackend) v.backend == JitBackend::Metal &&
+            (VarType) v.type == VarType::Float64 &&
+            (jitc_flags() & (uint32_t) JitFlag::MetalEmulateFloat64)) {
+            double d;
+            memcpy(&d, &v.literal, sizeof(double));
+            float pair[2];
+            pair[0] = (float) d;
+            pair[1] = (float) (d - (double) pair[0]);
+            uint64_t encoded;
+            memcpy(&encoded, pair, sizeof(uint64_t));
+            jitc_memset_async((JitBackend) v.backend, ptr, v.size, isize,
+                              &encoded);
+        } else
+#endif
+            jitc_memset_async((JitBackend) v.backend, ptr, v.size, isize,
+                              &v.literal);
     }
 
-    uint32_t result = jitc_var_mem_map((JitBackend) v.backend, (VarType) v.type,
-                                       ptr, v.size, 1);
+    uint32_t result;
+#if defined(DRJIT_ENABLE_METAL)
+    // Bypass jitc_var_mem_map's Float64-on-Metal redirection. The buffer we
+    // just allocated is in DD layout already (we encoded the literal above
+    // for the literal case; for the undefined case, the bytes are simply
+    // uninitialized, which is fine).
+    if ((JitBackend) v.backend == JitBackend::Metal &&
+        (VarType) v.type == VarType::Float64 &&
+        (jitc_flags() & (uint32_t) JitFlag::MetalEmulateFloat64)) {
+        Variable nv;
+        nv.kind = (uint32_t) VarKind::Evaluated;
+        nv.type = (uint32_t) v.type;
+        nv.backend = (uint32_t) v.backend;
+        nv.data = ptr;
+        nv.size = (uint32_t) v.size;
+        nv.retain_data = false;
+        result = jitc_var_new(nv, true);
+    } else {
+        result = jitc_var_mem_map((JitBackend) v.backend, (VarType) v.type,
+                                  ptr, v.size, 1);
+    }
+#else
+    result = jitc_var_mem_map((JitBackend) v.backend, (VarType) v.type,
+                              ptr, v.size, 1);
+#endif
 
     if (v.is_undefined()) {
         // Notify the thread_state that this allocation should not be
         // initialized for recording.
         if (thread_state_llvm)
             thread_state_llvm->notify_init_undefined(result);
+#if defined(DRJIT_ENABLE_CUDA)
         if (thread_state_cuda)
             thread_state_cuda->notify_init_undefined(result);
+#endif
     }
 
     jitc_log(Debug,
@@ -1550,6 +1662,21 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
                 "be caused by non-symbolic loops. In that case, setting "
                 "``JitFlag::SymbolicLoops`` to true might solve the issue.");
 
+#if defined(DRJIT_ENABLE_METAL)
+        // Metal DD: device data is a (hi, lo) float pair; reconstruct a host
+        // double for the user.
+        if ((JitBackend) v->backend == JitBackend::Metal &&
+            (VarType) v->type == VarType::Float64 &&
+            (jitc_flags() & (uint32_t) JitFlag::MetalEmulateFloat64)) {
+            float pair[2];
+            jitc_memcpy(JitBackend::Metal, pair,
+                        (const uint8_t *) v->data + offset * isize, isize);
+            double d = (double) pair[0] + (double) pair[1];
+            memcpy(dst, &d, sizeof(double));
+            return;
+        }
+#endif
+
         jitc_memcpy((JitBackend) v->backend, dst,
                     (const uint8_t *) v->data + offset * isize, isize);
     } else {
@@ -1577,6 +1704,23 @@ uint32_t jitc_var_write(uint32_t index_, size_t offset, const void *src) {
 
     uint32_t isize = type_size[v->type];
     uint8_t *dst = (uint8_t *) v->data + offset * isize;
+
+#if defined(DRJIT_ENABLE_METAL)
+    // Metal DD: split the host double into a (hi, lo) float pair before
+    // writing it to the device buffer.
+    if ((JitBackend) v->backend == JitBackend::Metal &&
+        (VarType) v->type == VarType::Float64 &&
+        (jitc_flags() & (uint32_t) JitFlag::MetalEmulateFloat64)) {
+        double d;
+        memcpy(&d, src, sizeof(double));
+        float pair[2];
+        pair[0] = (float) d;
+        pair[1] = (float) (d - (double) pair[0]);
+        jitc_poke(JitBackend::Metal, dst, pair, isize);
+        return index.release();
+    }
+#endif
+
     jitc_poke((JitBackend) v->backend, dst, src, isize);
 
     return index.release();
@@ -1589,6 +1733,17 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
         return 0;
 
     jitc_check_size("jit_var_mem_map", size);
+
+    // Metal: Float64 buffers cannot be zero-copy mapped — the host layout
+    // (IEEE 754 double) does not match the device layout (either Float32 if
+    // emulation is OFF, or DD float2 hi/lo if emulation is ON). Delegate to
+    // jitc_var_mem_copy which performs the appropriate conversion.
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal && type == VarType::Float64) {
+        return jitc_var_mem_copy(backend, VarType::Float64, ptr, size,
+                                 /*from_host=*/true);
+    }
+#endif
 
     Variable v;
     v.kind = (uint32_t) VarKind::Evaluated;
@@ -1608,54 +1763,103 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
 }
 
 /// Copy a memory region onto the device and return its variable index
-uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
-                           const void *ptr, size_t size) {
+uint32_t jitc_var_mem_copy(JitBackend backend, VarType vtype, const void *ptr,
+                           size_t size, bool from_host) {
     if (unlikely(size == 0))
         return 0;
 
     jitc_check_size("jit_var_mem_copy", size);
 
+    // Metal has no hardware FP64. Conversion is only meaningful when copying
+    // from a host buffer of IEEE 754 doubles; device-resident Metal Float64
+    // already lives in the DD layout.
+    std::unique_ptr<float[]> f32_buf;
+    std::unique_ptr<float[]> dd_buf;  // hi/lo pairs, 2 floats per element
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal && vtype == VarType::Float64 && from_host) {
+        bool emulate = (jitc_flags() &
+                        (uint32_t) JitFlag::MetalEmulateFloat64) != 0;
+        const double *src = (const double *) ptr;
+        if (emulate) {
+            // Pack (hi, lo) interleaved: 2 floats per element, total 8 bytes.
+            dd_buf.reset(new float[size * 2]);
+            for (size_t i = 0; i < size; i++) {
+                double d = src[i];
+                float hi = (float) d;
+                float lo = (float) (d - (double) hi);
+                dd_buf[2 * i + 0] = hi;
+                dd_buf[2 * i + 1] = lo;
+            }
+            ptr = dd_buf.get();
+            // vtype stays Float64; type_size[Float64]==8 == sizeof(float2).
+        } else {
+            jitc_metal_warn_float64_demotion_once();
+            f32_buf.reset(new float[size]);
+            for (size_t i = 0; i < size; i++)
+                f32_buf[i] = (float) src[i];
+            ptr = f32_buf.get();
+            vtype = VarType::Float32;
+        }
+    }
+#endif
+
     size_t total_size = (size_t) size * (size_t) type_size[(int) vtype];
     void *target_ptr;
 
-    if (backend == JitBackend::CUDA) {
-        target_ptr = jitc_malloc(AllocType::Device, total_size);
-
-        if (atype == AllocType::HostAsync) {
-            jitc_fail("jit_var_mem_copy(): copy from HostAsync to GPU memory not supported!");
-        } else if (atype == AllocType::Host) {
-            void *host_ptr = jitc_malloc(AllocType::HostPinned, total_size);
+    if (from_host) {
+        if (backend == JitBackend::CUDA) {
+            // Stage through a pinned host buffer, then async copy to device.
+            target_ptr = jitc_malloc(backend, total_size);
+            void *host_ptr =
+                jitc_malloc(JitBackend::CUDA, total_size, /*shared=*/true);
             {
-                unlock_guard guard2(state.lock);
+                unlock_guard guard(state.lock);
                 memcpy(host_ptr, ptr, total_size);
                 jitc_memcpy_async(backend, target_ptr, host_ptr, total_size);
             }
             jitc_free(host_ptr);
-        } else {
+        } else if (backend == JitBackend::Metal) {
+            // Metal has unified memory; copy directly into a device buffer.
+            target_ptr = jitc_malloc(backend, total_size);
+            unlock_guard guard(state.lock);
             jitc_memcpy_async(backend, target_ptr, ptr, total_size);
+        } else {
+            // LLVM: target is host-accessible; memcpy synchronously.
+            target_ptr =
+                jitc_malloc(JitBackend::LLVM, total_size, /*shared=*/true);
+            unlock_guard guard(state.lock);
+            memcpy(target_ptr, ptr, total_size);
         }
     } else {
-        if (atype == AllocType::HostAsync) {
-            target_ptr = jitc_malloc(AllocType::HostAsync, total_size);
-            jitc_memcpy_async(backend, target_ptr, ptr, total_size);
-        } else if (atype == AllocType::Host) {
-            target_ptr = jitc_malloc(AllocType::Host, total_size);
-            {
-                unlock_guard guard(state.lock);
-                memcpy(target_ptr, ptr, total_size);
-            }
-            target_ptr = jitc_malloc_migrate(target_ptr, AllocType::HostAsync, 1);
-        } else {
-            target_ptr = jitc_malloc(AllocType::HostPinned, total_size);
-            jitc_memcpy_async(backend, target_ptr, ptr, total_size);
-        }
+        // Async device-to-device copy on `backend`'s stream.
+        target_ptr = jitc_malloc(backend, total_size);
+        jitc_memcpy_async(backend, target_ptr, ptr, total_size);
     }
 
-    uint32_t index = jitc_var_mem_map(backend, vtype, target_ptr, size, true);
+    uint32_t index;
+#if defined(DRJIT_ENABLE_METAL)
+    // Bypass jitc_var_mem_map's Float64-on-Metal redirection (which would
+    // recurse back into us) -- the device buffer we just produced is already
+    // in DD layout and we just want to register it.
+    if (backend == JitBackend::Metal && vtype == VarType::Float64) {
+        Variable v;
+        v.kind = (uint32_t) VarKind::Evaluated;
+        v.type = (uint32_t) vtype;
+        v.backend = (uint32_t) backend;
+        v.data = target_ptr;
+        v.size = (uint32_t) size;
+        v.retain_data = false;
+        index = jitc_var_new(v, true);
+    } else {
+        index = jitc_var_mem_map(backend, vtype, target_ptr, size, true);
+    }
+#else
+    index = jitc_var_mem_map(backend, vtype, target_ptr, size, true);
+#endif
     jitc_log(Debug,
              "jit_var_mem_copy(): %s r%u[%zu] = copy_from(%s, " DRJIT_PTR ")",
-             type_name[(int) vtype], index, size, alloc_type_name[(int) atype],
-             (uintptr_t) ptr);
+             type_name[(int) vtype], index, size,
+             from_host ? "host" : "device", (uintptr_t) ptr);
     return index;
 }
 
@@ -1680,9 +1884,8 @@ uint32_t jitc_var_copy(uint32_t index) {
 
     if (v->is_evaluated()) {
         JitBackend backend = (JitBackend) v->backend;
-        AllocType atype = backend == JitBackend::CUDA ? AllocType::Device
-                                                      : AllocType::HostAsync;
-        result = jitc_var_mem_copy(backend, atype, vt, v->data, size);
+        result = jitc_var_mem_copy(backend, vt, v->data, size,
+                                   /*from_host=*/false);
     } else {
         Variable v2;
         v2.type = (uint32_t) vt;
@@ -1797,21 +2000,78 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     return result;
 }
 
-/// Migrate a variable to a different flavor of memory
-uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
+/// Migrate a variable to a different backend
+uint32_t jitc_var_migrate(uint32_t src_index, JitBackend dst_backend) {
     if (src_index == 0)
         return 0;
 
     Variable *v = jitc_var(src_index);
     JitBackend backend = (JitBackend) v->backend;
 
+    bool dst_is_host = (dst_backend == JitBackend::None) ||
+                       (dst_backend == JitBackend::LLVM);
+
+#if defined(DRJIT_ENABLE_METAL)
+    // Metal DD migration: the device-side layout (float2) does not match the
+    // host-side layout (IEEE 754 double). When the destination is host we
+    // must decode each DD pair into a true double, bypassing jitc_var_mem_map's
+    // redirect (which would re-trigger encoding).
+    if (backend == JitBackend::Metal &&
+        (VarType) v->type == VarType::Float64 &&
+        (jitc_flags() & (uint32_t) JitFlag::MetalEmulateFloat64) &&
+        dst_is_host) {
+        size_t n = v->size;
+        size_t bytes = n * sizeof(double);
+        void *host_ptr = jitc_malloc(dst_backend, bytes);
+
+        if (v->is_literal()) {
+            // Decode the literal once and broadcast to all elements.
+            double d;
+            memcpy(&d, &v->literal, sizeof(double));
+            double *p = (double *) host_ptr;
+            for (size_t i = 0; i < n; ++i) p[i] = d;
+        } else if (v->is_undefined()) {
+            // Leave host_ptr uninitialized (mirrors the regular path).
+        } else {
+            if (!v->is_evaluated() || v->is_dirty()) {
+                jitc_var_eval(src_index);
+                v = jitc_var(src_index);
+            }
+            // Stage the device DD pairs into a host-side scratch buffer,
+            // then decode into IEEE doubles. We need a host-readable
+            // representation of the device buffer first; the jit_memcpy
+            // path performs the GPU->CPU staging via Metal's blit encoder.
+            size_t dd_bytes = n * 2 * sizeof(float);
+            float *dd_buf = (float *) jitc_malloc(dst_backend, dd_bytes);
+            jitc_memcpy_async(backend, dd_buf, v->data, dd_bytes);
+            jit_sync_thread();
+            double *p = (double *) host_ptr;
+            for (size_t i = 0; i < n; ++i)
+                p[i] = (double) dd_buf[2 * i] + (double) dd_buf[2 * i + 1];
+            jitc_free(dd_buf);
+        }
+
+        // Build the host-resident Variable directly (bypassing mem_map's
+        // Float64 redirect). It still claims backend=Metal so downstream
+        // ad/refcount accounting works, but its data lives on the host.
+        Variable nv;
+        nv.kind = (uint32_t) VarKind::Evaluated;
+        nv.type = (uint32_t) VarType::Float64;
+        nv.backend = (uint32_t) JitBackend::Metal;
+        nv.data = host_ptr;
+        nv.size = (uint32_t) n;
+        nv.retain_data = false;
+        return jitc_var_new(nv, true);
+    }
+#endif
+
     if (v->is_literal() || v->is_undefined()) {
         size_t size = v->size;
-        void *ptr = jitc_malloc(dst_type, type_size[v->type] * size);
+        void *ptr = jitc_malloc(dst_backend, type_size[v->type] * size);
         v = jitc_var(src_index);
 
         if (v->is_literal()) {
-            if (dst_type == AllocType::Host) {
+            if (dst_backend == JitBackend::None) {
                 switch (type_size[v->type]) {
                     case 1: {
                         uint8_t *p = (uint8_t *) ptr, q = (uint8_t) v->literal;
@@ -1841,10 +2101,8 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
                         jitc_fail("jit_var_migrate(): invalid element size!");
                 }
             } else {
-                jitc_memset_async(dst_type == AllocType::HostAsync
-                                      ? JitBackend::LLVM
-                                      : JitBackend::CUDA,
-                                  ptr, (uint32_t) size, type_size[v->type], &v->literal);
+                jitc_memset_async(dst_backend, ptr, (uint32_t) size,
+                                  type_size[v->type], &v->literal);
             }
         }
 
@@ -1855,37 +2113,42 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
         jitc_var_eval(src_index);
         v = jitc_var(src_index);
     }
-
-    AllocType src_type;
+    JitBackend src_backend = JitBackend::None;
     void *src_ptr = v->data,
          *dst_ptr;
 
     auto it = state.alloc_used.find((uintptr_t) v->data);
     if (unlikely(it == state.alloc_used.end())) {
         /* Cannot resolve pointer to allocation, it was likely
-           likely created by another framework */
+           created by another framework */
+#if defined(DRJIT_ENABLE_CUDA)
         if ((JitBackend) v->backend == JitBackend::CUDA) {
             int type;
             ThreadState *ts = thread_state(v->backend);
             scoped_set_context guard(ts->context);
             cuda_check(cuPointerGetAttribute(
                 &type, CU_POINTER_ATTRIBUTE_MEMORY_TYPE, (CUdeviceptr) v->data));
-            if (type == CU_MEMORYTYPE_HOST)
-                src_type = AllocType::Host;
-            else
-                src_type = AllocType::Device;
+            if (type == CU_MEMORYTYPE_HOST) {
+                src_backend = JitBackend::None;
+            } else {
+                src_backend = JitBackend::CUDA;
+            }
+        } else
+#endif
+        if ((JitBackend) v->backend == JitBackend::Metal) {
+            src_backend = JitBackend::Metal;
         } else {
-            src_type = AllocType::Host;
+            src_backend = JitBackend::None;
         }
 
         size_t size = type_size[v->type] * v->size;
-        dst_ptr = jitc_malloc(dst_type, size);
+        dst_ptr = jitc_malloc(dst_backend, size);
         jitc_memcpy_async(backend, dst_ptr, src_ptr, size);
     } else {
-        auto [size, type, device] = alloc_info_decode(it->second);
-        (void) size; (void) device;
-        src_type = type;
-        dst_ptr = jitc_malloc_migrate(src_ptr, dst_type, 0);
+        auto [size, sb, ss, device] = alloc_info_decode(it->second);
+        (void) size; (void) ss; (void) device;
+        src_backend = sb;
+        dst_ptr = jitc_malloc_migrate(src_ptr, dst_backend, 0);
     }
 
     uint32_t dst_index = src_index;
@@ -1909,7 +2172,8 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
              "jit_var_migrate(r%u <- r%u, " DRJIT_PTR " <- " DRJIT_PTR
              ", %s <- %s)",
              dst_index, src_index, (uintptr_t) dst_ptr, (uintptr_t) src_ptr,
-             alloc_type_name[(int) dst_type], alloc_type_name[(int) src_type]);
+             jitc_backend_name(dst_backend),
+             jitc_backend_name(src_backend));
 
     return dst_index;
 }
@@ -1917,7 +2181,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, AllocType dst_type) {
 uint32_t jitc_var_mask_default(JitBackend backend, size_t size) {
     jitc_check_size("jit_var_mask_default", size);
 
-    if (backend == JitBackend::CUDA) {
+    if (backend == JitBackend::CUDA || backend == JitBackend::Metal) {
         bool value = true;
         return jitc_var_literal(backend, VarType::Bool, &value, size, 0);
     } else {
@@ -2069,8 +2333,7 @@ uint32_t jitc_var_any_async(JitBackend backend, uint32_t index) {
     if (v->kind == (uint32_t) VarKind::DefaultMask)
         return jitc_var_bool(backend, true);
 
-    uint8_t *mem = (uint8_t *) jitc_malloc(
-        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, 4);
+    uint8_t *mem = (uint8_t *) jitc_malloc(backend, 4);
 
     jitc_var_eval(index);
     v = jitc_var(index);
@@ -2111,8 +2374,7 @@ uint32_t jitc_var_all_async(JitBackend backend, uint32_t index) {
     if (v->is_literal())
         return jitc_var_bool(backend, (bool) v->literal);
 
-    uint8_t *mem = (uint8_t *) jitc_malloc(
-        backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync, 4);
+    uint8_t *mem = (uint8_t *) jitc_malloc(backend, 4);
 
     jitc_var_eval(index);
     v = jitc_var(index);
@@ -2144,8 +2406,7 @@ uint32_t jitc_var_compress(uint32_t index) {
         const uint8_t *ptr = (const uint8_t *) v->data;
 
         uint32_t *indices_out = (uint32_t *) jitc_malloc(
-            backend == JitBackend::CUDA ? AllocType::Device : AllocType::HostAsync,
-            size_in * sizeof(uint32_t));
+            backend, size_in * sizeof(uint32_t));
 
         uint32_t size_out = jitc_compress(backend, ptr, size_in, indices_out);
         if (size_out > 0) {
@@ -2294,9 +2555,7 @@ uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size,
         jitc_log(Debug, "jit_var_block_reduce(r%u, block_size=%u)", index, block_size);
 
         void *out =
-            jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                    : AllocType::HostAsync,
-                        reduced * (size_t) type_size[(int) vt]);
+            jitc_malloc(backend, reduced * (size_t) type_size[(int) vt]);
         Ref out_v = steal(jitc_var_mem_map(backend, vt, out, reduced, 1));
         jitc_block_reduce(backend, vt, op, size, block_size, jitc_var(index)->data, out);
 
@@ -2444,11 +2703,25 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp op,
     uint8_t *values = (uint8_t *) v->data;
     uint32_t size = v->size;
 
-    void *data =
-        jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                : AllocType::HostAsync,
-                    (size_t) type_size[(int) vt]);
+    void *data = jitc_malloc(backend, (size_t) type_size[(int) vt]);
     jitc_block_reduce(backend, vt, op, size, size, values, data);
+
+#if defined(DRJIT_ENABLE_METAL)
+    // Bypass jit_var_mem_map's Float64-on-Metal redirect: `data` is the
+    // device buffer the reduction kernel just wrote to (DD layout already);
+    // re-encoding via mem_copy would treat those bytes as host doubles.
+    if (backend == JitBackend::Metal && vt == VarType::Float64) {
+        Variable nv;
+        nv.kind = (uint32_t) VarKind::Evaluated;
+        nv.type = (uint32_t) vt;
+        nv.backend = (uint32_t) backend;
+        nv.data = data;
+        nv.size = 1;
+        nv.retain_data = false;
+        return jitc_var_new(nv, true);
+    }
+#endif
+
     return jitc_var_mem_map(backend, vt, data, 1, 1);
 }
 
@@ -2485,9 +2758,7 @@ uint32_t jitc_var_reduce_dot(uint32_t index_1, uint32_t index_2) {
 
         void *ptr_1 = v1->data,
              *ptr_2 = v2->data,
-             *data = jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                             : AllocType::HostAsync,
-                                 (size_t) type_size[(int) vt]);
+             *data = jitc_malloc(backend, (size_t) type_size[(int) vt]);
 
         jitc_reduce_dot(backend, vt, ptr_1, ptr_2, size, data);
 
@@ -2540,10 +2811,7 @@ uint32_t jitc_var_batched_gemm(uint32_t index_A, uint32_t index_B,
         jitc_raise("jitc_var_batched_gemm(): output element count %zu "
                    "exceeds the maximum JIT variable size (2^32 - 1). "
                    "Split the batch into smaller chunks.", out_size);
-    AllocType alloc_type = (backend == JitBackend::CUDA)
-                               ? AllocType::Device
-                               : AllocType::HostAsync;
-    void *ptr_C = jitc_malloc(alloc_type, out_size * type_size[(int) vt]);
+    void *ptr_C = jitc_malloc(backend, out_size * type_size[(int) vt]);
     Ref C = steal(jitc_var_mem_map(backend, vt, ptr_C, out_size, 1));
 
     jitc_batched_gemm(backend, vt, At, Bt, M, N, K, batch, ptr_A, ptr_B, ptr_C);
@@ -2600,9 +2868,7 @@ uint32_t jitc_var_block_prefix_reduce(ReduceOp op,
     const void *data_in = v->data;
 
     void *data_out =
-        jitc_malloc(backend == JitBackend::CUDA ? AllocType::Device
-                                                : AllocType::HostAsync,
-                    (size_t) type_size[(int) vt] * size);
+        jitc_malloc(backend, (size_t) type_size[(int) vt] * size);
 
     Ref result = steal(jitc_var_mem_map(backend, vt, data_out, size, 1));
 
@@ -2615,11 +2881,31 @@ uint32_t jitc_var_block_prefix_reduce(ReduceOp op,
 std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
     Variable *v = jitc_var(index);
     VarType vt = (VarType) v->type;
+    JitBackend backend = (JitBackend) v->backend;
 
     uint32_t tsize = ::type_size[v->type], size = v->size;
 
-    auto [workers, replication_per_worker] =
-        jitc_llvm_expand_replication_factor(size, tsize);
+    // Expansion factor and per-thread index stride differ per backend:
+    //  - LLVM: ``workers`` (~pool_size) accumulators, with each accumulator
+    //    region padded to a cache line to avoid false sharing — so the
+    //    per-thread index stride is ``replication_per_worker * size`` and
+    //    only every ``replication_per_worker``-th slot is actually written.
+    //  - Metal: ``factor`` accumulators chosen by ``jitc_metal_expand_factor``;
+    //    each thread writes into slot ``thread_position_in_grid % factor``,
+    //    giving a per-thread stride of just ``size`` (no false sharing on
+    //    GPU).
+    uint32_t replication_per_worker = 1, workers = 1;
+    if (backend == JitBackend::LLVM) {
+        std::tie(workers, replication_per_worker) =
+            jitc_llvm_expand_replication_factor(size, tsize);
+#if defined(DRJIT_ENABLE_METAL)
+    } else if (backend == JitBackend::Metal) {
+        workers = jitc_metal_expand_factor(size, tsize);
+#endif
+    } else {
+        jitc_raise("jit_var_expand(): drjit.ReduceMode.Expand is not "
+                   "supported by this backend.");
+    }
 
     uint32_t index_scale = replication_per_worker * size;
 
@@ -2643,14 +2929,14 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
 
     Ref dst;
     void *dst_addr = nullptr;
-    dst = steal(jitc_var_literal(JitBackend::LLVM, vt, &identity, new_size, 0));
+    dst = steal(jitc_var_literal(backend, vt, &identity, new_size, 0));
     dst = steal(jitc_var_data(dst, false, &dst_addr));
 
     v = jitc_var(index);
     if (!v->is_literal() || v->literal != identity) {
         void *src_addr = nullptr;
         Ref src = steal(jitc_var_data(index, false, &src_addr));
-        jitc_memcpy_async(JitBackend::LLVM, dst_addr, src_addr,
+        jitc_memcpy_async(backend, dst_addr, src_addr,
                           size * tsize);
     }
 
@@ -2663,7 +2949,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
              new_size / size);
 
     uint32_t dst_index = dst.release();
-    thread_state_llvm->notify_expand(dst_index);
+    thread_state(backend)->notify_expand(dst_index);
 
     return { dst_index, index_scale };
 }
@@ -2674,18 +2960,31 @@ void jitc_var_reduce_expanded(uint32_t index) {
     if ((ReduceOp) v->reduce_op == ReduceOp::Identity)
         return;
 
-    uint32_t workers = pool_size(),
-             tsize = type_size[v->type],
-             size = v->size;
+    JitBackend backend = (JitBackend) v->backend;
+    uint32_t tsize = type_size[v->type], size = v->size;
 
-    // 1 cache line per worker for scalar targets, otherwise be a bit more reasonable
-    uint32_t replication_per_worker = size == 1u ? (64u / tsize) : 1u;
+    // Recompute the same expansion factor that ``jitc_var_expand`` chose —
+    // both functions must agree, and the factor is not stored on the
+    // Variable.
+    uint32_t exp = 1;
+    if (backend == JitBackend::LLVM) {
+        auto [workers, replication_per_worker] =
+            jitc_llvm_expand_replication_factor(size, tsize);
+        exp = replication_per_worker * workers;
+#if defined(DRJIT_ENABLE_METAL)
+    } else if (backend == JitBackend::Metal) {
+        exp = jitc_metal_expand_factor(size, tsize);
+#endif
+    } else {
+        jitc_raise("jit_var_reduce_expanded(): unsupported backend.");
+    }
 
     jitc_reduce_expanded(
+        backend,
         (VarType) v->type,
         (ReduceOp) v->reduce_op,
         v->data,
-        replication_per_worker * workers,
+        exp,
         size
     );
 
@@ -2740,15 +3039,15 @@ const char *jitc_var_whos() {
                 else
                     var_buffer.put("mapped mem.");
             } else {
-                auto [size, type, device] = alloc_info_decode(it->second);
+                auto [size, bk, sh, device] = alloc_info_decode(it->second);
                 (void) size;
 
-                if ((AllocType) type == AllocType::Device) {
+                if ((bk == JitBackend::CUDA || bk == JitBackend::Metal) && !sh)
                     var_buffer.fmt("device %-4i", (int) device);
-                } else {
-                    const char *tname = alloc_type_name_short[(int) type];
-                    var_buffer.put(tname, strlen(tname));
-                }
+                else if (sh)
+                    var_buffer.fmt("%s shared ", jitc_backend_name(bk));
+                else
+                    var_buffer.fmt("%-11s", jitc_backend_name(bk));
             }
         } else {
             var_buffer.put("           ");
@@ -2790,12 +3089,15 @@ const char *jitc_var_whos() {
 
     var_buffer.put("  Memory allocator\n");
     var_buffer.put("  ================\n");
-    for (int i = 0; i < (int) AllocType::Count; ++i)
-        var_buffer.fmt("   - %-18s: %s/%s used (peak: %s).\n",
-                   alloc_type_name[i],
+    for (int i = 0; i < (int) JitBackend::Count; ++i) {
+        if (state.alloc_allocated[i] == 0 && state.alloc_watermark[i] == 0)
+            continue;
+        var_buffer.fmt("   - %-5s   : %s/%s used (peak: %s).\n",
+                   jitc_backend_name((JitBackend) i),
                    std::string(jitc_mem_string(state.alloc_usage[i])).c_str(),
                    std::string(jitc_mem_string(state.alloc_allocated[i])).c_str(),
                    std::string(jitc_mem_string(state.alloc_watermark[i])).c_str());
+    }
 
     return var_buffer.get();
 }

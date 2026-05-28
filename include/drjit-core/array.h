@@ -71,15 +71,15 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
     template <typename... Ts, enable_if_t<(sizeof...(Ts) > 1 && IsClass)> = 0>
     JitArray(Ts&&... ts) {
         uint32_t data[] = { jit_registry_get_id(Backend,  ts)... };
-        m_index = jit_var_mem_copy(Backend, AllocType::Host, Type, data,
-                                   sizeof...(Ts));
+        m_index = jit_var_mem_copy(Backend, Type, data, sizeof...(Ts),
+                                   /*from_host=*/1);
     }
 
     template <typename... Ts, enable_if_t<(sizeof...(Ts) > 1 && !IsClass)> = 0>
     JitArray(Ts&&... ts) {
         Value data[] = { (Value) ts... };
-        m_index = jit_var_mem_copy(Backend, AllocType::Host, Type, data,
-                                   sizeof...(Ts));
+        m_index = jit_var_mem_copy(Backend, Type, data, sizeof...(Ts),
+                                   /*from_host=*/1);
     }
 
     template <typename T, enable_if_t<drjit::detail::is_arithmetic_v<T>> = 0>
@@ -311,7 +311,7 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
 
     static JitArray copy(const void *ptr, size_t size) {
         return steal(
-            jit_var_mem_copy(Backend, AllocType::Host, Type, ptr, size));
+            jit_var_mem_copy(Backend, Type, ptr, size, /*from_host=*/1));
     }
 
     uint32_t release() {
@@ -429,10 +429,7 @@ protected:
 template <typename Array>
 Array empty(size_t size) {
     size_t byte_size = size * sizeof(typename Array::Value);
-    void *ptr =
-        jit_malloc(Array::Backend == JitBackend::CUDA ? AllocType::Device
-                                                      : AllocType::HostAsync,
-                   byte_size);
+    void *ptr = jit_malloc(Array::Backend, byte_size);
     return Array::steal(
         jit_var_mem_map(Array::Backend, Array::Type, ptr, size, 1));
 }
@@ -518,5 +515,6 @@ Array linspace(typename Array::Value min, typename Array::Value max, size_t size
 
 template <typename T> using CUDAArray = JitArray<JitBackend::CUDA, T>;
 template <typename T> using LLVMArray = JitArray<JitBackend::LLVM, T>;
+template <typename T> using MetalArray = JitArray<JitBackend::Metal, T>;
 
 NAMESPACE_END(drjit)

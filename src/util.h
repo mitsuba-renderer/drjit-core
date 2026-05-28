@@ -112,5 +112,8 @@ extern void jitc_aggregate(JitBackend backend, void *dst,
 extern void jitc_enqueue_host_func(JitBackend backend, void (*callback)(void *),
                                    void *payload);
 
-/// LLVM: reduce a variable that was previously expanded due to dr.ReduceOp.Expand
-extern void jitc_reduce_expanded(VarType vt, ReduceOp op, void *data, uint32_t exp, uint32_t size);
+/// Reduce a variable that was previously expanded due to dr.ReduceOp.Expand.
+/// Dispatches to the backend-specific implementation (LLVM and Metal both
+/// support this; CUDA does not).
+extern void jitc_reduce_expanded(JitBackend backend, VarType vt, ReduceOp op,
+                                 void *data, uint32_t exp, uint32_t size);

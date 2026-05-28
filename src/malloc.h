@@ -16,15 +16,21 @@
 
 using AllocInfo = uint64_t;
 
-inline AllocInfo alloc_info_encode(size_t size, AllocType type, int device) {
-    return (((uint64_t) size) << 16) + (((uint64_t) type) << 8) +
-           ((uint64_t) device);
+/// Bit layout: [size : 53][shared : 1][backend : 2][device : 8]
+inline AllocInfo alloc_info_encode(size_t size, JitBackend backend, bool shared,
+                                   int device) {
+    return (((uint64_t) size)    << 11) |
+           (((uint64_t) shared)  << 10) |
+           (((uint64_t) backend) <<  8) |
+            ((uint64_t) device);
 }
 
-inline drjit::tuple<size_t, AllocType, int> alloc_info_decode(AllocInfo value) {
-    return drjit::make_tuple((size_t)(value >> 16),
-                           (AllocType)((value >> 8) & 0xFF),
-                           (int) (value & 0xFF));
+inline drjit::tuple<size_t, JitBackend, bool, int>
+alloc_info_decode(AllocInfo v) {
+    return drjit::make_tuple((size_t)     (v >> 11),
+                             (JitBackend)((v >>  8) & 0x3),
+                             (bool)      ((v >> 10) & 0x1),
+                             (int)       ( v        & 0xFF));
 }
 
 using AllocInfoMap = tsl::robin_map<AllocInfo, std::vector<void *>, UInt64Hasher>;
@@ -34,18 +40,27 @@ using AllocUsedMap = tsl::robin_map<uintptr_t, AllocInfo, UInt64Hasher>;
 extern size_t round_pow2(size_t x);
 extern uint32_t round_pow2(uint32_t x);
 
-/// Descriptive names for the various allocation types
-extern const char *alloc_type_name[(int) AllocType::Count];
-extern const char *alloc_type_name_short[(int) AllocType::Count];
+/// Human-readable name of a JIT backend
+inline const char *jitc_backend_name(JitBackend b) {
+    switch (b) {
+        case JitBackend::None:  return "host";
+        case JitBackend::LLVM:  return "LLVM";
+        case JitBackend::CUDA:  return "CUDA";
+        case JitBackend::Metal: return "Metal";
+        default: return "?";
+    }
+}
 
-/// Allocate the given flavor of memory
-extern void *jitc_malloc(AllocType type, size_t size) JIT_MALLOC;
+/// Allocate a buffer of memory. See \ref jit_malloc() for the meaning of the
+/// ``(backend, shared)`` parameters.
+extern void *jitc_malloc(JitBackend backend, size_t size,
+                         bool shared = false) JIT_MALLOC;
 
 /// Release the given pointer
 extern void jitc_free(void *ptr);
 
-/// Change the flavor of an allocated memory region
-extern void* jitc_malloc_migrate(void *ptr, AllocType type, int move);
+/// Migrate an allocated memory region to a different backend
+extern void *jitc_malloc_migrate(void *ptr, JitBackend backend, int move = 1);
 
 /// Release all unused memory to the GPU / OS
 extern void jitc_flush_malloc_cache(bool warn);
@@ -53,11 +68,11 @@ extern void jitc_flush_malloc_cache(bool warn);
 /// Shut down the memory allocator (calls \ref jitc_flush_malloc_cache() and reports leaks)
 extern void jitc_malloc_shutdown();
 
-/// Query the flavor of a memory allocation made using \ref jitc_malloc()
-extern AllocType jitc_malloc_type(void *ptr);
-
 /// Query the device associated with a memory allocation made using \ref jitc_malloc()
 extern int jitc_malloc_device(void *ptr);
+
+/// Return the peak memory usage (watermark) for a given backend
+extern size_t jitc_malloc_watermark(JitBackend backend);
 
 /// Clear the peak memory usage statistics
 extern void jitc_malloc_clear_statistics();

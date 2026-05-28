@@ -10,6 +10,7 @@
 #pragma once
 
 #include "common.h"
+#include <inttypes.h>
 #include "malloc.h"
 #include "cuda.h"
 #include "llvm.h"
@@ -17,7 +18,6 @@
 #include "io.h"
 #include <queue>
 #include <string.h>
-#include <inttypes.h>
 #include <nanothread/nanothread.h>
 
 /// List of operations in Dr.Jit-Core's intermediate representation (see ``Variable::kind``)
@@ -584,6 +584,45 @@ struct WeakRef {
 
 struct KernelKey;
 
+/// Caches basic information about a Metal device
+struct MetalDevice {
+    /// MTL::Device* (opaque pointer to avoid Objective-C/metal-cpp leakage in headers)
+    void *device = nullptr;
+
+    /// MTL::CommandQueue* used to submit work to the GPU
+    void *queue = nullptr;
+
+    /// MTL::SharedEvent* used for synchronization (CPU/GPU)
+    void *event = nullptr;
+
+    /// Monotonic counter associated with the shared event
+    uint64_t event_value = 0;
+
+    /// Optional MTL::BinaryArchive* used to cache compiled kernels on disk
+    void *binary_archive = nullptr;
+
+    /// Maximum number of threads per threadgroup (typically 1024)
+    uint32_t max_threads_per_threadgroup = 1024;
+
+    /// Maximum bytes of threadgroup memory available (typically 32768)
+    uint32_t max_threadgroup_memory = 32768;
+
+    /// SIMD execution width (32 on all current Apple Silicon GPUs)
+    uint32_t simd_width = 32;
+
+    /// True if the device supports Metal 3 (M1+ enforced as minimum)
+    bool supports_metal3 = false;
+
+    /// True if the device supports hardware ray tracing acceleration
+    bool supports_ray_tracing = false;
+
+    /// True if the device supports float atomic add (Metal 3.0+)
+    bool supports_float_atomics = false;
+
+    /// Cached human-readable device name (owned, freed at shutdown)
+    char *name = nullptr;
+};
+
 /// Represents a single stream of a parallel communication
 struct ThreadStateBase {
     /// Backend type
@@ -670,6 +709,39 @@ struct ThreadStateBase {
     /// OptiX pipeline associated with the next kernel launch
     OptixPipelineData *optix_pipeline = nullptr;
     OptixShaderBindingTable *optix_sbt = nullptr;
+#endif
+
+    /// ---------------------------- Metal-specific ----------------------------
+
+#if defined(DRJIT_ENABLE_METAL)
+    /// MTL::Device* — opaque to avoid leaking metal-cpp into shared headers
+    void *metal_device = nullptr;
+
+    /// MTL::CommandQueue* used to submit work to the GPU
+    void *metal_queue = nullptr;
+
+    /// MTL::SharedEvent* used for synchronization
+    void *metal_event = nullptr;
+
+    /// Monotonic counter incremented for every encoded signal/wait
+    uint64_t metal_event_value = 0;
+
+    /// Pending MTL::CommandBuffer* (current open command buffer)
+    void *metal_command_buffer = nullptr;
+
+    /// Active MetalScene (MetalScene*) for the kernel currently being
+    /// assembled / launched. Determined at `jitc_metal_assemble` time by
+    /// walking the schedule for a TraceRay node and reading its scene
+    /// dependency (dep[1]). Read by codegen, cache-key computation,
+    /// kernel compilation (for linked-function lists) and by
+    /// `MetalThreadState::launch` to bind the correct TLAS + IFT.
+    void *metal_active_scene = nullptr;
+
+    /// SIMD execution width (typically 32)
+    uint32_t metal_simd_width = 32;
+
+    /// Maximum threads per threadgroup
+    uint32_t metal_max_threads = 1024;
 #endif
 };
 
@@ -912,6 +984,11 @@ struct State {
     /// Available devices and their CUDA IDs
     std::vector<Device> devices;
 
+#if defined(DRJIT_ENABLE_METAL)
+    /// Available Metal devices (Apple Silicon only)
+    std::vector<MetalDevice> metal_devices;
+#endif
+
     /// State associated with each DrJit thread
     std::vector<ThreadState *> tss;
 
@@ -922,9 +999,9 @@ struct State {
     AllocInfoMap alloc_free;
 
     /// Keep track of current memory usage and a maximum watermark
-    size_t alloc_usage    [(int) AllocType::Count] { 0 },
-           alloc_allocated[(int) AllocType::Count] { 0 },
-           alloc_watermark[(int) AllocType::Count] { 0 };
+    size_t alloc_usage    [(int) JitBackend::Count] { 0 },
+           alloc_allocated[(int) JitBackend::Count] { 0 },
+           alloc_watermark[(int) JitBackend::Count] { 0 };
 
     /// Limit the output of jit_var_str()?
     uint32_t print_limit = 20;
@@ -980,18 +1057,43 @@ enum ParamType { Register, Input, Output };
 /// State specific to threads
 #if defined(_MSC_VER)
   extern __declspec(thread) ThreadState* thread_state_llvm;
+#if defined(DRJIT_ENABLE_CUDA)
   extern __declspec(thread) ThreadState* thread_state_cuda;
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+  extern __declspec(thread) ThreadState* thread_state_metal;
+#endif
   extern __declspec(thread) JitBackend default_backend;
 #else
   extern __thread ThreadState* thread_state_llvm;
+#if defined(DRJIT_ENABLE_CUDA)
   extern __thread ThreadState* thread_state_cuda;
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+  extern __thread ThreadState* thread_state_metal;
+#endif
   extern __thread JitBackend default_backend;
 #endif
 
 extern ThreadState *jitc_init_thread_state(JitBackend backend);
 
 inline ThreadState *thread_state(JitBackend backend) {
-    ThreadState *result = (backend == JitBackend::CUDA) ? thread_state_cuda : thread_state_llvm;
+    ThreadState *result;
+    switch (backend) {
+#if defined(DRJIT_ENABLE_CUDA)
+        case JitBackend::CUDA:
+            result = thread_state_cuda;
+            break;
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+        case JitBackend::Metal:
+            result = thread_state_metal;
+            break;
+#endif
+        default:
+            result = thread_state_llvm;
+            break;
+    }
     if (unlikely(!result))
         result = jitc_init_thread_state(backend);
     return result;
@@ -1015,8 +1117,10 @@ extern void jitc_init(uint32_t backends);
 /// Release all resources used by the JIT compiler, and report reference leaks.
 extern void jitc_shutdown(int light);
 
+#if defined(DRJIT_ENABLE_CUDA)
 /// Set the currently active device & stream
 extern void jitc_cuda_set_device(int device);
+#endif
 
 /// Wait for all computation on the current stream to finish. If \c hold_lock
 /// is true, \c state.lock is kept through the wait, preventing other threads
@@ -1030,10 +1134,16 @@ extern void jitc_sync_device();
 /// Wait for all computation on *all devices* to finish
 extern void jitc_sync_all_devices();
 
+/// Returns true if the given backend uses GPU device memory (CUDA or Metal)
+inline bool jitc_is_device_backend(JitBackend b) {
+    return b == JitBackend::CUDA || b == JitBackend::Metal;
+}
+
 /// Search for a shared library and dlopen it if possible
 void *jitc_find_library(const char *fname, const char *glob_pat,
                         const char *env_var);
 
+#if defined(DRJIT_ENABLE_CUDA)
 /// Return a pointer to the CUDA stream associated with the currently active device
 extern void* jitc_cuda_stream();
 
@@ -1045,6 +1155,7 @@ extern void jitc_cuda_push_context(void *);
 
 /// Pop the current CUDA context and return it
 extern void* jitc_cuda_pop_context();
+#endif
 
 extern void jitc_set_flags(uint32_t flags);
 
@@ -1187,12 +1298,28 @@ struct EventData {
     union {
         CUevent cuda_event;
         Task* llvm_task;
+#if defined(DRJIT_ENABLE_METAL)
+        // For Metal we store a (MTL::SharedEvent*, value) pair encoded into
+        // two 64-bit slots. The pointer is held in metal_event and the
+        // monotonic counter associated with the recorded signal/wait is in
+        // metal_value.
+        struct {
+            void *metal_event;
+            uint64_t metal_value;
+        };
+#endif
     };
 
     EventData(JitBackend backend, bool enable_timing)
         : backend(backend), enable_timing(enable_timing), ts(nullptr) {
         if (backend == JitBackend::CUDA)
             cuda_event = nullptr;
+#if defined(DRJIT_ENABLE_METAL)
+        else if (backend == JitBackend::Metal) {
+            metal_event = nullptr;
+            metal_value = 0;
+        }
+#endif
         else
             llvm_task = nullptr;
     }

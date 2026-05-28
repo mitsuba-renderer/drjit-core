@@ -101,6 +101,8 @@ TEST_BOTH(04_load_store_float) {
                     v0 = jit_var_literal(Backend, VarType::Float32, &f1, 1 + j, k);
                     v1 = jit_var_literal(Backend, VarType::Float32, &f1234, 1 + j);
                 } else if (i == 1) {
+                    if constexpr (Backend == JitBackend::Metal)
+                        continue; // Metal does not support float64
                     double d1 = 1, d1234 = 1234;
                     v0 = jit_var_literal(Backend, VarType::Float64, &d1, 1 + j, k);
                     v1 = jit_var_literal(Backend, VarType::Float64, &d1234, 1 + j);
@@ -257,6 +259,14 @@ template <typename T> bool test_const_prop() {
                      op == JitOp::Rsqrt) &&
                     double(value - ref) < 1e-7)
                     continue;
+                // Metal fastMath doesn't preserve signed zero and may
+                // have small precision differences
+                if constexpr (Backend == JitBackend::Metal) {
+                    if (double(value) == 0.0 && double(ref) == 0.0)
+                        continue;
+                    if (std::abs(double(value - ref)) < 1e-5)
+                        continue;
+                }
 
                 // FIXME: See post OptiX forum post below
                 // https://forums.developer.nvidia.com/t/inconsistent-behavior-of-rcp-0-in-double-precision/358127
@@ -358,6 +368,12 @@ template <typename T> bool test_const_prop() {
                 if (memcmp(&value, &ref, sizeof(Value)) != 0) {
                     if (op == JitOp::Div && double(value - ref) < 1e-6)
                         continue;
+                    if constexpr (Backend == JitBackend::Metal) {
+                        if (double(value) == 0.0 && double(ref) == 0.0)
+                            continue;
+                        if (op == JitOp::Div && std::abs(double(value - ref)) < 1e-2)
+                            continue;
+                    }
                     char *v0 = strdup(jit_var_str(in[ir]));
                     char *v1 = strdup(jit_var_str(in[jr]));
                     char *v2 = strdup(jit_var_str(value_id));
@@ -492,7 +508,8 @@ TEST_BOTH_FLOAT_AGNOSTIC(05_const_prop) {
 
     fail |= test_const_prop<Float32>();
     fail |= test_const_prop<Float16>();
-    fail |= test_const_prop<Array<double>>();
+    if constexpr (Backend != JitBackend::Metal)
+        fail |= test_const_prop<Array<double>>();
     fail |= test_const_prop<UInt32>();
     fail |= test_const_prop<Int32>();
     fail |= test_const_prop<Array<int64_t>>();
@@ -549,6 +566,11 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
                 if (type_sizes[(int) source_type] == 0 ||
                     type_sizes[(int) target_type] == 0)
                     continue;
+                if constexpr (Backend == JitBackend::Metal) {
+                    if (source_type == VarType::Float64 ||
+                        target_type == VarType::Float64)
+                        continue;
+                }
 
                 // Booleans can only be bitcast to and from boolean.
                 if (reinterpret && (source_bool ? 0 : type_sizes[(int) source_type]) !=

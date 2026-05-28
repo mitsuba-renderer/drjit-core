@@ -66,7 +66,7 @@ struct DrJitCudaTexture {
      * not released.
      */
     bool release_texture(size_t index) {
-        if (state.backends & (uint32_t) JitBackend::CUDA) {
+        if (state.backends & (1u << (uint32_t) JitBackend::CUDA)) {
             // Only run the following code if the CUDA context is still alive
             ThreadState *ts = thread_state(JitBackend::CUDA);
             scoped_set_context guard(ts->context);
@@ -282,7 +282,7 @@ jitc_cuda_tex_alloc_staging_area(size_t n_texels,
         texture.type_size * n_texels *
         ((texture.n_textures - 1) * 4 +
          texture.channels_internal(texture.n_textures - 1));
-    void *staging_area = jitc_malloc(AllocType::Device, staging_area_size);
+    void *staging_area = jitc_malloc(JitBackend::CUDA, staging_area_size);
 
     return std::unique_ptr<void, StagingAreaDeleter>(staging_area, jitc_free);
 }

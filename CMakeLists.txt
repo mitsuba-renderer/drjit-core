@@ -18,8 +18,13 @@ option(DRJIT_DYNAMIC_LLVM "Resolve LLVM dynamically at run time?" ON)
 option(DRJIT_CORE_ENABLE_TESTS "Build Dr.Jit-Core test suite?" OFF)
 
 if (NOT APPLE)
+  option(DRJIT_ENABLE_CUDA  "Enable the NVIDIA CUDA backend?" ON)
   option(DRJIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
   option(DRJIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
+endif()
+
+if (APPLE)
+  option(DRJIT_ENABLE_METAL "Enable the Apple Metal backend?" ON)
 endif()
 
 if (NOT MSVC)
@@ -38,6 +43,14 @@ if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/nanothread/ext/cmake-defau
     "by invoking\n$ git submodule update --init --recursive")
 endif()
 
+if (DRJIT_ENABLE_METAL AND
+    NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/metal-cpp/Metal")
+  message(FATAL_ERROR "The metal-cpp dependency is missing under "
+    "ext/metal-cpp. Run\n$ git submodule update --init --recursive\n"
+    "to fetch it, or pass -DDRJIT_ENABLE_METAL=OFF to disable the Metal "
+    "backend.")
+endif()
+
 # ----------------------------------------------------------
 #  Build defaults for projects by the Realistic Graphics Lab
 # ----------------------------------------------------------
@@ -54,7 +67,7 @@ else()
   message(STATUS "Dr.Jit-Core: linking against LLVM shared libraries.")
 endif()
 
-if (NOT APPLE)
+if (DRJIT_ENABLE_CUDA)
   if (DRJIT_DYNAMIC_CUDA)
     message(STATUS "Dr.Jit-Core: CUDA will be loaded dynamically at runtime.")
   else()
@@ -66,6 +79,12 @@ if (NOT APPLE)
   else()
     message(STATUS "Dr.Jit-Core: OptiX support disabled.")
   endif()
+endif()
+
+if (DRJIT_ENABLE_METAL)
+  message(STATUS "Dr.Jit-Core: Metal GPU backend enabled.")
+else()
+  message(STATUS "Dr.Jit-Core: Metal GPU backend disabled.")
 endif()
 
 # ----------------------------------------------------------
@@ -81,6 +100,31 @@ mark_as_advanced(NANOTHREAD_ENABLE_TESTS NANOTHREAD_STATIC)
 #  Build Dr.Jit-Core
 # ----------------------------------------------------------
 
+if (DRJIT_ENABLE_CUDA)
+  set(DRJIT_CUDA_FILES
+    # CUDA backend
+    src/cuda_api.h
+    src/cuda_api.cpp
+    src/cuda_core.cpp
+    src/cuda_green.h
+    src/cuda_green.cpp
+    src/cuda_tex.h
+    src/cuda_tex.cpp
+    src/cuda_eval.cpp
+    src/cuda_ts.h
+    src/cuda_ts.cpp
+    src/cuda_scatter.h
+    src/cuda_scatter.cpp
+    src/cuda_packet.h
+    src/cuda_packet.cpp
+    src/cuda_array.h
+    src/cuda_array.cpp
+    # CUDA / OpenGL interop
+    include/drjit-core/gl_interop.h
+    src/gl_interop.cpp
+  )
+endif()
+
 if (DRJIT_ENABLE_OPTIX)
   set(DRJIT_OPTIX_FILES
     src/optix.h
@@ -89,6 +133,28 @@ if (DRJIT_ENABLE_OPTIX)
     src/optix_coop_vec.h
     src/optix_coop_vec.cpp
     src/optix_core.cpp)
+endif()
+
+if (DRJIT_ENABLE_METAL)
+  set(DRJIT_METAL_FILES
+    include/drjit-core/metal.h
+    src/metal.h
+    src/metal_api.h
+    src/metal_api.cpp
+    src/metal_core.cpp
+    src/metal_eval.h
+    src/metal_eval.cpp
+    src/metal_ts.h
+    src/metal_ts.cpp
+    src/metal_scatter.h
+    src/metal_scatter.cpp
+    src/metal_array.h
+    src/metal_array.cpp
+    src/metal_coop_vec.h
+    src/metal_coop_vec.cpp
+    src/metal_stage_buffer.h
+    src/metal_stage_buffer.cpp
+    src/metal_mps.mm)
 endif()
 
 
@@ -117,29 +183,14 @@ add_library(
   src/coop_vec.h      src/coop_vec.cpp
   src/reorder.h       src/reorder.cpp
 
-  # CUDA backend
-  src/cuda_api.h
-  src/cuda_api.cpp
-  src/cuda_core.cpp
-  src/cuda_green.h
-  src/cuda_green.cpp
-  src/cuda_tex.h
-  src/cuda_tex.cpp
-  src/cuda_eval.cpp
-  src/cuda_ts.h
-  src/cuda_ts.cpp
-  src/cuda_scatter.h
-  src/cuda_scatter.cpp
-  src/cuda_packet.h
-  src/cuda_packet.cpp
-  src/cuda_array.h
-  src/cuda_array.cpp
-  # CUDA / OpenGL interop
-  include/drjit-core/gl_interop.h
-  src/gl_interop.cpp
+  # CUDA backend, if enabled
+  ${DRJIT_CUDA_FILES}
 
-  # OptiX backend
+  # OptiX backend, if enabled
   ${DRJIT_OPTIX_FILES}
+
+  # Metal backend, if enabled
+  ${DRJIT_METAL_FILES}
 
   # LLVM backend
   src/llvm_api.h
@@ -261,6 +312,39 @@ if (DRJIT_ENABLE_OPTIX)
   if (WIN32)
     target_link_libraries(drjit-core PRIVATE Cfgmgr32)
   endif()
+endif()
+
+
+if (DRJIT_ENABLE_CUDA)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_CUDA=1)
+endif()
+
+if (DRJIT_ENABLE_METAL)
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_METAL=1)
+  set(METAL_KERNELS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/resources/metal_kernels.metal")
+  set(METAL_KERNELS_HDR "${CMAKE_CURRENT_BINARY_DIR}/metal_kernels_src.h")
+  add_custom_command(
+    OUTPUT  "${METAL_KERNELS_HDR}"
+    COMMAND ${CMAKE_COMMAND}
+      -DINPUT="${METAL_KERNELS_SRC}"
+      -DOUTPUT="${METAL_KERNELS_HDR}"
+      -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_metal_kernels.cmake"
+    DEPENDS "${METAL_KERNELS_SRC}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/embed_metal_kernels.cmake"
+    COMMENT "Embedding metal_kernels.metal as C++ raw string")
+  target_sources(drjit-core PRIVATE "${METAL_KERNELS_HDR}")
+  target_include_directories(drjit-core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
+  target_include_directories(drjit-core PRIVATE ext/metal-cpp)
+  target_link_libraries(drjit-core PRIVATE
+    "-framework Foundation"
+    "-framework Metal"
+    "-framework MetalPerformanceShaders"
+    "-framework MetalPerformanceShadersGraph"
+    "-framework QuartzCore")
+
+  set_source_files_properties(
+    src/metal_mps.mm
+    PROPERTIES COMPILE_FLAGS "-fno-objc-arc")
 endif()
 
 if (UNIX)

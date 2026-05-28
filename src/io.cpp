@@ -453,6 +453,16 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
             jitc_fail("jit_kernel_free(): VirtualFree() failed!");
 #endif
     } else {
+#if defined(DRJIT_ENABLE_METAL)
+        if ((state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0 &&
+            (state.backends & (1u << (uint32_t) JitBackend::Metal)) != 0) {
+            // Metal kernel.
+            extern void jitc_metal_free(Kernel &);
+            jitc_metal_free(const_cast<Kernel &>(kernel));
+            return;
+        }
+#endif
+#if defined(DRJIT_ENABLE_CUDA)
         const Device &device = state.devices.at(device_id);
         scoped_set_context guard(device.context);
         if (kernel.size) {
@@ -463,6 +473,10 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
             jitc_optix_free(kernel);
 #endif
         }
+#else
+        (void) device_id;
+        (void) kernel;
+#endif
     }
 }
 
