@@ -31,13 +31,13 @@ int main() {
     std::fflush(stdout);
 
     // Allocate a small device buffer to exercise the malloc path.
-    void *buf = jit_malloc(AllocType::Device, 1024);
+    void *buf = jit_malloc(JitBackend::Metal, 1024);
     std::printf("Allocated 1KB device buffer at %p\n", buf);
     std::fflush(stdout);
 
     // Round-trip: allocate a host-pinned (== shared mode) buffer and write
     // some data via the unified memory address.
-    void *host_buf = jit_malloc(AllocType::HostPinned, 64);
+    void *host_buf = jit_malloc(JitBackend::Metal, 64, /*shared=*/1);
     std::printf("Allocated 64B host-pinned buffer at %p\n", host_buf);
     std::fflush(stdout);
     if (host_buf) {

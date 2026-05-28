@@ -291,7 +291,7 @@ void LLVMThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
 
     void *buf = out;
     if (chunks_per_block > 1) {
-        buf = jitc_malloc(AllocType::HostAsync, tsize * chunk_count);
+        buf = jitc_malloc(JitBackend::LLVM, tsize * chunk_count);
 
         jitc_log(Debug,
                  "jit_block_reduce(" DRJIT_PTR " -> " DRJIT_PTR
@@ -384,7 +384,7 @@ void LLVMThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
 
     void *scratch = nullptr;
     if (chunks_per_block > 1) {
-        scratch = jitc_malloc(AllocType::HostAsync, tsize * chunk_count);
+        scratch = jitc_malloc(JitBackend::LLVM, tsize * chunk_count);
 
         // Launch a block_reduce within block_prefix_reduce. We need to access to its
         // intermediate state, which is why the kernel is called directly here
@@ -473,7 +473,7 @@ void LLVMThreadState::reduce_dot(VarType type, const void *ptr_1,
 
     void *target = out;
     if (blocks > 1)
-        target = jitc_malloc(AllocType::HostAsync, blocks * tsize);
+        target = jitc_malloc(JitBackend::LLVM, blocks * tsize);
 
     Reduction2 reduction = jitc_reduce_dot_create(type);
     submit_cpu(
@@ -567,7 +567,7 @@ void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
     // iteration reuses it. ``jitc_free`` on HostAsync memory defers
     // until the submitted tasks complete.
     size_t pb_bytes = (size_t) KC * NC * acc_size;
-    void *packed_B = jitc_malloc(AllocType::HostAsync, pb_bytes);
+    void *packed_B = jitc_malloc(JitBackend::LLVM, pb_bytes);
 
     // Half inputs reduce in float. The float ``C_scratch`` holds
     // partial sums between task dispatches, so it is only needed when
@@ -579,7 +579,7 @@ void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
     const bool widen_c = acc_size != tsize;
     const bool needs_c_scratch = widen_c && (K > KC || reduce_count > 1);
     void *C_scratch = needs_c_scratch
-        ? jitc_malloc(AllocType::HostAsync, (size_t) M * N * acc_size)
+        ? jitc_malloc(JitBackend::LLVM, (size_t) M * N * acc_size)
         : nullptr;
 
     const uint32_t cores = pool_size();
@@ -706,7 +706,7 @@ uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
     uint32_t *scratch = nullptr;
 
     if (blocks > 1) {
-        scratch = (uint32_t *) jitc_malloc(AllocType::HostAsync,
+        scratch = (uint32_t *) jitc_malloc(JitBackend::LLVM,
                                            blocks * sizeof(uint32_t));
 
         submit_cpu(
@@ -803,7 +803,7 @@ uint32_t LLVMThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
             tasks_per_group);
 
     uint32_t **buckets =
-        (uint32_t **) jitc_malloc(AllocType::HostAsync,
+        (uint32_t **) jitc_malloc(JitBackend::LLVM,
                                   sizeof(uint32_t *) * total_tasks);
 
     uint32_t unique_count = 0;
@@ -969,10 +969,6 @@ void LLVMThreadState::aggregate(void *dst_, AggregationEntry *agg,
             }
         },
         size, work_units);
-
-    submit_cpu(
-        KernelType::Other, this->recording_mode, [agg](uint32_t) { free(agg); },
-        1, 1);
 }
 
 void LLVMThreadState::enqueue_host_func(void (*callback)(void *),

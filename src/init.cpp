@@ -232,15 +232,15 @@ void jitc_shutdown(int light) {
 
         lock_guard guard(state.alloc_free_lock);
         for (auto it = state.alloc_free.begin(); it != state.alloc_free.end(); ++it) {
-            auto [size, type, device] = alloc_info_decode(it->first);
+            auto [size, backend, shared, device] = alloc_info_decode(it->first);
             (void) device;
 
-            if (type != AllocType::Device)
+            if (backend != JitBackend::CUDA || shared)
                 continue;
 
             std::vector<void *> entries;
             entries.swap(it.value());
-            state.alloc_allocated[(int) type] -= size * entries.size();
+            state.alloc_allocated[(int) backend] -= size * entries.size();
 
             for (void *ptr : entries)
                 cuda_check(cuMemFreeAsync((CUdeviceptr) ptr, ts->stream));

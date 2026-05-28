@@ -596,7 +596,7 @@ void MetalThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
     if (need_recursive) {
         // Allocate a temporary buffer for the per-chunk outputs
         temp_out =
-            jitc_malloc(AllocType::Device, (size_t) params.chunk_count * tsize, JitBackend::Metal);
+            jitc_malloc(JitBackend::Metal, (size_t) params.chunk_count * tsize);
         params.out = (uint64_t)(uintptr_t) temp_out;
     } else {
         // For HostPinned (shared) buffers, we need the GPU address
@@ -730,7 +730,7 @@ void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
         // caller's `out`, because callers frequently pass ``in == out`` (e.g.
         // ``mkperm`` on the bucket histogram). Re-using `out` would clobber
         // the original input that the final scan still needs to read.
-        void *p1_out = jitc_malloc(AllocType::Device, (size_t) size * tsize, JitBackend::Metal);
+        void *p1_out = jitc_malloc(JitBackend::Metal, (size_t) size * tsize);
         {
             struct {
                 uint64_t in_p, out_p, offsets_p;
@@ -772,7 +772,7 @@ void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
         // legacy CPU readback + index loop + re-upload that cost two
         // command-buffer roundtrips.
         void *chunk_totals_d =
-            jitc_malloc(AllocType::Device, (size_t) total_chunks * tsize, JitBackend::Metal);
+            jitc_malloc(JitBackend::Metal, (size_t) total_chunks * tsize);
         {
             char gather_name[40];
             snprintf(gather_name, sizeof(gather_name),
@@ -825,7 +825,7 @@ void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
         // order). The recursive call enqueues onto the same command
         // buffer; no sync needed here either.
         offsets_ptr =
-            jitc_malloc(AllocType::Device, (size_t) total_chunks * tsize, JitBackend::Metal);
+            jitc_malloc(JitBackend::Metal, (size_t) total_chunks * tsize);
         block_prefix_reduce(vt, op, total_chunks, chunks_per_block,
                             true, false, chunk_totals_d, offsets_ptr);
         jitc_free(chunk_totals_d);
@@ -930,7 +930,7 @@ void MetalThreadState::reduce_dot(VarType vt, const void *ptr_1,
     if (block_count == 1) {
         params.out = (uint64_t)(uintptr_t) out;
     } else {
-        temp = jitc_malloc(AllocType::Device, (size_t) block_count * tsize, JitBackend::Metal);
+        temp = jitc_malloc(JitBackend::Metal, (size_t) block_count * tsize);
         params.out = (uint64_t)(uintptr_t) temp;
     }
 
@@ -1027,8 +1027,7 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
                                     const void *A, const void *B, void *C) {
     DRJIT_METAL_SCOPED_POOL;
 
-    bool type_ok = (vt == VarType::Float16 || vt == VarType::Float32 ||
-                    vt == VarType::Int32   || vt == VarType::UInt32);
+    bool type_ok = (vt == VarType::Float16 || vt == VarType::Float32);
     if (!type_ok) {
         if (vt == VarType::Float64)
             jitc_raise("MetalThreadState::batched_gemm(): Float64 (DD) GEMM "
@@ -1036,6 +1035,10 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
                        "(MPS) library has no FP64 path; a hand-rolled DD GEMM "
                        "kernel would be required. Workaround: cast to Float32 "
                        "for the matmul.");
+        if (vt == VarType::Int32 || vt == VarType::UInt32)
+            jitc_raise("jit_batched_gemm(): integer GEMM unsupported on the "
+                       "Metal backend (only Float16 and Float32 are "
+                       "supported).");
         jitc_raise("MetalThreadState::batched_gemm(): unsupported type '%s'.",
                    type_name[(int) vt]);
     }
@@ -1123,15 +1126,9 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
             uint32_t a_rows = At ? K : M, a_cols = At ? M : K;
             uint32_t b_rows = Bt ? N : K, b_cols = Bt ? K : N;
 
-            // MPS data type
-            int mps_type;
-            switch (vt) {
-                case VarType::Float32: mps_type = 0x10000000 | 32; break; // MPSDataTypeFloat32
-                case VarType::Float16: mps_type = 0x10000000 | 16; break; // MPSDataTypeFloat16
-                case VarType::Int32:
-                case VarType::UInt32:  mps_type = 0x20000000 | 32; break; // MPSDataTypeInt32
-                default: mps_type = 0x10000000 | 32; break;
-            }
+            // MPS data type (type_ok above restricts this to Float16 / Float32)
+            int mps_type = (vt == VarType::Float16) ? (0x10000000 | 16)   // MPSDataTypeFloat16
+                                                    : (0x10000000 | 32);  // MPSDataTypeFloat32
 
             double alpha = 1.0, beta = (r > 0) ? 1.0 : 0.0;
 
@@ -1215,7 +1212,7 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
 
         // Scratch for per-block counts
         void *scratch_ptr =
-            jitc_malloc(AllocType::Device, (block_count + 1) * tsize_count, JitBackend::Metal);
+            jitc_malloc(JitBackend::Metal, (block_count + 1) * tsize_count);
 
         struct {
             uint64_t in, out, scratch;
@@ -1250,7 +1247,7 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
         // sum. Stays on the same command buffer — block_prefix_reduce
         // and the compress_total kernel both consume it without any
         // explicit GPU sync.
-        void *counts_copy = jitc_malloc(AllocType::Device, block_count * tsize_count, JitBackend::Metal);
+        void *counts_copy = jitc_malloc(JitBackend::Metal, block_count * tsize_count);
         memcpy_async(counts_copy, scratch_ptr, block_count * tsize_count);
 
         // Exclusive prefix sum of per-block counts (in-place over scratch).
@@ -1340,7 +1337,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
 
     // Allocate and zero-initialize histogram
     uint32_t bucket_bytes = bucket_count * sizeof(uint32_t);
-    void *buckets = jitc_malloc(AllocType::Device, bucket_bytes, JitBackend::Metal);
+    void *buckets = jitc_malloc(JitBackend::Metal, bucket_bytes);
 
     // Zero the histogram
     {
@@ -1531,14 +1528,14 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
 void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
                                  uint32_t size) {
     DRJIT_METAL_SCOPED_POOL;
-    // ``agg`` is allocated via ``jit_malloc(AllocType::HostPinned)`` by both
+    // ``agg`` is allocated via ``jit_malloc(Metal, shared=true)`` by both
     // the call infrastructure (call.cpp) and the freeze-replay machinery
     // (record_ts.cpp); it must be released with ``jit_free`` (NOT
     // ``std::free``) — they may track the pointer in their own bookkeeping.
     if (size == 0) { jitc_free(agg); return; }
 
     // Resolve the destination MTLBuffer (allocated by the caller via
-    // jit_malloc(AllocType::Device) → registered in the buffer map).
+    // jit_malloc(Metal) → registered in the buffer map).
     size_t dst_off = 0;
     auto *dst_buf = (MTL::Buffer *)
         jitc_metal_find_buffer(dst, &dst_off);
@@ -1552,7 +1549,6 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
     size_t entries_bytes = sizeof(AggregationEntry) * (size_t) size;
     auto *entries_buf = dev->newBuffer(agg, entries_bytes,
                                        MTL::ResourceStorageModeShared);
-    jitc_free(agg);  // Contents copied into entries_buf
 
     // Look up the precompiled aggregate kernel from the per-device library.
     auto *pso = jitc_metal_get_pipeline(this->device, "aggregate_kernel");

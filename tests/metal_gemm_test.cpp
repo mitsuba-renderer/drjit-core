@@ -20,9 +20,9 @@ int main() {
         float B[] = { 5, 6, 7, 8 };
         float C[4] = {};
 
-        void *A_d = jit_malloc(AllocType::Device, sizeof(A));
-        void *B_d = jit_malloc(AllocType::Device, sizeof(B));
-        void *C_d = jit_malloc(AllocType::Device, sizeof(C));
+        void *A_d = jit_malloc(JitBackend::Metal, sizeof(A));
+        void *B_d = jit_malloc(JitBackend::Metal, sizeof(B));
+        void *C_d = jit_malloc(JitBackend::Metal, sizeof(C));
 
         jit_memcpy_async(JitBackend::Metal, A_d, A, sizeof(A));
         jit_memcpy_async(JitBackend::Metal, B_d, B, sizeof(B));

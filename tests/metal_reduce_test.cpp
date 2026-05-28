@@ -26,8 +26,8 @@ int main() {
     // --- Test 1: sum of [1..8] = 36 ---
     {
         float data[] = { 1, 2, 3, 4, 5, 6, 7, 8 };
-        uint32_t src = jit_var_mem_copy(JitBackend::Metal, AllocType::Host,
-                                        VarType::Float32, data, 8);
+        uint32_t src = jit_var_mem_copy(JitBackend::Metal, VarType::Float32,
+                                        data, 8, /*from_host=*/1);
         uint32_t dst = jit_var_block_reduce(ReduceOp::Add, src, 8, 0);
         jit_var_eval(dst);
         const char *s = jit_var_str(dst);
@@ -41,8 +41,8 @@ int main() {
     // --- Test 2: pairwise sum of [1..8] with block_size=2 ---
     {
         float data[] = { 1, 2, 3, 4, 5, 6, 7, 8 };
-        uint32_t src = jit_var_mem_copy(JitBackend::Metal, AllocType::Host,
-                                        VarType::Float32, data, 8);
+        uint32_t src = jit_var_mem_copy(JitBackend::Metal, VarType::Float32,
+                                        data, 8, /*from_host=*/1);
         uint32_t dst = jit_var_block_reduce(ReduceOp::Add, src, 2, 0);
         jit_var_eval(dst);
         const char *s = jit_var_str(dst);
@@ -56,8 +56,8 @@ int main() {
     // --- Test 3: min of [4, 2, 7, 1, 8, 3, 6, 5] = 1 ---
     {
         float data[] = { 4, 2, 7, 1, 8, 3, 6, 5 };
-        uint32_t src = jit_var_mem_copy(JitBackend::Metal, AllocType::Host,
-                                        VarType::Float32, data, 8);
+        uint32_t src = jit_var_mem_copy(JitBackend::Metal, VarType::Float32,
+                                        data, 8, /*from_host=*/1);
         uint32_t dst = jit_var_block_reduce(ReduceOp::Min, src, 8, 0);
         jit_var_eval(dst);
         const char *s = jit_var_str(dst);
@@ -71,8 +71,8 @@ int main() {
     // --- Test 4: uint32 sum ---
     {
         uint32_t data[] = { 10, 20, 30, 40 };
-        uint32_t src = jit_var_mem_copy(JitBackend::Metal, AllocType::Host,
-                                        VarType::UInt32, data, 4);
+        uint32_t src = jit_var_mem_copy(JitBackend::Metal, VarType::UInt32,
+                                        data, 4, /*from_host=*/1);
         uint32_t dst = jit_var_block_reduce(ReduceOp::Add, src, 4, 0);
         jit_var_eval(dst);
         const char *s = jit_var_str(dst);

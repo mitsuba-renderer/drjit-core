@@ -23,10 +23,10 @@ int main() {
         uint8_t mask[] = { 1, 0, 1, 0, 1, 0, 1, 0 };
         uint32_t n = 8;
 
-        void *mask_d = jit_malloc(AllocType::Device, n);
+        void *mask_d = jit_malloc(JitBackend::Metal, n);
         jit_memcpy_async(JitBackend::Metal, mask_d, mask, n);
 
-        void *out_d = jit_malloc(AllocType::Device, n * sizeof(uint32_t));
+        void *out_d = jit_malloc(JitBackend::Metal, n * sizeof(uint32_t));
         uint32_t count = jit_compress(JitBackend::Metal,
                                        (const uint8_t *) mask_d, n,
                                        (uint32_t *) out_d);
@@ -55,14 +55,14 @@ int main() {
         uint32_t vals[] = { 2, 0, 1, 0, 2, 1 };
         uint32_t n = 6, bucket_count = 3;
 
-        void *vals_d = jit_malloc(AllocType::Device, n * sizeof(uint32_t));
+        void *vals_d = jit_malloc(JitBackend::Metal, n * sizeof(uint32_t));
         jit_memcpy_async(JitBackend::Metal, vals_d, vals, n * sizeof(uint32_t));
 
-        void *perm_d = jit_malloc(AllocType::Device, n * sizeof(uint32_t));
+        void *perm_d = jit_malloc(JitBackend::Metal, n * sizeof(uint32_t));
 
         // offsets array: 4 * bucket_count + 1 entries
         uint32_t offsets_size = (4 * bucket_count + 1) * sizeof(uint32_t);
-        void *offsets_d = jit_malloc(AllocType::HostPinned, offsets_size);
+        void *offsets_d = jit_malloc(JitBackend::Metal, offsets_size, /*shared=*/1);
         memset(offsets_d, 0, offsets_size);
 
         uint32_t unique = jit_block_mkperm(JitBackend::Metal,

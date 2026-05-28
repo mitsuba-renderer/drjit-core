@@ -598,9 +598,9 @@ void jit_flush_kernel_cache() {
     jitc_flush_kernel_cache();
 }
 
-void *jit_malloc(AllocType type, size_t size) {
+void *jit_malloc(JitBackend backend, size_t size, int shared) {
     lock_guard guard(state.lock);
-    return jitc_malloc(type, size);
+    return jitc_malloc(backend, size, shared != 0);
 }
 
 void jit_free(void *ptr) {
@@ -618,29 +618,19 @@ void jit_malloc_clear_statistics() {
     jitc_malloc_clear_statistics();
 }
 
-enum AllocType jit_malloc_type(void *ptr) {
-    lock_guard guard(state.lock);
-    return jitc_malloc_type(ptr);
-}
-
 int jit_malloc_device(void *ptr) {
     lock_guard guard(state.lock);
     return jitc_malloc_device(ptr);
 }
 
-void *jit_malloc_migrate(void *ptr, AllocType type, int move) {
+void *jit_malloc_migrate(void *ptr, JitBackend backend, int move) {
     lock_guard guard(state.lock);
-    return jitc_malloc_migrate(ptr, type, move);
+    return jitc_malloc_migrate(ptr, backend, move);
 }
 
-size_t jit_malloc_watermark(AllocType type) {
+size_t jit_malloc_watermark(JitBackend backend) {
     lock_guard guard(state.lock);
-    return state.alloc_watermark[(int) type];
-}
-
-enum AllocType jit_var_alloc_type(uint32_t index) {
-    lock_guard guard(state.lock);
-    return jitc_var_alloc_type(index);
+    return jitc_malloc_watermark(backend);
 }
 
 int jit_var_device(uint32_t index) {
@@ -1059,10 +1049,10 @@ uint32_t jit_var_mem_map(JitBackend backend, VarType type, void *ptr, size_t siz
     return jitc_var_mem_map(backend, type, ptr, size, free);
 }
 
-uint32_t jit_var_mem_copy(JitBackend backend, AllocType atype, VarType vtype,
-                          const void *value, size_t size) {
+uint32_t jit_var_mem_copy(JitBackend backend, VarType vtype, const void *value,
+                          size_t size, int from_host) {
     lock_guard guard(state.lock);
-    return jitc_var_mem_copy(backend, atype, vtype, value, size);
+    return jitc_var_mem_copy(backend, vtype, value, size, from_host != 0);
 }
 
 uint32_t jit_var_copy(uint32_t index) {
@@ -1070,9 +1060,9 @@ uint32_t jit_var_copy(uint32_t index) {
     return jitc_var_copy(index);
 }
 
-uint32_t jit_var_migrate(uint32_t index, AllocType type) {
+uint32_t jit_var_migrate(uint32_t index, JitBackend backend) {
     lock_guard guard(state.lock);
-    return jitc_var_migrate(index, type);
+    return jitc_var_migrate(index, backend);
 }
 
 void jit_var_mark_side_effect(uint32_t index) {

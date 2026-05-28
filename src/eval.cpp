@@ -453,10 +453,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             if (backend == JitBackend::LLVM && isize == 1)
                 dsize += 4 - isize;
 
-            sv.data = jitc_malloc(
-                jitc_is_device_backend(backend) ? AllocType::Device
-                                                : AllocType::HostAsync,
-                dsize); // Note: unsafe to access 'v' after jitc_malloc().
+            sv.data = jitc_malloc(backend, dsize); // Note: unsafe to access 'v' after jitc_malloc().
 
             kernel_params.push_back(sv.data);
             kernel_param_ids.push_back(index);
