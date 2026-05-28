@@ -2059,13 +2059,8 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
             jitc_raise("jit_var_gather(): out-of-bounds read from position %zu "
                        "in an array of size %u.", pos, src_info.size);
 
-        AllocType atype = ((JitBackend) src_info.backend == JitBackend::CUDA ||
-                           (JitBackend) src_info.backend == JitBackend::Metal)
-                              ? AllocType::Device
-                              : AllocType::HostAsync;
-
         void *p = (uint8_t *) jitc_var(src)->data + size * pos,
-             *p_out = jitc_malloc(atype, size);
+             *p_out = jitc_malloc((JitBackend) src_info.backend, size);
 
         jitc_memcpy_async(src_info.backend, p_out, p, size);
 

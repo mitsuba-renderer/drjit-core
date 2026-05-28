@@ -999,9 +999,9 @@ struct State {
     AllocInfoMap alloc_free;
 
     /// Keep track of current memory usage and a maximum watermark
-    size_t alloc_usage    [(int) AllocType::Count] { 0 },
-           alloc_allocated[(int) AllocType::Count] { 0 },
-           alloc_watermark[(int) AllocType::Count] { 0 };
+    size_t alloc_usage    [(int) JitBackend::Count] { 0 },
+           alloc_allocated[(int) JitBackend::Count] { 0 },
+           alloc_watermark[(int) JitBackend::Count] { 0 };
 
     /// Limit the output of jit_var_str()?
     uint32_t print_limit = 20;

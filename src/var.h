@@ -81,9 +81,9 @@ extern uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
                                  size_t size, int free);
 
 /// Copy a memory region onto the device and return its variable index
-extern uint32_t jitc_var_mem_copy(JitBackend backend, AllocType atype,
-                                  VarType vtype, const void *ptr,
-                                  size_t size);
+extern uint32_t jitc_var_mem_copy(JitBackend backend, VarType vtype,
+                                  const void *ptr, size_t size,
+                                  bool from_host);
 
 /// Duplicate a variable
 extern uint32_t jitc_var_copy(uint32_t index);
@@ -136,8 +136,8 @@ extern void jitc_var_set_callback(uint32_t index,
                                   void *data,
                                   bool is_internal);
 
-/// Migrate a variable to a different flavor of memory
-extern uint32_t jitc_var_migrate(uint32_t index, AllocType type);
+/// Migrate a variable to a different backend
+extern uint32_t jitc_var_migrate(uint32_t index, JitBackend backend);
 
 /// Indicate to the JIT compiler that a variable has side effects
 extern void jitc_var_mark_side_effect(uint32_t index);
@@ -187,9 +187,6 @@ extern void jitc_lvn_put(uint32_t index, const Variable *v);
 
 /// Append the given variable to the instruction trace and return its ID
 extern uint32_t jitc_var_new(Variable &v, bool disable_lvn = false);
-
-/// Query the current (or future, if not yet evaluated) allocation flavor of a variable
-extern AllocType jitc_var_alloc_type(uint32_t index);
 
 /// Query the device (or future, if not yet evaluated) associated with a variable
 extern int jitc_var_device(uint32_t index);
