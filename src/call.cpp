@@ -240,10 +240,8 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
     // Allocate memory + wrapper variables for call offset and data arrays
     call->offset_size = (inst_id_max + 1) * sizeof(uint64_t);
 
-    AllocType at =
-        jitc_is_device_backend(backend) ? AllocType::Device : AllocType::HostAsync;
-    call->offset = (uint64_t *) jitc_malloc(at, call->offset_size);
-    uint8_t *data_d = (uint8_t *) jitc_malloc(at, data_size);
+    call->offset = (uint64_t *) jitc_malloc(backend, call->offset_size);
+    uint8_t *data_d = (uint8_t *) jitc_malloc(backend, data_size);
 
     Ref data_buf, data_v,
         offset_buf = steal(jitc_var_mem_map(
@@ -263,13 +261,9 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
 
         data_v = steal(jitc_var_pointer(backend, data_d, data_buf, 0));
 
-        AggregationEntry *agg = nullptr;
         size_t agg_size = sizeof(AggregationEntry) * call->data_map.size();
-
-        if (backend == JitBackend::CUDA || backend == JitBackend::Metal)
-            agg = (AggregationEntry *) jitc_malloc(AllocType::HostPinned, agg_size, backend);
-        else
-            agg = (AggregationEntry *) malloc_check(agg_size);
+        AggregationEntry *agg = (AggregationEntry *)
+            jitc_malloc(backend, agg_size, /*shared=*/true);
 
         AggregationEntry *p = agg;
 
@@ -681,12 +675,8 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
 
 void jitc_call_upload(ThreadState *ts) {
     for (CallData *call : calls_assembled) {
-        uint64_t *data;
-        if (jitc_is_device_backend(ts->backend))
-            data = (uint64_t *) jitc_malloc(AllocType::HostPinned, call->offset_size,
-                                            (JitBackend) ts->backend);
-        else
-            data = (uint64_t *) malloc_check(call->offset_size);
+        uint64_t *data = (uint64_t *) jitc_malloc(
+            (JitBackend) ts->backend, call->offset_size, /*shared=*/true);
 
         memset(data, 0, call->offset_size);
 
@@ -713,18 +703,7 @@ void jitc_call_upload(ThreadState *ts) {
         }
 
         jitc_memcpy_async(ts->backend, call->offset, data, call->offset_size);
-
-        // Free call offset table asynchronously
-        if (jitc_is_device_backend(call->backend)) {
-            jitc_free(data);
-        } else {
-            Task *new_task = task_submit_dep(
-                nullptr, &jitc_task, 1, 1,
-                [](uint32_t, void *payload) { free(*((void **) payload)); },
-                &data, sizeof(void *), nullptr, 1);
-            task_release(jitc_task);
-            jitc_task = new_task;
-        }
+        jitc_free(data);
     }
 
     for (CallData *call : calls_assembled)
@@ -794,10 +773,9 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
     if (backend == JitBackend::LLVM)
         perm_size += jitc_llvm_vector_width * sizeof(uint32_t);
 
-    uint8_t *offsets = (uint8_t *) jitc_malloc(
-        jitc_is_device_backend(backend) ? AllocType::HostPinned : AllocType::Host, offsets_size);
-    uint32_t *perm = (uint32_t *) jitc_malloc(
-        jitc_is_device_backend(backend) ? AllocType::Device : AllocType::HostAsync, perm_size);
+    uint8_t *offsets = (uint8_t *) jitc_malloc(backend, offsets_size,
+                                               /*shared=*/true);
+    uint32_t *perm = (uint32_t *) jitc_malloc(backend, perm_size);
 
     // Compute permutation
     uint32_t unique_count = jitc_block_mkperm(backend, (const uint32_t *) self,

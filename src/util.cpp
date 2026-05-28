@@ -169,7 +169,7 @@ void jitc_all_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t 
 bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
     uint8_t buf[4], *tmp;
     if (jitc_is_device_backend(backend))
-        tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4, backend);
+        tmp = (uint8_t *) jitc_malloc(backend, 4, /*shared=*/true);
     else
         tmp = buf;
 
@@ -188,7 +188,7 @@ bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
 bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
     uint8_t buf[4], *tmp;
     if (jitc_is_device_backend(backend))
-        tmp = (uint8_t *) jitc_malloc(AllocType::HostPinned, 4, backend);
+        tmp = (uint8_t *) jitc_malloc(backend, 4, /*shared=*/true);
     else
         tmp = buf;
 

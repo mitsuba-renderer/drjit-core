@@ -17,8 +17,8 @@ int main() {
     {
         float data[] = { 1, 2, 3, 4 };
         uint32_t n = 4;
-        void *in_d = jit_malloc(AllocType::Device, n * sizeof(float));
-        void *out_d = jit_malloc(AllocType::Device, n * sizeof(float));
+        void *in_d = jit_malloc(JitBackend::Metal, n * sizeof(float));
+        void *out_d = jit_malloc(JitBackend::Metal, n * sizeof(float));
         jit_memcpy_async(JitBackend::Metal, in_d, data, n * sizeof(float));
         jit_block_prefix_reduce(JitBackend::Metal, VarType::Float32,
                                 ReduceOp::Add, n, n, 0, 0, in_d, out_d);
@@ -38,8 +38,8 @@ int main() {
     {
         float data[] = { 1, 2, 3, 4 };
         uint32_t n = 4;
-        void *in_d = jit_malloc(AllocType::Device, n * sizeof(float));
-        void *out_d = jit_malloc(AllocType::Device, n * sizeof(float));
+        void *in_d = jit_malloc(JitBackend::Metal, n * sizeof(float));
+        void *out_d = jit_malloc(JitBackend::Metal, n * sizeof(float));
         jit_memcpy_async(JitBackend::Metal, in_d, data, n * sizeof(float));
         jit_block_prefix_reduce(JitBackend::Metal, VarType::Float32,
                                 ReduceOp::Add, n, n, 1, 0, in_d, out_d);
@@ -59,8 +59,8 @@ int main() {
     {
         uint32_t data[] = { 3, 1, 4, 1, 5 };
         uint32_t n = 5;
-        void *in_d = jit_malloc(AllocType::Device, n * sizeof(uint32_t));
-        void *out_d = jit_malloc(AllocType::Device, n * sizeof(uint32_t));
+        void *in_d = jit_malloc(JitBackend::Metal, n * sizeof(uint32_t));
+        void *out_d = jit_malloc(JitBackend::Metal, n * sizeof(uint32_t));
         jit_memcpy_async(JitBackend::Metal, in_d, data, n * sizeof(uint32_t));
         jit_block_prefix_reduce(JitBackend::Metal, VarType::UInt32,
                                 ReduceOp::Add, n, n, 1, 0, in_d, out_d);
@@ -82,8 +82,8 @@ int main() {
     {
         float data[] = { 1, 2, 3, 4, 5, 6 };
         uint32_t n = 6;
-        void *in_d = jit_malloc(AllocType::Device, n * sizeof(float));
-        void *out_d = jit_malloc(AllocType::Device, n * sizeof(float));
+        void *in_d = jit_malloc(JitBackend::Metal, n * sizeof(float));
+        void *out_d = jit_malloc(JitBackend::Metal, n * sizeof(float));
         jit_memcpy_async(JitBackend::Metal, in_d, data, n * sizeof(float));
         jit_block_prefix_reduce(JitBackend::Metal, VarType::Float32,
                                 ReduceOp::Add, n, 2, 0, 0, in_d, out_d);

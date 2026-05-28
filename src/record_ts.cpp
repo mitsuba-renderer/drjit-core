@@ -264,22 +264,19 @@ struct ReplayVariable {
      * infer the size of this variable.
      */
     void alloc(JitBackend backend, size_t dsize) {
-        AllocType alloc_type =
-            jitc_is_device_backend(backend) ? AllocType::Device : AllocType::Host;
-
         if (!data) {
             alloc_size = dsize;
             jitc_log(LogLevel::Debug, "    allocating output of size %zu.",
                      dsize);
             if (!dry_run)
-                data = jitc_malloc(alloc_type, dsize);
+                data = jitc_malloc(backend, dsize);
         } else if (alloc_size < dsize) {
             alloc_size = dsize;
             jitc_log(LogLevel::Debug, "    re-allocating output of size %zu.",
                      dsize);
             if (!dry_run) {
                 jitc_free(data);
-                data = jitc_malloc(alloc_type, dsize);
+                data = jitc_malloc(backend, dsize);
             }
         } else {
             // Do not reallocate if the size is enough
@@ -846,7 +843,7 @@ void RecordThreadState::record_launch(
         size_t hit_group_size = optix_sbt->hitgroupRecordStrideInBytes *
                                 optix_sbt->hitgroupRecordCount;
         op.sbt->hitgroupRecordBase =
-            jitc_malloc(AllocType::Device, hit_group_size);
+            jitc_malloc(JitBackend::CUDA, hit_group_size);
         jitc_memcpy(backend, op.sbt->hitgroupRecordBase,
                     optix_sbt->hitgroupRecordBase, hit_group_size);
 
@@ -854,7 +851,7 @@ void RecordThreadState::record_launch(
         size_t miss_group_size =
             optix_sbt->missRecordStrideInBytes * optix_sbt->missRecordCount;
         op.sbt->missRecordBase =
-            jitc_malloc(AllocType::Device, miss_group_size);
+            jitc_malloc(JitBackend::CUDA, miss_group_size);
         jitc_memcpy(backend, op.sbt->missRecordBase, optix_sbt->missRecordBase,
                     miss_group_size);
     }
@@ -2125,10 +2122,8 @@ int Recording::replay_aggregate(Operation &op) {
     // of this function.
     if (dry_run)
         agg = (AggregationEntry *) malloc_check(agg_size);
-    else if (backend == JitBackend::CUDA || backend == JitBackend::Metal)
-        agg = (AggregationEntry *) jitc_malloc(AllocType::HostPinned, agg_size, backend);
     else
-        agg = (AggregationEntry *) malloc_check(agg_size);
+        agg = (AggregationEntry *) jitc_malloc(backend, agg_size, /*shared=*/true);
 
     AggregationEntry *p = agg;
 
@@ -2178,11 +2173,12 @@ int Recording::replay_aggregate(Operation &op) {
     jitc_log(LogLevel::Debug, "    aggregate(dst=%p, agg=%p, size=%u)",
              dst_rv.data, agg, (uint32_t) (p - agg));
 
-    if (!dry_run)
-        ts->aggregate(dst_rv.data, agg, (uint32_t) (p - agg));
-
-    if (dry_run)
+    if (dry_run) {
         free(agg);
+    } else {
+        ts->aggregate(dst_rv.data, agg, (uint32_t) (p - agg));
+        jitc_free(agg);
+    }
 
     return true;
 }
@@ -2337,9 +2333,7 @@ uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
     jitc_log(LogLevel::Debug, "capture_call_offset(ptr=%p, dsize=%zu)", ptr, dsize);
     uint32_t size = (uint32_t) dsize / type_size[(uint32_t) VarType::UInt64];
 
-    AllocType atype =
-        jitc_is_device_backend(backend) ? AllocType::Device : AllocType::HostAsync;
-    uint64_t *data = (uint64_t *) jitc_malloc(atype, dsize);
+    uint64_t *data = (uint64_t *) jitc_malloc(backend, dsize);
     jitc_memcpy(backend, data, ptr, dsize);
 
     uint32_t data_var =
