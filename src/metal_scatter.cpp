@@ -123,12 +123,6 @@ void jitc_metal_render_scatter(Variable *v) {
                        "not support the requested type of atomic reduction "
                        "(64-bit atomics are not available on Metal).");
 
-        if (vt == VarType::Float64)
-            jitc_raise("jitc_metal_render_scatter(): atomic Float64 (DD) "
-                       "scatter-reduce is not supported on Metal "
-                       "(MetalEmulateFloat64 lacks 128-bit CAS). Use a "
-                       "non-atomic scatter or reduce on the host.");
-
         // CAS loop fallback for float min/max/mul, half, etc.
         // MSL atomic_compare_exchange_weak_explicit returns bool and
         // updates the expected value in-place on failure.
