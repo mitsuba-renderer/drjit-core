@@ -12,6 +12,7 @@
 
 #include "metal.h"
 #include "metal_api.h"
+#include "metal_eval.h"
 #include "metal_stage_buffer.h"
 #include "internal.h"
 #include "log.h"
@@ -502,45 +503,45 @@ bool jitc_metal_compile(const char *source, size_t /*source_size*/,
                   "the compiled library.", kernel_name);
 
     // ---- Pipeline creation -------------------------------------------------
-    // If a scene with custom intersection functions is being compiled
-    // against, we link its [[intersection(bounding_box, instancing)]]
-    // functions into the compute pipeline so the kernel's
-    // intersector<...> calls can dispatch to them. The actual
-    // MTLIntersectionFunctionTable is built lazily at launch time per
-    // scene (in jitc_metal_get_or_create_ift_for_scene) — the pipeline
-    // itself is shared across all scenes that produce identical kernel
-    // sources + linked-function lists.
+    // Link the union of custom intersection functions across every scene
+    // registered with this kernel (collected by ``jitc_metal_assemble``'s
+    // pre-walk into ``metal_kernel_scenes``). MTLLinkedFunctions applies
+    // to the entire PSO, not per-IFT, so scenes with disjoint function
+    // name sets must all contribute. Per-scene IFTs are built lazily at
+    // launch time in ``jitc_metal_get_or_create_ift_for_scene``.
+    //
+    // Dedup by name only, consistent with how the link-identity comment
+    // in the MSL source identifies scenes for cache-key purposes (see
+    // ``jitc_metal_render`` TraceRay arm): names are assumed unique per
+    // implementation within a process.
     err = nullptr;
     MTL::ComputePipelineState *pso = nullptr;
 
-    MetalScene *scene = jitc_metal_active_scene();
-    auto *isect_lib = scene ? (MTL::Library *) scene->intersection_fn_library
-                            : nullptr;
-    uint32_t n_ift = scene ? (uint32_t) scene->intersection_fn_names.size() : 0u;
-
-    if (isect_lib && n_ift > 0) {
-        // Resolve unique function names (strip duplicates so we don't link
-        // the same MTL::Function twice — entries in the IFT may share
-        // functions).
-        std::vector<MTL::Function *> linked_fns;
-        linked_fns.reserve(n_ift);
-        std::unordered_map<std::string, MTL::Function *> seen;
-        for (uint32_t i = 0; i < n_ift; ++i) {
-            const std::string &name = scene->intersection_fn_names[i];
-            if (seen.count(name))
+    std::vector<MTL::Function *> linked_fns;
+    std::vector<std::string> seen;
+    for (MetalScene *scene : metal_kernel_scenes) {
+        auto *isect_lib = scene ? (MTL::Library *) scene->intersection_fn_library
+                                : nullptr;
+        if (!isect_lib)
+            continue;
+        for (const std::string &name : scene->intersection_fn_names) {
+            if (std::find(seen.begin(), seen.end(), name) != seen.end())
                 continue;
+            seen.push_back(name);
             NS::String *nstr =
                 NS::String::string(name.c_str(), NS::UTF8StringEncoding);
             MTL::Function *f = isect_lib->newFunction(nstr);
             if (!f) {
+                for (auto *prev : linked_fns) prev->release();
                 lib->release();
                 jitc_fail("jitc_metal_compile(): intersection function \"%s\" "
                           "not found in user-supplied library.", name.c_str());
             }
             linked_fns.push_back(f);
-            seen[name] = f;
         }
+    }
 
+    if (!linked_fns.empty()) {
         NS::Array *fn_array = NS::Array::array(
             (const NS::Object *const *) linked_fns.data(),
             linked_fns.size());
@@ -556,7 +557,6 @@ bool jitc_metal_compile(const char *source, size_t /*source_size*/,
         pso = dev->newComputePipelineState(desc, MTL::PipelineOptionNone,
                                             nullptr, &err);
 
-        // Release intermediate objects.
         desc->release();
         lf->release();
         for (auto *f : linked_fns)

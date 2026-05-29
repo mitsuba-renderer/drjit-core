@@ -197,7 +197,7 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey * /*key*/,
     // Two-phase binding: accels at slots [1, 1+N), then IFTs at the next
     // available slots — only for scenes that actually have an
     // ``intersection_fn_library``. Matches ``jitc_metal_finalize_scene_layout()``
-    // in eval.cpp, which assigns the same layout at signature-emit time.
+    // in metal_eval.cpp, which assigns the same layout at signature-emit time.
     //
     // Pass 1: bind accels.
     std::vector<MetalScene *> resolved(n_scenes, nullptr);

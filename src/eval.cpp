@@ -108,46 +108,6 @@ bool uses_metal_rt = false;
 bool uses_simdgroup_matrix = false;
 uint32_t simdgroup_tgm_floats = 0;
 
-#if defined(DRJIT_ENABLE_METAL)
-#include "metal.h"
-
-std::vector<MetalScene *> metal_kernel_scenes;
-std::unordered_map<MetalScene *, uint32_t> metal_kernel_scene_slot;
-std::vector<int32_t> metal_kernel_ift_slot;
-uint32_t metal_kernel_buffer_count = 0;
-
-uint32_t metal_register_kernel_scene(MetalScene *scene) {
-    if (!scene)
-        return 0;
-    auto it = metal_kernel_scene_slot.find(scene);
-    if (it != metal_kernel_scene_slot.end())
-        return it->second;
-    uint32_t slot = (uint32_t) metal_kernel_scenes.size();
-    metal_kernel_scenes.push_back(scene);
-    metal_kernel_scene_slot.emplace(scene, slot);
-    return slot;
-}
-
-void jitc_metal_finalize_scene_layout() {
-    uint32_t n = (uint32_t) metal_kernel_scenes.size();
-    metal_kernel_ift_slot.assign(n, -1);
-    if (n == 0) {
-        metal_kernel_buffer_count = 0;
-        return;
-    }
-    // Layout: [[buffer(0)]] = params, [[buffer(1)]]..[[buffer(N)]] = accels,
-    // [[buffer(N+1)]]..[[buffer(N+M)]] = IFTs (only for scenes that have one).
-    uint32_t next = 1u + n;
-    for (uint32_t i = 0; i < n; ++i) {
-        if (metal_kernel_scenes[i] &&
-            metal_kernel_scenes[i]->intersection_fn_library) {
-            metal_kernel_ift_slot[i] = (int32_t) next++;
-        }
-    }
-    metal_kernel_buffer_count = next;
-}
-#endif
-
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 int32_t alloca_size = -1;
 int32_t alloca_align = -1;
@@ -348,10 +308,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     uses_simdgroup_matrix = false;
     simdgroup_tgm_floats = 0;
 #if defined(DRJIT_ENABLE_METAL)
-    metal_kernel_scenes.clear();
-    metal_kernel_scene_slot.clear();
-    metal_kernel_ift_slot.clear();
-    metal_kernel_buffer_count = 0;
+    jitc_metal_assemble_reset();
 #endif
     kernel_history_entry = { };
 
@@ -664,21 +621,6 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 #endif
 
-#if defined(DRJIT_ENABLE_METAL)
-    // Mix the active scene's IFT identity into the cache key so different
-    // intersection-function configurations (per-scene blueprint) produce
-    // different cached pipelines. The active scene is determined by
-    // jitc_metal_assemble (schedule walk over TraceRay nodes).
-    if (ts->backend == JitBackend::Metal) {
-        MetalScene *scene = (MetalScene *) ts->metal_active_scene;
-        if (scene && scene->intersection_fn_library) {
-            flags ^= (uint64_t) (uintptr_t) scene->intersection_fn_library;
-            flags ^= (uint64_t) scene->intersection_fn_names.size() << 16;
-            flags ^= (uint64_t) scene->geometry_types_mask << 24;
-        }
-    }
-#endif
-
     KernelKey kernel_key((char *) buffer.get(), kernel_hash.high64, ts->device,
                          flags);
     auto it = state.kernel_cache.find(kernel_key);
@@ -725,25 +667,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         }
 
 #if defined(DRJIT_ENABLE_METAL)
-        if (ts->backend == JitBackend::Metal) {
-            // Persist the per-kernel ``MetalScene*`` list (populated by
-            // ``jitc_metal_assemble``'s pre-walk into ``metal_kernel_scenes``)
-            // into the cached ``Kernel`` so that frozen-function replay
-            // (which skips re-assemble) can still bind the right TLASes /
-            // IFTs at launch. Slot order is preserved — index ``i`` here
-            // is the same slot used by ``accel_<i>`` and (if applicable)
-            // ``ift_<i>`` in the generated MSL.
-            delete[] kernel.metal.scenes;
-            uint32_t n = (uint32_t) metal_kernel_scenes.size();
-            if (n > 0) {
-                kernel.metal.scenes = new void *[n];
-                for (uint32_t i = 0; i < n; ++i)
-                    kernel.metal.scenes[i] = metal_kernel_scenes[i];
-            } else {
-                kernel.metal.scenes = nullptr;
-            }
-            kernel.metal.scene_count = n;
-        }
+        if (ts->backend == JitBackend::Metal)
+            jitc_metal_persist_kernel_scenes(kernel);
 #endif
 
 #if defined(DRJIT_ENABLE_CUDA)
