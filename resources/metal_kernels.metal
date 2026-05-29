@@ -29,50 +29,6 @@ inline long simd_shuffle_xor(long v, ushort mask) {
     return (long)simd_shuffle_xor((ulong)v, mask);
 }
 
-// MSL allows `simd_shuffle_xor(float2, ushort)` in principle, but on some
-// devices the codegen miscompiles or the shader hangs. Provide an explicit
-// componentwise shuffle for `float2` (= dd_t) so the DD reduction kernels
-// behave consistently.
-inline float2 simd_shuffle_xor(float2 v, ushort mask) {
-    return float2(simd_shuffle_xor(v.x, mask),
-                  simd_shuffle_xor(v.y, mask));
-}
-
-// ============================================================================
-//  Float64 emulation via double-double (DD) -- two-float pair (hi, lo).
-//  Mirrors the helpers injected from src/metal_dd_preamble.h, but lives here
-//  so the precompiled utility kernels (block_reduce, etc.) can operate on
-//  Float64 when JitFlag::MetalEmulateFloat64 is enabled.
-// ============================================================================
-typedef float2 dd_t;
-
-inline dd_t dd_two_sum(float a, float b) {
-    float s  = a + b;
-    float bb = s - a;
-    float e  = (a - (s - bb)) + (b - bb);
-    return dd_t(s, e);
-}
-inline dd_t dd_fast_two_sum(float a, float b) {
-    float s = a + b;
-    float e = b - (s - a);
-    return dd_t(s, e);
-}
-inline dd_t dd_neg(dd_t a) { return dd_t(-a.x, -a.y); }
-inline dd_t dd_add(dd_t a, dd_t b) {
-    dd_t s = dd_two_sum(a.x, b.x);
-    dd_t t = dd_two_sum(a.y, b.y);
-    s.y += t.x;
-    s   = dd_fast_two_sum(s.x, s.y);
-    s.y += t.y;
-    s   = dd_fast_two_sum(s.x, s.y);
-    return s;
-}
-inline dd_t dd_sub(dd_t a, dd_t b) { return dd_add(a, dd_neg(b)); }
-inline bool dd_lt(dd_t a, dd_t b) { return a.x < b.x || (a.x == b.x && a.y < b.y); }
-inline bool dd_gt(dd_t a, dd_t b) { return a.x > b.x || (a.x == b.x && a.y > b.y); }
-inline dd_t dd_min(dd_t a, dd_t b) { return dd_lt(a, b) ? a : b; }
-inline dd_t dd_max(dd_t a, dd_t b) { return dd_gt(a, b) ? a : b; }
-
 // ============================================================================
 //  Reduction operators
 // ============================================================================
@@ -117,29 +73,6 @@ template <typename T> struct reduction_or {
 template <typename T> struct reduction_and {
     static T init() { return ~T(0); }
     static T apply(T a, T b) { return a & b; }
-};
-
-// DD specializations: Float64 emulation. reduction_add uses the precise
-// dd_add helper (not raw float2 + float2). min/max use lex comparison.
-//
-// Precision note: dd_add follows Bailey's Algorithm 6 (Hida et al. 2007),
-// which is accurate to ~2 ulp DD when the operands are well-separated in
-// magnitude. Long reductions over inputs with mixed scales (e.g. 1e16 + 1.0)
-// can still lose the small contributions during the residual-merge step
-// `s.y += t.x`. For exact sums regardless of scale, a Kahan-Babuska-Neumaier
-// accumulator would be needed -- intentionally not implemented here because
-// it doubles the per-step cost.
-template <> struct reduction_add<dd_t> {
-    static dd_t init() { return dd_t(0.0f, 0.0f); }
-    static dd_t apply(dd_t a, dd_t b) { return dd_add(a, b); }
-};
-template <> struct reduction_min<dd_t> {
-    static dd_t init() { return dd_t(INFINITY, 0.0f); }
-    static dd_t apply(dd_t a, dd_t b) { return dd_min(a, b); }
-};
-template <> struct reduction_max<dd_t> {
-    static dd_t init() { return dd_t(-INFINITY, 0.0f); }
-    static dd_t apply(dd_t a, dd_t b) { return dd_max(a, b); }
 };
 
 // ============================================================================
@@ -302,11 +235,6 @@ INSTANTIATE_RED("max_i64",  long,   reduction_max)
 // uint8 (used for boolean and/or reductions)
 INSTANTIATE_RED("or_u8",    uchar,  reduction_or)
 INSTANTIATE_RED("and_u8",   uchar,  reduction_and)
-
-// float64 (DD emulation; no mul -- the DD product would be a separate kernel)
-INSTANTIATE_RED("add_f64dd", dd_t, reduction_add)
-INSTANTIATE_RED("min_f64dd", dd_t, reduction_min)
-INSTANTIATE_RED("max_f64dd", dd_t, reduction_max)
 
 // ============================================================================
 //  block_prefix_reduce — inclusive / exclusive prefix scan within blocks

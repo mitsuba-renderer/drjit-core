@@ -521,8 +521,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     // Replace '^'s in '__raygen__^^^..' or 'drjit_^^^..' with hash.
     // Search for the kernel-name marker rather than the first '^', because
-    // injected preamble code (e.g. metal_dd_preamble) may contain '^' in
-    // comments that must not be overwritten.
+    // injected preamble code may contain '^' in comments that must not be
+    // overwritten.
     kernel_hash = hash_kernel(buffer.get());
 
     const char *needle =

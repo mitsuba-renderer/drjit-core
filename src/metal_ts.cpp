@@ -516,7 +516,6 @@ static const char *metal_type_suffix(VarType vt) {
         case VarType::Int32:   return "i32";
         case VarType::UInt64:  return "u64";
         case VarType::Int64:   return "i64";
-        case VarType::Float64: return "f64dd";  // DD-emulated reductions
         default: return nullptr;
     }
 }
@@ -894,15 +893,9 @@ void MetalThreadState::reduce_dot(VarType vt, const void *ptr_1,
     if (size == 0) return;
 
     const char *type_suffix = metal_type_suffix(vt);
-    if (!type_suffix) {
-        if (vt == VarType::Float64)
-            jitc_raise("MetalThreadState::reduce_dot(): Float64 (DD) dot "
-                       "reductions are not yet implemented on Metal. "
-                       "Workaround: compute element-wise products and reduce "
-                       "via dr.sum(), or move to host.");
+    if (!type_suffix)
         jitc_raise("MetalThreadState::reduce_dot(): unsupported type %s.",
                    type_name[(int) vt]);
-    }
 
     char kernel_name[64];
     snprintf(kernel_name, sizeof(kernel_name), "reduce_dot_%s", type_suffix);
@@ -1029,12 +1022,6 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
 
     bool type_ok = (vt == VarType::Float16 || vt == VarType::Float32);
     if (!type_ok) {
-        if (vt == VarType::Float64)
-            jitc_raise("MetalThreadState::batched_gemm(): Float64 (DD) GEMM "
-                       "is not implemented. Apple's Metal Performance Shaders "
-                       "(MPS) library has no FP64 path; a hand-rolled DD GEMM "
-                       "kernel would be required. Workaround: cast to Float32 "
-                       "for the matmul.");
         if (vt == VarType::Int32 || vt == VarType::UInt32)
             jitc_raise("jit_batched_gemm(): integer GEMM unsupported on the "
                        "Metal backend (only Float16 and Float32 are "

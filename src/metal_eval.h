@@ -66,9 +66,8 @@ extern void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
 /// Append an MSL helper definition to the kernel's global preamble (deduped
 /// by content hash via jitc_register_global). Use for on-demand emission of
-/// helpers like the dd_* Float64 primitives — only the helpers actually
-/// referenced by a kernel land in its source. Mirrors cuda_eval.h /
-/// llvm_eval.h.
+/// helpers so that only the ones actually referenced by a kernel land in its
+/// source. Mirrors cuda_eval.h / llvm_eval.h.
 #define fmt_intrinsic(fmt, ...)                                                \
     do {                                                                       \
         size_t tmpoff = buffer.size();                                         \

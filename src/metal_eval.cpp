@@ -46,7 +46,6 @@
 #include "metal_scatter.h"
 #include "metal_array.h"
 #include "metal_coop_vec.h"
-#include "metal_dd_preamble.h"
 #include "array.h"
 #include "trace.h"
 #include "call.h"
@@ -260,13 +259,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         put("]\n");
     }
 
-    // Float64 (double-double) helpers are emitted on demand: each codegen
-    // site in jitc_metal_render_dd registers exactly the dd_* helpers it
-    // references via fmt_intrinsic, and jitc_register_global dedups them.
-    // Kernels that don't touch Float64 emit zero dd_* text.
-    bool dd_enabled = (jitc_flags() &
-                       (uint32_t) JitFlag::MetalEmulateFloat64) != 0;
-
     // -------------------------------------------------------------------
     //   2. Kernel entry point
     //
@@ -338,16 +330,13 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         VarKind kind = (VarKind) v->kind;
         ParamType ptype = (ParamType) v->param_type;
 
-        // Float64 only reaches codegen when DD emulation is enabled (the
-        // demotion path in jitc_var_new strips Float64 otherwise). If we
-        // ever see a Float64 variable with the flag OFF, it's a bug --
-        // either an evaluated buffer slipped past the demotion, or the
-        // flag was toggled mid-computation. Fail loudly with guidance.
-        if ((VarType) v->type == VarType::Float64 && !dd_enabled)
+        // Apple GPUs have no hardware FP64, so Float64 is promoted to
+        // Float32 at variable creation (see jitc_var_new) and never reaches
+        // codegen. Seeing one here means a variable slipped past promotion.
+        if ((VarType) v->type == VarType::Float64)
             jitc_fail("jitc_metal_assemble(): a Float64 variable (r%u) "
-                      "reached MSL codegen with JitFlag::MetalEmulateFloat64 "
-                      "OFF. Either enable the flag (slow but precise) or "
-                      "cast the variable to Float32 before evaluation.",
+                      "reached MSL codegen; it should have been promoted to "
+                      "Float32 at creation. This is an internal error.",
                       index);
 
         // Declare output variables for TraceRay nodes before they're used
@@ -377,19 +366,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
                     fmt_metal("    $t $v = as_type<float>($lu);\n", v, v, v);
                 } else if (vt == VarType::Float16) {
                     fmt_metal("    $t $v = as_type<half>((ushort) $lu);\n", v, v, v);
-                } else if (vt == VarType::Float64) {
-                    // DD literal: split the IEEE 754 double bit-pattern into a
-                    // (hi, lo) float pair, then materialize via dd_from_bits.
-                    double d;
-                    memcpy(&d, &v->literal, sizeof(double));
-                    float hi = (float) d;
-                    float lo = (float) (d - (double) hi);
-                    uint32_t hi_bits, lo_bits;
-                    memcpy(&hi_bits, &hi, sizeof(float));
-                    memcpy(&lo_bits, &lo, sizeof(float));
-                    drjit::register_dd_from_bits();
-                    fmt_metal("    dd_t $v = dd_from_bits(0x$xu, 0x$xu);\n",
-                              v, hi_bits, lo_bits);
                 } else {
                     fmt_metal("    $t $v = ($t) $lu;\n", v, v, v, v);
                 }
@@ -399,10 +375,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
             // ``device const T* p<r> = *(device const T* device const*)
             //  (params + offset);``
             // ``T v<r> = (size > 1) ? p<r>[r0] : *p<r>;``
-            // For Float64 the `$t` formatter emits `dd_t` (= float2), so we
-            // register the typedef even when no dd_* helper is touched.
-            if ((VarType) v->type == VarType::Float64)
-                drjit::register_dd_t();
             fmt_metal("    device const $t* p$v = "
                       "*(device const $t* device const*)(params + $o);\n",
                       v, v, v, v);
@@ -424,8 +396,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         jitc_metal_render(v);
 
         if (ptype == ParamType::Output) {
-            if ((VarType) v->type == VarType::Float64)
-                drjit::register_dd_t();
             fmt_metal("    device $t* p$v = "
                       "*(device $t* device const*)(params + $o);\n",
                       v, v, v, v);
@@ -542,186 +512,6 @@ static void jitc_metal_render_call(Variable *v, const char *fn,
     put(");\n");
 }
 
-// ----------------------------------------------------------------------------
-//  Float64 (DD) codegen
-//
-//  When JitFlag::MetalEmulateFloat64 is enabled, Float64 variables are
-//  represented as `dd_t` (= float2) and lowered via helpers from
-//  metal_dd_preamble.h. Each branch below calls the matching
-//  drjit::register_dd_*() before emitting its dd_*(...) use, which appends
-//  the helper (and any transitive dependencies) to the kernel's global
-//  preamble via fmt_intrinsic. jitc_register_global dedups by content
-//  hash, so only the helpers actually referenced land in the kernel.
-//
-//  This routine handles the VarKinds whose default codegen (componentwise
-//  float2 operators, plain casts, etc.) would produce wrong results.
-//  Other VarKinds either fall through and work correctly (the dd_t bits
-//  are opaque under Gather/Scatter/Select/Move/Copy), or are rejected
-//  with a clear error.
-//
-//  Returns true if the VarKind was handled here.
-// ----------------------------------------------------------------------------
-static bool jitc_metal_render_dd(Variable *v) {
-    auto bin = [&](void (*reg)(), const char *fn) {
-        reg();
-        Variable *a = jitc_var(v->dep[0]);
-        Variable *b = jitc_var(v->dep[1]);
-        fmt_metal("    dd_t $v = $s($v, $v);\n", v, fn, a, b);
-    };
-    auto unary = [&](void (*reg)(), const char *fn) {
-        reg();
-        Variable *a = jitc_var(v->dep[0]);
-        fmt_metal("    dd_t $v = $s($v);\n", v, fn, a);
-    };
-    auto cmp = [&](void (*reg)(), const char *fn) {
-        reg();
-        Variable *a = jitc_var(v->dep[0]);
-        Variable *b = jitc_var(v->dep[1]);
-        fmt_metal("    bool $v = $s($v, $v);\n", v, fn, a, b);
-    };
-
-    switch ((VarKind) v->kind) {
-        case VarKind::Literal: {
-            // Out-of-input-load literal: re-emit dd_from_bits using the
-            // stored 64-bit double pattern.
-            double d;
-            memcpy(&d, &v->literal, sizeof(double));
-            float hi = (float) d;
-            float lo = (float) (d - (double) hi);
-            uint32_t hi_bits, lo_bits;
-            memcpy(&hi_bits, &hi, sizeof(float));
-            memcpy(&lo_bits, &lo, sizeof(float));
-            drjit::register_dd_from_bits();
-            fmt_metal("    dd_t $v = dd_from_bits(0x$xu, 0x$xu);\n",
-                      v, hi_bits, lo_bits);
-            return true;
-        }
-
-        case VarKind::Add: bin(drjit::register_dd_add, "dd_add"); return true;
-        case VarKind::Sub: bin(drjit::register_dd_sub, "dd_sub"); return true;
-        case VarKind::Mul: bin(drjit::register_dd_mul, "dd_mul"); return true;
-        case VarKind::Min: bin(drjit::register_dd_min, "dd_min"); return true;
-        case VarKind::Max: bin(drjit::register_dd_max, "dd_max"); return true;
-        case VarKind::Neg: unary(drjit::register_dd_neg, "dd_neg"); return true;
-        case VarKind::Abs: unary(drjit::register_dd_abs, "dd_abs"); return true;
-
-        case VarKind::Fma: {
-            drjit::register_dd_fma();
-            Variable *a0 = jitc_var(v->dep[0]),
-                     *a1 = jitc_var(v->dep[1]),
-                     *a2 = jitc_var(v->dep[2]);
-            fmt_metal("    dd_t $v = dd_fma($v, $v, $v);\n",
-                      v, a0, a1, a2);
-            return true;
-        }
-
-        case VarKind::Eq:  cmp(drjit::register_dd_eq, "dd_eq"); return true;
-        case VarKind::Neq: cmp(drjit::register_dd_ne, "dd_ne"); return true;
-        case VarKind::Lt:  cmp(drjit::register_dd_lt, "dd_lt"); return true;
-        case VarKind::Le:  cmp(drjit::register_dd_le, "dd_le"); return true;
-        case VarKind::Gt:  cmp(drjit::register_dd_gt, "dd_gt"); return true;
-        case VarKind::Ge:  cmp(drjit::register_dd_ge, "dd_ge"); return true;
-
-        case VarKind::Cast: {
-            // Cast TO Float64 (v->type == Float64): wrap source via dd_from_*
-            // Cast FROM Float64 (a->type == Float64): unwrap via dd_to_*
-            Variable *a = jitc_var(v->dep[0]);
-            VarType src_t = (VarType) a->type;
-            VarType dst_t = (VarType) v->type;
-
-            if (dst_t == VarType::Float64) {
-                const char *from = nullptr;
-                void (*reg)() = nullptr;
-                switch (src_t) {
-                    case VarType::Float32:
-                        from = "dd_from_f32"; reg = drjit::register_dd_from_f32; break;
-                    case VarType::Float16:
-                        from = "dd_from_half"; reg = drjit::register_dd_from_half; break;
-                    case VarType::Int8:
-                    case VarType::Int16:
-                    case VarType::Int32:
-                        from = "dd_from_i32"; reg = drjit::register_dd_from_i32; break;
-                    case VarType::UInt8:
-                    case VarType::UInt16:
-                    case VarType::UInt32:
-                        from = "dd_from_u32"; reg = drjit::register_dd_from_u32; break;
-                    case VarType::Int64:
-                        from = "dd_from_i64"; reg = drjit::register_dd_from_i64; break;
-                    case VarType::UInt64:
-                        from = "dd_from_u64"; reg = drjit::register_dd_from_u64; break;
-                    case VarType::Bool:
-                        from = "dd_from_bool"; reg = drjit::register_dd_from_bool; break;
-                    case VarType::Float64:
-                        // Identity (rare, but valid).
-                        fmt_metal("    dd_t $v = $v;\n", v, a);
-                        return true;
-                    default:
-                        jitc_fail("jitc_metal_render_dd(): unsupported "
-                                  "Cast source type for Float64 dest.");
-                }
-                reg();
-                fmt_metal("    dd_t $v = $s($v);\n", v, from, a);
-                return true;
-            }
-
-            if (src_t == VarType::Float64) {
-                const char *to = nullptr;
-                void (*reg)() = nullptr;
-                switch (dst_t) {
-                    case VarType::Float32:
-                        to = "dd_to_f32"; reg = drjit::register_dd_to_f32; break;
-                    case VarType::Float16:
-                        to = "dd_to_half"; reg = drjit::register_dd_to_half; break;
-                    case VarType::Int8:
-                    case VarType::Int16:
-                    case VarType::Int32:
-                        to = "dd_to_i32"; reg = drjit::register_dd_to_i32; break;
-                    case VarType::UInt8:
-                    case VarType::UInt16:
-                    case VarType::UInt32:
-                        to = "dd_to_u32"; reg = drjit::register_dd_to_u32; break;
-                    case VarType::Int64:
-                        to = "dd_to_i64"; reg = drjit::register_dd_to_i64; break;
-                    case VarType::UInt64:
-                        to = "dd_to_u64"; reg = drjit::register_dd_to_u64; break;
-                    case VarType::Bool:
-                        to = "dd_to_bool"; reg = drjit::register_dd_to_bool; break;
-                    default:
-                        jitc_fail("jitc_metal_render_dd(): unsupported "
-                                  "Cast dest type from Float64.");
-                }
-                reg();
-                fmt_metal("    $t $v = $s($v);\n", v, v, to, a);
-                return true;
-            }
-            return false;
-        }
-
-        case VarKind::Div:
-        case VarKind::DivApprox: bin(drjit::register_dd_div, "dd_div"); return true;
-        case VarKind::Rcp:
-        case VarKind::RcpApprox: unary(drjit::register_dd_rcp, "dd_rcp"); return true;
-        case VarKind::Sqrt:
-        case VarKind::SqrtApprox: unary(drjit::register_dd_sqrt, "dd_sqrt"); return true;
-        case VarKind::RSqrtApprox: unary(drjit::register_dd_rsqrt, "dd_rsqrt"); return true;
-        case VarKind::Sin:  unary(drjit::register_dd_sin,  "dd_sin");  return true;
-        case VarKind::Cos:  unary(drjit::register_dd_cos,  "dd_cos");  return true;
-        case VarKind::Exp2: unary(drjit::register_dd_exp2, "dd_exp2"); return true;
-        case VarKind::Log2: unary(drjit::register_dd_log2, "dd_log2"); return true;
-        case VarKind::Tanh: unary(drjit::register_dd_tanh, "dd_tanh"); return true;
-        case VarKind::Ceil:  unary(drjit::register_dd_ceil,  "dd_ceil");  return true;
-        case VarKind::Floor: unary(drjit::register_dd_floor, "dd_floor"); return true;
-        case VarKind::Round: unary(drjit::register_dd_round, "dd_round"); return true;
-        case VarKind::Trunc: unary(drjit::register_dd_trunc, "dd_trunc"); return true;
-
-        case VarKind::Mod: bin(drjit::register_dd_mod, "dd_mod"); return true;
-
-        default:
-            return false;  // fall through to default switch
-    }
-}
-
-
 static void jitc_metal_render(Variable *v) {
     if (v->coop_vec) {
         Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
@@ -729,32 +519,6 @@ static void jitc_metal_render(Variable *v) {
                  *a2 = v->dep[2] ? jitc_var(v->dep[2]) : nullptr,
                  *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
         return jitc_metal_render_coop_vec(v, a0, a1, a2, a3);
-    }
-
-    // Float64 (DD) lowering: intercept VarKinds whose default codegen would
-    // produce wrong results on a `dd_t = float2`. Compares are dispatched
-    // here when the *operands* are Float64 (the result is Bool); arithmetic
-    // and casts are dispatched when the result type is Float64. The helper
-    // returns false for VarKinds it doesn't claim, in which case we fall
-    // through to the default switch (Gather, Scatter, Select work as-is).
-    bool is_f64_result = (VarType) v->type == VarType::Float64;
-    bool dep0_is_f64 =
-        v->dep[0] && (VarType) jitc_var(v->dep[0])->type == VarType::Float64;
-    // Any time we touch a Float64 var we'll emit `dd_t` somewhere via the
-    // `$t` formatter — register the typedef once per kernel so the DD
-    // helpers compile even when no dd_* call is involved.
-    if (is_f64_result || dep0_is_f64)
-        drjit::register_dd_t();
-    if (is_f64_result || (dep0_is_f64 &&
-                          ((VarKind) v->kind == VarKind::Eq ||
-                           (VarKind) v->kind == VarKind::Neq ||
-                           (VarKind) v->kind == VarKind::Lt ||
-                           (VarKind) v->kind == VarKind::Le ||
-                           (VarKind) v->kind == VarKind::Gt ||
-                           (VarKind) v->kind == VarKind::Ge ||
-                           (VarKind) v->kind == VarKind::Cast))) {
-        if (jitc_metal_render_dd(v))
-            return;
     }
 
     switch ((VarKind) v->kind) {
@@ -1455,9 +1219,6 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
                       v, v, v, v, v, v, v);
         }
 
-        if (vt == VarType::Float64)
-            drjit::register_dd_t();
-
         if (kind == VarKind::Counter) {
             fmt_metal("    $t $v = ($t) index;\n", v, v, v);
         } else if (kind == VarKind::CallInput) {
@@ -1530,9 +1291,6 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
         if (offset == (uint32_t) -1)
             continue;
 
-        if ((VarType) v->type == VarType::Float64)
-            drjit::register_dd_t();
-
         if ((VarType) v->type != VarType::Bool)
             fmt_metal("    *(thread $t*)(result + $u) = $v;\n",
                       v, offset, v);
@@ -1574,9 +1332,6 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
                     (v->is_literal() || v_in->ref_count == 1));
             if (unused)
                 continue;
-
-            if ((VarType) v->type == VarType::Float64)
-                drjit::register_dd_t();
 
             if ((VarType) v->type != VarType::Bool)
                 fmt_metal("    *(thread $t*)(_in_$u + $u) = $v;\n",
@@ -1706,9 +1461,6 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
         uint32_t offset = call->out_offset[i];
         if (offset == (uint32_t) -1)
             continue;
-
-        if ((VarType) v->type == VarType::Float64)
-            drjit::register_dd_t();
 
         if ((VarType) v->type != VarType::Bool)
             fmt_metal("    $t $v = *(thread const $t*)(_out_$u + $u);\n",

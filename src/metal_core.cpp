@@ -313,9 +313,8 @@ static bool jitc_metal_load_utility_kernels(MetalDevice &md) {
 
     MTL::CompileOptions *opts = MTL::CompileOptions::alloc()->init();
     opts->setLanguageVersion(MTL::LanguageVersion3_0);
-    // Fast math is OFF: the DD (double-double) helpers used by Float64
-    // reductions rely on Knuth-style TwoSum, which the compiler would
-    // otherwise reassociate away ((a + b) - a == b becomes 0).
+    // Fast math is OFF so the precompiled reduction kernels are not
+    // reassociated in surprising ways (e.g. (a + b) - a collapsing to b).
     opts->setFastMathEnabled(false);
 
     MTL::Library *lib = dev->newLibrary(src, opts, &err);

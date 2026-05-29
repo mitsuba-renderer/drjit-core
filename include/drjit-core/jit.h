@@ -1687,14 +1687,6 @@ enum class JitFlag : uint32_t {
     /// Spill registers under pressure into shared memory
     SpillToSharedMemory = 1 << 24,
 
-    /// Emulate Float64 on the Metal backend using double-double (DD) arithmetic
-    /// (a pair of float32 values per scalar). When this flag is OFF (default),
-    /// Metal silently demotes Float64 to Float32 -- a one-shot warning is logged
-    /// the first time this happens. When ON, Float64 variables are preserved
-    /// and lowered to MSL via the DD helpers in metal_dd_preamble.h. Apple GPUs
-    /// have no hardware FP64; emulation is ~10x slower than native Float32.
-    MetalEmulateFloat64 = 1 << 25,
-
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
@@ -1739,8 +1731,7 @@ enum JitFlag {
     JitFlagFreezingScope = 1 << 21,
     JitFlagEnableObjectTraversal = 1 << 22,
     JitFlagShaderExecutionReordering = 1 << 23,
-    JitFlagSpillToSharedMemory = 1 << 24,
-    JitFlagMetalEmulateFloat64 = 1 << 25
+    JitFlagSpillToSharedMemory = 1 << 24
 };
 #endif
 
