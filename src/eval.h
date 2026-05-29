@@ -13,7 +13,6 @@
 #include "strbuf.h"
 #include <map>
 #include <vector>
-#include <unordered_map>
 
 /// A single variable that is scheduled to execute for a launch with 'size' entries
 struct ScheduledVariable {
@@ -87,55 +86,8 @@ extern bool uses_optix;
 /// Does this Metal kernel use ray tracing?
 extern bool uses_metal_rt;
 
-#if defined(DRJIT_ENABLE_METAL)
-struct MetalScene;
-
-/// Ordered list of distinct ``MetalScene*`` referenced by ``VarKind::TraceRay``
-/// nodes anywhere in the current kernel (top-level schedule + callable
-/// bodies + symbolic loops/conds — populated during the assemble pre-walk).
-/// The position in this vector becomes the MSL slot index, i.e. scene at
-/// index ``i`` is bound to ``[[buffer(1+i)]]`` and referenced as
-/// ``accel_<i>`` in the generated MSL.
-///
-/// Reset at the start of every ``jitc_assemble`` (alongside ``uses_metal_rt``)
-/// so each kernel gets a fresh map.
-extern std::vector<MetalScene *> metal_kernel_scenes;
-
-/// Look-up table: scene pointer → slot index in ``metal_kernel_scenes``.
-/// Maintained in lockstep so per-TraceRay codegen can resolve a slot in O(1).
-extern std::unordered_map<MetalScene *, uint32_t> metal_kernel_scene_slot;
-
-/// Per-scene IFT buffer slot. Indexed by the same position as
-/// ``metal_kernel_scenes``. Value is the buffer index of that scene's
-/// ``ift_<i>`` argument (always >= 1 + N where N is the accel count), or
-/// ``-1`` if the scene has no ``intersection_fn_library`` (no IFT param
-/// is emitted for it). Populated by ``jitc_metal_finalize_scene_layout()``
-/// after the pre-walk and before the kernel signature is emitted.
-extern std::vector<int32_t> metal_kernel_ift_slot;
-
-/// Total number of ``[[buffer]]`` slots consumed by accels + IFTs (i.e.
-/// 1 + N + (count of scenes with IFT)). Equals the next free buffer slot
-/// after the ray-tracing arguments. Mirrors what the kernel signature
-/// declared and what callables / call sites need to forward.
-extern uint32_t metal_kernel_buffer_count;
-
-/// Register a scene with the kernel, assigning it the next free slot if it
-/// hasn't been seen yet. Returns the slot index. ``nullptr`` returns 0 and
-/// is not registered (caller is expected to handle that case).
-extern uint32_t metal_register_kernel_scene(MetalScene *scene);
-
-/// Compute IFT slot indices for every registered scene. Called once after
-/// the recursive pre-walk and before any signature emission so all sites
-/// (kernel header, per-TraceRay intersect, callable header, call site,
-/// launch binding) agree on which slot belongs to which scene's IFT.
-extern void jitc_metal_finalize_scene_layout();
-#endif
-
 /// Does this Metal kernel use a simdgroup_matrix-accelerated CoopVecMatVec?
-/// When true the kernel emits an [[max_total_threads_per_threadgroup(32)]]
-/// attribute (one SIMD-group per threadgroup, so threadgroup memory is
-/// per-SG by definition) and reserves ``simdgroup_tgm_floats`` floats of
-/// threadgroup memory shared across consecutive matvecs.
+/// When true the kernel emits annotations to reserve threadgroup memory.
 extern bool uses_simdgroup_matrix;
 
 /// Maximum (K + M) sum across all simdgroup_matrix-eligible matvecs in the

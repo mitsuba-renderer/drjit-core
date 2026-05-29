@@ -61,10 +61,59 @@
 // The CUDA macro takes the format string as a separate parameter so that
 // ``count_args`` only counts the variadic arguments.
 #define fmt_metal(fmt, ...) buffer.fmt_metal(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
+/// CLAUDE: the CUDA and LLVM implementations name this macro fmt() throughout their respective _eval.cpp files. Let's do this here too.
 #define put(...)            buffer.put(__VA_ARGS__)
 
 // Forward declaration
 static void jitc_metal_render(Variable *v);
+
+// ----------------------------------------------------------------------------
+//  Internal API to track of scenes that are used by the kernel being compiled
+// ----------------------------------------------------------------------------
+std::vector<MetalScene *> metal_kernel_scenes;
+std::vector<int32_t> metal_kernel_ift_slot;
+
+void jitc_metal_assemble_reset() {
+    metal_kernel_scenes.clear();
+    metal_kernel_ift_slot.clear();
+}
+
+uint32_t metal_register_kernel_scene(MetalScene *scene) {
+    for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
+        if (metal_kernel_scenes[i] == scene)
+            return (uint32_t) i;
+    uint32_t slot = (uint32_t) metal_kernel_scenes.size();
+    metal_kernel_scenes.push_back(scene);
+    return slot;
+}
+
+void jitc_metal_finalize_scene_layout() {
+    uint32_t n = (uint32_t) metal_kernel_scenes.size();
+    metal_kernel_ift_slot.assign(n, -1);
+    if (n == 0)
+        return;
+    // Layout: [[buffer(0)]] = params, [[buffer(1)]]..[[buffer(N)]] = accels,
+    // [[buffer(N+1)]]..[[buffer(N+M)]] = IFTs (only for scenes that have one).
+    uint32_t next = 1u + n;
+    for (uint32_t i = 0; i < n; ++i) {
+        if (metal_kernel_scenes[i] &&
+            metal_kernel_scenes[i]->intersection_fn_library)
+            metal_kernel_ift_slot[i] = (int32_t) next++;
+    }
+}
+
+void jitc_metal_persist_kernel_scenes(Kernel &kernel) {
+    delete[] kernel.metal.scenes;
+    uint32_t n = (uint32_t) metal_kernel_scenes.size();
+    if (n > 0) {
+        kernel.metal.scenes = new void *[n];
+        for (uint32_t i = 0; i < n; ++i)
+            kernel.metal.scenes[i] = metal_kernel_scenes[i];
+    } else {
+        kernel.metal.scenes = nullptr;
+    }
+    kernel.metal.scene_count = n;
+}
 
 // ----------------------------------------------------------------------------
 //  Recursive scene-discovery for the assemble pre-walk.
@@ -150,8 +199,8 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     //   Each scene becomes a kernel argument: ``accel_<i>`` at slot
     //   ``1 + i`` and (optionally) ``ift_<i>`` at the next available
     //   slot in ``[1+N, 1+N+M)``. Per-TraceRay codegen routes each
-    //   intersect call to its scene's slot via
-    //   ``metal_kernel_scene_slot``; the launch path mirrors the same
+    //   intersect call to its scene's slot by linear-scanning
+    //   ``metal_kernel_scenes``; the launch path mirrors the same
     //   layout when binding TLASes / IFTs.
     // -------------------------------------------------------------------
     {
@@ -188,6 +237,28 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     if (uses_metal_rt)
         put("using namespace raytracing;\n");
     put("\n");
+
+    // Emit one comment per registered scene capturing the PSO link
+    // identity: the intersection-function names that must be linked into
+    // the pipeline plus the scene's geometry-type mask. ``kernel_hash``
+    // picks these up, so two kernels with identical MSL but different
+    // scenes hash to distinct cache keys (no separate flag-mixing
+    // required, c.f. the OptiX path which mixes pipeline-compile options
+    // into the cache flags). This iterates the same ``metal_kernel_scenes``
+    // list that drives the signature and the linker, so the cache key
+    // matches exactly what gets linked.
+    for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
+        MetalScene *si = metal_kernel_scenes[i];
+        fmt_metal("// Scene properties: accel_$u mask=0x$x fns=[",
+                  (uint32_t) i, si ? si->geometry_types_mask : 0u);
+        if (si) {
+            for (size_t j = 0; j < si->intersection_fn_names.size(); ++j) {
+                if (j) put(", ");
+                fmt_metal("$s", si->intersection_fn_names[j].c_str());
+            }
+        }
+        put("]\n");
+    }
 
     // Float64 (double-double) helpers are emitted on demand: each codegen
     // site in jitc_metal_render_dd registers exactly the dd_* helpers it
@@ -445,15 +516,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     jitc_call_upload(ts);
 }
 
-// ============================================================================
-//
-//  Per-VarKind code emission. This implementation covers a representative
-//  subset of the full ~80-case switch statement in cuda_eval.cpp; the
-//  remaining cases follow the same template and are scheduled for
-//  completion as part of Phase 2 testing on a real Metal device.
-//
-// ============================================================================
-
 static void jitc_metal_render_unary(Variable *v, const char *op) {
     Variable *a = jitc_var(v->dep[0]);
     fmt_metal("    $t $v = $s($v);\n", v, v, op, a);
@@ -661,13 +723,6 @@ static bool jitc_metal_render_dd(Variable *v) {
 
 
 static void jitc_metal_render(Variable *v) {
-    // Cooperative vectors have a dedicated lowering path mirroring
-    // jitc_optix_render_coop_vec / jitc_llvm_render_coop_vec. The
-    // coop_vec flag is set on every variable whose value IS a coopvec,
-    // so this catches CoopVecLiteral/Pack/Load/Cast/UnaryOp/BinaryOp/
-    // TernaryOp/MatVec. Operations whose output is a regular scalar
-    // (CoopVecUnpack/Accum/OuterProductAccum) fall through to the
-    // switch below and are dispatched by VarKind.
     if (v->coop_vec) {
         Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
                  *a1 = v->dep[1] ? jitc_var(v->dep[1]) : nullptr,
@@ -1105,11 +1160,11 @@ static void jitc_metal_render(Variable *v) {
             bool is_unmasked = valid->is_literal() && valid->literal == 1;
 
             // Resolve which kernel-bound ``accel_<i>`` / ``ift_<i>`` to
-            // use for THIS trace by looking up the trace's scene in
-            // ``metal_kernel_scene_slot``. If the scene wasn't
-            // registered (shouldn't happen — the recursive pre-walk
-            // visits every TraceRay reachable from the kernel), or no
-            // scene at all, fall back to the active scene at slot 0.
+            // use for THIS trace by linear-scanning ``metal_kernel_scenes``.
+            // If the scene wasn't registered (shouldn't happen, the
+            // recursive pre-walk visits every TraceRay reachable from the
+            // kernel), or no scene at all, fall back to the active scene
+            // at slot 0.
             MetalScene *scene_local = nullptr;
             if (v->dep[1])
                 scene_local = jitc_metal_get_scene(v->dep[1]);
@@ -1118,9 +1173,12 @@ static void jitc_metal_render(Variable *v) {
 
             uint32_t accel_idx = 0;
             if (scene_local) {
-                auto it = metal_kernel_scene_slot.find(scene_local);
-                if (it != metal_kernel_scene_slot.end())
-                    accel_idx = it->second;
+                for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
+                    if (metal_kernel_scenes[i] == scene_local) {
+                        accel_idx = (uint32_t) i;
+                        break;
+                    }
+                }
             }
 
             // Guard with active mask
@@ -1235,23 +1293,6 @@ static void jitc_metal_render(Variable *v) {
             break;
         }
 
-        // -- Features requiring Metal-specific implementations --
-        // These CUDA/OptiX-specific features need dedicated Metal ports:
-        //
-        // Textures: Metal uses MTLTexture + sampler (not CUtexObject).
-        //   Requires a new metal_tex.cpp with MTLTextureDescriptor,
-        //   MTLSamplerDescriptor, and MSL texture2d<T>::sample() codegen.
-        //
-        // Virtual calls: Metal has no PTX-style indirect function calls.
-        //   Options: (1) switch-case dispatch, (2) visible_function_table,
-        //   (3) function pointers via argument buffers.
-        //   See LuisaCompute's metal backend for a reference.
-        //
-        // Cooperative vectors: lowered via metal_coop_vec.cpp. Variables whose
-        //   *output* is a coopvec are caught by the early dispatch at the top
-        //   of this function (`if (v->coop_vec)`); the three ops below
-        //   produce scalar outputs and so reach this switch.
-
         case VarKind::TexLookup:
             jitc_fail("jitc_metal_render(): texture lookup (VarKind::TexLookup) "
                       "is not yet implemented on the Metal backend. Metal "
@@ -1336,18 +1377,6 @@ static void jitc_metal_render(Variable *v) {
                                            jitc_var(v->dep[1]), jitc_var(v->dep[2]));
             break;
 
-        // -- Genuinely unsupported / irrelevant on Metal --
-        case VarKind::DefaultMask:   // LLVM-only (SIMD lane masking)
-        case VarKind::ThreadIndex:   // LLVM-only
-        case VarKind::CallMask:      // LLVM-only
-        case VarKind::PacketGather:  // LLVM packet mode
-        case VarKind::PacketScatter: // LLVM packet mode
-        case VarKind::VectorLoad:    // OptiX SBT data load
-        case VarKind::ReorderThread: // OptiX SER
-            jitc_fail("jitc_metal_render(): VarKind::%s is not applicable "
-                      "to the Metal backend.",
-                      var_kind_name[v->kind]);
-
         default:
             jitc_fail("jitc_metal_render(): unhandled VarKind=%u (%s) for "
                       "variable r%u (type=%s).",
@@ -1357,15 +1386,13 @@ static void jitc_metal_render(Variable *v) {
 }
 
 // ============================================================================
-//
 //  Virtual function call support (switch-case dispatch)
-//
 // ============================================================================
 
 void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
-                               uint32_t in_size, uint32_t /*in_align*/,
-                               uint32_t out_size, uint32_t /*out_align*/,
-                               uint32_t /*n_regs*/) {
+                              uint32_t in_size, uint32_t /*in_align*/,
+                              uint32_t out_size, uint32_t /*out_align*/,
+                              uint32_t /*n_regs*/) {
     // Emit the function signature with '^' placeholders for the hash
     put("void func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(");
 
@@ -1518,10 +1545,10 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 }
 
 void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
-                                   uint32_t self_reg, uint32_t mask_reg,
-                                   uint32_t offset_reg, uint32_t data_reg,
-                                   uint32_t in_size, uint32_t /*in_align*/,
-                                   uint32_t out_size, uint32_t /*out_align*/) {
+                                  uint32_t self_reg, uint32_t mask_reg,
+                                  uint32_t offset_reg, uint32_t data_reg,
+                                  uint32_t in_size, uint32_t /*in_align*/,
+                                  uint32_t out_size, uint32_t /*out_align*/) {
     // =====================================================
     // 1. Conditional branch (masked lanes)
     // =====================================================
