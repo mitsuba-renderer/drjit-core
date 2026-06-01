@@ -102,7 +102,7 @@ void jitc_metal_render_array_memcpy_in(const Variable *v) {
     fmt_metal("    $t arr_$u[$u];\n",
               v, v->reg_index, (uint32_t) v->array_length);
     fmt_metal("    for (uint _i = 0; _i < $uu; _i++)\n"
-              "        arr_$u[_i] = ((device const $t*) p$v)[_i * r2 + r0];\n",
+              "        arr_$u[_i] = ((device const $t*) p$v)[_i * params.size + r0];\n",
               (uint32_t) v->array_length,
               v->reg_index, v, v);
 }
@@ -110,7 +110,7 @@ void jitc_metal_render_array_memcpy_in(const Variable *v) {
 void jitc_metal_render_array_memcpy_out(const Variable *v) {
     // Write thread-local array back to global memory
     fmt_metal("    for (uint _i = 0; _i < $uu; _i++)\n"
-              "        ((device $t*) p$v)[_i * r2 + r0] = arr_$u[_i];\n",
+              "        ((device $t*) p$v)[_i * params.size + r0] = arr_$u[_i];\n",
               (uint32_t) v->array_length,
               v, v, v->reg_index);
 }
