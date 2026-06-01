@@ -43,14 +43,6 @@ if (NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/nanothread/ext/cmake-defau
     "by invoking\n$ git submodule update --init --recursive")
 endif()
 
-if (DRJIT_ENABLE_METAL AND
-    NOT IS_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/ext/metal-cpp/Metal")
-  message(FATAL_ERROR "The metal-cpp dependency is missing under "
-    "ext/metal-cpp. Run\n$ git submodule update --init --recursive\n"
-    "to fetch it, or pass -DDRJIT_ENABLE_METAL=OFF to disable the Metal "
-    "backend.")
-endif()
-
 # ----------------------------------------------------------
 #  Build defaults for projects by the Realistic Graphics Lab
 # ----------------------------------------------------------
@@ -139,13 +131,11 @@ if (DRJIT_ENABLE_METAL)
   set(DRJIT_METAL_FILES
     include/drjit-core/metal.h
     src/metal.h
-    src/metal_api.h
-    src/metal_api.cpp
-    src/metal_core.cpp
+    src/metal_core.mm
     src/metal_eval.h
     src/metal_eval.cpp
     src/metal_ts.h
-    src/metal_ts.cpp
+    src/metal_ts.mm
     src/metal_scatter.h
     src/metal_scatter.cpp
     src/metal_array.h
@@ -153,7 +143,7 @@ if (DRJIT_ENABLE_METAL)
     src/metal_coop_vec.h
     src/metal_coop_vec.cpp
     src/metal_stage_buffer.h
-    src/metal_stage_buffer.cpp
+    src/metal_stage_buffer.mm
     src/metal_mps.mm)
 endif()
 
@@ -334,17 +324,22 @@ if (DRJIT_ENABLE_METAL)
     COMMENT "Embedding metal_kernels.metal as C++ raw string")
   target_sources(drjit-core PRIVATE "${METAL_KERNELS_HDR}")
   target_include_directories(drjit-core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
-  target_include_directories(drjit-core PRIVATE ext/metal-cpp)
   target_link_libraries(drjit-core PRIVATE
     "-framework Foundation"
     "-framework Metal"
     "-framework MetalPerformanceShaders"
-    "-framework MetalPerformanceShadersGraph"
-    "-framework QuartzCore")
+    "-framework MetalPerformanceShadersGraph")
 
   set_source_files_properties(
     src/metal_mps.mm
     PROPERTIES COMPILE_FLAGS "-fno-objc-arc")
+
+  # The native Objective-C++ Metal backend files use ARC.
+  set_source_files_properties(
+    src/metal_core.mm
+    src/metal_ts.mm
+    src/metal_stage_buffer.mm
+    PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 endif()
 
 if (UNIX)

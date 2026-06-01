@@ -586,7 +586,7 @@ struct KernelKey;
 
 /// Caches basic information about a Metal device
 struct MetalDevice {
-    /// MTL::Device* (opaque pointer to avoid Objective-C/metal-cpp leakage in headers)
+    /// MTLDevice handle (opaque pointer to keep Objective-C / Metal types out of shared headers)
     void *device = nullptr;
 
     /// MTL::CommandQueue* used to submit work to the GPU
@@ -714,7 +714,7 @@ struct ThreadStateBase {
     /// ---------------------------- Metal-specific ----------------------------
 
 #if defined(DRJIT_ENABLE_METAL)
-    /// MTL::Device* — opaque to avoid leaking metal-cpp into shared headers
+    /// MTLDevice handle — opaque to keep Metal types out of shared headers
     void *metal_device = nullptr;
 
     /// MTL::CommandQueue* used to submit work to the GPU
