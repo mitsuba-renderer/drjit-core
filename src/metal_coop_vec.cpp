@@ -17,13 +17,8 @@
     Implementation status — all coopvec ops are implemented:
       * Pack / Load / Cast / Bitcast / Unary{Exp2,Log2,Tanh} /
         Binary{Add,Sub,Mul,Min,Max,Step} / Ternary{Fma} -- per-element
-        scalar lowering ("Phase A").
-      * CoopVecMatVec -- Phase B simdgroup_matrix<8,8> fast path when
-        Float32 with rows%8==0 and cols%8==0; per-thread x is staged
-        through ``_sg_tgm`` (one SG per threadgroup, 32 lanes) and 8x8
-        tiles of A are multiplied via ``simdgroup_multiply_accumulate``.
-        Falls back to the unrolled scalar FMA path otherwise. Measured
-        ~3x speedup vs LLVM on hashgrid+MLP inference and training.
+        scalar lowering.
+      * CoopVecMatVec -- unrolled scalar FMA path (out = (A or Aᵀ) @ x + b).
       * CoopVecAccum / OuterProductAccum -- per-element atomic adds
         (Float32/Int32/UInt32 native; Float16 via 32-bit-aligned CAS).
 */
@@ -206,9 +201,6 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
             // For typical coopvec sizes (≤64×64) the resulting MSL is
             // small; the Metal compiler folds the scalar FMAs into the
             // GPU's FMA pipeline.
-            //
-            // Phase B will add an alternative codegen path here that
-            // routes 8×8-aligned matvecs through simdgroup_matrix.
             CoopVecMatVecData *d = (CoopVecMatVecData *) v->data;
             const Variable *bias = a3;
             bool transpose = d->transpose;
@@ -217,112 +209,6 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
             uint32_t n = transpose ? d->A_descr.rows : d->A_descr.cols;
             uint32_t stride = d->A_descr.stride;
             uint32_t a_off  = d->A_descr.offset;
-
-            // ---- Phase B fast path: simdgroup_matrix<float, 8, 8> ----
-            //
-            // Preconditions match the pre-pass in eval.cpp that sets
-            // ``uses_simdgroup_matrix``: Float32, A_descr.rows%8==0,
-            // A_descr.cols%8==0. The 32 lanes of the SIMD group
-            // cooperate on one 8×8 tile at a time; per-thread input
-            // vectors are staged through threadgroup memory ``_sg_tgm``
-            // (one SG per threadgroup, see metal_eval.cpp's
-            // [[max_total_threads_per_threadgroup(32)]] attribute).
-            //
-            // For ``transpose=false`` we compute Y = A @ X directly.
-            // For ``transpose=true`` (the backward-pass dx = Aᵀ @ dy)
-            // we ask ``simdgroup_load`` to transpose the 8×8 A tile on
-            // load via its ``transpose_matrix=true`` parameter, and
-            // walk a different rectangle of A: tile (i_blk, k_blk) of
-            // Aᵀ corresponds to A[k_blk*8 .. +8][i_blk*8 .. +8] in
-            // memory, so the source address swaps row/col offsets.
-            //
-            // Throughput on Apple Silicon: ~1 8×8 matmul per simdgroup
-            // op, executed on the AMX coprocessor. Replaces 32 × 64
-            // scalar FMAs (= 2048 FMA-equiv) with 1 cooperative tile op
-            // for an 8×8 matvec — expected 4-10× speedup on the matmul
-            // portion of MLP inference and training.
-            VarType vt = (VarType) v->type;
-            bool use_simdgroup =
-                vt == VarType::Float32 &&
-                m % 8 == 0 && n % 8 == 0;
-
-            if (use_simdgroup) {
-                // Lay out the shared TGM:
-                //   _sg_tgm[0           .. n*32)        = X (n cols × 32 lanes)
-                //   _sg_tgm[n*32        .. (n+m)*32)    = Y (m cols × 32 lanes)
-                // Stored column-major so simdgroup_load with stride=32 picks
-                // up an 8x8 block as (k_block × 8 rows) × (j_block × 8 cols).
-                uint32_t y_off = n * 32;
-
-                fmt_metal("    // CoopVecMatVec(simdgroup_matrix): "
-                          "M=$u, K=$u, transpose=$u\n",
-                          m, n, (uint32_t) transpose);
-
-                // 1. Stage each thread's x[i] into _sg_tgm[i*32 + sg_lane].
-                for (uint32_t i = 0; i < n; ++i)
-                    fmt_metal("    _sg_tgm[$u + sg_lane] = $v_$u;\n",
-                              i * 32, a1, i);
-                put("    simdgroup_barrier(mem_flags::mem_threadgroup);\n");
-
-                // 2. Tile loop. Y is m × 32 → m/8 row tiles × 4 col tiles.
-                //    For each output tile we accumulate across n/8 inner
-                //    tiles (the K dimension).
-                const char *transpose_arg =
-                    transpose ? ", ulong2(0, 0), true" : "";
-                for (uint32_t i_blk = 0; i_blk < m / 8; ++i_blk) {
-                    for (uint32_t j_blk = 0; j_blk < 4; ++j_blk) {
-                        fmt_metal(
-                            "    {\n"
-                            "        simdgroup_float8x8 _Y(0.0f), _A, _X;\n");
-                        for (uint32_t k_blk = 0; k_blk < n / 8; ++k_blk) {
-                            // Without transpose: A[i_blk*8 .. +8][k_blk*8 .. +8]
-                            // With transpose:    A[k_blk*8 .. +8][i_blk*8 .. +8]
-                            // The simdgroup_load's transpose_matrix=true
-                            // flag flips the loaded tile in registers.
-                            uint32_t a_tile_off = a_off + (transpose
-                                ? (k_blk * 8 * stride + i_blk * 8)
-                                : (i_blk * 8 * stride + k_blk * 8));
-                            uint32_t x_tile_off = k_blk * 8 * 32 + j_blk * 8;
-                            fmt_metal(
-                                "        simdgroup_load(_A, "
-                                "(device const float*) $v + $u, $u$s);\n"
-                                "        simdgroup_load(_X, "
-                                "_sg_tgm + $u, 32);\n"
-                                "        simdgroup_multiply_accumulate"
-                                "(_Y, _A, _X, _Y);\n",
-                                a0, a_tile_off, stride, transpose_arg,
-                                x_tile_off);
-                        }
-                        uint32_t y_tile_off = y_off
-                            + i_blk * 8 * 32 + j_blk * 8;
-                        fmt_metal(
-                            "        simdgroup_store(_Y, "
-                            "_sg_tgm + $u, 32);\n"
-                            "    }\n",
-                            y_tile_off);
-                    }
-                }
-                put("    simdgroup_barrier(mem_flags::mem_threadgroup);\n");
-
-                // 3. Read back each thread's output column, adding bias.
-                if (bias) {
-                    uint32_t b_off = d->b_descr.offset;
-                    for (uint32_t i = 0; i < m; ++i)
-                        fmt_metal(
-                            "    $t $v_$u = _sg_tgm[$u + sg_lane] + "
-                            "((device const $t*) $v)[$u];\n",
-                            v, v, i, y_off + i * 32,
-                            v, bias, b_off + i);
-                } else {
-                    for (uint32_t i = 0; i < m; ++i)
-                        fmt_metal(
-                            "    $t $v_$u = _sg_tgm[$u + sg_lane];\n",
-                            v, v, i, y_off + i * 32);
-                }
-                break;
-            }
-
-            // ---- Phase A scalar fallback ----
 
             // 1. Initialize output elements with the bias, or zero.
             if (bias) {

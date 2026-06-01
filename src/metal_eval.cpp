@@ -225,8 +225,7 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     //   1. MSL header
     // -------------------------------------------------------------------
     put("#include <metal_stdlib>\n"
-        "#include <metal_atomic>\n"
-        "#include <metal_simdgroup>\n");
+        "#include <metal_atomic>\n");
 
     // Conditionally include the ray tracing header.
     if (uses_metal_rt /* repurposed flag: TraceRay used */)
@@ -275,12 +274,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     //
     //   ``params.size`` is the launch size.
     // -------------------------------------------------------------------
-    // simdgroup_matrix MatVec fast path constrains every threadgroup to a
-    // single SIMD-group (32 threads) so the per-kernel threadgroup memory
-    // is per-SG by definition — no partitioning needed.
-    if (uses_simdgroup_matrix)
-        put("[[max_total_threads_per_threadgroup(32)]]\n");
-
     fmt_metal("kernel void drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(\n"
               "    device const Params& params [[buffer(0)]],\n");
     // Multi-scene kernel signature: one ``accel_<i>`` per registered
@@ -308,17 +301,7 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
                       ift_template, (uint32_t) i, (uint32_t) ift_slot);
         }
     }
-    put("    uint r0 [[thread_position_in_grid]]");
-    if (uses_simdgroup_matrix)
-        put(",\n    uint sg_lane [[thread_index_in_simdgroup]]");
-    put(") {\n");
-
-    // -------------------------------------------------------------------
-    //   3b. Threadgroup memory for simdgroup_matrix matvec staging
-    // -------------------------------------------------------------------
-    if (uses_simdgroup_matrix)
-        fmt_metal("    threadgroup float _sg_tgm[$u];\n\n",
-                  simdgroup_tgm_floats * 32);
+    put("    uint r0 [[thread_position_in_grid]]) {\n");
 
     // -------------------------------------------------------------------
     //   4. Render every variable in the schedule

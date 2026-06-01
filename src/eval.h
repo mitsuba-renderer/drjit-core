@@ -86,15 +86,6 @@ extern bool uses_optix;
 /// Does this Metal kernel use ray tracing?
 extern bool uses_metal_rt;
 
-/// Does this Metal kernel use a simdgroup_matrix-accelerated CoopVecMatVec?
-/// When true the kernel emits annotations to reserve threadgroup memory.
-extern bool uses_simdgroup_matrix;
-
-/// Maximum (K + M) sum across all simdgroup_matrix-eligible matvecs in the
-/// current kernel. The kernel reserves ``simdgroup_tgm_floats * 32`` floats
-/// of threadgroup memory at function entry.
-extern uint32_t simdgroup_tgm_floats;
-
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 extern int32_t alloca_size;
 extern int32_t alloca_align;
