@@ -182,23 +182,4 @@ extern void *jitc_metal_context_impl();
 /// Return the active ``MTL::CommandQueue*`` for the current thread.
 extern void *jitc_metal_command_queue_impl();
 
-/// Choose the per-target expansion factor for ``ReduceMode::Expand`` on
-/// Metal. The scatter target gets allocated as ``factor`` consecutive
-/// copies of ``size`` elements, and each GPU thread routes its update to
-/// copy ``thread_position_in_grid % factor``. This trades a bounded
-/// amount of extra memory (``factor * size * tsize`` bytes) for a roughly
-/// ``factor``-fold reduction in atomic contention — which is what fixes
-/// FP32 atomic_fetch_add precision loss in PRB backward.
-///
-/// Returns a power of 2 in [1, 1024]; 1 means "do not expand" (size×tsize
-/// already exceeds the per-target memory budget). Must be deterministic
-/// from (size, tsize): both ``jitc_var_expand`` and
-/// ``jitc_var_reduce_expanded`` rely on agreeing on the same factor.
-extern uint32_t jitc_metal_expand_factor(uint32_t size, uint32_t tsize);
-
-/// Soft cap on the size of an array that ``ReduceMode::Auto`` will
-/// promote to ``ReduceMode::Expand`` on Metal (mirrors
-/// ``llvm_expand_threshold``).
-extern size_t metal_expand_threshold;
-
 #endif // defined(DRJIT_ENABLE_METAL)

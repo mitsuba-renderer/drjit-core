@@ -236,7 +236,7 @@ void jitc_enqueue_host_func(JitBackend backend, void (*callback)(void *),
     thread_state(backend)->enqueue_host_func(callback, payload);
 }
 
-void jitc_reduce_expanded(JitBackend backend, VarType vt, ReduceOp op,
-                          void *ptr, uint32_t exp, uint32_t size) {
-    thread_state(backend)->reduce_expanded(vt, op, ptr, exp, size);
+void jitc_reduce_expanded(VarType vt, ReduceOp op, void *ptr, uint32_t exp,
+                          uint32_t size) {
+    thread_state_llvm->reduce_expanded(vt, op, ptr, exp, size);
 }

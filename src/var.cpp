@@ -2689,23 +2689,14 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
 
     uint32_t tsize = ::type_size[v->type], size = v->size;
 
-    // Expansion factor and per-thread index stride differ per backend:
-    //  - LLVM: ``workers`` (~pool_size) accumulators, with each accumulator
-    //    region padded to a cache line to avoid false sharing — so the
-    //    per-thread index stride is ``replication_per_worker * size`` and
-    //    only every ``replication_per_worker``-th slot is actually written.
-    //  - Metal: ``factor`` accumulators chosen by ``jitc_metal_expand_factor``;
-    //    each thread writes into slot ``thread_position_in_grid % factor``,
-    //    giving a per-thread stride of just ``size`` (no false sharing on
-    //    GPU).
+    // LLVM uses ``workers`` (~pool_size) accumulators, with each accumulator
+    // region padded to a cache line to avoid false sharing — so the per-thread
+    // index stride is ``replication_per_worker * size`` and only every
+    // ``replication_per_worker``-th slot is actually written.
     uint32_t replication_per_worker = 1, workers = 1;
     if (backend == JitBackend::LLVM) {
         std::tie(workers, replication_per_worker) =
             jitc_llvm_expand_replication_factor(size, tsize);
-#if defined(DRJIT_ENABLE_METAL)
-    } else if (backend == JitBackend::Metal) {
-        workers = jitc_metal_expand_factor(size, tsize);
-#endif
     } else {
         jitc_raise("jit_var_expand(): drjit.ReduceMode.Expand is not "
                    "supported by this backend.");
@@ -2753,7 +2744,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
              new_size / size);
 
     uint32_t dst_index = dst.release();
-    thread_state(backend)->notify_expand(dst_index);
+    thread_state_llvm->notify_expand(dst_index);
 
     return { dst_index, index_scale };
 }
@@ -2775,16 +2766,11 @@ void jitc_var_reduce_expanded(uint32_t index) {
         auto [workers, replication_per_worker] =
             jitc_llvm_expand_replication_factor(size, tsize);
         exp = replication_per_worker * workers;
-#if defined(DRJIT_ENABLE_METAL)
-    } else if (backend == JitBackend::Metal) {
-        exp = jitc_metal_expand_factor(size, tsize);
-#endif
     } else {
         jitc_raise("jit_var_reduce_expanded(): unsupported backend.");
     }
 
     jitc_reduce_expanded(
-        backend,
         (VarType) v->type,
         (ReduceOp) v->reduce_op,
         v->data,

@@ -920,14 +920,14 @@ void ThreadState::reset_state() {
 }
 void ThreadState::notify_free(const void *) { }
 void ThreadState::notify_expand(uint32_t) { }
-void ThreadState::batched_gemm(VarType, bool, bool, uint32_t, uint32_t, uint32_t,
-                         const GemmBatch *, const void *, const void *,
-                         void *) {
-    jitc_raise("jit_batched_gemm(): not supported by the current backend!");
+
+
+void ThreadState::reduce_expanded(VarType, ReduceOp, void *, uint32_t, uint32_t) {
+    jitc_raise("ThreadState::reduce_expanded(): not supported by the current backend!");
 }
+
 void ThreadState::notify_opaque_width(uint32_t, uint32_t) {}
 void ThreadState::notify_init_undefined(uint32_t) {}
-// TODO: rename to block_reduce_bool
 void ThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
                                     uint8_t *out, ReduceOp op) {
     /* When \c size is not a multiple of 4, the implementation will initialize

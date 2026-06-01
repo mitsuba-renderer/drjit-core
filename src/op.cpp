@@ -2808,20 +2808,8 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             uint32_t tsize = jitc_var(target)->size;
             if (mode == ReduceMode::Auto && tsize <= llvm_expand_threshold)
                 mode = ReduceMode::Expand;
-#if defined(DRJIT_ENABLE_METAL)
-        } else if (backend == JitBackend::Metal) {
-            uint32_t tsize_v = jitc_var(target)->size;
-            uint32_t tsize_b = type_size[jitc_var(target)->type];
-            // Only auto-promote if the chosen factor would actually expand
-            // (small targets get factor=1, in which case Expand is a no-op
-            // and we'd just pay the bookkeeping cost).
-            if (mode == ReduceMode::Auto &&
-                tsize_v <= metal_expand_threshold &&
-                jitc_metal_expand_factor(tsize_v, tsize_b) > 1)
-                mode = ReduceMode::Expand;
-#endif
         } else {
-            // ReduceMode::Expand is only supported on the LLVM/Metal backends
+            // ReduceMode::Expand is only supported on the LLVM backend
             if (mode == ReduceMode::Expand)
                 mode = ReduceMode::Auto;
         }
@@ -2850,39 +2838,16 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             auto [target_i, expand_i] = jitc_var_expand(target, op);
             target = steal(target_i);
 
-#if defined(DRJIT_ENABLE_METAL)
-            if (backend == JitBackend::Metal) {
-                // Per-thread slot is ``thread_position_in_grid % factor``.
-                // ``jitc_metal_expand_factor`` always returns a power of 2,
-                // so we can use a bitwise AND with ``factor - 1`` instead
-                // of a (slow) modulo. We re-derive ``factor`` from the
-                // target's logical size + tsize so we agree with what
-                // ``jitc_var_expand`` allocated.
-                uint32_t target_size = jitc_var(target)->size;
-                uint32_t tsize_b = type_size[jitc_var(target)->type];
-                uint32_t factor = jitc_metal_expand_factor(target_size, tsize_b);
+            Variable v{};
+            v.kind = (uint32_t) VarKind::ThreadIndex;
+            v.type = (uint32_t) VarType::UInt32;
+            v.size = (uint32_t) size;
+            v.backend = (uint32_t) backend;
 
-                Ref counter   = steal(jitc_var_counter(backend, size, false));
-                Ref mask_v    = steal(jitc_var_u32(backend, factor - 1u));
-                Ref slot      = steal(jitc_var_and(counter, mask_v));
-                Ref size_var  = steal(jitc_var_u32(backend, target_size));
-                Ref slot_off  = steal(jitc_var_mul(slot, size_var));
-                index         = steal(jitc_var_add(slot_off, index));
-                (void) expand_i;
-            } else
-#endif
-            {
-                Variable v{};
-                v.kind = (uint32_t) VarKind::ThreadIndex;
-                v.type = (uint32_t) VarType::UInt32;
-                v.size = (uint32_t) size;
-                v.backend = (uint32_t) backend;
+            Ref expand = steal(jitc_var_u32(backend, expand_i)),
+                thread_idx = steal(jitc_var_new(v));
 
-                Ref expand = steal(jitc_var_u32(backend, expand_i)),
-                    thread_idx = steal(jitc_var_new(v));
-
-                index = steal(jitc_var_fma(thread_idx, expand, index));
-            }
+            index = steal(jitc_var_fma(thread_idx, expand, index));
 
             mode = ReduceMode::NoConflicts;
         }
@@ -2941,8 +2906,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         jitc_raise(
             "jit_var_scatter(): the %s backend does not support the requested "
             "type of atomic reduction (%s) for variables of type (%s)",
-            backend == JitBackend::CUDA ? "CUDA" : "LLVM", red_name[(int) op],
-            type_name[(int) vt]);
+            jitc_backend_name(backend), red_name[(int) op], type_name[(int) vt]);
 
     if (target_v->symbolic)
         jitc_raise(
@@ -3118,9 +3082,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         jitc_raise(
             "jit_var_scatter_packet(): the %s backend does not support the requested "
             "type of atomic reduction (%s) for variables of type (%s)",
-            backend == JitBackend::CUDA ? "CUDA" :
-            backend == JitBackend::Metal ? "Metal" : "LLVM",
-            red_name[(int) op], type_name[(int) vt]);
+            jitc_backend_name(backend), red_name[(int) op], type_name[(int) vt]);
 
     if (target_v->symbolic)
         jitc_raise(

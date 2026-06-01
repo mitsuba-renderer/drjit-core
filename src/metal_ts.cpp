@@ -953,67 +953,6 @@ void MetalThreadState::reduce_dot(VarType vt, const void *ptr_1,
     }
 }
 
-void MetalThreadState::reduce_expanded(VarType vt, ReduceOp op, void *data,
-                                       uint32_t exp, uint32_t size) {
-    DRJIT_METAL_SCOPED_POOL;
-    if (size == 0 || exp <= 1)
-        return;
-
-    // Signed add/mul/and/or use the unsigned kernel (same bit pattern).
-    if (op == ReduceOp::Add || op == ReduceOp::Mul ||
-        op == ReduceOp::Or || op == ReduceOp::And)
-        vt = metal_make_unsigned(vt);
-
-    const char *type_suffix = metal_type_suffix(vt);
-    const char *op_name = metal_op_name(op);
-    if (!type_suffix || !op_name)
-        jitc_raise("MetalThreadState::reduce_expanded(): unsupported "
-                   "type=%s or op=%s.", type_name[(int) vt],
-                   op_name ? op_name : "?");
-
-    char kernel_name[64];
-    snprintf(kernel_name, sizeof(kernel_name),
-             "reduce_expanded_%s_%s", op_name, type_suffix);
-
-    auto *pso = jitc_metal_get_pipeline(this->device, kernel_name);
-    if (!pso)
-        jitc_raise("MetalThreadState::reduce_expanded(): kernel \"%s\" not "
-                   "found in the utility library.", kernel_name);
-
-    struct {
-        uint64_t data;
-        uint32_t exp;
-        uint32_t size;
-    } params;
-    params.data = (uint64_t)(uintptr_t) data;
-    params.exp  = exp;
-    params.size = size;
-
-    auto *enc = jitc_metal_acquire_compute_encoder(this);
-    enc->setComputePipelineState(pso);
-    enc->setBytes(&params, sizeof(params), 0);
-
-    size_t off = 0;
-    auto *buf = (MTL::Buffer *)
-        jitc_metal_find_buffer(data, &off);
-    if (buf)
-        enc->useResource(buf,
-                         MTL::ResourceUsageRead | MTL::ResourceUsageWrite);
-
-    uint32_t threads_per_group =
-        std::min<uint32_t>((uint32_t) pso->maxTotalThreadsPerThreadgroup(),
-                           std::min<uint32_t>(size, 256u));
-    if (threads_per_group == 0)
-        threads_per_group = 1;
-    enc->dispatchThreads(MTL::Size::Make(size, 1, 1),
-                         MTL::Size::Make(threads_per_group, 1, 1));
-
-    jitc_log(Debug,
-             "MetalThreadState::reduce_expanded(%s, %s, exp=%u, size=%u) "
-             "-> kernel \"%s\"",
-             type_name[(int) vt], op_name, exp, size, kernel_name);
-}
-
 void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
                                     uint32_t M, uint32_t N, uint32_t K,
                                     const GemmBatch *batch,
