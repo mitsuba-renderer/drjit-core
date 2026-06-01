@@ -56,12 +56,8 @@
 
 #include <unordered_set>
 
-// Convenience macros local to this translation unit (mirroring cuda_eval.cpp).
-// The CUDA macro takes the format string as a separate parameter so that
-// ``count_args`` only counts the variadic arguments.
-#define fmt_metal(fmt, ...) buffer.fmt_metal(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
-/// CLAUDE: the CUDA and LLVM implementations name this macro fmt() throughout their respective _eval.cpp files. Let's do this here too.
-#define put(...)            buffer.put(__VA_ARGS__)
+#define fmt(fmt, ...) buffer.fmt_metal(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
+#define put(...)      buffer.put(__VA_ARGS__)
 
 // Forward declaration
 static void jitc_metal_render(Variable *v);
@@ -236,11 +232,11 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         put("using namespace raytracing;\n");
     put("\n");
 
-    fmt_metal("struct Params {\n"
-              "    uint size;\n"
-              "    device void *args[$u];\n"
-              "};\n\n",
-              n_params > 1 ? n_params - 1 : 1);
+    fmt("struct Params {\n"
+        "    uint size;\n"
+        "    device void *args[$u];\n"
+        "};\n\n",
+        n_params > 1 ? n_params - 1 : 1);
 
     // Emit one comment per registered scene capturing the PSO link
     // identity: the intersection-function names that must be linked into
@@ -253,19 +249,19 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     // matches exactly what gets linked.
     for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
         MetalScene *si = metal_kernel_scenes[i];
-        fmt_metal("// Scene properties: accel_$u mask=0x$x fns=[",
-                  (uint32_t) i, si ? si->geometry_types_mask : 0u);
+        fmt("// Scene properties: accel_$u mask=0x$x fns=[",
+            (uint32_t) i, si ? si->geometry_types_mask : 0u);
         if (si) {
             for (size_t j = 0; j < si->intersection_fn_names.size(); ++j) {
                 if (j) put(", ");
-                fmt_metal("$s", si->intersection_fn_names[j].c_str());
+                fmt("$s", si->intersection_fn_names[j].c_str());
             }
         }
         put("]\n");
     }
 
-    fmt_metal("kernel void drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(\n"
-              "    constant Params& params [[buffer(0)]],\n");
+    fmt("kernel void drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(\n"
+        "    constant Params& params [[buffer(0)]],\n");
 
     // Multi-scene kernel signature: one ``accel_<i>`` per registered
     // scene at slots [1, N+1), then one ``ift_<i>`` for every scene
@@ -276,8 +272,8 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
 
     if (uses_metal_rt) {
         for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
-            fmt_metal("    instance_acceleration_structure accel_$u [[buffer($u)]],\n",
-                      (uint32_t) i, (uint32_t) (1 + i));
+            fmt("    instance_acceleration_structure accel_$u [[buffer($u)]],\n",
+                (uint32_t) i, (uint32_t) (1 + i));
         for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
             int32_t ift_slot = metal_kernel_ift_slot[i];
             if (ift_slot < 0)
@@ -289,8 +285,8 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
                 has_curves_i
                     ? "intersection_function_table<triangle_data, curve_data, instancing>"
                     : "intersection_function_table<triangle_data, instancing>";
-            fmt_metal("    $s ift_$u [[buffer($u)]],\n",
-                      ift_template, (uint32_t) i, (uint32_t) ift_slot);
+            fmt("    $s ift_$u [[buffer($u)]],\n",
+                ift_template, (uint32_t) i, (uint32_t) ift_slot);
         }
     }
     put("    uint r0 [[thread_position_in_grid]]) {\n");
@@ -313,14 +309,14 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
 
         // Declare output variables for TraceRay nodes before they're used
         if (kind == VarKind::TraceRay) {
-            fmt_metal("    bool  $v_out_0 = false;\n"
-                      "    float $v_out_1 = 0.0f;\n"
-                      "    float $v_out_2 = 0.0f;\n"
-                      "    float $v_out_3 = 0.0f;\n"
-                      "    uint  $v_out_4 = 0u;\n"
-                      "    uint  $v_out_5 = 0u;\n"
-                      "    uint  $v_out_6 = 0u;\n",
-                      v, v, v, v, v, v, v);
+            fmt("    bool  $v_out_0 = false;\n"
+                "    float $v_out_1 = 0.0f;\n"
+                "    float $v_out_2 = 0.0f;\n"
+                "    float $v_out_3 = 0.0f;\n"
+                "    uint  $v_out_4 = 0u;\n"
+                "    uint  $v_out_5 = 0u;\n"
+                "    uint  $v_out_6 = 0u;\n",
+                v, v, v, v, v, v, v);
         }
 
         if (likely(ptype == ParamType::Input)) {
@@ -332,30 +328,29 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
                 if (vt == VarType::Pointer) {
                     // Pointer literals must be loaded from params (not inlined)
                     // so frozen function replay can update the address
-                    fmt_metal("    $t $v = ($t) params.args[$o];\n",
+                    fmt("    $t $v = ($t) params.args[$o];\n",
                               v, v, v, v);
                 } else if (vt == VarType::Float32) {
-                    fmt_metal("    $t $v = as_type<float>($lu);\n", v, v, v);
+                    fmt("    $t $v = as_type<float>($lu);\n", v, v, v);
                 } else if (vt == VarType::Float16) {
-                    fmt_metal("    $t $v = as_type<half>((ushort) $lu);\n", v, v, v);
+                    fmt("    $t $v = as_type<half>((ushort) $lu);\n", v, v, v);
                 } else {
-                    fmt_metal("    $t $v = ($t) $lu;\n", v, v, v, v);
+                    fmt("    $t $v = ($t) $lu;\n", v, v, v, v);
                 }
                 continue;
             }
 
             if (!v->is_array()) {
                 if (v->size > 1)
-                    fmt_metal("    $t $v = ((device const $t*) params.args[$o])[r0];\n",
+                    fmt("    $t $v = ((device const $t*) params.args[$o])[r0];\n",
                               v, v, v, v);
                 else
-                    fmt_metal("    $t $v = *(device const $t*) params.args[$o];\n",
+                    fmt("    $t $v = *(device const $t*) params.args[$o];\n",
                               v, v, v, v);
             } else {
                 // Array memcpy helpers reference the named ``p<r>`` pointer.
-                fmt_metal("    device const $t* p$v = "
-                          "(device const $t*) params.args[$o];\n",
-                          v, v, v, v);
+                fmt("    device const $t* p$v = (device const $t*) params.args[$o];\n",
+                    v, v, v, v);
                 jitc_metal_render_array_memcpy_in(v);
             }
             continue;
@@ -368,13 +363,12 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
 
         if (ptype == ParamType::Output) {
             if (!v->is_array()) {
-                fmt_metal("    ((device $t*) params.args[$o])[r0] = $v;\n",
-                          v, v, v);
+                fmt("    ((device $t*) params.args[$o])[r0] = $v;\n",
+                    v, v, v);
             } else {
                 // Array memcpy helpers reference the named ``p<r>`` pointer.
-                fmt_metal("    device $t* p$v = "
-                          "(device $t*) params.args[$o];\n",
-                          v, v, v, v);
+                fmt("    device $t* p$v = (device $t*) params.args[$o];\n",
+                    v, v, v, v);
                 jitc_metal_render_array_memcpy_out(v);
             }
         }
@@ -460,26 +454,26 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
 
 static void jitc_metal_render_unary(Variable *v, const char *op) {
     Variable *a = jitc_var(v->dep[0]);
-    fmt_metal("    $t $v = $s($v);\n", v, v, op, a);
+    fmt("    $t $v = $s($v);\n", v, v, op, a);
 }
 
 static void jitc_metal_render_binary(Variable *v, const char *op) {
     Variable *a = jitc_var(v->dep[0]);
     Variable *b = jitc_var(v->dep[1]);
-    fmt_metal("    $t $v = $v $s $v;\n", v, v, a, op, b);
+    fmt("    $t $v = $v $s $v;\n", v, v, a, op, b);
 }
 
 static void jitc_metal_render_call(Variable *v, const char *fn,
                                    uint32_t n_args) {
     Variable *a0 = jitc_var(v->dep[0]);
-    fmt_metal("    $t $v = $s($v", v, v, fn, a0);
+    fmt("    $t $v = $s($v", v, v, fn, a0);
     if (n_args >= 2) {
         Variable *a1 = jitc_var(v->dep[1]);
-        fmt_metal(", $v", a1);
+        fmt(", $v", a1);
     }
     if (n_args >= 3) {
         Variable *a2 = jitc_var(v->dep[2]);
-        fmt_metal(", $v", a2);
+        fmt(", $v", a2);
     }
     put(");\n");
 }
@@ -500,18 +494,18 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Literal: {
             VarType vt = (VarType) v->type;
             if (vt == VarType::Float32)
-                fmt_metal("    $t $v = as_type<float>($lu);\n", v, v, v);
+                fmt("    $t $v = as_type<float>($lu);\n", v, v, v);
             else if (vt == VarType::Float16)
-                fmt_metal("    $t $v = as_type<half>((ushort) $lu);\n", v, v, v);
+                fmt("    $t $v = as_type<half>((ushort) $lu);\n", v, v, v);
             else if (vt == VarType::Bool)
-                fmt_metal("    $t $v = ($t) ($lu);\n", v, v, v, v);
+                fmt("    $t $v = ($t) ($lu);\n", v, v, v, v);
             else
-                fmt_metal("    $t $v = ($t) $lu;\n", v, v, v, v);
+                fmt("    $t $v = ($t) $lu;\n", v, v, v, v);
             break;
         }
 
         case VarKind::Counter:
-            fmt_metal("    $t $v = ($t) r0;\n", v, v, v);
+            fmt("    $t $v = ($t) r0;\n", v, v, v);
             break;
 
         // -- Arithmetic --
@@ -527,7 +521,7 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::MulHi: {
             Variable *a = jitc_var(v->dep[0]);
             Variable *b = jitc_var(v->dep[1]);
-            fmt_metal("    $t $v = mulhi($v, $v);\n", v, v, a, b);
+            fmt("    $t $v = mulhi($v, $v);\n", v, v, a, b);
             break;
         }
 
@@ -535,7 +529,7 @@ static void jitc_metal_render(Variable *v) {
             // 32-bit × 32-bit → 64-bit
             Variable *a = jitc_var(v->dep[0]);
             Variable *b = jitc_var(v->dep[1]);
-            fmt_metal("    $t $v = ($t)$v * ($t)$v;\n", v, v, v, a, v, b);
+            fmt("    $t $v = ($t)$v * ($t)$v;\n", v, v, v, a, v, b);
             break;
         }
 
@@ -544,9 +538,9 @@ static void jitc_metal_render(Variable *v) {
                      *a1 = jitc_var(v->dep[1]),
                      *a2 = jitc_var(v->dep[2]);
             if (jitc_is_float(v))
-                fmt_metal("    $t $v = fma($v, $v, $v);\n", v, v, a0, a1, a2);
+                fmt("    $t $v = fma($v, $v, $v);\n", v, v, a0, a1, a2);
             else
-                fmt_metal("    $t $v = $v * $v + $v;\n", v, v, a0, a1, a2);
+                fmt("    $t $v = $v * $v + $v;\n", v, v, a0, a1, a2);
             break;
         }
         case VarKind::Min:  jitc_metal_render_call(v, "min",  2); break;
@@ -571,7 +565,7 @@ static void jitc_metal_render(Variable *v) {
             Variable *cond = jitc_var(v->dep[0]);
             Variable *a    = jitc_var(v->dep[1]);
             Variable *b    = jitc_var(v->dep[2]);
-            fmt_metal("    $t $v = $v ? $v : $v;\n", v, v, cond, a, b);
+            fmt("    $t $v = $v ? $v : $v;\n", v, v, cond, a, b);
             break;
         }
 
@@ -581,7 +575,7 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Ctz:   jitc_metal_render_call(v, "ctz", 1); break;
         case VarKind::Brev: {
             Variable *a = jitc_var(v->dep[0]);
-            fmt_metal("    $t $v = reverse_bits($v);\n", v, v, a);
+            fmt("    $t $v = reverse_bits($v);\n", v, v, a);
             break;
         }
 
@@ -589,12 +583,12 @@ static void jitc_metal_render(Variable *v) {
             Variable *a0 = jitc_var(v->dep[0]),
                      *a1 = jitc_var(v->dep[1]);
             if (a0->type != a1->type)
-                fmt_metal("    $t $v = $v ? $v : ($t) 0;\n", v, v, a1, a0, v);
+                fmt("    $t $v = $v ? $v : ($t) 0;\n", v, v, a1, a0, v);
             else if (jitc_is_float(v))
-                fmt_metal("    $t $v = as_type<$t>(($b)(as_type<$b>($v) & as_type<$b>($v)));\n",
-                          v, v, v, v, v, a0, v, a1);
+                fmt("    $t $v = as_type<$t>(($b)(as_type<$b>($v) & as_type<$b>($v)));\n",
+                    v, v, v, v, v, a0, v, a1);
             else
-                fmt_metal("    $t $v = $v & $v;\n", v, v, a0, a1);
+                fmt("    $t $v = $v & $v;\n", v, v, a0, a1);
             break;
         }
 
@@ -602,13 +596,13 @@ static void jitc_metal_render(Variable *v) {
             Variable *a0 = jitc_var(v->dep[0]),
                      *a1 = jitc_var(v->dep[1]);
             if (a0->type != a1->type)
-                fmt_metal("    $t $v = as_type<$t>(($b)($v ? ($b) ~0u : as_type<$b>($v)));\n",
-                          v, v, v, v, a1, v, v, a0);
+                fmt("    $t $v = as_type<$t>(($b)($v ? ($b) ~0u : as_type<$b>($v)));\n",
+                    v, v, v, v, a1, v, v, a0);
             else if (jitc_is_float(v))
-                fmt_metal("    $t $v = as_type<$t>(($b)(as_type<$b>($v) | as_type<$b>($v)));\n",
-                          v, v, v, v, v, a0, v, a1);
+                fmt("    $t $v = as_type<$t>(($b)(as_type<$b>($v) | as_type<$b>($v)));\n",
+                    v, v, v, v, v, a0, v, a1);
             else
-                fmt_metal("    $t $v = $v | $v;\n", v, v, a0, a1);
+                fmt("    $t $v = $v | $v;\n", v, v, a0, a1);
             break;
         }
 
@@ -616,10 +610,10 @@ static void jitc_metal_render(Variable *v) {
             Variable *a0 = jitc_var(v->dep[0]),
                      *a1 = jitc_var(v->dep[1]);
             if (jitc_is_float(v))
-                fmt_metal("    $t $v = as_type<$t>(($b)(as_type<$b>($v) ^ as_type<$b>($v)));\n",
-                          v, v, v, v, v, a0, v, a1);
+                fmt("    $t $v = as_type<$t>(($b)(as_type<$b>($v) ^ as_type<$b>($v)));\n",
+                    v, v, v, v, v, a0, v, a1);
             else
-                fmt_metal("    $t $v = $v ^ $v;\n", v, v, a0, a1);
+                fmt("    $t $v = $v ^ $v;\n", v, v, a0, a1);
             break;
         }
         case VarKind::Shl: jitc_metal_render_binary(v, "<<"); break;
@@ -630,9 +624,9 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Not: {
             Variable *a = jitc_var(v->dep[0]);
             if ((VarType) v->type == VarType::Bool)
-                fmt_metal("    $t $v = !$v;\n", v, v, a);
+                fmt("    $t $v = !$v;\n", v, v, a);
             else
-                fmt_metal("    $t $v = ~$v;\n", v, v, a);
+                fmt("    $t $v = ~$v;\n", v, v, a);
             break;
         }
         case VarKind::Abs: jitc_metal_render_unary(v, "abs"); break;
@@ -652,8 +646,8 @@ static void jitc_metal_render(Variable *v) {
         // -- Reciprocal --
         case VarKind::Rcp:
         case VarKind::RcpApprox:
-            fmt_metal("    $t $v = ($t) 1.0 / $v;\n",
-                      v, v, v, jitc_var(v->dep[0]));
+            fmt("    $t $v = ($t) 1.0 / $v;\n",
+                v, v, v, jitc_var(v->dep[0]));
             break;
 
         case VarKind::RSqrtApprox:
@@ -663,19 +657,18 @@ static void jitc_metal_render(Variable *v) {
         // -- Casts --
         case VarKind::Cast: {
             Variable *a = jitc_var(v->dep[0]);
-            fmt_metal("    $t $v = ($t) $v;\n", v, v, v, a);
+            fmt("    $t $v = ($t) $v;\n", v, v, v, a);
             break;
         }
 
         case VarKind::Bitcast: {
             Variable *a = jitc_var(v->dep[0]);
-            if (v->type == a->type) {
-                fmt_metal("    $t $v = $v;\n", v, v, a);
-            } else if (type_size[v->type] == type_size[a->type]) {
-                fmt_metal("    $t $v = as_type<$t>($v);\n", v, v, v, a);
-            } else {
-                fmt_metal("    $t $v = as_type<$t>(($b) $v);\n", v, v, v, v, a);
-            }
+            if (v->type == a->type)
+                fmt("    $t $v = $v;\n", v, v, a);
+            else if (type_size[v->type] == type_size[a->type])
+                fmt("    $t $v = as_type<$t>($v);\n", v, v, v, a);
+            else
+                fmt("    $t $v = as_type<$t>(($b) $v);\n", v, v, v, v, a);
             break;
         }
 
@@ -685,14 +678,12 @@ static void jitc_metal_render(Variable *v) {
             Variable *mask   = jitc_var(v->dep[1]);
             Variable *buf    = jitc_var(v->dep[2]);
             uint32_t size    = (uint32_t) v->literal;
-            fmt_metal("    bool $v = $v && ($v < (uint) $uu);\n"
-                      "    if ($v && !$v)\n"
-                      "        atomic_store_explicit("
-                      "(device atomic_uint*) $v, $v, "
-                      "memory_order_relaxed);\n",
-                      v, mask, index, size,
-                      mask, v,
-                      buf, index);
+            fmt("    bool $v = $v && ($v < (uint) $uu);\n"
+                "    if ($v && !$v)\n"
+                "        atomic_store_explicit((device atomic_uint*) $v, $v, memory_order_relaxed);\n",
+                v, mask, index, size,
+                mask, v,
+                buf, index);
             break;
         }
 
@@ -703,12 +694,12 @@ static void jitc_metal_render(Variable *v) {
             Variable *mask  = jitc_var(v->dep[2]);
             bool is_unmasked = mask->is_literal() && mask->literal == 1;
             if (is_unmasked)
-                fmt_metal("    $t $v = ((device const $t*) $v)[$v];\n",
-                          v, v, v, src, index);
+                fmt("    $t $v = ((device const $t*) $v)[$v];\n",
+                    v, v, v, src, index);
             else
-                fmt_metal("    $t $v = ($v) ? "
+                fmt("    $t $v = ($v) ? "
                           "((device const $t*) $v)[$v] : ($t) 0;\n",
-                          v, v, mask, v, src, index, v);
+                    v, v, mask, v, src, index, v);
             break;
         }
 
@@ -740,11 +731,11 @@ static void jitc_metal_render(Variable *v) {
             if ((VarKind) src->kind == VarKind::TraceRay ||
                 (VarKind) src->kind == VarKind::ScatterCAS) {
                 // Extract from a multi-output op — reference the pre-declared outputs
-                fmt_metal("    $t $v = $v_out_$u;\n",
-                          v, v, src, sub_index);
+                fmt("    $t $v = $v_out_$u;\n",
+                    v, v, src, sub_index);
             } else {
-                fmt_metal("    $t $v = $v; // extract[$u]\n",
-                          v, v, src, sub_index);
+                fmt("    $t $v = $v; // extract[$u]\n",
+                    v, v, src, sub_index);
             }
             break;
         }
@@ -759,9 +750,9 @@ static void jitc_metal_render(Variable *v) {
                     inner_in->is_array())
                     continue;
                 if (outer_in->reg_index)
-                    fmt_metal("    $t $v = $v;\n", inner_in, inner_in, outer_in);
+                    fmt("    $t $v = $v;\n", inner_in, inner_in, outer_in);
                 else
-                    fmt_metal("    $t $v = ($t) 0;\n", inner_in, inner_in, inner_in);
+                    fmt("    $t $v = ($t) 0;\n", inner_in, inner_in, inner_in);
             }
             put("    while (true) {\n");
             break;
@@ -769,7 +760,7 @@ static void jitc_metal_render(Variable *v) {
 
         case VarKind::LoopCond: {
             Variable *cond = jitc_var(v->dep[1]);
-            fmt_metal("        if (!$v) break;\n", cond);
+            fmt("        if (!$v) break;\n", cond);
             break;
         }
 
@@ -800,7 +791,7 @@ static void jitc_metal_render(Variable *v) {
                 if (in == out || !in->reg_index || !out->reg_index ||
                     in->is_array() || out->scratch != 1)
                     continue;
-                fmt_metal("    $t $v_tmp = $v;\n", in, in, out);
+                fmt("    $t $v_tmp = $v;\n", in, in, out);
                 out->scratch = 2;
             }
 
@@ -811,9 +802,9 @@ static void jitc_metal_render(Variable *v) {
                     in->is_array())
                     continue;
                 if (out->scratch == 2)
-                    fmt_metal("    $v = $v_tmp;\n", in, in);
+                    fmt("    $v = $v_tmp;\n", in, in);
                 else
-                    fmt_metal("    $v = $v;\n", in, out);
+                    fmt("    $v = $v;\n", in, out);
             }
 
             put("    }\n");
@@ -839,7 +830,7 @@ static void jitc_metal_render(Variable *v) {
                 if (outer_out == v) {
                     Variable *inner_in = jitc_var(ld->inner_in[i]);
                     if (v->reg_index && inner_in->reg_index)
-                        fmt_metal("    $t $v = $v;\n", v, v, inner_in);
+                        fmt("    $t $v = $v;\n", v, v, inner_in);
                     break;
                 }
             }
@@ -854,9 +845,9 @@ static void jitc_metal_render(Variable *v) {
             for (size_t i = 0; i < cd->indices_out.size(); ++i) {
                 Variable *vo = jitc_var(cd->indices_out[i]);
                 if (vo && vo->reg_index)
-                    fmt_metal("    $t $v;\n", vo, vo);
+                    fmt("    $t $v;\n", vo, vo);
             }
-            fmt_metal("    if ($v) {\n", cond);
+            fmt("    if ($v) {\n", cond);
             break;
         }
 
@@ -867,7 +858,7 @@ static void jitc_metal_render(Variable *v) {
                 Variable *vt = jitc_var(cd->indices_t[i]),
                          *vo = jitc_var(cd->indices_out[i]);
                 if (vo && vo->reg_index && vt->reg_index)
-                    fmt_metal("    $v = $v;\n", vo, vt);
+                    fmt("    $v = $v;\n", vo, vt);
             }
             put("    } else {\n");
             break;
@@ -880,7 +871,7 @@ static void jitc_metal_render(Variable *v) {
                 Variable *vf = jitc_var(cd->indices_f[i]),
                          *vo = jitc_var(cd->indices_out[i]);
                 if (vo && vo->reg_index && vf->reg_index)
-                    fmt_metal("    $v = $v;\n", vo, vf);
+                    fmt("    $v = $v;\n", vo, vf);
             }
             put("    }\n");
             break;
@@ -919,7 +910,7 @@ static void jitc_metal_render(Variable *v) {
 
             // Guard with active mask
             if (!is_unmasked)
-                fmt_metal("    if ($v) {\n", valid);
+                fmt("    if ($v) {\n", valid);
 
             // Read ray parameters from TraceData indices
             Variable *ox   = jitc_var(td->indices[0]);
@@ -960,20 +951,20 @@ static void jitc_metal_render(Variable *v) {
                     "        _inter.force_opacity(metal::raytracing::forced_opacity::opaque);\n"
                     "        _inter.accept_any_intersection(false);\n");
             }
-            fmt_metal("        metal::raytracing::ray _r;\n"
-                      "        _r.origin = float3($v, $v, $v);\n"
-                      "        _r.direction = float3($v, $v, $v);\n"
-                      "        _r.min_distance = $v;\n"
-                      "        _r.max_distance = $v;\n",
-                      ox, oy, oz, dx, dy, dz, tmin, tmax);
+            fmt("        metal::raytracing::ray _r;\n"
+                "        _r.origin = float3($v, $v, $v);\n"
+                "        _r.direction = float3($v, $v, $v);\n"
+                "        _r.min_distance = $v;\n"
+                "        _r.max_distance = $v;\n",
+                ox, oy, oz, dx, dy, dz, tmin, tmax);
             // Route the intersect call to this scene's kernel-bound
             // accel + IFT (per-scene slots assigned at signature time).
             if (has_ift_local)
-                fmt_metal("        auto _hit = _inter.intersect(_r, accel_$u, ift_$u);\n",
-                          accel_idx, accel_idx);
+                fmt("        auto _hit = _inter.intersect(_r, accel_$u, ift_$u);\n",
+                    accel_idx, accel_idx);
             else
-                fmt_metal("        auto _hit = _inter.intersect(_r, accel_$u);\n",
-                          accel_idx);
+                fmt("        auto _hit = _inter.intersect(_r, accel_$u);\n",
+                    accel_idx);
 
             // Hit-result extraction.
             // - Triangle hit: prim_uv = triangle_barycentric_coord
@@ -990,30 +981,27 @@ static void jitc_metal_render(Variable *v) {
                 // across backends (otherwise backface tests on rays starting
                 // inside a curve report a spurious hit at t=0 with
                 // garbage curve_parameter).
-                fmt_metal("        auto _ht = _hit.type;\n"
-                          "        bool _zero_curve_hit = "
-                          "(_ht == metal::raytracing::intersection_type::curve) "
-                          "&& (_hit.distance <= 0.0f);\n"
-                          "        $v_out_0 = (_ht != metal::raytracing::intersection_type::none) "
-                          "&& !_zero_curve_hit;\n"
-                          "        $v_out_1 = _hit.distance;\n"
-                          "        $v_out_2 = (_ht == metal::raytracing::intersection_type::triangle)\n"
-                          "                   ? _hit.triangle_barycentric_coord.x\n"
-                          "                   : ((_ht == metal::raytracing::intersection_type::curve)\n"
-                          "                      ? _hit.curve_parameter : 0.0f);\n"
-                          "        $v_out_3 = (_ht == metal::raytracing::intersection_type::triangle)\n"
-                          "                   ? _hit.triangle_barycentric_coord.y : 0.0f;\n"
-                          "        $v_out_4 = _hit.instance_id;\n"
-                          "        $v_out_5 = _hit.primitive_id;\n"
-                          "        $v_out_6 = _hit.geometry_id;\n"
-                          "    }\n",
-                          v, v, v, v, v, v, v);
+                fmt("        auto _ht = _hit.type;\n"
+                    "        bool _zero_curve_hit = (_ht == metal::raytracing::intersection_type::curve) && (_hit.distance <= 0.0f);\n"
+                    "        $v_out_0 = (_ht != metal::raytracing::intersection_type::none) && !_zero_curve_hit;\n"
+                    "        $v_out_1 = _hit.distance;\n"
+                    "        $v_out_2 = (_ht == metal::raytracing::intersection_type::triangle)\n"
+                    "                   ? _hit.triangle_barycentric_coord.x\n"
+                    "                   : ((_ht == metal::raytracing::intersection_type::curve)\n"
+                    "                      ? _hit.curve_parameter : 0.0f);\n"
+                    "        $v_out_3 = (_ht == metal::raytracing::intersection_type::triangle)\n"
+                    "                   ? _hit.triangle_barycentric_coord.y : 0.0f;\n"
+                    "        $v_out_4 = _hit.instance_id;\n"
+                    "        $v_out_5 = _hit.primitive_id;\n"
+                    "        $v_out_6 = _hit.geometry_id;\n"
+                    "    }\n",
+                    v, v, v, v, v, v, v);
             } else {
                 // No curves — both the triangle-only fast path and the
                 // triangle+bbox extended path can use the same extraction:
                 // triangle_barycentric_coord is correct for triangle hits and
                 // unused (overwritten) for bbox hits.
-                fmt_metal("        $v_out_0 = (_hit.type != metal::raytracing::intersection_type::none);\n"
+                fmt("        $v_out_0 = (_hit.type != metal::raytracing::intersection_type::none);\n"
                           "        $v_out_1 = _hit.distance;\n"
                           "        $v_out_2 = _hit.triangle_barycentric_coord.x;\n"
                           "        $v_out_3 = _hit.triangle_barycentric_coord.y;\n"
@@ -1055,7 +1043,7 @@ static void jitc_metal_render(Variable *v) {
             break;
 
         case VarKind::CallSelf:
-            fmt_metal("    uint $v = self;\n", v);
+            fmt("    uint $v = self;\n", v);
             break;
 
         case VarKind::CallInput:
@@ -1149,8 +1137,8 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
     // eliminating unused parameters during pipeline compilation.
     if (uses_metal_rt) {
         for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
-            fmt_metal("instance_acceleration_structure accel_$u, ",
-                      (uint32_t) i);
+            fmt("instance_acceleration_structure accel_$u, ",
+                (uint32_t) i);
         for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
             int32_t ift_slot = metal_kernel_ift_slot[i];
             if (ift_slot < 0)
@@ -1162,16 +1150,16 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
                 has_curves_i
                     ? "intersection_function_table<triangle_data, curve_data, instancing>"
                     : "intersection_function_table<triangle_data, instancing>";
-            fmt_metal("$s ift_$u, ", ift_template, (uint32_t) i);
+            fmt("$s ift_$u, ", ift_template, (uint32_t) i);
         }
     }
 
     // Remove trailing ", "
     buffer.delete_trailing_commas();
 
-    fmt_metal(") {\n"
-              "    // Call: $s\n",
-              call->name.c_str());
+    fmt(") {\n"
+        "    // Call: $s\n",
+        call->name.c_str());
 
     for (size_t i = 0; i < schedule.size(); ++i) {
         ScheduledVariable &sv = schedule[i];
@@ -1181,28 +1169,28 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
         // Pre-declare TraceRay output variables in callable functions
         if (kind == VarKind::TraceRay) {
-            fmt_metal("    bool  $v_out_0 = false;\n"
-                      "    float $v_out_1 = 0.0f;\n"
-                      "    float $v_out_2 = 0.0f;\n"
-                      "    float $v_out_3 = 0.0f;\n"
-                      "    uint  $v_out_4 = 0u;\n"
-                      "    uint  $v_out_5 = 0u;\n"
-                      "    uint  $v_out_6 = 0u;\n",
-                      v, v, v, v, v, v, v);
+            fmt("    bool  $v_out_0 = false;\n"
+                "    float $v_out_1 = 0.0f;\n"
+                "    float $v_out_2 = 0.0f;\n"
+                "    float $v_out_3 = 0.0f;\n"
+                "    uint  $v_out_4 = 0u;\n"
+                "    uint  $v_out_5 = 0u;\n"
+                "    uint  $v_out_6 = 0u;\n",
+                v, v, v, v, v, v, v);
         }
 
         if (kind == VarKind::Counter) {
-            fmt_metal("    $t $v = ($t) index;\n", v, v, v);
+            fmt("    $t $v = ($t) index;\n", v, v, v);
         } else if (kind == VarKind::CallInput) {
             Variable *a = jitc_var(v->dep[0]);
             if (vt != VarType::Bool)
-                fmt_metal("    $t $v = *(thread const $t*)(params + $u);\n",
+                fmt("    $t $v = *(thread const $t*)(params + $u);\n",
                           v, v, v, a->param_offset);
             else
-                fmt_metal("    bool $v = *(thread const uint8_t*)(params + $u) != 0;\n",
+                fmt("    bool $v = *(thread const uint8_t*)(params + $u) != 0;\n",
                           v, a->param_offset);
         } else if (kind == VarKind::CallSelf) {
-            fmt_metal("    uint $v = self;\n", v);
+            fmt("    uint $v = self;\n", v);
         } else if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst) << 32);
             auto it = call->data_map.find(key);
@@ -1239,15 +1227,15 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
             uint32_t offset = it->second - call->data_offset[inst];
             if (vt == VarType::Bool)
-                fmt_metal("    bool $v = *(device uint8_t*)(data + $u) != 0;\n",
-                          v, offset);
+                fmt("    bool $v = *(device uint8_t*)(data + $u) != 0;\n",
+                    v, offset);
             else if (vt == VarType::Pointer)
-                fmt_metal("    device uint8_t* $v = "
-                          "*(device uint8_t* device const*)(data + $u);\n",
-                          v, offset);
+                fmt("    device uint8_t* $v = "
+                    "*(device uint8_t* device const*)(data + $u);\n",
+                    v, offset);
             else
-                fmt_metal("    $t $v = *(device $t*)(data + $u);\n",
-                          v, v, v, offset);
+                fmt("    $t $v = *(device $t*)(data + $u);\n",
+                    v, v, v, offset);
         } else if (v->is_literal()) {
             jitc_metal_render(v);
         } else {
@@ -1264,11 +1252,11 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
             continue;
 
         if ((VarType) v->type != VarType::Bool)
-            fmt_metal("    *(thread $t*)(result + $u) = $v;\n",
-                      v, offset, v);
+            fmt("    *(thread $t*)(result + $u) = $v;\n",
+                v, offset, v);
         else
-            fmt_metal("    *(thread uint8_t*)(result + $u) = $v ? 1 : 0;\n",
-                      offset, v);
+            fmt("    *(thread uint8_t*)(result + $u) = $v ? 1 : 0;\n",
+                offset, v);
     }
 
     put("}\n");
@@ -1286,14 +1274,14 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     Variable *mask = jitc_var(jitc_var(call->id)->dep[1]);
     bool is_masked = !mask->is_literal() || mask->literal != 1;
 
-    fmt_metal("\n    // VCall: $s\n", call->name.c_str());
+    fmt("\n    // VCall: $s\n", call->name.c_str());
 
     // =====================================================
     // 2. Declare input local buffers and pack inputs
     // =====================================================
 
     if (in_size) {
-        fmt_metal("    uint8_t _in_$u[$u];\n", call_reg, in_size);
+        fmt("    uint8_t _in_$u[$u];\n", call_reg, in_size);
 
         for (uint32_t i = 0; i < call->n_in; ++i) {
             const Variable *v = jitc_var(call->outer_in[i]);
@@ -1306,10 +1294,10 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
                 continue;
 
             if ((VarType) v->type != VarType::Bool)
-                fmt_metal("    *(thread $t*)(_in_$u + $u) = $v;\n",
+                fmt("    *(thread $t*)(_in_$u + $u) = $v;\n",
                           v, call_reg, v->param_offset, v);
             else
-                fmt_metal("    *(thread uint8_t*)(_in_$u + $u) = $v ? 1 : 0;\n",
+                fmt("    *(thread uint8_t*)(_in_$u + $u) = $v ? 1 : 0;\n",
                           call_reg, v->param_offset, v);
         }
     }
@@ -1319,7 +1307,7 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     // =====================================================
 
     if (out_size)
-        fmt_metal("    uint8_t _out_$u[$u] = {};\n", call_reg, out_size);
+        fmt("    uint8_t _out_$u[$u] = {};\n", call_reg, out_size);
 
     // =====================================================
     // 4. Masked guard + offset table lookup
@@ -1328,18 +1316,18 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     const char *indent = is_masked ? "            " : "        ";
 
     if (is_masked)
-        fmt_metal("    if (v$u) {\n", mask_reg);
+        fmt("    if (v$u) {\n", mask_reg);
 
     // Load the uint64_t entry: (data_offset << 32) | callable_index
-    fmt_metal("$sulong _oe_$u = ((device const ulong*) v$u)[v$u];\n"
-              "$suint _ci_$u = (uint)(_oe_$u & 0xFFFFFFFFu);\n",
-              indent, call_reg, offset_reg, self_reg,
-              indent, call_reg, call_reg);
+    fmt("$sulong _oe_$u = ((device const ulong*) v$u)[v$u];\n"
+        "$suint _ci_$u = (uint)(_oe_$u & 0xFFFFFFFFu);\n",
+        indent, call_reg, offset_reg, self_reg,
+        indent, call_reg, call_reg);
 
     if (data_reg)
-        fmt_metal("$sdevice uint8_t* _cd_$u = "
-                  "(device uint8_t*) v$u + (uint)(_oe_$u >> 32);\n",
-                  indent, call_reg, data_reg, call_reg);
+        fmt("$sdevice uint8_t* _cd_$u = "
+            "(device uint8_t*) v$u + (uint)(_oe_$u >> 32);\n",
+            indent, call_reg, data_reg, call_reg);
 
     // =====================================================
     // 5. Switch-case dispatch
@@ -1353,68 +1341,68 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     if (call->n_inst == 1) {
         // Single instance: direct call, no switch needed
         XXH128_hash_t hash = call->inst_hash[0];
-        fmt_metal("$sfunc_", indent);
+        fmt("$sfunc_", indent);
         buffer.put_q64_unchecked(hash.high64);
         buffer.put_q64_unchecked(hash.low64);
         put("(");
         if (call->use_index)
-            fmt_metal("$s, ", index_name);
+            fmt("$s, ", index_name);
         if (call->use_self)
-            fmt_metal("v$u, ", self_reg);
+            fmt("v$u, ", self_reg);
         if (data_reg)
-            fmt_metal("_cd_$u, ", call_reg);
+            fmt("_cd_$u, ", call_reg);
         if (in_size)
-            fmt_metal("_in_$u, ", call_reg);
+            fmt("_in_$u, ", call_reg);
         if (out_size)
-            fmt_metal("_out_$u, ", call_reg);
+            fmt("_out_$u, ", call_reg);
         // Forward every accel + IFT from the kernel-level bindings
         // into the callable, matching the callable's signature.
         if (uses_metal_rt) {
             for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
-                fmt_metal("accel_$u, ", (uint32_t) i);
+                fmt("accel_$u, ", (uint32_t) i);
             for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
                 if (metal_kernel_ift_slot[i] >= 0)
-                    fmt_metal("ift_$u, ", (uint32_t) i);
+                    fmt("ift_$u, ", (uint32_t) i);
             }
         }
         buffer.delete_trailing_commas();
         put(");\n");
     } else {
-        fmt_metal("$sswitch (_ci_$u) {\n", indent, call_reg);
+        fmt("$sswitch (_ci_$u) {\n", indent, call_reg);
 
         for (uint32_t i = 0; i < call->n_inst; ++i) {
             XXH128_hash_t hash = call->inst_hash[i];
 
-            fmt_metal("$s    case $u: func_$Q$Q(",
+            fmt("$s    case $u: func_$Q$Q(",
                       indent, i,
                       hash.high64, hash.low64);
 
             if (call->use_index)
-                fmt_metal("$s, ", index_name);
+                fmt("$s, ", index_name);
             if (call->use_self)
-                fmt_metal("v$u, ", self_reg);
+                fmt("v$u, ", self_reg);
             if (data_reg)
-                fmt_metal("_cd_$u, ", call_reg);
+                fmt("_cd_$u, ", call_reg);
             if (in_size)
-                fmt_metal("_in_$u, ", call_reg);
+                fmt("_in_$u, ", call_reg);
             if (out_size)
-                fmt_metal("_out_$u, ", call_reg);
+                fmt("_out_$u, ", call_reg);
             // Forward all kernel-bound scene resources into each
             // switch-case branch (mirror of the single-instance path
             // above).
             if (uses_metal_rt) {
                 for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
-                    fmt_metal("accel_$u, ", (uint32_t) i);
+                    fmt("accel_$u, ", (uint32_t) i);
                 for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
                     if (metal_kernel_ift_slot[i] >= 0)
-                        fmt_metal("ift_$u, ", (uint32_t) i);
+                        fmt("ift_$u, ", (uint32_t) i);
                 }
             }
             buffer.delete_trailing_commas();
             put("); break;\n");
         }
 
-        fmt_metal("$s    default: break;\n"
+        fmt("$s    default: break;\n"
                   "$s}\n", indent, indent);
     }
 
@@ -1435,10 +1423,10 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
             continue;
 
         if ((VarType) v->type != VarType::Bool)
-            fmt_metal("    $t $v = *(thread const $t*)(_out_$u + $u);\n",
+            fmt("    $t $v = *(thread const $t*)(_out_$u + $u);\n",
                       v, v, v, call_reg, offset);
         else
-            fmt_metal("    bool $v = *(thread const uint8_t*)(_out_$u + $u) != 0;\n",
+            fmt("    bool $v = *(thread const uint8_t*)(_out_$u + $u) != 0;\n",
                       v, call_reg, offset);
     }
 
