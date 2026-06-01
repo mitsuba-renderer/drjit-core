@@ -444,9 +444,9 @@ public:
 
     void barrier() override;
 
-    Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
-                 uint32_t size, std::vector<void *> *kernel_params,
-                 const std::vector<uint32_t> *kernel_param_ids,
+    Task *launch(Kernel kernel, KernelKey &key, XXH128_hash_t hash,
+                 uint32_t size, std::vector<void *> &kernel_params,
+                 const std::vector<uint32_t> &kernel_param_ids,
                  KernelHistoryEntry *kernel_history_entry) override;
 
     /// Fill a device memory region with constants of a given type
@@ -617,9 +617,9 @@ public:
     void record_expand(uint32_t index);
 
     /// Record a kernel launch
-    void record_launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
-                       uint32_t size, std::vector<void *> *kernel_params,
-                       const std::vector<uint32_t> *kernel_param_ids);
+    void record_launch(Kernel kernel, KernelKey &key, XXH128_hash_t hash,
+                       uint32_t size, std::vector<void *> &kernel_params,
+                       const std::vector<uint32_t> &kernel_param_ids);
     void record_memset_async(void *ptr, uint32_t size, uint32_t isize,
                              const void *src);
     void record_compress(const uint8_t *in, uint32_t size, uint32_t *out);

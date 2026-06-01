@@ -18,8 +18,8 @@
 #include "var.h"
 
 struct MetalThreadState : ThreadState {
-    /// Lazily initialized in jitc_init_thread_state(). The MTL::CommandQueue*,
-    /// MTL::Device*, and MTL::SharedEvent* are stored in the ThreadStateBase
+    /// Lazily initialized in jitc_init_thread_state(). The id<MTLCommandQueue>,
+    /// id<MTLDevice>, and id<MTLSharedEvent> are stored in the ThreadStateBase
     /// fields ``metal_queue`` / ``metal_device`` / ``metal_event``.
     MetalThreadState() = default;
     ~MetalThreadState();
@@ -28,11 +28,31 @@ struct MetalThreadState : ThreadState {
     /// useResource() calls at kernel launch time.
     std::vector<void *> metal_call_resources;
 
+    // -- Command buffer / encoder lifecycle (defined in metal_ts.mm) ---------
+
+    /// Return the pending command buffer, opening one on first use. A non-null
+    /// ``metal_command_buffer`` is the "GPU work is queued" signal.
+    void *ensure_cmdbuf();
+
+    /// End and release the currently-open encoder, if any.
+    void close_encoder();
+
+    /// Return the active compute / blit encoder, opening or switching the
+    /// encoder as needed (also opening the command buffer if necessary).
+    void *ensure_compute_encoder();
+    void *ensure_blit_encoder();
+
+    /// Commit the pending command buffer (if one is open), optionally waiting
+    /// for GPU completion, and clear the slot. A no-op when no command buffer
+    /// is open, so a no-work sync is cheap.
+    void flush(bool wait);
+
+    /// The Metal backend uses barrier() as a hint to submit the command buffer
     void barrier() override;
 
-    Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
-                 uint32_t size, std::vector<void *> *kernel_params,
-                 const std::vector<uint32_t> *kernel_param_ids,
+    Task *launch(Kernel kernel, KernelKey &key, XXH128_hash_t hash,
+                 uint32_t size, std::vector<void *> &kernel_params,
+                 const std::vector<uint32_t> &kernel_param_ids,
                  KernelHistoryEntry *kernel_history_entry) override;
 
     /// Fill a device memory region with constants of a given type
@@ -82,7 +102,7 @@ struct MetalThreadState : ThreadState {
     void aggregate(void *dst, AggregationEntry *agg, uint32_t size) override;
 
     /// Enqueue a host callback to fire when the current command buffer
-    /// completes. Implemented via ``MTL::CommandBuffer::addCompletedHandler``.
+    /// completes. Implemented via ``-[MTLCommandBuffer addCompletedHandler:]``.
     void enqueue_host_func(void (*callback)(void *), void *payload) override;
 
     /// Pack matrices/vectors for the cooperative vector API.
@@ -98,7 +118,7 @@ struct MetalThreadState : ThreadState {
     /// The ``in``/``out`` arguments are GPU virtual addresses (returned
     /// by ``jitc_var_data``) — we route each copy through the existing
     /// ``memcpy_async`` path which knows how to translate them to
-    /// ``MTL::Buffer*`` and dispatch a blit encoder. Logically mirrors
+    /// ``id<MTLBuffer>`` and dispatch a blit encoder. Logically mirrors
     /// LLVMThreadState::coop_vec_pack (llvm_ts.cpp:1058).
     void coop_vec_pack(uint32_t count, const void *in_, const MatrixDescr *in_d,
                        void *out_, const MatrixDescr *out_d) override {

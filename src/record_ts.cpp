@@ -664,10 +664,10 @@ bool RecordThreadState::resume() {
     return tmp;
 }
 
-Task *RecordThreadState::launch(Kernel kernel, KernelKey *key,
+Task *RecordThreadState::launch(Kernel kernel, KernelKey &key,
                                 XXH128_hash_t hash, uint32_t size,
-                                std::vector<void *> *params,
-                                const std::vector<uint32_t> *kernel_param_ids,
+                                std::vector<void *> &params,
+                                const std::vector<uint32_t> &kernel_param_ids,
                                 KernelHistoryEntry *kernel_history_entry) {
     if (!paused()) {
         try {
@@ -682,14 +682,14 @@ Task *RecordThreadState::launch(Kernel kernel, KernelKey *key,
     m_internal->optix_pipeline = optix_pipeline;
     m_internal->optix_sbt      = optix_sbt;
 #endif
-    return m_internal->launch(kernel, key, hash, size, params, nullptr,
+    return m_internal->launch(kernel, key, hash, size, params, kernel_param_ids,
                               kernel_history_entry);
 }
 
 void RecordThreadState::record_launch(
-    Kernel kernel, KernelKey *key, XXH128_hash_t hash, uint32_t size,
-    std::vector<void *> *params,
-    const std::vector<uint32_t> *kernel_param_ids) {
+    Kernel kernel, KernelKey &key, XXH128_hash_t hash, uint32_t size,
+    std::vector<void *> &params,
+    const std::vector<uint32_t> &kernel_param_ids) {
     uint32_t kernel_param_offset =
         (backend == JitBackend::CUDA || backend == JitBackend::Metal) ? 1 : 3;
 
@@ -708,16 +708,16 @@ void RecordThreadState::record_launch(
 #endif
 
     uint32_t start = (uint32_t) m_recording.dependencies.size();
-    for (uint32_t param_index = 0; param_index < kernel_param_ids->size();
+    for (uint32_t param_index = 0; param_index < kernel_param_ids.size();
          param_index++) {
 
         bool pointer_access = false;
-        uint32_t index      = kernel_param_ids->at(param_index);
+        uint32_t index      = kernel_param_ids.at(param_index);
         Variable *v         = jitc_var(index);
 
         // Note, the ptr might not come from the variable but the \c
         // ScheduledVariable if it is an output.
-        void *ptr = params->at(kernel_param_offset + param_index);
+        void *ptr = params.at(kernel_param_offset + param_index);
         ParamType param_type = (ParamType) v->param_type;
 
         if (param_type == ParamType::Input &&
@@ -772,14 +772,14 @@ void RecordThreadState::record_launch(
                      " %s recording param %u = var(%u, points to r%u, "
                      "size=%u, data=%p, type=%s) at s%u",
                      param_type == ParamType::Output ? "<-" : "->", param_index,
-                     kernel_param_ids->at(param_index), index, v->size, ptr,
+                     kernel_param_ids.at(param_index), index, v->size, ptr,
                      type_name[(uint32_t) v->type], slot);
         } else {
             jitc_log(LogLevel::Debug,
                      " %s recording param %u = var(%u, size=%u, "
                      "data=%p, type=%s) at s%u",
                      param_type == ParamType::Output ? "<-" : "->", param_index,
-                     kernel_param_ids->at(param_index), v->size, ptr,
+                     kernel_param_ids.at(param_index), v->size, ptr,
                      type_name[(uint32_t) v->type], slot);
         }
 
@@ -802,11 +802,11 @@ void RecordThreadState::record_launch(
     op.kernel.key      = (KernelKey *) malloc_check(sizeof(KernelKey));
     size_t str_size    = buffer.size() + 1;
     op.kernel.key->str = (char *) malloc_check(str_size);
-    std::memcpy(op.kernel.key->str, key->str, str_size);
+    std::memcpy(op.kernel.key->str, key.str, str_size);
     op.kernel.hash            = hash;
-    op.kernel.key->device     = key->device;
-    op.kernel.key->flags      = key->flags;
-    op.kernel.key->high64     = key->high64;
+    op.kernel.key->device     = key.device;
+    op.kernel.key->flags      = key.flags;
+    op.kernel.key->high64     = key.high64;
 
     op.size = size;
 
@@ -842,9 +842,9 @@ void RecordThreadState::record_launch(
     // Find out which pointer variables, if any contributed to the final size of
     // the kernel. We only use those when inferring the launch size.
     if (input_size == 0)
-        for (uint32_t i = 0; i < kernel_param_ids->size(); i++) {
+        for (uint32_t i = 0; i < kernel_param_ids.size(); i++) {
 
-            uint32_t index = kernel_param_ids->at(i);
+            uint32_t index = kernel_param_ids.at(i);
             Variable *v    = jitc_var(index);
 
             if ((VarType) v->type == VarType::Pointer) {
@@ -1050,8 +1050,9 @@ int Recording::replay_launch(Operation &op) {
             kernel_history_entry.operation_count = op.kernel.kernel.operation_count;
         }
 
-        ts->launch(kernel, op.kernel.key, op.kernel.hash, launch_size,
-                   &kernel_params, nullptr,
+        const std::vector<uint32_t> empty_param_ids;
+        ts->launch(kernel, *op.kernel.key, op.kernel.hash, launch_size,
+                   kernel_params, empty_param_ids,
                    unlikely(record_kernel_history) ? &kernel_history_entry
                                                    : nullptr);
 
@@ -2599,9 +2600,9 @@ struct DisabledThreadState : ThreadState {
     }
 
     void barrier() override { record_exception(); }
-    Task *launch(Kernel /*kernel*/, KernelKey * /*key*/, XXH128_hash_t /*hash*/,
-                 uint32_t /*size*/, std::vector<void *> * /*kernel_params*/,
-                 const std::vector<uint32_t> * /*kernel_param_ids*/,
+    Task *launch(Kernel /*kernel*/, KernelKey & /*key*/, XXH128_hash_t /*hash*/,
+                 uint32_t /*size*/, std::vector<void *> & /*kernel_params*/,
+                 const std::vector<uint32_t> & /*kernel_param_ids*/,
                  KernelHistoryEntry * /*kernel_history_entry*/) override {
         record_exception();
         return nullptr;

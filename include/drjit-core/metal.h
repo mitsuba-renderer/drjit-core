@@ -16,12 +16,12 @@
 extern "C" {
 #endif
 
-/// Return an opaque pointer to the active Metal device (``MTL::Device*``).
+/// Return an opaque pointer to the active Metal device (``id<MTLDevice>``).
 /// Useful for application code that wishes to interoperate with raw Metal
 /// APIs (e.g. acceleration structure construction).
 extern JIT_EXPORT void *jit_metal_context();
 
-/// Return the Metal command queue handle (``MTL::CommandQueue*``) that Dr.Jit
+/// Return the Metal command queue handle (``id<MTLCommandQueue>``) that Dr.Jit
 /// uses for kernel submission.
 extern JIT_EXPORT void *jit_metal_command_queue();
 
@@ -47,17 +47,17 @@ extern JIT_EXPORT void *jit_metal_command_queue();
  * IR node at recording time.
  *
  * \param acceleration_structure
- *     ``MTL::AccelerationStructure*`` — the TLAS to bind at ``[[buffer(1)]]``
+ *     ``id<MTLAccelerationStructure>`` — the TLAS to bind at ``[[buffer(1)]]``
  *     for every kernel that traces against this scene.
  *
  * \param resources / n_resources
- *     List of ``MTL::Resource*`` pointers that the TLAS references (child
+ *     List of ``id<MTLResource>`` pointers that the TLAS references (child
  *     BLAS, vertex/index buffers, etc.). All entries are marked resident
  *     via ``useResource()`` whenever a kernel that uses this scene is
  *     launched.
  *
  * \param intersection_fn_library
- *     Optional ``MTL::Library*`` with custom intersection functions
+ *     Optional ``id<MTLLibrary>`` with custom intersection functions
  *     (``[[intersection(bounding_box, instancing)]]``). May be ``nullptr``
  *     for triangle-only scenes.
  *
@@ -70,7 +70,7 @@ extern JIT_EXPORT void *jit_metal_command_queue();
  *     intersection function in ``intersection_fn_library``.
  *
  * \param ift_buffers
- *     Array of length ``n_ift_entries``. Each is an ``MTL::Buffer*``
+ *     Array of length ``n_ift_entries``. Each is an ``id<MTLBuffer>``
  *     bound to the IFT at the slot indicated by ``ift_buffer_slots[i]``.
  *     Individual entries may be null.
  *
@@ -149,9 +149,9 @@ extern JIT_EXPORT void jit_metal_ray_trace(uint32_t n_args, uint32_t *args,
                                            uint32_t n_out, uint32_t scene);
 
 /**
- * \brief Look up the MTL::Buffer containing the given pointer.
+ * \brief Look up the id<MTLBuffer> containing the given pointer.
  *
- * Returns the ``MTL::Buffer*`` whose address range covers ``ptr``, or
+ * Returns the ``id<MTLBuffer>`` whose address range covers ``ptr``, or
  * ``nullptr`` if no registered buffer contains that address.
  * If found, ``*offset`` is set to the byte offset from the buffer start.
  */
@@ -161,7 +161,7 @@ extern JIT_EXPORT void *jit_metal_lookup_buffer(void *ptr, size_t *offset);
  * \brief Invalidate a scene's TLAS pointer ahead of releasing it.
  *
  * Call this from ``accel_release_metal`` *before* releasing the
- * MTL::AccelerationStructure handle. If the underlying MetalScene is
+ * id<MTLAccelerationStructure> handle. If the underlying MetalScene is
  * still alive (e.g. captured by a frozen-function recording's TraceRay
  * dependency), this nulls out its ``tlas`` field so subsequent kernel
  * launches that resolve back to this MetalScene see "no TLAS" and fall

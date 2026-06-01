@@ -62,10 +62,10 @@ struct Kernel {
 
 #if defined(DRJIT_ENABLE_METAL)
         struct {
-            /// Compiled MTL::ComputePipelineState* (kept opaque)
+            /// Compiled id<MTLComputePipelineState> (kept opaque)
             void *pipeline;
 
-            /// Owning MTL::Library* (released at kernel teardown)
+            /// Owning id<MTLLibrary> (released at kernel teardown)
             void *library;
 
             /// Recommended threadgroup size, queried via

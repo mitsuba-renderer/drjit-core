@@ -75,10 +75,10 @@ void LLVMThreadState::barrier() {
 }
 
 Task *
-LLVMThreadState::launch(Kernel kernel, KernelKey * /*key*/,
+LLVMThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                         XXH128_hash_t /*hash*/, uint32_t size,
-                        std::vector<void *> *kernel_params,
-                        const std::vector<uint32_t> * /*kernel_param_ids*/,
+                        std::vector<void *> &kernel_params,
+                        const std::vector<uint32_t> & /*kernel_param_ids*/,
                         KernelHistoryEntry *kernel_history_entry) {
     Task *ret_task = nullptr;
 
@@ -147,8 +147,8 @@ LLVMThreadState::launch(Kernel kernel, KernelKey * /*key*/,
 #endif
     };
 
-    (*kernel_params)[0] = (void *) kernel.llvm.reloc[0];
-    (*kernel_params)[1] = (void *) ((((uintptr_t) block_size) << 32) +
+    kernel_params[0] = (void *) kernel.llvm.reloc[0];
+    kernel_params[1] = (void *) ((((uintptr_t) block_size) << 32) +
                                  (uintptr_t) size);
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
@@ -161,8 +161,8 @@ LLVMThreadState::launch(Kernel kernel, KernelKey * /*key*/,
 
     ret_task = task_submit_dep(
         nullptr, &jitc_task, 1, blocks,
-        callback, kernel_params->data(),
-        (uint32_t) (kernel_params->size() * sizeof(void *)),
+        callback, kernel_params.data(),
+        (uint32_t) (kernel_params.size() * sizeof(void *)),
         nullptr
     );
 

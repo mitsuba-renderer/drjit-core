@@ -12,6 +12,7 @@
 
 #include "metal.h"
 #include "metal_eval.h"
+#include "metal_ts.h"
 #include "internal.h"
 #include "malloc.h"
 #include "log.h"
@@ -39,8 +40,7 @@
 // Buffer API
 // ============================================================================
 //
-void *metal_buffer_new(void *device, size_t size, bool shared,
-                            void **ptr_out) {
+void *metal_buffer_new(void *device, size_t size, bool shared, void **ptr_out) {
     @autoreleasepool {
         id<MTLDevice> dev = (__bridge id<MTLDevice>) device;
         MTLResourceOptions opts = shared ? MTLResourceStorageModeShared
@@ -60,18 +60,22 @@ void metal_buffer_free(void *buffer) {
 
 void jitc_metal_cmdbuf_free_on_complete(void *cmdbuf, uint64_t info,
                                         void *ptr) {
-    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cmdbuf;
-    [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-        jitc_malloc_release(info, ptr);
-    }];
+    @autoreleasepool {
+        id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cmdbuf;
+        [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
+            jitc_malloc_release(info, ptr);
+        }];
+    }
 }
 
 // Lazily-sorted flat vector of (base address, id<MTLBuffer>, length) entries.
+// Protected by ``state.lock``.
 struct BufferEntry {
     uintptr_t base;
     void     *buf;    // id<MTLBuffer>
     size_t    length;
 };
+
 static std::vector<BufferEntry> metal_buffer_map;
 static bool metal_buffer_map_sorted = true;
 
@@ -125,78 +129,9 @@ void *jitc_metal_unregister_buffer(void *ptr) {
     if (it == metal_buffer_map.end() || it->base != addr)
         return nullptr;
     void *buf = it->buf;
+    // Turn the entry into a tombstone to postpone cleanup work
     it->buf = nullptr;
     return buf;
-}
-
-// ============================================================================
-//  Encoder lifecycle helpers
-// ============================================================================
-
-enum class MetalEncoderKind : uint32_t {
-    None = 0,
-    Compute,
-    Blit,
-    Acceleration
-};
-
-static void *metal_encoder = nullptr; // owned (+1) id<MTL...CommandEncoder>
-static MetalEncoderKind metal_encoder_kind = MetalEncoderKind::None;
-
-void *jitc_metal_acquire_cmdbuf(ThreadState *ts) {
-    if (ts->metal_command_buffer)
-        return ts->metal_command_buffer;
-
-    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>) ts->metal_queue;
-    id<MTLCommandBuffer> cb = [queue commandBuffer];
-    void *handle = (__bridge_retained void *) cb;
-    ts->metal_command_buffer = handle;
-    return handle;
-}
-
-void jitc_metal_close_encoder(ThreadState *) {
-    if (metal_encoder_kind == MetalEncoderKind::Compute) {
-        id<MTLComputeCommandEncoder> enc =
-            (__bridge_transfer id<MTLComputeCommandEncoder>) metal_encoder;
-        [enc endEncoding];
-    } else if (metal_encoder_kind == MetalEncoderKind::Blit) {
-        id<MTLBlitCommandEncoder> enc =
-            (__bridge_transfer id<MTLBlitCommandEncoder>) metal_encoder;
-        [enc endEncoding];
-    } else if (metal_encoder_kind == MetalEncoderKind::Acceleration) {
-        id<MTLAccelerationStructureCommandEncoder> enc =
-            (__bridge_transfer id<MTLAccelerationStructureCommandEncoder>)
-                metal_encoder;
-        [enc endEncoding];
-    }
-    metal_encoder = nullptr;
-    metal_encoder_kind = MetalEncoderKind::None;
-}
-
-void *jitc_metal_acquire_compute_encoder(ThreadState *ts) {
-    if (metal_encoder_kind == MetalEncoderKind::Compute)
-        return metal_encoder;
-    jitc_metal_close_encoder(ts);
-    id<MTLCommandBuffer> cb =
-        (__bridge id<MTLCommandBuffer>) jitc_metal_acquire_cmdbuf(ts);
-    id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
-    void *handle = (__bridge_retained void *) enc;
-    metal_encoder = handle;
-    metal_encoder_kind = MetalEncoderKind::Compute;
-    return handle;
-}
-
-void *jitc_metal_acquire_blit_encoder(ThreadState *ts) {
-    if (metal_encoder_kind == MetalEncoderKind::Blit)
-        return metal_encoder;
-    jitc_metal_close_encoder(ts);
-    id<MTLCommandBuffer> cb =
-        (__bridge id<MTLCommandBuffer>) jitc_metal_acquire_cmdbuf(ts);
-    id<MTLBlitCommandEncoder> enc = [cb blitCommandEncoder];
-    void *handle = (__bridge_retained void *) enc;
-    metal_encoder = handle;
-    metal_encoder_kind = MetalEncoderKind::Blit;
-    return handle;
 }
 
 // ============================================================================
@@ -529,22 +464,12 @@ void jitc_metal_commit_and_wait(void *cb_ptr) {
     [cb waitUntilCompleted];
 }
 
-/// Flush the thread's pending command buffer: close the open encoder, commit,
-/// and wait for the GPU to finish so the CPU can read back results.
+/// Flush the thread's pending command buffer and wait for the GPU to finish so
+/// the CPU can read back results.
 void jitc_metal_sync(ThreadState *ts) {
-    @autoreleasepool {
-        if (auto *rts = dynamic_cast<RecordThreadState *>(ts))
-            ts = rts->m_internal;
-        if (!ts->metal_command_buffer)
-            return;
-        id<MTLCommandBuffer> cb =
-            (__bridge_transfer id<MTLCommandBuffer>) ts->metal_command_buffer;
-        ts->metal_command_buffer = nullptr;
-        jitc_metal_close_encoder(ts);
-
-        [cb commit];
-        [cb waitUntilCompleted];
-    }
+    if (auto *rts = dynamic_cast<RecordThreadState *>(ts))
+        ts = rts->m_internal;
+    ((MetalThreadState *) ts)->flush(/* wait = */ true);
 }
 
 // ============================================================================
