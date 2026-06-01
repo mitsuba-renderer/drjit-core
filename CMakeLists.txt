@@ -142,8 +142,6 @@ if (DRJIT_ENABLE_METAL)
     src/metal_array.cpp
     src/metal_coop_vec.h
     src/metal_coop_vec.cpp
-    src/metal_stage_buffer.h
-    src/metal_stage_buffer.mm
     src/metal_mps.mm)
 endif()
 
@@ -338,7 +336,6 @@ if (DRJIT_ENABLE_METAL)
   set_source_files_properties(
     src/metal_core.mm
     src/metal_ts.mm
-    src/metal_stage_buffer.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 endif()
 

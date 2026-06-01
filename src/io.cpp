@@ -457,8 +457,8 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
         if ((state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0 &&
             (state.backends & (1u << (uint32_t) JitBackend::Metal)) != 0) {
             // Metal kernel.
-            extern void jitc_metal_free(Kernel &);
-            jitc_metal_free(const_cast<Kernel &>(kernel));
+            extern void jitc_metal_kernel_free(Kernel &);
+            jitc_metal_kernel_free(const_cast<Kernel &>(kernel));
             return;
         }
 #endif

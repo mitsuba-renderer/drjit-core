@@ -80,7 +80,7 @@ struct Kernel {
             /// held by the recording's input set), so this kernel struct is a
             /// non-owning reference array. ``scenes == nullptr`` for kernels
             /// that do not perform ray tracing. The array is heap-allocated
-            /// via ``new[]`` and released in ``jitc_metal_free``.
+            /// via ``new[]`` and released in ``jitc_metal_kernel_free``.
             void **scenes;
             uint32_t scene_count;
         } metal;

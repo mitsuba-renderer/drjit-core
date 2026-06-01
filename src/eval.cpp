@@ -623,8 +623,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 #if defined(DRJIT_ENABLE_METAL)
         if (ts->backend == JitBackend::Metal) {
             ProfilerPhase profiler(profiler_region_backend_compile);
-            cache_hit = jitc_metal_compile(buffer.get(), buffer.size(),
-                                           kernel_name, kernel);
+            cache_hit = jitc_metal_kernel_compile(buffer.get(), buffer.size(),
+                                                  kernel_name, kernel);
         } else
 #endif
         {
