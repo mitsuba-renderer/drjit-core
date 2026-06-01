@@ -12,11 +12,6 @@
     each coopvec variable lowers to ``array_length`` independent MSL scalars
     named ``$v_0, $v_1, ..., $v_{N-1}``, and per-element ops emit one MSL
     expression per element.
-
-    Phase B (simdgroup_matrix-accelerated CoopVecMatVec) lives in this same
-    file so the dispatcher only has one place to look. See the plan in
-    ``~/.claude/plans/i-pushed-it-myself-prancy-patterson.md`` for the
-    overall design.
 */
 
 #pragma once

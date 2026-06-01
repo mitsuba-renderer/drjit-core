@@ -105,8 +105,6 @@ bool uses_optix = false;
 
 /// Does this Metal kernel use ray tracing?
 bool uses_metal_rt = false;
-bool uses_simdgroup_matrix = false;
-uint32_t simdgroup_tgm_floats = 0;
 
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 int32_t alloca_size = -1;
@@ -305,8 +303,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     indirect_callable_count = 0;
     indirect_callable_count_unique = 0;
     uses_metal_rt = false;
-    uses_simdgroup_matrix = false;
-    simdgroup_tgm_floats = 0;
 #if defined(DRJIT_ENABLE_METAL)
     jitc_metal_assemble_reset();
 #endif
@@ -432,28 +428,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                     ((VarKind) v->kind == VarKind::TraceRay ||
                      (VarKind) v->kind == VarKind::Call))
                     uses_metal_rt = true;
-
-                // Detect simdgroup_matrix-eligible matvecs and reserve the
-                // largest (rows + cols) of TGM in floats per SIMD lane.
-                // The fast path works for both transpose=false (out =
-                // A @ x) and transpose=true (out = Aᵀ @ x); the transpose
-                // is folded into ``simdgroup_load(... transpose_matrix=
-                // true ...)`` in metal_coop_vec.cpp. The TGM footprint is
-                // determined by the physical matrix dimensions, which are
-                // identical in both cases (rows + cols).
-                if (backend == JitBackend::Metal &&
-                    (VarKind) v->kind == VarKind::CoopVecMatVec &&
-                    (VarType) v->type == VarType::Float32 && v->dep[1]) {
-                    CoopVecMatVecData *d = (CoopVecMatVecData *) v->data;
-                    uint32_t rows = d->A_descr.rows,
-                             cols = d->A_descr.cols;
-                    if (rows % 8 == 0 && cols % 8 == 0) {
-                        uses_simdgroup_matrix = true;
-                        uint32_t need = rows + cols;
-                        if (need > simdgroup_tgm_floats)
-                            simdgroup_tgm_floats = need;
-                    }
-                }
             #endif
         }
     }
