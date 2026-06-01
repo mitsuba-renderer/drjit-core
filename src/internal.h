@@ -1089,12 +1089,18 @@ inline ThreadState *thread_state(JitBackend backend) {
             result = thread_state_metal;
             break;
 #endif
-        default:
+        case JitBackend::LLVM:
             result = thread_state_llvm;
             break;
+
+        default:
+            result = nullptr;
+            break;
     }
+
     if (unlikely(!result))
         result = jitc_init_thread_state(backend);
+
     return result;
 }
 
