@@ -167,10 +167,11 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
                 unlock_guard guard(state.lock);
                 if (host_alloc) {
                     ptr = aligned_malloc(size);
+
 #if defined(DRJIT_ENABLE_METAL)
                 } else if (backend == JitBackend::Metal) {
-                    metal_buf = jitc_metal_buffer_new(ts->metal_device, size,
-                                                      shared, &ptr);
+                    metal_buf =
+                        metal_buffer_new(ts->metal_device, size, shared, &ptr);
 #endif
 
 #if defined(DRJIT_ENABLE_CUDA)
@@ -232,22 +233,21 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
     return ptr;
 }
 
+/// Return a no-longer-used allocation to the free list
+void jitc_malloc_release(AllocInfo info, void *ptr) {
+    lock_guard guard(state.alloc_free_lock);
+    state.alloc_free[info].push_back(ptr);
+}
+
 struct ReleaseRecord {
     AllocInfo info;
     void *ptr;
 };
 
-/// Return a (no-longer-in-use) allocation to the free list. Used both
-/// synchronously and from GPU completion handlers.
-void jitc_malloc_free_deferred(AllocInfo info, void *ptr) {
-    lock_guard guard(state.alloc_free_lock);
-    state.alloc_free[info].push_back(ptr);
-}
-
-/// Helper function used in jitc_free
-static inline void release_callback(const void *p) {
+/// Wrapper using the callback ABI used by nanothread tasks / CUDA host funcs
+static inline void release_cb(const void *p) {
     const ReleaseRecord *r = (const ReleaseRecord *) p;
-    jitc_malloc_free_deferred(r->info, r->ptr);
+    jitc_malloc_release(r->info, r->ptr);
 };
 
 void jitc_free(void *ptr) {
@@ -291,17 +291,17 @@ void jitc_free(void *ptr) {
     // are only safe to reuse once queued computation completes, which we
     // detect by enqueueing a callback.
     if (!shared || backend == JitBackend::None) {
-        release_callback(&rec);
+        release_cb(&rec);
     } else if (backend == JitBackend::LLVM) {
         if (jitc_task) {
             Task *new_task = task_submit_dep(
                 nullptr, &jitc_task, 1, /*size=*/1,
-                [](uint32_t, void *p) { release_callback(p); },
+                [](uint32_t, void *p) { release_cb(p); },
                 &rec, sizeof(ReleaseRecord));
             task_release(jitc_task);
             jitc_task = new_task;
         } else {
-            release_callback(&rec);
+            release_cb(&rec);
         }
     }
 
@@ -311,7 +311,7 @@ void jitc_free(void *ptr) {
         *rec2 = rec;
         cuda_check(cuLaunchHostFunc(
             thread_state_cuda->stream,
-            [](void *p) { release_callback(p); free(p); },
+            [](void *p) { release_cb(p); free(p); },
             rec2));
     }
 #endif
@@ -322,7 +322,7 @@ void jitc_free(void *ptr) {
             jitc_metal_cmdbuf_free_on_complete(ts->metal_command_buffer,
                                                rec.info, rec.ptr);
         else
-            release_callback(&rec);
+            release_cb(&rec);
     }
 #endif
 
@@ -534,7 +534,7 @@ void jitc_flush_malloc_cache(bool warn) {
                 }
                 for (void *buf : bufs)
                     if (buf)
-                        jitc_metal_buffer_free(buf);
+                        metal_buffer_free(buf);
                 continue;
             }
 #endif

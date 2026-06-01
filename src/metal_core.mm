@@ -6,31 +6,12 @@
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
-
-    --------------------------------------------------------------------------
-
-    This file talks to Metal directly through the native Objective-C API
-    (``#import <Metal/Metal.h>``) and is compiled as Objective-C++ with ARC
-    (``-fobjc-arc``). The rest of the Dr.Jit codebase only ever sees Metal
-    handles as opaque ``void*`` pointers stored in plain C++ structs; this
-    file is where those ``void*`` are bridged to/from ``id<MTL...>``.
-
-    ARC bridging contract for the ``void*`` handle fields:
-      * Hand an owned (+1) object out to a ``void*`` field / return value:
-        ``(__bridge_retained void *) obj``  (this is the +1 that the old
-        metal-cpp code expressed via ``->retain()`` or a ``new*`` method).
-      * Release a ``void*`` field:  ``(void) (__bridge_transfer id) field``
-        (replaces the old ``->release()``).
-      * Borrow without ownership change:  ``(__bridge id) field``.
-    Transient objects (NSString, MTLCompileOptions, descriptors, ...) are
-    plain ARC locals and need no manual release.
 */
 
 #if defined(DRJIT_ENABLE_METAL)
 
 #include "metal.h"
 #include "metal_eval.h"
-#include "metal_stage_buffer.h"
 #include "internal.h"
 #include "malloc.h"
 #include "log.h"
@@ -38,13 +19,10 @@
 #include "var.h"
 #include "trace.h"
 #include "record_ts.h"
-#include "drjit-core/metal.h"  // public extern "C" declarations
-#include "metal_kernels_src.h" // generated: drjit::metal_kernels_src
+#include "drjit-core/metal.h"
+#include "metal_kernels_src.h"
 
-// Suppress the obsolete Carbon <CarbonCore/Threads.h> (pulled in transitively
-// by Foundation), whose ``typedef UInt16 ThreadState`` collides with Dr.Jit's
-// ``struct ThreadState``. We do not use the Carbon Thread Manager. Defining
-// the header's include guard up front keeps its body out of this TU.
+// Suppress the obsolete Carbon <CarbonCore/Threads.h>, whose ThreadState collides with Dr.Jit
 #define __THREADS__
 #import <Metal/Metal.h>
 
@@ -60,18 +38,37 @@
 #include <algorithm>
 
 // ============================================================================
-//  Pointer ↔ MTLBuffer mapping
-//
-//  Dr.Jit treats device memory as raw void* but the Metal API requires
-//  ``MTLBuffer`` references (for ``setBuffer``, ``useResource``, ``gpuAddress``,
-//  etc.). We maintain a simple thread-safe hash map. The stored ``void*`` is
-//  an ``id<MTLBuffer>`` that is owned (+1) by ``malloc.cpp`` (via
-//  ``jitc_metal_buffer_new``) — the map only borrows it.
+// Buffer API
 // ============================================================================
+//
+void *metal_buffer_new(void *device, size_t size, bool shared,
+                            void **ptr_out) {
+    @autoreleasepool {
+        id<MTLDevice> dev = (__bridge id<MTLDevice>) device;
+        MTLResourceOptions opts = shared ? MTLResourceStorageModeShared
+                                         : MTLResourceStorageModePrivate;
+        id<MTLBuffer> buf = [dev newBufferWithLength:size options:opts];
+        *ptr_out = shared ? [buf contents]
+                          : (void *) (uintptr_t) [buf gpuAddress];
+        return (__bridge_retained void *) buf;
+    }
+}
+
+void metal_buffer_free(void *buffer) {
+    @autoreleasepool {
+        (void) (__bridge_transfer id<MTLBuffer>) buffer; // release the +1
+    }
+}
+
+void jitc_metal_cmdbuf_free_on_complete(void *cmdbuf, uint64_t info,
+                                        void *ptr) {
+    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cmdbuf;
+    [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
+        jitc_malloc_release(info, ptr);
+    }];
+}
 
 // Lazily-sorted flat vector of (base address, id<MTLBuffer>, length) entries.
-// The length is cached at registration time so the containment test in
-// ``jitc_metal_find_buffer`` (a hot path) needs no ``[buf length]`` message.
 struct BufferEntry {
     uintptr_t base;
     void     *buf;    // id<MTLBuffer>
@@ -94,8 +91,8 @@ static void jitc_metal_ensure_sorted() {
     metal_buffer_map_sorted = true;
 }
 
-void jitc_metal_register_buffer(void *ptr, void *mtl_buffer, size_t size) {
-    metal_buffer_map.push_back({ (uintptr_t) ptr, mtl_buffer, size });
+void jitc_metal_register_buffer(void *ptr, void *metal_buffer, size_t size) {
+    metal_buffer_map.push_back({ (uintptr_t) ptr, metal_buffer, size });
     metal_buffer_map_sorted = false;
 }
 
@@ -135,48 +132,7 @@ void *jitc_metal_unregister_buffer(void *ptr) {
 }
 
 // ============================================================================
-//  Buffer allocation shims (used by the cross-backend, C++-only malloc.cpp)
-// ============================================================================
-
-void *jitc_metal_buffer_new(void *device, size_t size, bool shared,
-                            void **ptr_out) {
-    // Called from jit_malloc(), possibly on a thread with no ambient
-    // autorelease pool — bracket so Metal's internal temporaries drain.
-    @autoreleasepool {
-        id<MTLDevice> dev = (__bridge id<MTLDevice>) device;
-        MTLResourceOptions opts = shared ? MTLResourceStorageModeShared
-                                         : MTLResourceStorageModePrivate;
-        id<MTLBuffer> buf = [dev newBufferWithLength:size options:opts];
-        if (ptr_out)
-            *ptr_out = shared ? [buf contents]
-                              : (void *) (uintptr_t) [buf gpuAddress];
-        return (__bridge_retained void *) buf;
-    }
-}
-
-void jitc_metal_buffer_free(void *buffer) {
-    if (!buffer)
-        return;
-    (void) (__bridge_transfer id<MTLBuffer>) buffer; // release the +1
-}
-
-void jitc_metal_cmdbuf_free_on_complete(void *cmdbuf, uint64_t info,
-                                        void *ptr) {
-    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cmdbuf;
-    // ``info`` and ``ptr`` are captured by value; the block's own heap copy
-    // (made by addCompletedHandler) is the only allocation.
-    [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-        jitc_malloc_free_deferred(info, ptr);
-    }];
-}
-
-// ============================================================================
 //  Encoder lifecycle helpers
-//
-//  At any given time a Metal command buffer hosts at most one open encoder.
-//  Switching encoder type (compute → blit, ...) requires closing the previous
-//  encoder and opening a fresh one. We track which type is currently open via
-//  a small thread-local struct.
 // ============================================================================
 
 enum class MetalEncoderKind : uint32_t {
@@ -186,13 +142,8 @@ enum class MetalEncoderKind : uint32_t {
     Acceleration
 };
 
-namespace {
-    struct ActiveEncoder {
-        void *encoder = nullptr;             // owned (+1) id<MTL...CommandEncoder>
-        MetalEncoderKind kind = MetalEncoderKind::None;
-    };
-    thread_local ActiveEncoder g_active_encoder;
-}
+static void *metal_encoder = nullptr; // owned (+1) id<MTL...CommandEncoder>
+static MetalEncoderKind metal_encoder_kind = MetalEncoderKind::None;
 
 void *jitc_metal_acquire_cmdbuf(ThreadState *ts) {
     if (ts->metal_command_buffer)
@@ -200,53 +151,54 @@ void *jitc_metal_acquire_cmdbuf(ThreadState *ts) {
 
     id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>) ts->metal_queue;
     id<MTLCommandBuffer> cb = [queue commandBuffer];
-    // ``commandBuffer`` returns an autoreleased object; retain it so it
-    // survives past the enclosing autorelease pool.
-    ts->metal_command_buffer = (__bridge_retained void *) cb;
-    return ts->metal_command_buffer;
+    void *handle = (__bridge_retained void *) cb;
+    ts->metal_command_buffer = handle;
+    return handle;
 }
 
 void jitc_metal_close_encoder(ThreadState *) {
-    if (g_active_encoder.kind == MetalEncoderKind::Compute) {
+    if (metal_encoder_kind == MetalEncoderKind::Compute) {
         id<MTLComputeCommandEncoder> enc =
-            (__bridge_transfer id<MTLComputeCommandEncoder>) g_active_encoder.encoder;
+            (__bridge_transfer id<MTLComputeCommandEncoder>) metal_encoder;
         [enc endEncoding];
-    } else if (g_active_encoder.kind == MetalEncoderKind::Blit) {
+    } else if (metal_encoder_kind == MetalEncoderKind::Blit) {
         id<MTLBlitCommandEncoder> enc =
-            (__bridge_transfer id<MTLBlitCommandEncoder>) g_active_encoder.encoder;
+            (__bridge_transfer id<MTLBlitCommandEncoder>) metal_encoder;
         [enc endEncoding];
-    } else if (g_active_encoder.kind == MetalEncoderKind::Acceleration) {
+    } else if (metal_encoder_kind == MetalEncoderKind::Acceleration) {
         id<MTLAccelerationStructureCommandEncoder> enc =
             (__bridge_transfer id<MTLAccelerationStructureCommandEncoder>)
-                g_active_encoder.encoder;
+                metal_encoder;
         [enc endEncoding];
     }
-    g_active_encoder.encoder = nullptr;
-    g_active_encoder.kind = MetalEncoderKind::None;
+    metal_encoder = nullptr;
+    metal_encoder_kind = MetalEncoderKind::None;
 }
 
 void *jitc_metal_acquire_compute_encoder(ThreadState *ts) {
-    if (g_active_encoder.kind == MetalEncoderKind::Compute)
-        return g_active_encoder.encoder;
+    if (metal_encoder_kind == MetalEncoderKind::Compute)
+        return metal_encoder;
     jitc_metal_close_encoder(ts);
     id<MTLCommandBuffer> cb =
         (__bridge id<MTLCommandBuffer>) jitc_metal_acquire_cmdbuf(ts);
     id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
-    g_active_encoder.encoder = (__bridge_retained void *) enc;
-    g_active_encoder.kind = MetalEncoderKind::Compute;
-    return g_active_encoder.encoder;
+    void *handle = (__bridge_retained void *) enc;
+    metal_encoder = handle;
+    metal_encoder_kind = MetalEncoderKind::Compute;
+    return handle;
 }
 
 void *jitc_metal_acquire_blit_encoder(ThreadState *ts) {
-    if (g_active_encoder.kind == MetalEncoderKind::Blit)
-        return g_active_encoder.encoder;
+    if (metal_encoder_kind == MetalEncoderKind::Blit)
+        return metal_encoder;
     jitc_metal_close_encoder(ts);
     id<MTLCommandBuffer> cb =
         (__bridge id<MTLCommandBuffer>) jitc_metal_acquire_cmdbuf(ts);
     id<MTLBlitCommandEncoder> enc = [cb blitCommandEncoder];
-    g_active_encoder.encoder = (__bridge_retained void *) enc;
-    g_active_encoder.kind = MetalEncoderKind::Blit;
-    return g_active_encoder.encoder;
+    void *handle = (__bridge_retained void *) enc;
+    metal_encoder = handle;
+    metal_encoder_kind = MetalEncoderKind::Blit;
+    return handle;
 }
 
 // ============================================================================
@@ -414,8 +366,6 @@ bool jitc_metal_init() {
 
 void jitc_metal_shutdown() {
     @autoreleasepool {
-        jitc_metal_stage_shutdown();
-
         // Release cached pipeline states
         {
             std::lock_guard<std::mutex> g(g_pipeline_cache_mutex);
@@ -440,28 +390,15 @@ void jitc_metal_shutdown() {
     }
 }
 
-const char *jitc_metal_device_name(int device_id) {
-    if (device_id < 0 || (size_t) device_id >= state.metal_devices.size())
-        return "<invalid>";
-    return state.metal_devices[device_id].name;
-}
-
-void jitc_metal_dump_devices() {
-    for (size_t i = 0; i < state.metal_devices.size(); ++i) {
-        const MetalDevice &d = state.metal_devices[i];
-        jitc_log(Info, "  [%zu] %s", i, d.name);
-    }
-}
-
 // ============================================================================
 //  Kernel compilation
 // ============================================================================
 
-bool jitc_metal_compile(const char *source, size_t /*source_size*/,
+bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
                         const char *kernel_name, Kernel &kernel) {
     @autoreleasepool {
         if (state.metal_devices.empty())
-            jitc_fail("jitc_metal_compile(): no Metal devices initialized.");
+            jitc_fail("jitc_metal_kernel_compile(): no Metal devices initialized.");
 
         // Compile against the device of the calling thread (defaults to device 0).
         auto *ts = thread_state(JitBackend::Metal);
@@ -482,14 +419,14 @@ bool jitc_metal_compile(const char *source, size_t /*source_size*/,
         if (!lib) {
             const char *desc = err ? err.localizedDescription.UTF8String
                                    : "<unknown>";
-            jitc_fail("jitc_metal_compile(): MSL compilation failed:\n%s\n\n"
+            jitc_fail("jitc_metal_kernel_compile(): MSL compilation failed:\n%s\n\n"
                       "--- Source code ---\n%s",
                       desc, source);
         }
 
         id<MTLFunction> func = [lib newFunctionWithName:@(kernel_name)];
         if (!func)
-            jitc_fail("jitc_metal_compile(): kernel function \"%s\" not found in "
+            jitc_fail("jitc_metal_kernel_compile(): kernel function \"%s\" not found in "
                       "the compiled library.", kernel_name);
 
         // ---- Pipeline creation ---------------------------------------------
@@ -516,7 +453,7 @@ bool jitc_metal_compile(const char *source, size_t /*source_size*/,
                 seen.push_back(name);
                 id<MTLFunction> f = [isect_lib newFunctionWithName:@(name.c_str())];
                 if (!f)
-                    jitc_fail("jitc_metal_compile(): intersection function "
+                    jitc_fail("jitc_metal_kernel_compile(): intersection function "
                               "\"%s\" not found in user-supplied library.",
                               name.c_str());
                 [linked_fns addObject:f];
@@ -543,7 +480,7 @@ bool jitc_metal_compile(const char *source, size_t /*source_size*/,
         if (!pso) {
             const char *desc = err ? err.localizedDescription.UTF8String
                                    : "<unknown>";
-            jitc_fail("jitc_metal_compile(): pipeline creation failed: %s", desc);
+            jitc_fail("jitc_metal_kernel_compile(): pipeline creation failed: %s", desc);
         }
 
         kernel.metal.pipeline    = (__bridge_retained void *) pso;
@@ -556,7 +493,7 @@ bool jitc_metal_compile(const char *source, size_t /*source_size*/,
     }
 }
 
-void jitc_metal_free(Kernel &kernel) {
+void jitc_metal_kernel_free(Kernel &kernel) {
     @autoreleasepool {
         if (kernel.metal.pipeline)
             (void) (__bridge_transfer id<MTLComputePipelineState>)

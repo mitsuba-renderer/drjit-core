@@ -1,42 +1,7 @@
-/*
-    src/metal_ts.mm -- Implementation of MetalThreadState.
-
-    Copyright (c) 2026 Wenzel Jakob <wenzel.jakob@epfl.ch>
-
-    All rights reserved. Use of this source code is governed by a BSD-style
-    license that can be found in the LICENSE file.
-
-    --------------------------------------------------------------------------
-
-    Metal memory model summary (relevant to this file):
-
-      * ``StorageModePrivate`` buffers live in GPU-only VRAM. They are fast
-        for compute but cannot be read or written by the CPU. The only way
-        to move data in/out is via ``[MTLBlitCommandEncoder copyFromBuffer:...]``.
-
-      * ``StorageModeShared`` buffers are in unified memory and accessible
-        to both CPU and GPU. They are used as staging areas for uploads and
-        downloads, and also for ``HostPinned`` allocations.
-
-      * ``[buffer gpuAddress]`` returns the GPU virtual address of a buffer.
-        The kernel parameter buffer contains these addresses so the GPU can
-        dereference them as ``device T*``. The CPU must never dereference a
-        ``gpuAddress`` pointer directly.
-
-      * Every buffer accessed by a compute kernel must be declared via
-        ``[encoder useResource:...]`` so that Metal's residency system makes
-        the pages available to the GPU.
-
-    This file is compiled as Objective-C++ with ARC. Metal handles still cross
-    module boundaries as opaque ``void*`` (see metal_core.mm for the bridging
-    contract); locally they are bridged to ``id<MTL...>`` as needed.
-*/
-
 #if defined(DRJIT_ENABLE_METAL)
 
 #include "metal_ts.h"
 #include "metal.h"
-#include "metal_stage_buffer.h"
 #include "log.h"
 #include "var.h"
 #include "malloc.h"
@@ -51,33 +16,6 @@
 // collides with Dr.Jit's ``struct ThreadState``).
 #define __THREADS__
 #import <Metal/Metal.h>
-
-// Forward declaration of the MPS GEMM wrapper (in metal_mps.mm)
-extern "C" void jitc_metal_mps_gemm(
-    void *mtl_device, void *mtl_queue,
-    void *a_buf, size_t a_offset,
-    void *b_buf, size_t b_offset,
-    void *c_buf, size_t c_offset,
-    uint32_t M, uint32_t N, uint32_t K,
-    bool At, bool Bt,
-    uint32_t a_rows, uint32_t a_cols,
-    uint32_t b_rows, uint32_t b_cols,
-    uint32_t tsize, int mps_data_type,
-    double alpha, double beta);
-
-// Encoder / command-buffer helpers in metal_core.mm. All Metal handles are
-// passed across as opaque void* (== id<MTL...> at the ABI level).
-extern void *jitc_metal_acquire_cmdbuf(ThreadState *ts);
-extern void *jitc_metal_acquire_compute_encoder(ThreadState *ts);
-extern void *jitc_metal_acquire_blit_encoder(ThreadState *ts);
-extern void jitc_metal_close_encoder(ThreadState *ts);
-extern void jitc_metal_sync_tagged(ThreadState *ts, const char *tag);
-extern void jitc_metal_commit_and_wait_tagged(void *cb_ptr, const char *tag);
-extern bool jitc_metal_launch_trace_enabled();
-extern void jitc_metal_launch_stats_add(
-    uint64_t total_us, uint64_t setup_us, uint64_t setbytes_us,
-    uint64_t params_loop_us, uint64_t vcall_loop_us,
-    uint64_t scene_loop_us, uint64_t dispatch_us, uint64_t n_params);
 
 MetalThreadState::~MetalThreadState() {
     @autoreleasepool {
@@ -343,65 +281,10 @@ void MetalThreadState::memset_async(void *ptr, uint32_t size, uint32_t isize,
   }
 }
 
-/// Synchronous GPU→CPU or CPU→GPU copy.
 void MetalThreadState::memcpy(void *dst, const void *src, size_t size) {
   @autoreleasepool {
-    // Flush any pending GPU work — commit but don't wait. The staging blit
-    // below is queued onto a fresh CB; Metal queues are FIFO so the new CB
-    // executes after the prior one completes.
-    this->barrier();
-
-    size_t src_offset = 0, dst_offset = 0;
-    id<MTLBuffer> src_buf =
-        (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) src, &src_offset);
-    id<MTLBuffer> dst_buf =
-        (__bridge id<MTLBuffer>) jitc_metal_find_buffer(dst, &dst_offset);
-
-    if (src_buf && !dst_buf) {
-        // GPU → CPU readback (synchronous)
-        void *staging_buf  = nullptr;
-        size_t staging_off = 0;
-        void *staging_tok  = nullptr;
-        void *staging_ptr  = jitc_metal_stage_acquire_download(
-            this, size, &staging_buf, &staging_off, &staging_tok);
-        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>) metal_queue;
-        id<MTLCommandBuffer> cb = [queue commandBuffer];
-        id<MTLBlitCommandEncoder> enc = [cb blitCommandEncoder];
-        [enc copyFromBuffer:src_buf
-               sourceOffset:src_offset
-                   toBuffer:(__bridge id<MTLBuffer>) staging_buf
-          destinationOffset:staging_off
-                       size:size];
-        [enc endEncoding];
-        jitc_metal_commit_and_wait_tagged((__bridge void *) cb, "memcpy.gpu2cpu");
-        std::memcpy(dst, staging_ptr, size);
-        jitc_metal_stage_release(staging_tok);
-    } else if (!src_buf && dst_buf) {
-        // CPU → GPU upload (synchronous)
-        void *staging_buf  = nullptr;
-        size_t staging_off = 0;
-        void *staging_tok  = nullptr;
-        void *staging_ptr  = jitc_metal_stage_acquire_upload(
-            this, size, &staging_buf, &staging_off, &staging_tok);
-        std::memcpy(staging_ptr, src, size);
-        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>) metal_queue;
-        id<MTLCommandBuffer> cb = [queue commandBuffer];
-        id<MTLBlitCommandEncoder> enc = [cb blitCommandEncoder];
-        [enc copyFromBuffer:(__bridge id<MTLBuffer>) staging_buf
-               sourceOffset:staging_off
-                   toBuffer:dst_buf
-          destinationOffset:dst_offset
-                       size:size];
-        [enc endEncoding];
-        jitc_metal_commit_and_wait_tagged((__bridge void *) cb, "memcpy.cpu2gpu");
-        jitc_metal_stage_release(staging_tok);
-    } else if (!src_buf && !dst_buf) {
-        std::memcpy(dst, src, size);
-    } else {
-        // GPU → GPU
-        memcpy_async(dst, src, size);
-        jitc_metal_sync_tagged(this, "memcpy.gpu2gpu");
-    }
+    memcpy_async(dst, src, size);
+    jitc_metal_sync_tagged(this, "memcpy");
   }
 }
 
@@ -415,7 +298,7 @@ void MetalThreadState::memcpy_async(void *dst, const void *src, size_t size) {
         (__bridge id<MTLBuffer>) jitc_metal_find_buffer(dst, &dst_offset);
 
     if (src_buf && dst_buf) {
-        // GPU → GPU blit
+        // GPU -> GPU blit
         id<MTLBlitCommandEncoder> enc =
             (__bridge id<MTLBlitCommandEncoder>)
                 jitc_metal_acquire_blit_encoder(this);
@@ -425,48 +308,41 @@ void MetalThreadState::memcpy_async(void *dst, const void *src, size_t size) {
           destinationOffset:dst_offset
                        size:size];
     } else if (!src_buf && dst_buf) {
-        // CPU → GPU: stage through a pooled shared buffer
-        void *staging_buf  = nullptr;
+        // CPU -> GPU upload via staging buffer
+        void *staging = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
+        std::memcpy(staging, src, size);
         size_t staging_off = 0;
-        void *staging_tok  = nullptr;
-        void *staging_ptr  = jitc_metal_stage_acquire_upload(
-            this, size, &staging_buf, &staging_off, &staging_tok);
-        std::memcpy(staging_ptr, src, size);
+        id<MTLBuffer> staging_buf = (__bridge id<MTLBuffer>)
+            jitc_metal_find_buffer(staging, &staging_off);
         id<MTLBlitCommandEncoder> enc =
             (__bridge id<MTLBlitCommandEncoder>)
                 jitc_metal_acquire_blit_encoder(this);
-        [enc copyFromBuffer:(__bridge id<MTLBuffer>) staging_buf
+        [enc copyFromBuffer:staging_buf
                sourceOffset:staging_off
                    toBuffer:dst_buf
           destinationOffset:dst_offset
                        size:size];
-        id<MTLCommandBuffer> cb =
-            (__bridge id<MTLCommandBuffer>) metal_command_buffer;
-        [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-            jitc_metal_stage_release(staging_tok);
-        }];
+        jitc_free(staging);
     } else if (src_buf && !dst_buf) {
-        // GPU → CPU: stage through a pooled shared buffer (async —
-        // completion handler copies from staging to dst, then releases)
-        void *staging_buf  = nullptr;
+        // GPU → CPU readback: a completion handler copies staging → dst
+        void *staging = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
         size_t staging_off = 0;
-        void *staging_tok  = nullptr;
-        void *staging_ptr  = jitc_metal_stage_acquire_download(
-            this, size, &staging_buf, &staging_off, &staging_tok);
+        id<MTLBuffer> staging_buf = (__bridge id<MTLBuffer>)
+            jitc_metal_find_buffer(staging, &staging_off);
         id<MTLBlitCommandEncoder> enc =
             (__bridge id<MTLBlitCommandEncoder>)
                 jitc_metal_acquire_blit_encoder(this);
         [enc copyFromBuffer:src_buf
                sourceOffset:src_offset
-                   toBuffer:(__bridge id<MTLBuffer>) staging_buf
+                   toBuffer:staging_buf
           destinationOffset:staging_off
                        size:size];
         id<MTLCommandBuffer> cb =
             (__bridge id<MTLCommandBuffer>) metal_command_buffer;
         [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-            std::memcpy(dst, staging_ptr, size);
-            jitc_metal_stage_release(staging_tok);
+            std::memcpy(dst, staging, size);
         }];
+        jitc_free(staging);
     } else {
         std::memcpy(dst, src, size);
     }

@@ -13,86 +13,58 @@
 
 #if defined(DRJIT_ENABLE_METAL)
 
-#include <cstdint>
-#include <vector>
-
 struct ThreadState;
 struct Kernel;
-struct ScheduledGroup;
-struct MetalDevice;
-struct KernelHistoryEntry;
 
-/// Initialize the Metal backend. Enumerates the available Apple Silicon GPUs
-/// (Metal 3 is required, i.e. M1+) and registers them in ``state.metal_devices``.
+/// Initialize the Metal backend
 extern bool jitc_metal_init();
 
 /// Release all resources held by the Metal backend.
 extern void jitc_metal_shutdown();
 
-/// Compile a piece of MSL source code into a compute pipeline state.
-/// Returns the (opaque) ``MTL::ComputePipelineState*`` together with the
-/// associated library, both stored within the kernel object.
-///
-/// The kernel name (entry-point function) is taken from ``kernel_name`` (set
-/// by jitc_assemble) so the same convention as PTX/LLVM is reused.
-extern bool jitc_metal_compile(const char *source, size_t source_size,
-                               const char *kernel_name, Kernel &kernel);
-
-/// Free a previously compiled Metal kernel.
-extern void jitc_metal_free(Kernel &kernel);
-
-// ---------------------------------------------------------------------------
-//  Buffer allocation shims (implemented in metal_core.mm)
-//
-//  These exist so the cross-backend, C++-only ``malloc.cpp`` can allocate and
-//  free Metal buffers without including any Objective-C / Metal headers. They
-//  trade exclusively in ``void*`` handles.
-// ---------------------------------------------------------------------------
-
-/// Allocate a new ``MTLBuffer`` of ``size`` bytes (shared or private storage).
-/// Returns an owned (+1) ``MTL::Buffer*`` handle and, via ``ptr_out``, the
-/// CPU pointer (shared) or GPU address (private) used by Dr.Jit as the raw
-/// allocation pointer.
-extern void *jitc_metal_buffer_new(void *device, size_t size, bool shared,
-                                   void **ptr_out);
-
-/// Release a buffer handle previously returned by ``jitc_metal_buffer_new``.
-extern void jitc_metal_buffer_free(void *buffer);
-
-/// Schedule a deferred free: once ``cmdbuf`` finishes executing on the GPU,
-/// return the allocation ``(info, ptr)`` to the malloc free list. The pair is
-/// captured by value in the completion handler, so no separate release record
-/// needs to be heap-allocated.
-extern void jitc_metal_cmdbuf_free_on_complete(void *cmdbuf, uint64_t info,
-                                               void *ptr);
-
 /// Wait for all Metal work submitted on the current thread to complete.
 extern void jitc_metal_sync(ThreadState *ts);
 
-/// Pretty-print Metal device information at startup (debug helper)
-extern void jitc_metal_dump_devices();
+// ---------------------------------------------------------------------
 
-/// Return the human-readable name of the GPU
-extern const char *jitc_metal_device_name(int device_id);
+/// Allocate a new ``MTLBuffer`` of ``size`` bytes (shared or private storage).
+/// Returns an owned (+1) ``MTL::Buffer*`` handle. The ``ptr_out`` argument
+/// returns the CPU pointer (shared) or GPU address (private).
+///
+/// ``metal_buffer_new``/``metal_buffer_free`` are called from
+/// ``jit_malloc``/``jit_free`` *without* holding the Dr.Jit lock — hence the
+/// ``metal_`` (rather than ``jitc_``) prefix.
+extern void *metal_buffer_new(void *device, size_t size, bool shared,
+                              void **ptr_out);
 
-/// Stash a buffer pointer ↔ MTLBuffer mapping (plus the allocation ``size``)
-/// for later retrieval. Metal kernels need access to the underlying
-/// ``MTLBuffer`` (rather than the raw pointer) for ``useResource()`` calls,
-/// ``gpuAddress()``, etc. The size is cached so ``jitc_metal_find_buffer``
-/// can range-check without messaging the buffer.
+/// Release a buffer handle allocated by ``metal_buffer_new``.
+extern void metal_buffer_free(void *buffer);
+
+/// Schedule a deferred free: once ``cmdbuf`` finishes executing on the GPU,
+/// return the allocation ``(info, ptr)`` to the malloc free list.
+extern void jitc_metal_cmdbuf_free_on_complete(void *cmdbuf, uint64_t info,
+                                               void *ptr);
+
+/// Register a MTLBuffer so for use with the find_buffer API shown below
 extern void jitc_metal_register_buffer(void *ptr, void *mtl_buffer,
                                        size_t size);
 
-/// Look up the ``MTLBuffer*`` for a pointer that may lie at an offset
-/// from a registered allocation's base. Returns the ``MTL::Buffer*`` and,
-/// optionally, the byte offset from its start. Returns nullptr if no
-/// registered allocation contains ``ptr``.
+/// Find the ``MTLBuffer`` for a given pointer adress. Returns the
+/// ``MTL::Buffer*`` and the byte offset from its start.
+/// Returns {nullptr, 0} if no registered allocation contains ``ptr``.
 extern void *jitc_metal_find_buffer(void *ptr, size_t *offset_out);
 
-/// Forget a previously registered pointer ↔ buffer mapping, returning
-/// the ``MTL::Buffer*`` that was associated with it (or nullptr if the
-/// pointer was not registered).
+/// Unregister a previously registered MTLBuffer
 extern void *jitc_metal_unregister_buffer(void *ptr);
+
+// ---------------------------------------------------------------------
+
+/// Compile a piece of MSL source code into a Kernel object
+extern bool jitc_metal_kernel_compile(const char *source, size_t source_size,
+                                      const char *kernel_name, Kernel &kernel);
+
+/// Free a previously compiled Metal kernel.
+extern void jitc_metal_kernel_free(Kernel &kernel);
 
 /// Retrieve a precompiled compute pipeline state from the utility kernel
 /// library by kernel name (e.g. "block_reduce_add_f32_1024"). Returns
@@ -100,6 +72,48 @@ extern void *jitc_metal_unregister_buffer(void *ptr);
 /// (opaque ``MTL::ComputePipelineState*``)
 extern void *
 jitc_metal_get_pipeline(int device_id, const char *name);
+
+// ---------------------------------------------------------------------
+//  Command-buffer / encoder helpers (implemented in metal_core.mm) and the
+//  MPS GEMM wrapper (metal_mps.mm). Metal handles cross as opaque void*.
+// ---------------------------------------------------------------------
+
+/// Return the thread's open command buffer, creating one on first use.
+extern void *jitc_metal_acquire_cmdbuf(ThreadState *ts);
+
+/// Return the active compute / blit encoder (opening or switching as needed).
+extern void *jitc_metal_acquire_compute_encoder(ThreadState *ts);
+extern void *jitc_metal_acquire_blit_encoder(ThreadState *ts);
+
+/// End and release the currently-open encoder (if any).
+extern void jitc_metal_close_encoder(ThreadState *ts);
+
+/// Flush the thread's command buffer (commit + wait), recording the call
+/// against the sync-trace stats under ``tag``.
+extern void jitc_metal_sync_tagged(ThreadState *ts, const char *tag);
+
+/// Commit + wait on an ad-hoc command buffer (counts against sync stats).
+extern void jitc_metal_commit_and_wait_tagged(void *cb_ptr, const char *tag);
+
+/// Launch-path instrumentation (gated by ``DRJIT_METAL_TRACE_SYNC``).
+extern bool jitc_metal_launch_trace_enabled();
+extern void jitc_metal_launch_stats_add(
+    uint64_t total_us, uint64_t setup_us, uint64_t setbytes_us,
+    uint64_t params_loop_us, uint64_t vcall_loop_us,
+    uint64_t scene_loop_us, uint64_t dispatch_us, uint64_t n_params);
+
+/// Batched GEMM via MetalPerformanceShaders (implemented in metal_mps.mm).
+extern "C" void jitc_metal_mps_gemm(
+    void *mtl_device, void *mtl_queue,
+    void *a_buf, size_t a_offset,
+    void *b_buf, size_t b_offset,
+    void *c_buf, size_t c_offset,
+    uint32_t M, uint32_t N, uint32_t K,
+    bool At, bool Bt,
+    uint32_t a_rows, uint32_t a_cols,
+    uint32_t b_rows, uint32_t b_cols,
+    uint32_t tsize, int mps_data_type,
+    double alpha, double beta);
 
 /// Live-MetalScene registry. Used by ``MetalThreadState::launch`` during
 /// frozen-function replay to detect stale ``MetalScene*`` pointers (the
@@ -112,6 +126,9 @@ extern void *jitc_metal_last_live_scene();
 
 #include <string>
 #include <unordered_map>
+#include <cstdint>
+#include <vector>
+
 
 /// Per-scene Metal ray-tracing state. One instance is allocated per call
 /// to ``jitc_metal_configure_scene`` and wrapped in a JIT variable; its
