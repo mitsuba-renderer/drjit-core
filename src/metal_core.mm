@@ -272,8 +272,6 @@ static bool jitc_metal_load_utility_kernels(MetalDevice &md) {
 
     MTLCompileOptions *opts = [MTLCompileOptions new];
     opts.languageVersion = MTLLanguageVersion3_0;
-    // Fast math is OFF (MathModeSafe) so the precompiled reduction kernels are
-    // not reassociated in surprising ways (e.g. (a + b) - a collapsing to b).
     opts.mathMode = MTLMathModeSafe;
 
     id<MTLLibrary> lib = [dev newLibraryWithSource:src options:opts error:&err];
@@ -393,7 +391,7 @@ void jitc_metal_shutdown() {
 // ============================================================================
 
 bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
-                        const char *kernel_name, Kernel &kernel) {
+                               const char *kernel_name, Kernel &kernel) {
     @autoreleasepool {
         if (state.metal_devices.empty())
             jitc_fail("jitc_metal_kernel_compile(): no Metal devices initialized.");
@@ -407,9 +405,10 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
 
         MTLCompileOptions *opts = [MTLCompileOptions new];
         opts.languageVersion = MTLLanguageVersion3_2;
-        // Equivalent of `-fmetal-math-mode=relaxed -ffp-contract=on`.
-        opts.mathMode = MTLMathModeRelaxed;
-        opts.mathFloatingPointFunctions = MTLMathFloatingPointFunctionsFast;
+        // The relaxed/fast math modes are a little aggressive and break the Dr.Jit
+        // test suite. We instead opt in on a per instruction bases by calling
+        // math functions from the fast:: namespace
+        opts.mathMode = MTLMathModeSafe;
         opts.libraryType = MTLLibraryTypeExecutable;
 
         id<MTLLibrary> lib = [dev newLibraryWithSource:src options:opts error:&err];
