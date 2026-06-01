@@ -433,7 +433,9 @@ bool jitc_metal_compile(const char *source, size_t /*source_size*/,
 
     MTL::CompileOptions *opts = MTL::CompileOptions::alloc()->init();
     opts->setLanguageVersion(MTL::LanguageVersion3_2);
-    opts->setFastMathEnabled(false);
+    // Equivalent of `-fmetal-math-mode=relaxed -ffp-contract=on`.
+    opts->setMathMode(MTL::MathModeRelaxed);
+    opts->setMathFloatingPointFunctions(MTL::MathFloatingPointFunctionsFast);
     opts->setLibraryType(MTL::LibraryTypeExecutable);
 
     MTL::Library *lib = dev->newLibrary(src, opts, &err);
