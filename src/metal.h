@@ -41,6 +41,31 @@ extern bool jitc_metal_compile(const char *source, size_t source_size,
 /// Free a previously compiled Metal kernel.
 extern void jitc_metal_free(Kernel &kernel);
 
+// ---------------------------------------------------------------------------
+//  Buffer allocation shims (implemented in metal_core.mm)
+//
+//  These exist so the cross-backend, C++-only ``malloc.cpp`` can allocate and
+//  free Metal buffers without including any Objective-C / Metal headers. They
+//  trade exclusively in ``void*`` handles.
+// ---------------------------------------------------------------------------
+
+/// Allocate a new ``MTLBuffer`` of ``size`` bytes (shared or private storage).
+/// Returns an owned (+1) ``MTL::Buffer*`` handle and, via ``ptr_out``, the
+/// CPU pointer (shared) or GPU address (private) used by Dr.Jit as the raw
+/// allocation pointer.
+extern void *jitc_metal_buffer_new(void *device, size_t size, bool shared,
+                                   void **ptr_out);
+
+/// Release a buffer handle previously returned by ``jitc_metal_buffer_new``.
+extern void jitc_metal_buffer_free(void *buffer);
+
+/// Schedule a deferred free: once ``cmdbuf`` finishes executing on the GPU,
+/// return the allocation ``(info, ptr)`` to the malloc free list. The pair is
+/// captured by value in the completion handler, so no separate release record
+/// needs to be heap-allocated.
+extern void jitc_metal_cmdbuf_free_on_complete(void *cmdbuf, uint64_t info,
+                                               void *ptr);
+
 /// Wait for all Metal work submitted on the current thread to complete.
 extern void jitc_metal_sync(ThreadState *ts);
 
@@ -50,10 +75,13 @@ extern void jitc_metal_dump_devices();
 /// Return the human-readable name of the GPU
 extern const char *jitc_metal_device_name(int device_id);
 
-/// Stash a buffer pointer ↔ MTL::Buffer* mapping for later retrieval. Metal
-/// kernels need access to the underlying ``MTLBuffer`` (rather than the raw
-/// pointer) for ``useResource()`` calls, ``gpuAddress()``, etc.
-extern void jitc_metal_register_buffer(void *ptr, void *mtl_buffer);
+/// Stash a buffer pointer ↔ MTLBuffer mapping (plus the allocation ``size``)
+/// for later retrieval. Metal kernels need access to the underlying
+/// ``MTLBuffer`` (rather than the raw pointer) for ``useResource()`` calls,
+/// ``gpuAddress()``, etc. The size is cached so ``jitc_metal_find_buffer``
+/// can range-check without messaging the buffer.
+extern void jitc_metal_register_buffer(void *ptr, void *mtl_buffer,
+                                       size_t size);
 
 /// Look up the ``MTLBuffer*`` for a pointer that may lie at an offset
 /// from a registered allocation's base. Returns the ``MTL::Buffer*`` and,
@@ -69,8 +97,8 @@ extern void *jitc_metal_unregister_buffer(void *ptr);
 /// Retrieve a precompiled compute pipeline state from the utility kernel
 /// library by kernel name (e.g. "block_reduce_add_f32_1024"). Returns
 /// nullptr if the kernel is not found. Pipeline states are cached.
-namespace MTL { class ComputePipelineState; class IntersectionFunctionTable; }
-extern MTL::ComputePipelineState *
+/// (opaque ``MTL::ComputePipelineState*``)
+extern void *
 jitc_metal_get_pipeline(int device_id, const char *name);
 
 /// Live-MetalScene registry. Used by ``MetalThreadState::launch`` during
@@ -153,9 +181,10 @@ extern MetalScene *jitc_metal_active_scene();
 /// given scene + compute pipeline. The function handles are derived from
 /// the pipeline so each pipeline needs its own IFT instance. Returns
 /// nullptr if the scene has no custom intersection functions configured.
-extern MTL::IntersectionFunctionTable *
-jitc_metal_get_or_create_ift_for_scene(MetalScene *scene,
-                                       MTL::ComputePipelineState *pso);
+/// (returns an opaque ``MTL::IntersectionFunctionTable*``; ``pso`` is an
+/// opaque ``MTL::ComputePipelineState*``)
+extern void *
+jitc_metal_get_or_create_ift_for_scene(MetalScene *scene, void *pso);
 
 /// Build a MetalScene with the given configuration and wrap it in a JIT
 /// variable. Returns the variable index; the caller is expected to hold

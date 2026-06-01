@@ -1,20 +1,38 @@
 /*
-    src/metal_core.cpp -- Metal device init, shutdown, compilation, and
+    src/metal_core.mm -- Metal device init, shutdown, compilation, and
     encoder management.
 
     Copyright (c) 2026 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
+
+    --------------------------------------------------------------------------
+
+    This file talks to Metal directly through the native Objective-C API
+    (``#import <Metal/Metal.h>``) and is compiled as Objective-C++ with ARC
+    (``-fobjc-arc``). The rest of the Dr.Jit codebase only ever sees Metal
+    handles as opaque ``void*`` pointers stored in plain C++ structs; this
+    file is where those ``void*`` are bridged to/from ``id<MTL...>``.
+
+    ARC bridging contract for the ``void*`` handle fields:
+      * Hand an owned (+1) object out to a ``void*`` field / return value:
+        ``(__bridge_retained void *) obj``  (this is the +1 that the old
+        metal-cpp code expressed via ``->retain()`` or a ``new*`` method).
+      * Release a ``void*`` field:  ``(void) (__bridge_transfer id) field``
+        (replaces the old ``->release()``).
+      * Borrow without ownership change:  ``(__bridge id) field``.
+    Transient objects (NSString, MTLCompileOptions, descriptors, ...) are
+    plain ARC locals and need no manual release.
 */
 
 #if defined(DRJIT_ENABLE_METAL)
 
 #include "metal.h"
-#include "metal_api.h"
 #include "metal_eval.h"
 #include "metal_stage_buffer.h"
 #include "internal.h"
+#include "malloc.h"
 #include "log.h"
 #include "io.h"
 #include "var.h"
@@ -23,7 +41,13 @@
 #include "drjit-core/metal.h"  // public extern "C" declarations
 #include "metal_kernels_src.h" // generated: drjit::metal_kernels_src
 
-#include <Metal/Metal.hpp>
+// Suppress the obsolete Carbon <CarbonCore/Threads.h> (pulled in transitively
+// by Foundation), whose ``typedef UInt16 ThreadState`` collides with Dr.Jit's
+// ``struct ThreadState``. We do not use the Carbon Thread Manager. Defining
+// the header's include guard up front keeps its body out of this TU.
+#define __THREADS__
+#import <Metal/Metal.h>
+
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -36,15 +60,23 @@
 #include <algorithm>
 
 // ============================================================================
-//  Pointer ↔ MTL::Buffer mapping
+//  Pointer ↔ MTLBuffer mapping
 //
 //  Dr.Jit treats device memory as raw void* but the Metal API requires
 //  ``MTLBuffer`` references (for ``setBuffer``, ``useResource``, ``gpuAddress``,
-//  etc.). We maintain a simple thread-safe hash map.
+//  etc.). We maintain a simple thread-safe hash map. The stored ``void*`` is
+//  an ``id<MTLBuffer>`` that is owned (+1) by ``malloc.cpp`` (via
+//  ``jitc_metal_buffer_new``) — the map only borrows it.
 // ============================================================================
 
-// Lazily-sorted flat vector of (base_addr, MTLBuffer*) entries.
-using BufferEntry = std::pair<uintptr_t, void *>;
+// Lazily-sorted flat vector of (base address, id<MTLBuffer>, length) entries.
+// The length is cached at registration time so the containment test in
+// ``jitc_metal_find_buffer`` (a hot path) needs no ``[buf length]`` message.
+struct BufferEntry {
+    uintptr_t base;
+    void     *buf;    // id<MTLBuffer>
+    size_t    length;
+};
 static std::vector<BufferEntry> metal_buffer_map;
 static bool metal_buffer_map_sorted = true;
 
@@ -53,14 +85,17 @@ static void jitc_metal_ensure_sorted() {
         return;
     metal_buffer_map.erase(
         std::remove_if(metal_buffer_map.begin(), metal_buffer_map.end(),
-                       [](const BufferEntry &e) { return e.second == nullptr; }),
+                       [](const BufferEntry &e) { return e.buf == nullptr; }),
         metal_buffer_map.end());
-    std::sort(metal_buffer_map.begin(), metal_buffer_map.end());
+    std::sort(metal_buffer_map.begin(), metal_buffer_map.end(),
+              [](const BufferEntry &a, const BufferEntry &b) {
+                  return a.base < b.base;
+              });
     metal_buffer_map_sorted = true;
 }
 
-void jitc_metal_register_buffer(void *ptr, void *mtl_buffer) {
-    metal_buffer_map.emplace_back((uintptr_t) ptr, mtl_buffer);
+void jitc_metal_register_buffer(void *ptr, void *mtl_buffer, size_t size) {
+    metal_buffer_map.push_back({ (uintptr_t) ptr, mtl_buffer, size });
     metal_buffer_map_sorted = false;
 }
 
@@ -71,15 +106,13 @@ void *jitc_metal_find_buffer(void *ptr, size_t *offset_out) {
     uintptr_t addr = (uintptr_t) ptr;
     auto it = std::upper_bound(
         metal_buffer_map.begin(), metal_buffer_map.end(), addr,
-        [](uintptr_t a, const BufferEntry &b) { return a < b.first; });
+        [](uintptr_t a, const BufferEntry &b) { return a < b.base; });
 
     if (it != metal_buffer_map.begin()) {
         --it;
-        uintptr_t base = it->first;
-        MTL::Buffer *buf = (MTL::Buffer *) it->second;
-        if (addr < base + buf->length()) {
-            *offset_out = (size_t) (addr - base);
-            return buf;
+        if (addr < it->base + it->length) {
+            *offset_out = (size_t) (addr - it->base);
+            return it->buf;
         }
     }
 
@@ -93,22 +126,57 @@ void *jitc_metal_unregister_buffer(void *ptr) {
     uintptr_t addr = (uintptr_t) ptr;
     auto it = std::lower_bound(
         metal_buffer_map.begin(), metal_buffer_map.end(), addr,
-        [](const BufferEntry &e, uintptr_t a) { return e.first < a; });
-    if (it == metal_buffer_map.end() || it->first != addr)
+        [](const BufferEntry &e, uintptr_t a) { return e.base < a; });
+    if (it == metal_buffer_map.end() || it->base != addr)
         return nullptr;
-    void *buf = it->second;
-    it->second = nullptr;
+    void *buf = it->buf;
+    it->buf = nullptr;
     return buf;
+}
+
+// ============================================================================
+//  Buffer allocation shims (used by the cross-backend, C++-only malloc.cpp)
+// ============================================================================
+
+void *jitc_metal_buffer_new(void *device, size_t size, bool shared,
+                            void **ptr_out) {
+    // Called from jit_malloc(), possibly on a thread with no ambient
+    // autorelease pool — bracket so Metal's internal temporaries drain.
+    @autoreleasepool {
+        id<MTLDevice> dev = (__bridge id<MTLDevice>) device;
+        MTLResourceOptions opts = shared ? MTLResourceStorageModeShared
+                                         : MTLResourceStorageModePrivate;
+        id<MTLBuffer> buf = [dev newBufferWithLength:size options:opts];
+        if (ptr_out)
+            *ptr_out = shared ? [buf contents]
+                              : (void *) (uintptr_t) [buf gpuAddress];
+        return (__bridge_retained void *) buf;
+    }
+}
+
+void jitc_metal_buffer_free(void *buffer) {
+    if (!buffer)
+        return;
+    (void) (__bridge_transfer id<MTLBuffer>) buffer; // release the +1
+}
+
+void jitc_metal_cmdbuf_free_on_complete(void *cmdbuf, uint64_t info,
+                                        void *ptr) {
+    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cmdbuf;
+    // ``info`` and ``ptr`` are captured by value; the block's own heap copy
+    // (made by addCompletedHandler) is the only allocation.
+    [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
+        jitc_malloc_free_deferred(info, ptr);
+    }];
 }
 
 // ============================================================================
 //  Encoder lifecycle helpers
 //
 //  At any given time a Metal command buffer hosts at most one open encoder.
-//  Switching encoder type (compute → blit, blit → accel, ...) requires
-//  closing the previous encoder and opening a fresh one.  We track which
-//  type is currently open via a small enum stored alongside the command
-//  buffer pointer in the ThreadState.
+//  Switching encoder type (compute → blit, ...) requires closing the previous
+//  encoder and opening a fresh one. We track which type is currently open via
+//  a small thread-local struct.
 // ============================================================================
 
 enum class MetalEncoderKind : uint32_t {
@@ -119,71 +187,66 @@ enum class MetalEncoderKind : uint32_t {
 };
 
 namespace {
-    // Per-thread "currently active encoder" pointer + kind. We co-locate
-    // these in a tiny struct rather than adding two new fields to
-    // ``ThreadStateBase`` (which would require widening the file change set
-    // beyond what the plan envisages).
     struct ActiveEncoder {
-        void *encoder = nullptr;
+        void *encoder = nullptr;             // owned (+1) id<MTL...CommandEncoder>
         MetalEncoderKind kind = MetalEncoderKind::None;
     };
     thread_local ActiveEncoder g_active_encoder;
 }
 
-MTL::CommandBuffer *jitc_metal_acquire_cmdbuf(ThreadState *ts) {
+void *jitc_metal_acquire_cmdbuf(ThreadState *ts) {
     if (ts->metal_command_buffer)
-        return (MTL::CommandBuffer *) ts->metal_command_buffer;
+        return ts->metal_command_buffer;
 
-    auto *queue = (MTL::CommandQueue *) ts->metal_queue;
-    auto *cb = queue->commandBuffer();
-    cb->retain();
-    ts->metal_command_buffer = cb;
-    return cb;
+    id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>) ts->metal_queue;
+    id<MTLCommandBuffer> cb = [queue commandBuffer];
+    // ``commandBuffer`` returns an autoreleased object; retain it so it
+    // survives past the enclosing autorelease pool.
+    ts->metal_command_buffer = (__bridge_retained void *) cb;
+    return ts->metal_command_buffer;
 }
 
 void jitc_metal_close_encoder(ThreadState *) {
     if (g_active_encoder.kind == MetalEncoderKind::Compute) {
-        auto *enc =
-            (MTL::ComputeCommandEncoder *) g_active_encoder.encoder;
-        enc->endEncoding();
-        enc->release();
+        id<MTLComputeCommandEncoder> enc =
+            (__bridge_transfer id<MTLComputeCommandEncoder>) g_active_encoder.encoder;
+        [enc endEncoding];
     } else if (g_active_encoder.kind == MetalEncoderKind::Blit) {
-        auto *enc = (MTL::BlitCommandEncoder *) g_active_encoder.encoder;
-        enc->endEncoding();
-        enc->release();
+        id<MTLBlitCommandEncoder> enc =
+            (__bridge_transfer id<MTLBlitCommandEncoder>) g_active_encoder.encoder;
+        [enc endEncoding];
     } else if (g_active_encoder.kind == MetalEncoderKind::Acceleration) {
-        auto *enc = (MTL::AccelerationStructureCommandEncoder *)
-            g_active_encoder.encoder;
-        enc->endEncoding();
-        enc->release();
+        id<MTLAccelerationStructureCommandEncoder> enc =
+            (__bridge_transfer id<MTLAccelerationStructureCommandEncoder>)
+                g_active_encoder.encoder;
+        [enc endEncoding];
     }
     g_active_encoder.encoder = nullptr;
     g_active_encoder.kind = MetalEncoderKind::None;
 }
 
-MTL::ComputeCommandEncoder *
-jitc_metal_acquire_compute_encoder(ThreadState *ts) {
+void *jitc_metal_acquire_compute_encoder(ThreadState *ts) {
     if (g_active_encoder.kind == MetalEncoderKind::Compute)
-        return (MTL::ComputeCommandEncoder *) g_active_encoder.encoder;
+        return g_active_encoder.encoder;
     jitc_metal_close_encoder(ts);
-    auto *cb = jitc_metal_acquire_cmdbuf(ts);
-    auto *enc = cb->computeCommandEncoder();
-    enc->retain();
-    g_active_encoder.encoder = enc;
+    id<MTLCommandBuffer> cb =
+        (__bridge id<MTLCommandBuffer>) jitc_metal_acquire_cmdbuf(ts);
+    id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
+    g_active_encoder.encoder = (__bridge_retained void *) enc;
     g_active_encoder.kind = MetalEncoderKind::Compute;
-    return enc;
+    return g_active_encoder.encoder;
 }
 
-MTL::BlitCommandEncoder *jitc_metal_acquire_blit_encoder(ThreadState *ts) {
+void *jitc_metal_acquire_blit_encoder(ThreadState *ts) {
     if (g_active_encoder.kind == MetalEncoderKind::Blit)
-        return (MTL::BlitCommandEncoder *) g_active_encoder.encoder;
+        return g_active_encoder.encoder;
     jitc_metal_close_encoder(ts);
-    auto *cb = jitc_metal_acquire_cmdbuf(ts);
-    auto *enc = cb->blitCommandEncoder();
-    enc->retain();
-    g_active_encoder.encoder = enc;
+    id<MTLCommandBuffer> cb =
+        (__bridge id<MTLCommandBuffer>) jitc_metal_acquire_cmdbuf(ts);
+    id<MTLBlitCommandEncoder> enc = [cb blitCommandEncoder];
+    g_active_encoder.encoder = (__bridge_retained void *) enc;
     g_active_encoder.kind = MetalEncoderKind::Blit;
-    return enc;
+    return g_active_encoder.encoder;
 }
 
 // ============================================================================
@@ -194,41 +257,34 @@ MTL::BlitCommandEncoder *jitc_metal_acquire_blit_encoder(ThreadState *ts) {
 //  Pipeline states are looked up by name via jitc_metal_get_pipeline().
 // ============================================================================
 
-/// The compiled utility library per device.  Stored in MetalDevice::binary_archive
-/// (repurposed to hold the MTL::Library*).
-
-/// Look up a precompiled pipeline state by kernel name. Returns nullptr if
-/// the kernel was not found or not yet compiled.
-static MTL::ComputePipelineState *
-jitc_metal_get_pipeline_impl(MTL::Device *dev, MTL::Library *lib,
-                             const char *name) {
-    NS::String *fn_name =
-        NS::String::string(name, NS::UTF8StringEncoding);
-    MTL::Function *func = lib->newFunction(fn_name);
+/// Look up a precompiled pipeline state by kernel name. Returns nullptr (as a
+/// borrowed void*) if the kernel was not found, else an owned (+1) handle.
+static void *jitc_metal_get_pipeline_impl(id<MTLDevice> dev, id<MTLLibrary> lib,
+                                          const char *name) {
+    id<MTLFunction> func = [lib newFunctionWithName:@(name)];
     if (!func)
         return nullptr;
-    NS::Error *err = nullptr;
-    MTL::ComputePipelineState *pso =
-        dev->newComputePipelineState(func, &err);
-    func->release();
+    NSError *err = nil;
+    id<MTLComputePipelineState> pso =
+        [dev newComputePipelineStateWithFunction:func error:&err];
     if (!pso) {
-        const char *desc = err && err->localizedDescription()
-                               ? err->localizedDescription()->utf8String()
+        const char *desc = err ? err.localizedDescription.UTF8String
                                : "<unknown>";
         jitc_log(Warn, "jitc_metal_get_pipeline(%s): pipeline creation "
                        "failed: %s",
                  name, desc);
+        return nullptr;
     }
-    return pso;
+    return (__bridge_retained void *) pso;
 }
 
 namespace {
-    /// Cache: kernel name → pipeline state, per device.
+    /// Cache: kernel name → pipeline state (owned +1), per device.
     std::mutex g_pipeline_cache_mutex;
     std::unordered_map<std::string, void *> g_pipeline_cache;
 }
 
-MTL::ComputePipelineState *
+void *
 jitc_metal_get_pipeline(int device_id, const char *name) {
     std::string key = std::to_string(device_id) + "/" + name;
 
@@ -236,18 +292,18 @@ jitc_metal_get_pipeline(int device_id, const char *name) {
         std::lock_guard<std::mutex> g(g_pipeline_cache_mutex);
         auto it = g_pipeline_cache.find(key);
         if (it != g_pipeline_cache.end())
-            return (MTL::ComputePipelineState *) it->second;
+            return it->second;
     }
 
     if (device_id < 0 || (size_t) device_id >= state.metal_devices.size())
         return nullptr;
     MetalDevice &md = state.metal_devices[device_id];
-    auto *lib = (MTL::Library *) md.binary_archive;
-    auto *dev = (MTL::Device *) md.device;
+    id<MTLLibrary> lib = (__bridge id<MTLLibrary>) md.binary_archive;
+    id<MTLDevice> dev = (__bridge id<MTLDevice>) md.device;
     if (!lib)
         return nullptr;
 
-    auto *pso = jitc_metal_get_pipeline_impl(dev, lib, name);
+    void *pso = jitc_metal_get_pipeline_impl(dev, lib, name);
     if (pso) {
         std::lock_guard<std::mutex> g(g_pipeline_cache_mutex);
         g_pipeline_cache[key] = pso;
@@ -260,23 +316,20 @@ jitc_metal_get_pipeline(int device_id, const char *name) {
 /// from ``resources/metal_kernels.metal`` and exposed as
 /// ``drjit::metal_kernels_src`` — no runtime file I/O is needed.
 static bool jitc_metal_load_utility_kernels(MetalDevice &md) {
-    auto *dev = (MTL::Device *) md.device;
-    NS::Error *err = nullptr;
-    NS::String *src = NS::String::string(drjit::metal_kernels_src,
-                                         NS::UTF8StringEncoding);
+    id<MTLDevice> dev = (__bridge id<MTLDevice>) md.device;
+    NSError *err = nil;
+    NSString *src = @(drjit::metal_kernels_src);
 
-    MTL::CompileOptions *opts = MTL::CompileOptions::alloc()->init();
-    opts->setLanguageVersion(MTL::LanguageVersion3_0);
-    // Fast math is OFF so the precompiled reduction kernels are not
-    // reassociated in surprising ways (e.g. (a + b) - a collapsing to b).
-    opts->setFastMathEnabled(false);
+    MTLCompileOptions *opts = [MTLCompileOptions new];
+    opts.languageVersion = MTLLanguageVersion3_0;
+    // Fast math is OFF (MathModeSafe) so the precompiled reduction kernels are
+    // not reassociated in surprising ways (e.g. (a + b) - a collapsing to b).
+    opts.mathMode = MTLMathModeSafe;
 
-    MTL::Library *lib = dev->newLibrary(src, opts, &err);
-    opts->release();
+    id<MTLLibrary> lib = [dev newLibraryWithSource:src options:opts error:&err];
 
     if (!lib) {
-        const char *desc = err && err->localizedDescription()
-                               ? err->localizedDescription()->utf8String()
+        const char *desc = err ? err.localizedDescription.UTF8String
                                : "<unknown>";
         jitc_log(Warn,
                  "jitc_metal_load_utility_kernels(): compilation failed: %s",
@@ -285,7 +338,7 @@ static bool jitc_metal_load_utility_kernels(MetalDevice &md) {
     }
 
     // Store the library in the MetalDevice (repurposing binary_archive).
-    md.binary_archive = lib;
+    md.binary_archive = (__bridge_retained void *) lib;
 
     jitc_log(Info, "jit_metal_init(): compiled utility kernel library for "
                    "device \"%s\".",
@@ -298,106 +351,93 @@ static bool jitc_metal_load_utility_kernels(MetalDevice &md) {
 // ============================================================================
 
 bool jitc_metal_init() {
-    DRJIT_METAL_SCOPED_POOL;
-
-    if (!jitc_metal_api_init()) {
-        jitc_log(Warn, "jit_metal_init(): Metal API initialization failed.");
-        return false;
-    }
-
-    NS::Array *devices = MTL::CopyAllDevices();
-    if (!devices || devices->count() == 0) {
-        jitc_log(Warn, "jit_metal_init(): no Metal-capable GPU was detected.");
-        if (devices)
-            devices->release();
-        return false;
-    }
-
-    state.metal_devices.clear();
-
-    for (NS::UInteger i = 0; i < devices->count(); ++i) {
-        auto *dev = (MTL::Device *) devices->object(i);
-        if (!dev->supportsFamily(MTL::GPUFamilyMetal3)) {
-            jitc_log(Warn,
-                     "jit_metal_init(): skipping device \"%s\" because it "
-                     "does not support Metal 3 (M1+ required).",
-                     dev->name()->utf8String());
-            continue;
+    @autoreleasepool {
+        NSArray<id<MTLDevice>> *devices = MTLCopyAllDevices();
+        if (!devices || devices.count == 0) {
+            jitc_log(Warn, "jit_metal_init(): no Metal-capable GPU was detected.");
+            return false;
         }
 
-        MetalDevice md;
-        dev->retain();
-        md.device = dev;
-        md.queue  = dev->newCommandQueue();
-        md.event  = dev->newSharedEvent();
-        md.event_value = 0;
+        state.metal_devices.clear();
 
-        md.max_threads_per_threadgroup =
-            (uint32_t) dev->maxThreadsPerThreadgroup().width;
-        md.max_threadgroup_memory =
-            (uint32_t) dev->maxThreadgroupMemoryLength();
-        md.simd_width = 32; // Apple Silicon
-        md.supports_metal3 = true;
-        md.supports_ray_tracing = dev->supportsRaytracing();
-        md.supports_float_atomics =
-            dev->supportsFamily(MTL::GPUFamilyApple7);
-        const char *name = dev->name()->utf8String();
-        size_t len = std::strlen(name);
-        md.name = (char *) std::malloc(len + 1);
-        std::memcpy(md.name, name, len + 1);
+        for (id<MTLDevice> dev in devices) {
+            if (![dev supportsFamily:MTLGPUFamilyMetal3]) {
+                jitc_log(Warn,
+                         "jit_metal_init(): skipping device \"%s\" because it "
+                         "does not support Metal 3 (M1+ required).",
+                         dev.name.UTF8String);
+                continue;
+            }
 
-        state.metal_devices.push_back(md);
+            MetalDevice md;
+            md.device = (__bridge_retained void *) dev;
+            md.queue  = (__bridge_retained void *) [dev newCommandQueue];
+            md.event  = (__bridge_retained void *) [dev newSharedEvent];
+            md.event_value = 0;
 
-        jitc_log(Info,
-                 "jit_metal_init(): registered device \"%s\" "
-                 "(simd=%u, max_threads=%u, rt=%s, float_atomic=%s)",
-                 name, md.simd_width, md.max_threads_per_threadgroup,
-                 md.supports_ray_tracing ? "yes" : "no",
-                 md.supports_float_atomics ? "yes" : "no");
+            md.max_threads_per_threadgroup =
+                (uint32_t) [dev maxThreadsPerThreadgroup].width;
+            md.max_threadgroup_memory =
+                (uint32_t) [dev maxThreadgroupMemoryLength];
+            md.simd_width = 32; // Apple Silicon
+            md.supports_metal3 = true;
+            md.supports_ray_tracing = [dev supportsRaytracing];
+            md.supports_float_atomics =
+                [dev supportsFamily:MTLGPUFamilyApple7];
+            const char *name = dev.name.UTF8String;
+            size_t len = std::strlen(name);
+            md.name = (char *) std::malloc(len + 1);
+            std::memcpy(md.name, name, len + 1);
+
+            state.metal_devices.push_back(md);
+
+            jitc_log(Info,
+                     "jit_metal_init(): registered device \"%s\" "
+                     "(simd=%u, max_threads=%u, rt=%s, float_atomic=%s)",
+                     md.name, md.simd_width, md.max_threads_per_threadgroup,
+                     md.supports_ray_tracing ? "yes" : "no",
+                     md.supports_float_atomics ? "yes" : "no");
+        }
+
+        // Compile the utility kernel library for each device
+        for (MetalDevice &md : state.metal_devices) {
+            if (!jitc_metal_load_utility_kernels(md))
+                jitc_log(Warn,
+                         "jit_metal_init(): failed to compile utility kernels "
+                         "for device \"%s\".",
+                         md.name);
+        }
+
+        return !state.metal_devices.empty();
     }
-
-    devices->release();
-
-    // Compile the utility kernel library for each device
-    for (MetalDevice &md : state.metal_devices) {
-        if (!jitc_metal_load_utility_kernels(md))
-            jitc_log(Warn,
-                     "jit_metal_init(): failed to compile utility kernels "
-                     "for device \"%s\".",
-                     md.name);
-    }
-
-    return !state.metal_devices.empty();
 }
 
 void jitc_metal_shutdown() {
-    DRJIT_METAL_SCOPED_POOL;
+    @autoreleasepool {
+        jitc_metal_stage_shutdown();
 
-    jitc_metal_stage_shutdown();
+        // Release cached pipeline states
+        {
+            std::lock_guard<std::mutex> g(g_pipeline_cache_mutex);
+            for (auto &kv : g_pipeline_cache)
+                (void) (__bridge_transfer id<MTLComputePipelineState>) kv.second;
+            g_pipeline_cache.clear();
+        }
 
-    // Release cached pipeline states
-    {
-        std::lock_guard<std::mutex> g(g_pipeline_cache_mutex);
-        for (auto &kv : g_pipeline_cache)
-            ((MTL::ComputePipelineState *) kv.second)->release();
-        g_pipeline_cache.clear();
+        for (MetalDevice &d : state.metal_devices) {
+            if (d.event)
+                (void) (__bridge_transfer id<MTLSharedEvent>) d.event;
+            if (d.queue)
+                (void) (__bridge_transfer id<MTLCommandQueue>) d.queue;
+            if (d.binary_archive)
+                (void) (__bridge_transfer id<MTLLibrary>) d.binary_archive;
+            if (d.device)
+                (void) (__bridge_transfer id<MTLDevice>) d.device;
+            std::free(d.name);
+        }
+        state.metal_devices.clear();
+        metal_buffer_map.clear();
     }
-
-    for (MetalDevice &d : state.metal_devices) {
-        if (d.event)
-            ((MTL::SharedEvent *) d.event)->release();
-        if (d.queue)
-            ((MTL::CommandQueue *) d.queue)->release();
-        if (d.binary_archive)
-            ((MTL::Library *) d.binary_archive)->release();
-        if (d.device)
-            ((MTL::Device *) d.device)->release();
-        std::free(d.name);
-    }
-    state.metal_devices.clear();
-    metal_buffer_map.clear();
-
-    jitc_metal_api_shutdown();
 }
 
 const char *jitc_metal_device_name(int device_id) {
@@ -419,152 +459,132 @@ void jitc_metal_dump_devices() {
 
 bool jitc_metal_compile(const char *source, size_t /*source_size*/,
                         const char *kernel_name, Kernel &kernel) {
-    DRJIT_METAL_SCOPED_POOL;
+    @autoreleasepool {
+        if (state.metal_devices.empty())
+            jitc_fail("jitc_metal_compile(): no Metal devices initialized.");
 
-    if (state.metal_devices.empty())
-        jitc_fail("jitc_metal_compile(): no Metal devices initialized.");
+        // Compile against the device of the calling thread (defaults to device 0).
+        auto *ts = thread_state(JitBackend::Metal);
+        id<MTLDevice> dev = (__bridge id<MTLDevice>) ts->metal_device;
 
-    // Compile against the device of the calling thread (defaults to device 0).
-    auto *ts = thread_state(JitBackend::Metal);
-    auto *dev = (MTL::Device *) ts->metal_device;
+        NSError *err = nil;
+        NSString *src = @(source);
 
-    NS::Error *err = nullptr;
-    NS::String *src = NS::String::string(source, NS::UTF8StringEncoding);
+        MTLCompileOptions *opts = [MTLCompileOptions new];
+        opts.languageVersion = MTLLanguageVersion3_2;
+        // Equivalent of `-fmetal-math-mode=relaxed -ffp-contract=on`.
+        opts.mathMode = MTLMathModeRelaxed;
+        opts.mathFloatingPointFunctions = MTLMathFloatingPointFunctionsFast;
+        opts.libraryType = MTLLibraryTypeExecutable;
 
-    MTL::CompileOptions *opts = MTL::CompileOptions::alloc()->init();
-    opts->setLanguageVersion(MTL::LanguageVersion3_2);
-    // Equivalent of `-fmetal-math-mode=relaxed -ffp-contract=on`.
-    opts->setMathMode(MTL::MathModeRelaxed);
-    opts->setMathFloatingPointFunctions(MTL::MathFloatingPointFunctionsFast);
-    opts->setLibraryType(MTL::LibraryTypeExecutable);
+        id<MTLLibrary> lib = [dev newLibraryWithSource:src options:opts error:&err];
 
-    MTL::Library *lib = dev->newLibrary(src, opts, &err);
-    opts->release();
-
-    if (!lib) {
-        const char *desc = err && err->localizedDescription()
-                               ? err->localizedDescription()->utf8String()
-                               : "<unknown>";
-        jitc_fail("jitc_metal_compile(): MSL compilation failed:\n%s\n\n"
-                  "--- Source code ---\n%s",
-                  desc, source);
-    }
-
-    NS::String *fn_name =
-        NS::String::string(kernel_name, NS::UTF8StringEncoding);
-    MTL::Function *func = lib->newFunction(fn_name);
-    if (!func)
-        jitc_fail("jitc_metal_compile(): kernel function \"%s\" not found in "
-                  "the compiled library.", kernel_name);
-
-    // ---- Pipeline creation -------------------------------------------------
-    // Link the union of custom intersection functions across every scene
-    // registered with this kernel (collected by ``jitc_metal_assemble``'s
-    // pre-walk into ``metal_kernel_scenes``). MTLLinkedFunctions applies
-    // to the entire PSO, not per-IFT, so scenes with disjoint function
-    // name sets must all contribute. Per-scene IFTs are built lazily at
-    // launch time in ``jitc_metal_get_or_create_ift_for_scene``.
-    //
-    // Dedup by name only, consistent with how the link-identity comment
-    // in the MSL source identifies scenes for cache-key purposes (see
-    // ``jitc_metal_render`` TraceRay arm): names are assumed unique per
-    // implementation within a process.
-    err = nullptr;
-    MTL::ComputePipelineState *pso = nullptr;
-
-    std::vector<MTL::Function *> linked_fns;
-    std::vector<std::string> seen;
-    for (MetalScene *scene : metal_kernel_scenes) {
-        auto *isect_lib = scene ? (MTL::Library *) scene->intersection_fn_library
-                                : nullptr;
-        if (!isect_lib)
-            continue;
-        for (const std::string &name : scene->intersection_fn_names) {
-            if (std::find(seen.begin(), seen.end(), name) != seen.end())
-                continue;
-            seen.push_back(name);
-            NS::String *nstr =
-                NS::String::string(name.c_str(), NS::UTF8StringEncoding);
-            MTL::Function *f = isect_lib->newFunction(nstr);
-            if (!f) {
-                for (auto *prev : linked_fns) prev->release();
-                lib->release();
-                jitc_fail("jitc_metal_compile(): intersection function \"%s\" "
-                          "not found in user-supplied library.", name.c_str());
-            }
-            linked_fns.push_back(f);
+        if (!lib) {
+            const char *desc = err ? err.localizedDescription.UTF8String
+                                   : "<unknown>";
+            jitc_fail("jitc_metal_compile(): MSL compilation failed:\n%s\n\n"
+                      "--- Source code ---\n%s",
+                      desc, source);
         }
+
+        id<MTLFunction> func = [lib newFunctionWithName:@(kernel_name)];
+        if (!func)
+            jitc_fail("jitc_metal_compile(): kernel function \"%s\" not found in "
+                      "the compiled library.", kernel_name);
+
+        // ---- Pipeline creation ---------------------------------------------
+        // Link the union of custom intersection functions across every scene
+        // registered with this kernel (collected by ``jitc_metal_assemble``'s
+        // pre-walk into ``metal_kernel_scenes``). LinkedFunctions applies to
+        // the entire PSO, not per-IFT, so scenes with disjoint function name
+        // sets must all contribute. Per-scene IFTs are built lazily at launch
+        // time in ``jitc_metal_get_or_create_ift_for_scene``.
+        err = nil;
+        id<MTLComputePipelineState> pso = nil;
+
+        NSMutableArray<id<MTLFunction>> *linked_fns = [NSMutableArray array];
+        std::vector<std::string> seen;
+        for (MetalScene *scene : metal_kernel_scenes) {
+            id<MTLLibrary> isect_lib =
+                scene ? (__bridge id<MTLLibrary>) scene->intersection_fn_library
+                      : nil;
+            if (!isect_lib)
+                continue;
+            for (const std::string &name : scene->intersection_fn_names) {
+                if (std::find(seen.begin(), seen.end(), name) != seen.end())
+                    continue;
+                seen.push_back(name);
+                id<MTLFunction> f = [isect_lib newFunctionWithName:@(name.c_str())];
+                if (!f)
+                    jitc_fail("jitc_metal_compile(): intersection function "
+                              "\"%s\" not found in user-supplied library.",
+                              name.c_str());
+                [linked_fns addObject:f];
+            }
+        }
+
+        if (linked_fns.count > 0) {
+            MTLLinkedFunctions *lf = [MTLLinkedFunctions new];
+            lf.functions = linked_fns;
+
+            MTLComputePipelineDescriptor *desc =
+                [MTLComputePipelineDescriptor new];
+            desc.computeFunction = func;
+            desc.linkedFunctions = lf;
+
+            pso = [dev newComputePipelineStateWithDescriptor:desc
+                                                     options:MTLPipelineOptionNone
+                                                  reflection:nil
+                                                       error:&err];
+        } else {
+            pso = [dev newComputePipelineStateWithFunction:func error:&err];
+        }
+
+        if (!pso) {
+            const char *desc = err ? err.localizedDescription.UTF8String
+                                   : "<unknown>";
+            jitc_fail("jitc_metal_compile(): pipeline creation failed: %s", desc);
+        }
+
+        kernel.metal.pipeline    = (__bridge_retained void *) pso;
+        kernel.metal.library     = (__bridge_retained void *) lib;
+        kernel.metal.scenes      = nullptr; // Set by eval.cpp after assemble
+        kernel.metal.scene_count = 0;
+        kernel.size = (uint32_t) std::strlen(source);
+
+        return false; // No on-disk cache hit (Phase 5 will hook into BinaryArchive)
     }
-
-    if (!linked_fns.empty()) {
-        NS::Array *fn_array = NS::Array::array(
-            (const NS::Object *const *) linked_fns.data(),
-            linked_fns.size());
-
-        MTL::LinkedFunctions *lf = MTL::LinkedFunctions::alloc()->init();
-        lf->setFunctions(fn_array);
-
-        MTL::ComputePipelineDescriptor *desc =
-            MTL::ComputePipelineDescriptor::alloc()->init();
-        desc->setComputeFunction(func);
-        desc->setLinkedFunctions(lf);
-
-        pso = dev->newComputePipelineState(desc, MTL::PipelineOptionNone,
-                                            nullptr, &err);
-
-        desc->release();
-        lf->release();
-        for (auto *f : linked_fns)
-            f->release();
-    } else {
-        pso = dev->newComputePipelineState(func, &err);
-    }
-
-    func->release();
-
-    if (!pso) {
-        const char *desc = err && err->localizedDescription()
-                               ? err->localizedDescription()->utf8String()
-                               : "<unknown>";
-        lib->release();
-        jitc_fail("jitc_metal_compile(): pipeline creation failed: %s", desc);
-    }
-
-    kernel.metal.pipeline    = pso;
-    kernel.metal.library     = lib;
-    kernel.metal.scenes      = nullptr; // Set by eval.cpp after assemble
-    kernel.metal.scene_count = 0;
-    kernel.size = (uint32_t) std::strlen(source);
-
-    return false; // No on-disk cache hit (Phase 5 will hook into BinaryArchive)
 }
 
 void jitc_metal_free(Kernel &kernel) {
-    DRJIT_METAL_SCOPED_POOL;
-    if (kernel.metal.pipeline)
-        ((MTL::ComputePipelineState *) kernel.metal.pipeline)->release();
-    if (kernel.metal.library)
-        ((MTL::Library *) kernel.metal.library)->release();
-    delete[] kernel.metal.scenes;
-    kernel.metal.pipeline    = nullptr;
-    kernel.metal.library     = nullptr;
-    kernel.metal.scenes      = nullptr;
-    kernel.metal.scene_count = 0;
+    @autoreleasepool {
+        if (kernel.metal.pipeline)
+            (void) (__bridge_transfer id<MTLComputePipelineState>)
+                kernel.metal.pipeline;
+        if (kernel.metal.library)
+            (void) (__bridge_transfer id<MTLLibrary>) kernel.metal.library;
+        delete[] kernel.metal.scenes;
+        kernel.metal.pipeline    = nullptr;
+        kernel.metal.library     = nullptr;
+        kernel.metal.scenes      = nullptr;
+        kernel.metal.scene_count = 0;
+    }
 }
 
 /// Resolve a Metal kernel-history entry's execution_time by waiting on the
-/// stashed MTL::CommandBuffer and reading its GPU times. Called from the
+/// stashed command buffer and reading its GPU times. Called from the
 /// backend-agnostic `KernelHistory::get()` in init.cpp. Returns the
-/// execution time in ms, or 0 if no buffer is attached.
+/// execution time in ms, or 0 if no buffer is attached. Consumes the +1 that
+/// ``launch`` added to the command buffer.
 float jitc_metal_finalize_kernel_history_entry(void *task_ptr) {
-    DRJIT_METAL_SCOPED_POOL;
-    if (!task_ptr)
-        return 0.f;
-    auto *cb = (MTL::CommandBuffer *) task_ptr;
-    cb->waitUntilCompleted();
-    float ms = (float) ((cb->GPUEndTime() - cb->GPUStartTime()) * 1000.0);
-    cb->release();
-    return ms;
+    @autoreleasepool {
+        if (!task_ptr)
+            return 0.f;
+        id<MTLCommandBuffer> cb = (__bridge_transfer id<MTLCommandBuffer>) task_ptr;
+        [cb waitUntilCompleted];
+        float ms = (float) ((cb.GPUEndTime - cb.GPUStartTime) * 1000.0);
+        return ms;
+    }
 }
 
 // ----------------------------------------------------------------------------
@@ -572,19 +592,11 @@ float jitc_metal_finalize_kernel_history_entry(void *task_ptr) {
 //
 //  Gated by ``DRJIT_METAL_TRACE_SYNC``:
 //    unset / 0   : no instrumentation, zero overhead.
-//    "1"         : count + total wall time per thread, accessible via the
-//                  jitc_metal_sync_stats_* functions below.
+//    "1"         : count + total wall time per thread.
 //    "verbose"   : in addition, log each sync to stderr with its `tag`.
-//
-//  jitc_metal_sync() funnels every commit+wait we issue, so timing here
-//  captures every stall point. The optional ``tag`` is a static string
-//  identifying the caller (e.g. "block_prefix_reduce.phase1"). Default is
-//  the legacy untagged signature so existing call sites keep working.
 // ----------------------------------------------------------------------------
 
 namespace {
-    // Process-wide so counters work whether the syncs happen on the Python
-    // thread or on a Dr.Jit worker thread.
     std::atomic<uint64_t> g_sync_count{0};
     std::atomic<uint64_t> g_sync_total_us{0};
     int g_sync_trace_mode = -1;  // -1 = uninitialised, 0 off, 1 on, 2 verbose
@@ -605,15 +617,13 @@ namespace {
 
 /// Commit + waitUntilCompleted on a fresh ad-hoc command buffer. Counts
 /// against the global sync stats just like jitc_metal_sync_tagged.
-/// Use from sites that build their own command buffer (memcpy staging,
-/// fillBuffer init, etc.) rather than going through jitc_metal_sync.
 void jitc_metal_commit_and_wait_tagged(void *cb_ptr, const char *tag) {
-    auto *cb = (MTL::CommandBuffer *) cb_ptr;
+    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cb_ptr;
     int mode = sync_trace_mode();
     auto t0 = mode > 0 ? std::chrono::steady_clock::now()
                        : std::chrono::steady_clock::time_point{};
-    cb->commit();
-    cb->waitUntilCompleted();
+    [cb commit];
+    [cb waitUntilCompleted];
     if (mode > 0) {
         auto t1 = std::chrono::steady_clock::now();
         uint64_t us = (uint64_t) std::chrono::duration_cast<
@@ -639,7 +649,6 @@ extern "C" JIT_EXPORT void jitc_metal_sync_stats_reset() {
 
 // ---------------------------------------------------------------------------
 //  Launch-path instrumentation. Same env-var gate as sync stats.
-//  Process-wide atomics so worker-thread launches are captured.
 // ---------------------------------------------------------------------------
 namespace {
     std::atomic<uint64_t> g_launch_count{0};
@@ -696,36 +705,37 @@ void jitc_metal_launch_stats_add(uint64_t total_us, uint64_t setup_us,
 }
 
 void jitc_metal_sync_tagged(ThreadState *ts, const char *tag) {
-    DRJIT_METAL_SCOPED_POOL;
-    int mode = sync_trace_mode();
-    if (auto *rts = dynamic_cast<RecordThreadState *>(ts))
-        ts = rts->m_internal;
-    if (!ts->metal_command_buffer) {
-        if (mode == 2)
-            fprintf(stderr, "[METAL SYNC %s] noop (no pending CB)\n",
-                    tag ? tag : "?");
-        return;
-    }
-    auto *cb = (MTL::CommandBuffer *) ts->metal_command_buffer;
-    jitc_metal_close_encoder(ts);
+    @autoreleasepool {
+        int mode = sync_trace_mode();
+        if (auto *rts = dynamic_cast<RecordThreadState *>(ts))
+            ts = rts->m_internal;
+        if (!ts->metal_command_buffer) {
+            if (mode == 2)
+                fprintf(stderr, "[METAL SYNC %s] noop (no pending CB)\n",
+                        tag ? tag : "?");
+            return;
+        }
+        id<MTLCommandBuffer> cb =
+            (__bridge_transfer id<MTLCommandBuffer>) ts->metal_command_buffer;
+        ts->metal_command_buffer = nullptr;
+        jitc_metal_close_encoder(ts);
 
-    auto t0 = mode > 0 ? std::chrono::steady_clock::now()
-                       : std::chrono::steady_clock::time_point{};
+        auto t0 = mode > 0 ? std::chrono::steady_clock::now()
+                           : std::chrono::steady_clock::time_point{};
 
-    cb->commit();
-    cb->waitUntilCompleted();
-    cb->release();
-    ts->metal_command_buffer = nullptr;
+        [cb commit];
+        [cb waitUntilCompleted];
 
-    if (mode > 0) {
-        auto t1 = std::chrono::steady_clock::now();
-        uint64_t us = (uint64_t) std::chrono::duration_cast<
-            std::chrono::microseconds>(t1 - t0).count();
-        g_sync_count.fetch_add(1, std::memory_order_relaxed);
-        g_sync_total_us.fetch_add(us, std::memory_order_relaxed);
-        if (mode == 2)
-            fprintf(stderr, "[METAL SYNC %s] %llu us\n",
-                    tag ? tag : "?", (unsigned long long) us);
+        if (mode > 0) {
+            auto t1 = std::chrono::steady_clock::now();
+            uint64_t us = (uint64_t) std::chrono::duration_cast<
+                std::chrono::microseconds>(t1 - t0).count();
+            g_sync_count.fetch_add(1, std::memory_order_relaxed);
+            g_sync_total_us.fetch_add(us, std::memory_order_relaxed);
+            if (mode == 2)
+                fprintf(stderr, "[METAL SYNC %s] %llu us\n",
+                        tag ? tag : "?", (unsigned long long) us);
+        }
     }
 }
 
@@ -737,9 +747,6 @@ void jitc_metal_sync(ThreadState *ts) {
 //  Ray Tracing API
 // ============================================================================
 
-/// Build a MetalScene with the given configuration and wrap it in a JIT
-/// variable. Returns the variable index; the caller is expected to hold
-/// the reference for the scene's lifetime and dec_ref it on destruction.
 uint32_t jitc_metal_configure_scene(void *accel, void **resources,
                                     uint32_t n_resources,
                                     void *intersection_fn_library,
@@ -764,8 +771,10 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
         scene->resources.assign(resources, resources + n_resources);
 
     if (intersection_fn_library) {
-        scene->intersection_fn_library = intersection_fn_library;
-        ((MTL::Library *) intersection_fn_library)->retain();
+        // Retain a reference for the scene's lifetime.
+        id<MTLLibrary> isect_lib =
+            (__bridge id<MTLLibrary>) intersection_fn_library;
+        scene->intersection_fn_library = (__bridge_retained void *) isect_lib;
     }
 
     if (n_ift_entries > 0) {
@@ -810,10 +819,11 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
                  s->ift_cache.size());
         for (auto &kv : s->ift_cache) {
             if (kv.second)
-                ((MTL::IntersectionFunctionTable *) kv.second)->release();
+                (void) (__bridge_transfer id<MTLIntersectionFunctionTable>)
+                    kv.second;
         }
         if (s->intersection_fn_library)
-            ((MTL::Library *) s->intersection_fn_library)->release();
+            (void) (__bridge_transfer id<MTLLibrary>) s->intersection_fn_library;
         jitc_metal_unregister_live_scene(s);
         delete s;
     };
@@ -826,15 +836,6 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
 
 // ============================================================================
 //  Live MetalScene registry
-//
-//  Frozen-function replay skips ``jitc_metal_assemble``, so it can't refresh
-//  ``ts->metal_active_scene`` when a scene's TLAS is rebuilt mid-recording
-//  (which dangles any cached scene pointer). At launch time we therefore
-//  consult this registry to (a) detect that a saved scene pointer is stale
-//  and (b) fall back to the most-recently-configured scene as a heuristic.
-//  This works for the typical single-scene case; multi-scene workflows that
-//  rebuild between recording and replay would need explicit scene-input
-//  plumbing (out of scope here).
 // ============================================================================
 namespace {
     std::mutex g_live_scenes_mutex;
@@ -868,9 +869,6 @@ void *jitc_metal_last_live_scene() {
     return g_last_live_scene;
 }
 
-/// Look up the MetalScene attached to a JIT variable returned by
-/// jitc_metal_configure_scene. Returns nullptr if the variable is not a
-/// scene (e.g. has been destroyed already).
 MetalScene *jitc_metal_get_scene(uint32_t scene_index) {
     if (!scene_index)
         return nullptr;
@@ -887,84 +885,76 @@ void jit_metal_invalidate_scene_tlas(uint32_t scene_index) {
         scene->tlas = nullptr;
 }
 
-/// Read the active scene that the current ThreadState's kernel is being
-/// assembled / launched against. Returns the MetalScene determined by the
-/// schedule walk in jitc_metal_assemble (or nullptr if no TraceRay node is
-/// present in this kernel).
 MetalScene *jitc_metal_active_scene() {
     auto *ts = thread_state(JitBackend::Metal);
     return (MetalScene *) ts->metal_active_scene;
 }
 
-/// Lazily build (and cache) an IntersectionFunctionTable for the given
-/// scene + compute pipeline. The function handles are derived from the
-/// pipeline so each pipeline needs its own IFT instance. Returns nullptr
-/// if the scene has no custom intersection functions configured.
-MTL::IntersectionFunctionTable *
-jitc_metal_get_or_create_ift_for_scene(MetalScene *scene,
-                                       MTL::ComputePipelineState *pso) {
+/// Lazily build (and cache) an IntersectionFunctionTable for the given scene
+/// + compute pipeline. The function handles are derived from the pipeline so
+/// each pipeline needs its own IFT instance. The cache owns the (+1) IFT; the
+/// returned pointer is borrowed.
+void *
+jitc_metal_get_or_create_ift_for_scene(MetalScene *scene, void *pso_) {
+    id<MTLComputePipelineState> pso = (__bridge id<MTLComputePipelineState>) pso_;
     if (!scene || !pso || scene->intersection_fn_names.empty())
         return nullptr;
 
     // Cache hit: we already built an IFT for this pipeline.
-    auto it = scene->ift_cache.find(pso);
+    auto it = scene->ift_cache.find(pso_);
     if (it != scene->ift_cache.end())
-        return (MTL::IntersectionFunctionTable *) it->second;
+        return it->second;
 
-    auto *isect_lib = (MTL::Library *) scene->intersection_fn_library;
+    id<MTLLibrary> isect_lib =
+        (__bridge id<MTLLibrary>) scene->intersection_fn_library;
     if (!isect_lib)
         return nullptr;
 
     uint32_t n_ift = (uint32_t) scene->intersection_fn_names.size();
 
-    // Resolve unique function objects (deduplicate so we look up each
-    // function only once even if the IFT references it multiple times).
-    std::unordered_map<std::string, MTL::Function *> unique_fns;
+    // Resolve unique function objects (deduplicate so we look up each function
+    // only once even if the IFT references it multiple times).
+    NSMutableDictionary<NSString *, id<MTLFunction>> *unique_fns =
+        [NSMutableDictionary dictionary];
     for (uint32_t i = 0; i < n_ift; ++i) {
-        const std::string &name = scene->intersection_fn_names[i];
-        if (unique_fns.count(name))
+        NSString *name = @(scene->intersection_fn_names[i].c_str());
+        if (unique_fns[name])
             continue;
-        NS::String *nstr =
-            NS::String::string(name.c_str(), NS::UTF8StringEncoding);
-        MTL::Function *f = isect_lib->newFunction(nstr);
-        if (!f) {
+        id<MTLFunction> f = [isect_lib newFunctionWithName:name];
+        if (!f)
             jitc_fail("jitc_metal_get_or_create_ift_for_scene(): intersection "
                       "function \"%s\" not found in user-supplied library.",
-                      name.c_str());
-        }
+                      scene->intersection_fn_names[i].c_str());
         unique_fns[name] = f;
     }
 
-    MTL::IntersectionFunctionTableDescriptor *iftd =
-        MTL::IntersectionFunctionTableDescriptor::alloc()->init();
-    iftd->setFunctionCount(n_ift);
-    MTL::IntersectionFunctionTable *ift =
-        pso->newIntersectionFunctionTable(iftd);
-    iftd->release();
+    MTLIntersectionFunctionTableDescriptor *iftd =
+        [MTLIntersectionFunctionTableDescriptor new];
+    iftd.functionCount = n_ift;
+    id<MTLIntersectionFunctionTable> ift =
+        [pso newIntersectionFunctionTableWithDescriptor:iftd];
 
     for (uint32_t i = 0; i < n_ift; ++i) {
-        const std::string &name = scene->intersection_fn_names[i];
-        MTL::Function *f = unique_fns[name];
-        MTL::FunctionHandle *handle = pso->functionHandle(f);
-        ift->setFunction(handle, i);
+        NSString *name = @(scene->intersection_fn_names[i].c_str());
+        id<MTLFunction> f = unique_fns[name];
+        id<MTLFunctionHandle> handle = [pso functionHandleWithFunction:f];
+        [ift setFunction:handle atIndex:i];
 
         if (i < scene->intersection_fn_buffers.size()) {
-            auto *buf = (MTL::Buffer *) scene->intersection_fn_buffers[i];
+            id<MTLBuffer> buf =
+                (__bridge id<MTLBuffer>) scene->intersection_fn_buffers[i];
             uint32_t slot = (i < scene->intersection_fn_buffer_slots.size())
                                 ? scene->intersection_fn_buffer_slots[i] : 0u;
             uint64_t offset =
                 (i < scene->intersection_fn_buffer_offsets.size())
                     ? scene->intersection_fn_buffer_offsets[i] : 0ull;
             if (buf)
-                ift->setBuffer(buf, offset, slot);
+                [ift setBuffer:buf offset:offset atIndex:slot];
         }
     }
 
-    for (auto &kv : unique_fns)
-        kv.second->release();
-
-    scene->ift_cache[pso] = ift;
-    return ift;
+    scene->ift_cache[pso_] = (__bridge_retained void *) ift;
+    return scene->ift_cache[pso_];
 }
 
 void *jitc_metal_context_impl() {
@@ -1020,8 +1010,6 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
     }
 
     // Create TraceRay node with valid mask as dep[0] and scene as dep[1].
-    // The scene dep keeps the MetalScene alive while the trace op is in
-    // the IR, and lets codegen / launch resolve per-scene state.
     Ref trace = steal(jitc_var_new_node_2(
         JitBackend::Metal, VarKind::TraceRay, VarType::Void, size,
         symbolic, valid, jitc_var(valid),

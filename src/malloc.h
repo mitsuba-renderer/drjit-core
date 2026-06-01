@@ -59,6 +59,10 @@ extern void *jitc_malloc(JitBackend backend, size_t size,
 /// Release the given pointer
 extern void jitc_free(void *ptr);
 
+/// Return a no-longer-used allocation ``(info, ptr)`` to the free list. Safe to
+/// call from a GPU completion handler.
+extern void jitc_malloc_free_deferred(AllocInfo info, void *ptr);
+
 /// Migrate an allocated memory region to a different backend
 extern void *jitc_malloc_migrate(void *ptr, JitBackend backend, int move = 1);
 

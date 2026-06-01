@@ -19,8 +19,6 @@
 
 #if defined(DRJIT_ENABLE_METAL)
 #  include "metal.h"
-#  include "metal_api.h"
-#  include <Metal/Metal.hpp>
 #endif
 
 // Try to use huge pages for allocations > 2M (only on Linux)
@@ -162,7 +160,7 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
     // Otherwise, allocate memory
     if (unlikely(!ptr)) {
 #if defined(DRJIT_ENABLE_METAL)
-        MTL::Buffer *metal_buf = nullptr;
+        void *metal_buf = nullptr; // opaque MTLBuffer handle
 #endif
         for (int i = 0; i < 2; ++i) {
             {
@@ -171,15 +169,8 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
                     ptr = aligned_malloc(size);
 #if defined(DRJIT_ENABLE_METAL)
                 } else if (backend == JitBackend::Metal) {
-                    DRJIT_METAL_SCOPED_POOL;
-                    auto *dev = (MTL::Device *) ts->metal_device;
-                    MTL::ResourceOptions opts =
-                        shared ? MTL::ResourceStorageModeShared
-                               : MTL::ResourceStorageModePrivate;
-                    metal_buf = dev->newBuffer(size, opts);
-                    if (metal_buf)
-                        ptr = shared ? metal_buf->contents() :
-                              (void *) metal_buf->gpuAddress();
+                    metal_buf = jitc_metal_buffer_new(ts->metal_device, size,
+                                                      shared, &ptr);
 #endif
 
 #if defined(DRJIT_ENABLE_CUDA)
@@ -208,7 +199,7 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
 #if defined(DRJIT_ENABLE_METAL)
         // Register metal buffer given that we're holding the JIT lock again
         if (metal_buf)
-            jitc_metal_register_buffer(ptr, metal_buf);
+            jitc_metal_register_buffer(ptr, metal_buf, size);
 #endif
 
         descr = "new allocation";
@@ -246,11 +237,17 @@ struct ReleaseRecord {
     void *ptr;
 };
 
+/// Return a (no-longer-in-use) allocation to the free list. Used both
+/// synchronously and from GPU completion handlers.
+void jitc_malloc_free_deferred(AllocInfo info, void *ptr) {
+    lock_guard guard(state.alloc_free_lock);
+    state.alloc_free[info].push_back(ptr);
+}
+
 /// Helper function used in jitc_free
 static inline void release_callback(const void *p) {
     const ReleaseRecord *r = (const ReleaseRecord *) p;
-    lock_guard guard(state.alloc_free_lock);
-    state.alloc_free[r->info].push_back(r->ptr);
+    jitc_malloc_free_deferred(r->info, r->ptr);
 };
 
 void jitc_free(void *ptr) {
@@ -321,9 +318,9 @@ void jitc_free(void *ptr) {
 
 #if defined(DRJIT_ENABLE_METAL)
     else if (backend == JitBackend::Metal) {
-        auto *cb = (MTL::CommandBuffer *) ts->metal_command_buffer;
-        if (cb)
-            cb->addCompletedHandler([rec](MTL::CommandBuffer *) { release_callback(&rec); });
+        if (ts->metal_command_buffer)
+            jitc_metal_cmdbuf_free_on_complete(ts->metal_command_buffer,
+                                               rec.info, rec.ptr);
         else
             release_callback(&rec);
     }
@@ -529,17 +526,15 @@ void jitc_flush_malloc_cache(bool warn) {
 #if defined(DRJIT_ENABLE_METAL)
             if (backend == JitBackend::Metal &&
                 (state.backends & (1u << (uint32_t) JitBackend::Metal))) {
-                DRJIT_METAL_SCOPED_POOL;
-                std::vector<MTL::Buffer *> bufs(entries.size());
+                std::vector<void *> bufs(entries.size());
                 {
                     lock_guard guard_map(state.lock);
                     for (size_t i = 0; i < entries.size(); ++i)
-                        bufs[i] = (MTL::Buffer *)
-                            jitc_metal_unregister_buffer(entries[i]);
+                        bufs[i] = jitc_metal_unregister_buffer(entries[i]);
                 }
-                for (MTL::Buffer *buf : bufs)
+                for (void *buf : bufs)
                     if (buf)
-                        buf->release();
+                        jitc_metal_buffer_free(buf);
                 continue;
             }
 #endif
