@@ -408,7 +408,6 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->metal_device = dev.device;
         ts->metal_queue  = dev.queue;
         ts->metal_event  = dev.event;
-        ts->metal_event_value = 0;
         ts->metal_simd_width  = dev.simd_width;
         ts->metal_max_threads = dev.max_threads_per_threadgroup;
         thread_state_metal = ts;
@@ -877,7 +876,7 @@ void KernelHistory::clear() {
 #endif
 #if defined(DRJIT_ENABLE_METAL)
         if (k.backend == JitBackend::Metal) {
-            // The Metal `task` slot holds an MTL::CommandBuffer*, not a
+            // The Metal `task` slot holds an id<MTLCommandBuffer>, not a
             // nanothread Task. Reuse the finalize helper to wait + release.
             extern float jitc_metal_finalize_kernel_history_entry(void *);
             jitc_metal_finalize_kernel_history_entry(k.task);

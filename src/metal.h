@@ -28,7 +28,7 @@ extern void jitc_metal_sync(ThreadState *ts);
 // ---------------------------------------------------------------------
 
 /// Allocate a new ``MTLBuffer`` of ``size`` bytes (shared or private storage).
-/// Returns an owned (+1) ``MTL::Buffer*`` handle. The ``ptr_out`` argument
+/// Returns an owned (+1) ``id<MTLBuffer>`` handle. The ``ptr_out`` argument
 /// returns the CPU pointer (shared) or GPU address (private).
 ///
 /// ``metal_buffer_new``/``metal_buffer_free`` are called from
@@ -50,7 +50,7 @@ extern void jitc_metal_register_buffer(void *ptr, void *mtl_buffer,
                                        size_t size);
 
 /// Find the ``MTLBuffer`` for a given pointer adress. Returns the
-/// ``MTL::Buffer*`` and the byte offset from its start.
+/// ``id<MTLBuffer>`` and the byte offset from its start.
 /// Returns {nullptr, 0} if no registered allocation contains ``ptr``.
 extern void *jitc_metal_find_buffer(void *ptr, size_t *offset_out);
 
@@ -69,23 +69,25 @@ extern void jitc_metal_kernel_free(Kernel &kernel);
 /// Retrieve a precompiled compute pipeline state from the utility kernel
 /// library by kernel name (e.g. "block_reduce_add_f32_1024"). Returns
 /// nullptr if the kernel is not found. Pipeline states are cached.
-/// (opaque ``MTL::ComputePipelineState*``)
+/// (opaque ``id<MTLComputePipelineState>``)
 extern void *
 jitc_metal_get_pipeline(int device_id, const char *name);
 
 // ---------------------------------------------------------------------
 //  Command-buffer / encoder helpers
 // ---------------------------------------------------------------------
+//
+// The per-thread command buffer / encoder lifecycle lives on
+// ``MetalThreadState`` (see ``ensure_cmdbuf`` / ``close_encoder`` /
+// ``ensure_compute_encoder`` / ``ensure_blit_encoder`` / ``flush`` in
+// metal_ts.h). ``jitc_metal_sync`` remains a free function because it is also
+// called with a generic ``ThreadState *`` (e.g. from malloc.cpp / init.cpp /
+// the record thread state).
 
-/// Return the thread's open command buffer, creating one on first use.
-extern void *jitc_metal_acquire_cmdbuf(ThreadState *ts);
-
-/// Return the active compute / blit encoder (opening or switching as needed).
-extern void *jitc_metal_acquire_compute_encoder(ThreadState *ts);
-extern void *jitc_metal_acquire_blit_encoder(ThreadState *ts);
-
-/// End and release the currently-open encoder (if any).
-extern void jitc_metal_close_encoder(ThreadState *ts);
+/// Flush the thread's pending command buffer and wait for GPU completion so
+/// the CPU can read back results. Routes a RecordThreadState to its internal
+/// thread state, then delegates to ``MetalThreadState::flush(true)``.
+extern void jitc_metal_sync(ThreadState *ts);
 
 /// Commit + wait on an ad-hoc (standalone) command buffer.
 extern void jitc_metal_commit_and_wait(void *cb_ptr);
@@ -112,10 +114,10 @@ extern void *jitc_metal_last_live_scene();
 /// which releases the per-scene Metal objects.
 ///
 /// All fields are owned by the MetalScene — releasing the scene releases
-/// the IFT, the linked MTL::Library, and any cached compute pipelines /
+/// the IFT, the linked MTLLibrary, and any cached compute pipelines /
 /// per-entry buffers we hold strong references to.
 struct MetalScene {
-    /// MTL::AccelerationStructure* (TLAS). Bound at [[buffer(1)]] for
+    /// id<MTLAccelerationStructure> (TLAS). Bound at [[buffer(1)]] for
     /// every kernel that traces against this scene. Not retained — the
     /// caller owns the TLAS lifetime.
     void *tlas = nullptr;
@@ -124,7 +126,7 @@ struct MetalScene {
     /// buffers, etc.). useResource()'d at every launch. Not retained.
     std::vector<void *> resources;
 
-    /// Optional MTL::Library* with custom intersection functions.
+    /// Optional id<MTLLibrary> with custom intersection functions.
     /// Retained so the linker can find functions during pipeline
     /// creation.
     void *intersection_fn_library = nullptr;
@@ -132,7 +134,7 @@ struct MetalScene {
     /// Per-IFT-entry MSL function names (heap-owned C strings).
     std::vector<std::string> intersection_fn_names;
 
-    /// Per-IFT-entry data buffer (MTL::Buffer*, may be null). NOT
+    /// Per-IFT-entry data buffer (id<MTLBuffer>, may be null). NOT
     /// retained — caller manages buffer lifetime.
     std::vector<void *> intersection_fn_buffers;
 
@@ -173,8 +175,8 @@ extern MetalScene *jitc_metal_active_scene();
 /// given scene + compute pipeline. The function handles are derived from
 /// the pipeline so each pipeline needs its own IFT instance. Returns
 /// nullptr if the scene has no custom intersection functions configured.
-/// (returns an opaque ``MTL::IntersectionFunctionTable*``; ``pso`` is an
-/// opaque ``MTL::ComputePipelineState*``)
+/// (returns an opaque ``id<MTLIntersectionFunctionTable>``; ``pso`` is an
+/// opaque ``id<MTLComputePipelineState>``)
 extern void *
 jitc_metal_get_or_create_ift_for_scene(MetalScene *scene, void *pso);
 
@@ -197,10 +199,10 @@ extern void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
                                  uint32_t mask, uint32_t *out,
                                  uint32_t n_out, uint32_t scene);
 
-/// Return the active ``MTL::Device*`` for the current thread.
+/// Return the active ``id<MTLDevice>`` for the current thread.
 extern void *jitc_metal_context_impl();
 
-/// Return the active ``MTL::CommandQueue*`` for the current thread.
+/// Return the active ``id<MTLCommandQueue>`` for the current thread.
 extern void *jitc_metal_command_queue_impl();
 
 #endif // defined(DRJIT_ENABLE_METAL)

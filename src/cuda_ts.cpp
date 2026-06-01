@@ -47,10 +47,10 @@ static void submit_gpu(KernelType type, KernelRecordingMode recording_mode,
 }
 
 Task *
-CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
+CUDAThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                         XXH128_hash_t /*hash*/, uint32_t size,
-                        std::vector<void *> *kernel_params,
-                        const std::vector<uint32_t> * /*kernel_param_ids*/,
+                        std::vector<void *> &kernel_params,
+                        const std::vector<uint32_t> & /*kernel_param_ids*/,
                         KernelHistoryEntry *kernel_history_entry) {
     if (kernel_history_entry) {
         auto &e = *kernel_history_entry;
@@ -59,7 +59,7 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
         cuda_check(cuEventRecord((CUevent) e.event_start, this->stream));
     }
 
-    uint32_t kernel_param_count = (uint32_t) kernel_params->size();
+    uint32_t kernel_param_count = (uint32_t) kernel_params.size();
 
     // Pass parameters through global memory if too large or using OptiX
     if (uses_optix || kernel_param_count > jitc_cuda_arg_limit) {
@@ -68,11 +68,11 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
             (uint8_t *) jitc_malloc(JitBackend::CUDA, param_size, true);
         kernel_params_global =
             (uint8_t *) jitc_malloc(JitBackend::CUDA, param_size);
-        std::memcpy(tmp, kernel_params->data(), param_size);
+        std::memcpy(tmp, kernel_params.data(), param_size);
         jitc_memcpy_async(backend, kernel_params_global, tmp, param_size);
         jitc_free(tmp);
-        kernel_params->clear();
-        kernel_params->push_back(kernel_params_global);
+        kernel_params.clear();
+        kernel_params.push_back(kernel_params_global);
     }
 
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -85,11 +85,11 @@ CUDAThreadState::launch(Kernel kernel, KernelKey * /*key*/,
 #endif
 
     if (!uses_optix) {
-        size_t buffer_size = kernel_params->size() * sizeof(void *);
+        size_t buffer_size = kernel_params.size() * sizeof(void *);
 
         void *config[] = {
             CU_LAUNCH_PARAM_BUFFER_POINTER,
-            kernel_params->data(),
+            kernel_params.data(),
             CU_LAUNCH_PARAM_BUFFER_SIZE,
             &buffer_size,
             CU_LAUNCH_PARAM_END

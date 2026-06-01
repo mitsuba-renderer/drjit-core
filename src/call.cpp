@@ -286,6 +286,7 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
                   });
 
         jitc_aggregate(backend, data_d, agg, (uint32_t) (p - agg));
+        jitc_free(agg);
     } else {
         call->data_map.clear();
     }

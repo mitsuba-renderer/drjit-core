@@ -1,9 +1,9 @@
 #include "internal.h"
 
 struct LLVMThreadState : ThreadState {
-    Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
-                 uint32_t size, std::vector<void *> *kernel_params,
-                 const std::vector<uint32_t> *,
+    Task *launch(Kernel kernel, KernelKey &key, XXH128_hash_t hash,
+                 uint32_t size, std::vector<void *> &kernel_params,
+                 const std::vector<uint32_t> &,
                  KernelHistoryEntry *kernel_history_entry) override;
 
     void barrier() override;

@@ -589,16 +589,16 @@ struct MetalDevice {
     /// MTLDevice handle (opaque pointer to keep Objective-C / Metal types out of shared headers)
     void *device = nullptr;
 
-    /// MTL::CommandQueue* used to submit work to the GPU
+    /// id<MTLCommandQueue> used to submit work to the GPU
     void *queue = nullptr;
 
-    /// MTL::SharedEvent* used for synchronization (CPU/GPU)
+    /// id<MTLSharedEvent> used for synchronization (CPU/GPU)
     void *event = nullptr;
 
     /// Monotonic counter associated with the shared event
     uint64_t event_value = 0;
 
-    /// Optional MTL::BinaryArchive* used to cache compiled kernels on disk
+    /// Optional id<MTLBinaryArchive> used to cache compiled kernels on disk
     void *binary_archive = nullptr;
 
     /// Maximum number of threads per threadgroup (typically 1024)
@@ -717,17 +717,18 @@ struct ThreadStateBase {
     /// MTLDevice handle — opaque to keep Metal types out of shared headers
     void *metal_device = nullptr;
 
-    /// MTL::CommandQueue* used to submit work to the GPU
+    /// id<MTLCommandQueue> used to submit work to the GPU
     void *metal_queue = nullptr;
 
-    /// MTL::SharedEvent* used for synchronization
+    /// id<MTLSharedEvent> used for synchronization
     void *metal_event = nullptr;
 
-    /// Monotonic counter incremented for every encoded signal/wait
-    uint64_t metal_event_value = 0;
-
-    /// Pending MTL::CommandBuffer* (current open command buffer)
+    /// A id<MTLCommandBuffer> with pending work
     void *metal_command_buffer = nullptr;
+
+    /// Current Metal command encoder and its kind (a ``MetalEncoderKind``).
+    void *metal_encoder = nullptr;
+    uint32_t metal_encoder_kind = 0;
 
     /// Active MetalScene (MetalScene*) for the kernel currently being
     /// assembled / launched. Determined at `jitc_metal_assemble` time by
@@ -760,9 +761,9 @@ struct ThreadState : public ThreadStateBase {
      */
     virtual void barrier();
 
-    virtual Task *launch(Kernel kernel, KernelKey *key, XXH128_hash_t hash,
-                         uint32_t size, std::vector<void *> *kernel_params,
-                         const std::vector<uint32_t> *kernel_param_ids,
+    virtual Task *launch(Kernel kernel, KernelKey &key, XXH128_hash_t hash,
+                         uint32_t size, std::vector<void *> &kernel_params,
+                         const std::vector<uint32_t> &kernel_param_ids,
                          KernelHistoryEntry *kernel_history_entry) = 0;
 
     /// Fill a device memory region with constants of a given type
@@ -1304,7 +1305,7 @@ struct EventData {
         CUevent cuda_event;
         Task* llvm_task;
 #if defined(DRJIT_ENABLE_METAL)
-        // For Metal we store a (MTL::SharedEvent*, value) pair encoded into
+        // For Metal we store a (id<MTLSharedEvent>, value) pair encoded into
         // two 64-bit slots. The pointer is held in metal_event and the
         // monotonic counter associated with the recorded signal/wait is in
         // metal_value.

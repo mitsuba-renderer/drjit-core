@@ -704,10 +704,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     if(unlikely(jit_flag(JitFlag::KernelHistory)))
         e = &kernel_history_entry;
 
-    Task *ret_task = ts->launch(kernel, &kernel_key, kernel_hash, group.size,
-                                &kernel_params, &kernel_param_ids, e);
-
-    return ret_task;
+    return ts->launch(kernel, kernel_key, kernel_hash, group.size,
+                      kernel_params, kernel_param_ids, e);
 }
 
 static ProfilerRegion profiler_region_eval("jit_eval");
