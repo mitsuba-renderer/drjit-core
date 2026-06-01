@@ -264,24 +264,16 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         put("]\n");
     }
 
-    // -------------------------------------------------------------------
-    //   2. Kernel entry point
-    //
-    //   The kernel receives:
-    //     buffer(0)  -- the ``Params`` argument buffer (size + args[])
-    //     buffer(1)  -- (optional) instance acceleration structure
-    //     [[thread_position_in_grid]] -- linear thread index
-    //
-    //   ``params.size`` is the launch size.
-    // -------------------------------------------------------------------
     fmt_metal("kernel void drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(\n"
-              "    device const Params& params [[buffer(0)]],\n");
+              "    constant Params& params [[buffer(0)]],\n");
+
     // Multi-scene kernel signature: one ``accel_<i>`` per registered
     // scene at slots [1, N+1), then one ``ift_<i>`` for every scene
     // that has an ``intersection_fn_library`` (slots assigned by
     // ``jitc_metal_finalize_scene_layout``). Each IFT's template
     // depends on the scene's geometry-type mix (triangle-only vs
     // with-curves).
+
     if (uses_metal_rt) {
         for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
             fmt_metal("    instance_acceleration_structure accel_$u [[buffer($u)]],\n",
@@ -316,10 +308,8 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         // Float32 at variable creation (see jitc_var_new) and never reaches
         // codegen. Seeing one here means a variable slipped past promotion.
         if ((VarType) v->type == VarType::Float64)
-            jitc_fail("jitc_metal_assemble(): a Float64 variable (r%u) "
-                      "reached MSL codegen; it should have been promoted to "
-                      "Float32 at creation. This is an internal error.",
-                      index);
+            jitc_fail("jitc_metal_assemble(): the program should not contain "
+                      "Float64 variables.\n");
 
         // Declare output variables for TraceRay nodes before they're used
         if (kind == VarKind::TraceRay) {
