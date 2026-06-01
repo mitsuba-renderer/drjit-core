@@ -139,24 +139,6 @@
 #include "metal.h"
 #endif
 
-namespace {
-/// Compute the (replication_per_worker, workers) pair the live eval would
-/// have used for a Reduce-Expand region of `size` elements of `tsize` bytes
-/// on the given backend. Used to size the expand buffer / sweep parameters
-/// during frozen-function replay so that the buffer geometry matches what
-/// the recorded kernel was generated against.
-inline std::pair<uint32_t, uint32_t>
-expand_geometry(JitBackend backend, uint32_t size, uint32_t tsize) {
-#if defined(DRJIT_ENABLE_METAL)
-    if (backend == JitBackend::Metal)
-        return { 1u, jitc_metal_expand_factor(size, tsize) };
-#else
-    (void) backend;
-#endif
-    return jitc_llvm_expand_replication_factor(size, tsize);
-}
-} // namespace
-
 const char *op_type_name[(int) OpType::Count]{
     "Barrier",        "KernelLaunch",      "MemsetAsync",          "Expand",
     "ReduceExpanded", "Compress",          "MemcpyAsync",          "BlockMkperm",
@@ -1168,12 +1150,12 @@ int Recording::replay_expand(Operation &op) {
     if (size != op.size)
         return false;
 
-    // Use the same expand geometry the live eval would have chosen for this
-    // backend. Recording stores `op.size = size`, but neither the workers nor
-    // replication factor — and they differ per-backend (LLVM uses
-    // pool_size() accumulators padded for false sharing; Metal uses a much
-    // larger power-of-two factor with a per-thread stride of just `size`).
-    auto [replication_per_worker, workers] = expand_geometry(backend, size, tsize);
+    // Recompute the geometry the live eval would have chosen: recording
+    // stores `op.size = size` but neither the worker count nor the
+    // replication factor (LLVM uses pool_size() accumulators padded to avoid
+    // false sharing).
+    auto [replication_per_worker, workers] =
+        jitc_llvm_expand_replication_factor(size, tsize);
 
     uint32_t new_size = size * replication_per_worker *  workers;
 
@@ -1257,12 +1239,10 @@ int Recording::replay_reduce_expanded(Operation &op) {
     uint32_t size    = data_var.size(vt);
     uint32_t tsize   = type_size[(uint32_t) vt];
 
-    // Mirror `replay_expand`: pick the same factor the live eval would have
-    // used for this backend, so we sweep the matching number of expanded
-    // copies. Using the LLVM formula on Metal made `exp` come out as
-    // `pool_size()` instead of the much larger Metal factor, so part of the
-    // expanded buffer was never visited at reduction time.
-    auto [replication_per_worker, workers] = expand_geometry(backend, size, tsize);
+    // Mirror `replay_expand`: recompute the same factor the live eval used so
+    // we sweep the matching number of expanded copies.
+    auto [replication_per_worker, workers] =
+        jitc_llvm_expand_replication_factor(size, tsize);
     uint32_t exp = replication_per_worker * workers;
 
     jitc_log(
@@ -2689,6 +2669,13 @@ struct DisabledThreadState : ThreadState {
     void coop_vec_pack(uint32_t /* count */, const void * /* in */,
                        const MatrixDescr * /* in_d */, void * /* out */,
                        const MatrixDescr * /* out_d */) override { }
+
+    void batched_gemm(VarType /* type */, bool /* At */, bool /* Bt */,
+                      uint32_t /* M */, uint32_t /* N */, uint32_t /* K */,
+                      const GemmBatch */* batch */,
+                      const void */* A */, const void */* B */, void */* C */) override {
+        record_exception();
+    }
 };
 
 void set_disabled_thread_state(ThreadState **tsp, JitBackend recording_backend) {

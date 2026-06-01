@@ -807,7 +807,7 @@ struct ThreadState : public ThreadStateBase {
     virtual void batched_gemm(VarType type, bool At, bool Bt,
                               uint32_t M, uint32_t N, uint32_t K,
                               const GemmBatch *batch,
-                              const void *A, const void *B, void *C);
+                              const void *A, const void *B, void *C) = 0;
 
     /// Mask compression
     virtual uint32_t compress(const uint8_t *in, uint32_t size,
@@ -836,10 +836,9 @@ struct ThreadState : public ThreadStateBase {
     /// \c jitc_var_expand. This is required to record the ThreadState.
     virtual void notify_expand(uint32_t index);
 
-    /// LLVM: reduce a variable that was previously expanded due to
-    /// dr.ReduceOp.Expand
+    /// LLVM: reduce a variable that was previously expanded due to dr.ReduceOp.Expand
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
-                                 uint32_t exp, uint32_t size) = 0;
+                                 uint32_t exp, uint32_t size);
 
     /// Pack a set of matrices/vectors for use with the cooperative vector API
     virtual void coop_vec_pack(uint32_t count, const void *in,

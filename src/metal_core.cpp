@@ -36,52 +36,6 @@
 #include <algorithm>
 
 // ============================================================================
-//  Expand-mode tunables (mirror of ``llvm_expand_threshold`` for Metal)
-// ============================================================================
-
-// Soft cap on the size of an array that ``ReduceMode::Auto`` will promote to
-// ``ReduceMode::Expand`` on Metal. ``jitc_var_infer_reduce_mode`` consults
-// this when deciding whether to expand. Tuned to 1M entries (matches the
-// LLVM default), since past this point each output already gets so many
-// distinct atomics that contention isn't the dominant concern.
-size_t metal_expand_threshold = 1024 * 1024;
-
-uint32_t jitc_metal_expand_factor(uint32_t size, uint32_t tsize) {
-    if (size == 0 || tsize == 0)
-        return 1;
-
-    // Cap the per-call Expand temp buffer at 4 MB / factor 64.
-    //
-    // The previous cap (64 MB / factor 1024) consistently produced ~40 ms
-    // stalls per scatter on Metal at film sizes where it kicked in: the
-    // reduce_expanded kernel's wall time is proportional to the temp
-    // buffer size, and Apple's GPU + memory pipeline takes roughly 1 us
-    // per element regardless of how parallel the kernel looks. With the
-    // smaller cap each Expand call costs ~3-4 ms instead, while still
-    // providing enough per-output expansion to avoid ULP loss in the
-    // typical pixel-accumulation pattern (a few rays per pixel).
-    //
-    // For workloads with much higher per-output contention (e.g. 64+ spp
-    // path tracing) callers can override by explicitly passing
-    // ``ReduceMode::Expand`` with custom expand_factor.
-    constexpr size_t MAX_BUFFER_BYTES = 4ull * 1024 * 1024;
-    constexpr uint32_t MAX_FACTOR     = 64;
-
-    size_t budget = MAX_BUFFER_BYTES / ((size_t) size * tsize);
-    uint32_t factor = (uint32_t) std::min<size_t>(budget, MAX_FACTOR);
-    if (factor < 2)
-        return 1;
-
-    // Round down to power of 2 so the slot computation in
-    // ``jitc_var_infer_reduce_mode`` can use a bitwise AND instead of a
-    // modulo.
-    uint32_t pow2 = 1;
-    while (pow2 * 2u <= factor)
-        pow2 *= 2u;
-    return pow2;
-}
-
-// ============================================================================
 //  Pointer ↔ MTL::Buffer mapping
 //
 //  Dr.Jit treats device memory as raw void* but the Metal API requires

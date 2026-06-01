@@ -85,13 +85,6 @@ struct MetalThreadState : ThreadState {
     /// completes. Implemented via ``MTL::CommandBuffer::addCompletedHandler``.
     void enqueue_host_func(void (*callback)(void *), void *payload) override;
 
-    /// Reduce a previously expanded (scatter-add) variable. Mirrors
-    /// ``LLVMThreadState::reduce_expanded`` (llvm_ts.cpp:1033). The buffer
-    /// at ``data`` holds ``exp`` consecutive copies of ``size`` elements;
-    /// this collapses them into the first copy in-place.
-    void reduce_expanded(VarType vt, ReduceOp op, void *data,
-                         uint32_t exp, uint32_t size) override;
-
     /// Pack matrices/vectors for the cooperative vector API.
     ///
     /// Metal does not have hardware-specific "training-optimal" or
