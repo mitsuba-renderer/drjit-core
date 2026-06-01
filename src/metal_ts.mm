@@ -9,7 +9,6 @@
 #include "util.h"
 
 #include <cstdlib>
-#include <chrono>
 
 // Imported after the project headers, with the obsolete Carbon
 // <CarbonCore/Threads.h> suppressed (its ``typedef UInt16 ThreadState``
@@ -57,20 +56,6 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey * /*key*/,
                                const std::vector<uint32_t> * /*kernel_param_ids*/,
                                KernelHistoryEntry *kernel_history_entry) {
   @autoreleasepool {
-    using clock = std::chrono::steady_clock;
-    bool trace = jitc_metal_launch_trace_enabled();
-    auto t_total_0 = trace ? clock::now() : clock::time_point{};
-    uint64_t t_setup = 0, t_setbytes = 0, t_params_loop = 0;
-    uint64_t t_vcall_loop = 0, t_scene_loop = 0, t_dispatch = 0;
-    auto take = [&](clock::time_point &t0) -> uint64_t {
-        auto t1 = clock::now();
-        uint64_t us = (uint64_t) std::chrono::duration_cast<
-            std::chrono::microseconds>(t1 - t0).count();
-        t0 = t1;
-        return us;
-    };
-    auto t_phase = trace ? clock::now() : clock::time_point{};
-
     id<MTLComputePipelineState> pso =
         (__bridge id<MTLComputePipelineState>) kernel.metal.pipeline;
     id<MTLComputeCommandEncoder> enc =
@@ -78,13 +63,11 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey * /*key*/,
             jitc_metal_acquire_compute_encoder(this);
 
     [enc setComputePipelineState:pso];
-    if (trace) t_setup = take(t_phase);
 
     if (kernel_params && !kernel_params->empty()) {
         [enc setBytes:kernel_params->data()
                length:kernel_params->size() * sizeof(void *)
               atIndex:0];
-        if (trace) t_setbytes = take(t_phase);
 
         // Mark every referenced MTLBuffer with useResource().
         // Entry 0 is the encoded launch size — skip it.
@@ -99,7 +82,6 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey * /*key*/,
                 [enc useResource:buf
                            usage:MTLResourceUsageRead | MTLResourceUsageWrite];
         }
-        if (trace) t_params_loop = take(t_phase);
     }
 
     // Mark buffers referenced by vcall data sections
@@ -113,7 +95,6 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey * /*key*/,
                        usage:MTLResourceUsageRead | MTLResourceUsageWrite];
     }
     metal_call_resources.clear();
-    if (trace) t_vcall_loop = take(t_phase);
 
     // Bind per-scene TLAS + IFT for every scene referenced by this kernel.
     // The kernel was generated with ``accel_<i> [[buffer(1+i)]]`` for each
@@ -203,20 +184,8 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey * /*key*/,
     if (threads_per_group == 0)
         threads_per_group = metal_simd_width;
 
-    if (trace) t_scene_loop = take(t_phase);
-
     [enc dispatchThreads:MTLSizeMake(size, 1, 1)
         threadsPerThreadgroup:MTLSizeMake(threads_per_group, 1, 1)];
-    if (trace) t_dispatch = take(t_phase);
-
-    if (trace) {
-        uint64_t t_total = (uint64_t) std::chrono::duration_cast<
-            std::chrono::microseconds>(clock::now() - t_total_0).count();
-        uint64_t n_params = kernel_params ? kernel_params->size() : 0;
-        jitc_metal_launch_stats_add(t_total, t_setup, t_setbytes,
-                                    t_params_loop, t_vcall_loop,
-                                    t_scene_loop, t_dispatch, n_params);
-    }
 
     if (kernel_history_entry) {
         kernel_history_entry->size = size;
@@ -284,7 +253,7 @@ void MetalThreadState::memset_async(void *ptr, uint32_t size, uint32_t isize,
 void MetalThreadState::memcpy(void *dst, const void *src, size_t size) {
   @autoreleasepool {
     memcpy_async(dst, src, size);
-    jitc_metal_sync_tagged(this, "memcpy");
+    jitc_metal_sync(this);
   }
 }
 
@@ -872,8 +841,7 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
         id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
         [blit fillBuffer:c_buf range:NSMakeRange(c_buf_offset, c_size) value:0];
         [blit endEncoding];
-        jitc_metal_commit_and_wait_tagged((__bridge void *) cb,
-                                          "batched_gemm.zero_init");
+        jitc_metal_commit_and_wait((__bridge void *) cb);
     }
 
     // Iterate over grid and reduce dimensions
@@ -1102,7 +1070,7 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
     }
 
     // Sync and read count
-    jitc_metal_sync_tagged(this, "compress.read_count");
+    jitc_metal_sync(this);
     uint32_t result = *(uint32_t *) [count_buf contents];
     return result;
   }
@@ -1244,7 +1212,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
         [enc dispatchThreads:MTLSizeMake(bucket_count, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
 
-        jitc_metal_sync_tagged(this, "mkperm.detect");
+        jitc_metal_sync(this);
         unique_count = *(uint32_t *) [counter_buf contents];
 
         if (staging_buf) {
@@ -1302,7 +1270,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
     }
 
-    jitc_metal_sync_tagged(this, "mkperm.tail");
+    jitc_metal_sync(this);
     if (perm_staging) {
         std::memcpy((void *) perm, [perm_staging contents],
                     (size_t) size * sizeof(uint32_t));

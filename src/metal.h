@@ -88,19 +88,8 @@ extern void *jitc_metal_acquire_blit_encoder(ThreadState *ts);
 /// End and release the currently-open encoder (if any).
 extern void jitc_metal_close_encoder(ThreadState *ts);
 
-/// Flush the thread's command buffer (commit + wait), recording the call
-/// against the sync-trace stats under ``tag``.
-extern void jitc_metal_sync_tagged(ThreadState *ts, const char *tag);
-
-/// Commit + wait on an ad-hoc command buffer (counts against sync stats).
-extern void jitc_metal_commit_and_wait_tagged(void *cb_ptr, const char *tag);
-
-/// Launch-path instrumentation (gated by ``DRJIT_METAL_TRACE_SYNC``).
-extern bool jitc_metal_launch_trace_enabled();
-extern void jitc_metal_launch_stats_add(
-    uint64_t total_us, uint64_t setup_us, uint64_t setbytes_us,
-    uint64_t params_loop_us, uint64_t vcall_loop_us,
-    uint64_t scene_loop_us, uint64_t dispatch_us, uint64_t n_params);
+/// Commit + wait on an ad-hoc (standalone) command buffer.
+extern void jitc_metal_commit_and_wait(void *cb_ptr);
 
 /// Batched GEMM via MetalPerformanceShaders (implemented in metal_mps.mm).
 extern "C" void jitc_metal_mps_gemm(

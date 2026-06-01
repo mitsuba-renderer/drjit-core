@@ -33,8 +33,6 @@
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
-#include <chrono>
-#include <atomic>
 #include <algorithm>
 
 // ============================================================================
@@ -524,160 +522,30 @@ float jitc_metal_finalize_kernel_history_entry(void *task_ptr) {
     }
 }
 
-// ----------------------------------------------------------------------------
-//  Sync instrumentation (Phase-1 perf investigation)
-//
-//  Gated by ``DRJIT_METAL_TRACE_SYNC``:
-//    unset / 0   : no instrumentation, zero overhead.
-//    "1"         : count + total wall time per thread.
-//    "verbose"   : in addition, log each sync to stderr with its `tag`.
-// ----------------------------------------------------------------------------
-
-namespace {
-    std::atomic<uint64_t> g_sync_count{0};
-    std::atomic<uint64_t> g_sync_total_us{0};
-    int g_sync_trace_mode = -1;  // -1 = uninitialised, 0 off, 1 on, 2 verbose
-
-    int sync_trace_mode() {
-        if (g_sync_trace_mode < 0) {
-            const char *e = std::getenv("DRJIT_METAL_TRACE_SYNC");
-            if (!e || e[0] == '\0' || (e[0] == '0' && e[1] == '\0'))
-                g_sync_trace_mode = 0;
-            else if (std::strcmp(e, "verbose") == 0)
-                g_sync_trace_mode = 2;
-            else
-                g_sync_trace_mode = 1;
-        }
-        return g_sync_trace_mode;
-    }
-}
-
-/// Commit + waitUntilCompleted on a fresh ad-hoc command buffer. Counts
-/// against the global sync stats just like jitc_metal_sync_tagged.
-void jitc_metal_commit_and_wait_tagged(void *cb_ptr, const char *tag) {
+/// Commit + waitUntilCompleted on a standalone command buffer (one not tied to
+/// the thread's pending ``metal_command_buffer``).
+void jitc_metal_commit_and_wait(void *cb_ptr) {
     id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cb_ptr;
-    int mode = sync_trace_mode();
-    auto t0 = mode > 0 ? std::chrono::steady_clock::now()
-                       : std::chrono::steady_clock::time_point{};
     [cb commit];
     [cb waitUntilCompleted];
-    if (mode > 0) {
-        auto t1 = std::chrono::steady_clock::now();
-        uint64_t us = (uint64_t) std::chrono::duration_cast<
-            std::chrono::microseconds>(t1 - t0).count();
-        g_sync_count.fetch_add(1, std::memory_order_relaxed);
-        g_sync_total_us.fetch_add(us, std::memory_order_relaxed);
-        if (mode == 2)
-            fprintf(stderr, "[METAL SYNC %s] %llu us\n",
-                    tag ? tag : "?", (unsigned long long) us);
-    }
 }
 
-extern "C" JIT_EXPORT void
-jitc_metal_sync_stats_get(uint64_t *count, uint64_t *total_us) {
-    if (count) *count = g_sync_count.load(std::memory_order_relaxed);
-    if (total_us) *total_us = g_sync_total_us.load(std::memory_order_relaxed);
-}
-
-extern "C" JIT_EXPORT void jitc_metal_sync_stats_reset() {
-    g_sync_count.store(0, std::memory_order_relaxed);
-    g_sync_total_us.store(0, std::memory_order_relaxed);
-}
-
-// ---------------------------------------------------------------------------
-//  Launch-path instrumentation. Same env-var gate as sync stats.
-// ---------------------------------------------------------------------------
-namespace {
-    std::atomic<uint64_t> g_launch_count{0};
-    std::atomic<uint64_t> g_launch_total_us{0};
-    std::atomic<uint64_t> g_launch_setup_us{0};
-    std::atomic<uint64_t> g_launch_setbytes_us{0};
-    std::atomic<uint64_t> g_launch_params_loop_us{0};
-    std::atomic<uint64_t> g_launch_vcall_loop_us{0};
-    std::atomic<uint64_t> g_launch_scene_loop_us{0};
-    std::atomic<uint64_t> g_launch_dispatch_us{0};
-    std::atomic<uint64_t> g_launch_n_params{0};
-}
-
-extern "C" JIT_EXPORT void jitc_metal_launch_stats_get(
-    uint64_t *count, uint64_t *total_us, uint64_t *setup_us,
-    uint64_t *setbytes_us, uint64_t *params_loop_us,
-    uint64_t *vcall_loop_us, uint64_t *scene_loop_us,
-    uint64_t *dispatch_us, uint64_t *n_params)
-{
-    if (count)          *count          = g_launch_count.load();
-    if (total_us)       *total_us       = g_launch_total_us.load();
-    if (setup_us)       *setup_us       = g_launch_setup_us.load();
-    if (setbytes_us)    *setbytes_us    = g_launch_setbytes_us.load();
-    if (params_loop_us) *params_loop_us = g_launch_params_loop_us.load();
-    if (vcall_loop_us)  *vcall_loop_us  = g_launch_vcall_loop_us.load();
-    if (scene_loop_us)  *scene_loop_us  = g_launch_scene_loop_us.load();
-    if (dispatch_us)    *dispatch_us    = g_launch_dispatch_us.load();
-    if (n_params)       *n_params       = g_launch_n_params.load();
-}
-
-extern "C" JIT_EXPORT void jitc_metal_launch_stats_reset() {
-    g_launch_count.store(0); g_launch_total_us.store(0);
-    g_launch_setup_us.store(0); g_launch_setbytes_us.store(0);
-    g_launch_params_loop_us.store(0); g_launch_vcall_loop_us.store(0);
-    g_launch_scene_loop_us.store(0); g_launch_dispatch_us.store(0);
-    g_launch_n_params.store(0);
-}
-
-bool jitc_metal_launch_trace_enabled() { return sync_trace_mode() > 0; }
-
-void jitc_metal_launch_stats_add(uint64_t total_us, uint64_t setup_us,
-                                 uint64_t setbytes_us, uint64_t params_loop_us,
-                                 uint64_t vcall_loop_us, uint64_t scene_loop_us,
-                                 uint64_t dispatch_us, uint64_t n_params) {
-    g_launch_count.fetch_add(1, std::memory_order_relaxed);
-    g_launch_total_us.fetch_add(total_us, std::memory_order_relaxed);
-    g_launch_setup_us.fetch_add(setup_us, std::memory_order_relaxed);
-    g_launch_setbytes_us.fetch_add(setbytes_us, std::memory_order_relaxed);
-    g_launch_params_loop_us.fetch_add(params_loop_us, std::memory_order_relaxed);
-    g_launch_vcall_loop_us.fetch_add(vcall_loop_us, std::memory_order_relaxed);
-    g_launch_scene_loop_us.fetch_add(scene_loop_us, std::memory_order_relaxed);
-    g_launch_dispatch_us.fetch_add(dispatch_us, std::memory_order_relaxed);
-    g_launch_n_params.fetch_add(n_params, std::memory_order_relaxed);
-}
-
-void jitc_metal_sync_tagged(ThreadState *ts, const char *tag) {
+/// Flush the thread's pending command buffer: close the open encoder, commit,
+/// and wait for the GPU to finish so the CPU can read back results.
+void jitc_metal_sync(ThreadState *ts) {
     @autoreleasepool {
-        int mode = sync_trace_mode();
         if (auto *rts = dynamic_cast<RecordThreadState *>(ts))
             ts = rts->m_internal;
-        if (!ts->metal_command_buffer) {
-            if (mode == 2)
-                fprintf(stderr, "[METAL SYNC %s] noop (no pending CB)\n",
-                        tag ? tag : "?");
+        if (!ts->metal_command_buffer)
             return;
-        }
         id<MTLCommandBuffer> cb =
             (__bridge_transfer id<MTLCommandBuffer>) ts->metal_command_buffer;
         ts->metal_command_buffer = nullptr;
         jitc_metal_close_encoder(ts);
 
-        auto t0 = mode > 0 ? std::chrono::steady_clock::now()
-                           : std::chrono::steady_clock::time_point{};
-
         [cb commit];
         [cb waitUntilCompleted];
-
-        if (mode > 0) {
-            auto t1 = std::chrono::steady_clock::now();
-            uint64_t us = (uint64_t) std::chrono::duration_cast<
-                std::chrono::microseconds>(t1 - t0).count();
-            g_sync_count.fetch_add(1, std::memory_order_relaxed);
-            g_sync_total_us.fetch_add(us, std::memory_order_relaxed);
-            if (mode == 2)
-                fprintf(stderr, "[METAL SYNC %s] %llu us\n",
-                        tag ? tag : "?", (unsigned long long) us);
-        }
     }
-}
-
-void jitc_metal_sync(ThreadState *ts) {
-    jitc_metal_sync_tagged(ts, "untagged");
 }
 
 // ============================================================================
