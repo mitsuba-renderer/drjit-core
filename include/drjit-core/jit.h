@@ -2175,32 +2175,32 @@ extern JIT_EXPORT void jit_block_reduce(JIT_ENUM JitBackend backend,
 /**
  * \brief Batched GEMM specification.
  *
- * Describes the batch layout of a ``jit_batched_gemm()`` call. Batch dims are
- * partitioned into two groups:
+ * Describes the batch layout of a ``jit_batched_gemm()`` call. The batch
+ * dimensions are partitioned into two groups:
  *
- *   - ``n_bdims`` **grid dims**, iterated across the kernel launch (one output
- *     matrix per point in the grid batch space). ``extent[0..n_bdims)`` are
- *     the grid extents; the output buffer is contiguous in batch-major order
- *     over them.
+ *   - ``n_bdims`` grid dimensions. Each point in the grid specifies
+ *     one output matrix. The output buffer is contiguous in batch-major
+ *     order over them.
  *
- *   - ``n_rdims`` **reduce dims**, iterated inside the kernel. For each point
- *     in the grid batch space, the kernel sums the per-reduce-index products
- *     into the same output tile (accumulator stays in registers / L1). This
- *     is how broadcast-operand gradients fold their sum-over-batch into the
- *     GEMM's contraction.
+ *   - ``n_rdims`` reduce dimensions. For each point in the grid, the
+ *     kernel sums the accumulated result into the same output tile.
  *
- * Indexing: ``d = 0`` is innermost (varies fastest). Grid dims occupy slots
- * ``[0, n_bdims)``; reduce dims occupy ``[n_bdims, n_bdims + n_rdims)``. Grid
- * points are enumerated by a single linearized index that decomposes into
- * per-dim positions as ``idx[0] = lin % extent[0]``, ``lin /= extent[0]``,
- * etc.; reduce points are enumerated the same way over
- * ``extent[n_bdims..n_bdims + n_rdims)``. ``a_stride[d]`` / ``b_stride[d]`` is
- * the per-element pointer offset when ``idx[d]`` increments by one, or ``0``
- * if the operand is broadcast along that dim. The output ``C`` advances
- * only along the grid dims (implicit stride ``M * N`` per grid step).
+ * Entry ``0`` is innermost and varies fastest. The grid dimensions
+ * occupy slots ``[0, n_bdims)``, while reduce dimensions occupy
+ * ``[n_bdims, n_bdims + n_rdims)``.
  *
- * ``n_bdims == n_rdims == 0`` means a single matrix (no batching).
- * ``n_bdims + n_rdims`` must not exceed ``DRJIT_GEMM_MAX_BDIMS``.
+ * Grid points are enumerated by a single linearized index that
+ * decomposes into per-ddimension positions as
+ * ``idx[0] = lin % extent[0]``, ``lin /= extent[0]``, etc.
+ *
+ * The members ``a_stride[d]`` and ``b_stride[d]`` specify the per-element
+ * pointer offset when ``idx[d]`` increments by one, or ``0`` if the operand is
+ * broadcast along that dimension. The output ``C`` advances only along the grid
+ * dimensions with a stride of ``M * N`` elements.
+ *
+ * A simple matrix multiplication without batching/reductions specifies
+ * ``n_bdims == n_rdims == 0``. The sum ``n_bdims + n_rdims`` must not exceed
+ * ``DRJIT_GEMM_MAX_BDIMS``.
  */
 struct GemmBatch {
     uint32_t n_bdims;

@@ -74,8 +74,7 @@ extern void *
 jitc_metal_get_pipeline(int device_id, const char *name);
 
 // ---------------------------------------------------------------------
-//  Command-buffer / encoder helpers (implemented in metal_core.mm) and the
-//  MPS GEMM wrapper (metal_mps.mm). Metal handles cross as opaque void*.
+//  Command-buffer / encoder helpers
 // ---------------------------------------------------------------------
 
 /// Return the thread's open command buffer, creating one on first use.
@@ -90,19 +89,6 @@ extern void jitc_metal_close_encoder(ThreadState *ts);
 
 /// Commit + wait on an ad-hoc (standalone) command buffer.
 extern void jitc_metal_commit_and_wait(void *cb_ptr);
-
-/// Batched GEMM via MetalPerformanceShaders (implemented in metal_mps.mm).
-extern "C" void jitc_metal_mps_gemm(
-    void *mtl_device, void *mtl_queue,
-    void *a_buf, size_t a_offset,
-    void *b_buf, size_t b_offset,
-    void *c_buf, size_t c_offset,
-    uint32_t M, uint32_t N, uint32_t K,
-    bool At, bool Bt,
-    uint32_t a_rows, uint32_t a_cols,
-    uint32_t b_rows, uint32_t b_cols,
-    uint32_t tsize, int mps_data_type,
-    double alpha, double beta);
 
 /// Live-MetalScene registry. Used by ``MetalThreadState::launch`` during
 /// frozen-function replay to detect stale ``MetalScene*`` pointers (the

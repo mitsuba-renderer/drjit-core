@@ -141,8 +141,7 @@ if (DRJIT_ENABLE_METAL)
     src/metal_array.h
     src/metal_array.cpp
     src/metal_coop_vec.h
-    src/metal_coop_vec.cpp
-    src/metal_mps.mm)
+    src/metal_coop_vec.cpp)
 endif()
 
 
@@ -327,10 +326,6 @@ if (DRJIT_ENABLE_METAL)
     "-framework Metal"
     "-framework MetalPerformanceShaders"
     "-framework MetalPerformanceShadersGraph")
-
-  set_source_files_properties(
-    src/metal_mps.mm
-    PROPERTIES COMPILE_FLAGS "-fno-objc-arc")
 
   # The native Objective-C++ Metal backend files use ARC.
   set_source_files_properties(

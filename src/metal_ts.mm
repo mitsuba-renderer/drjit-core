@@ -15,6 +15,7 @@
 // collides with Dr.Jit's ``struct ThreadState``).
 #define __THREADS__
 #import <Metal/Metal.h>
+#import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 
 MetalThreadState::~MetalThreadState() {
     @autoreleasepool {
@@ -324,11 +325,11 @@ void MetalThreadState::poke(void *dst, const void *src, uint32_t size) {
     size_t offset = 0;
     id<MTLBuffer> buf =
         (__bridge id<MTLBuffer>) jitc_metal_find_buffer(dst, &offset);
-    if (buf && [buf storageMode] == MTLStorageModeShared) {
+
+    if (buf && [buf storageMode] == MTLStorageModeShared)
         std::memcpy((uint8_t *) [buf contents] + offset, src, size);
-    } else {
+    else
         memcpy_async(dst, src, size);
-    }
   }
 }
 
@@ -812,13 +813,6 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
 
     uint32_t tsize = type_size[(int) vt];
 
-    id<MTLDevice> dev = (__bridge id<MTLDevice>) metal_device;
-
-    // Commit any pending work without waiting — MPS opens its own command
-    // buffer from the same queue, so FIFO submission order already serialises
-    // it after our committed CB.
-    this->barrier();
-
     size_t a_buf_offset = 0, b_buf_offset = 0, c_buf_offset = 0;
     id<MTLBuffer> a_buf =
         (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) A, &a_buf_offset);
@@ -828,66 +822,125 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
         (__bridge id<MTLBuffer>) jitc_metal_find_buffer(C, &c_buf_offset);
 
     if (!a_buf || !b_buf || !c_buf)
-        jitc_raise("MetalThreadState::batched_gemm(): could not resolve "
-                   "buffer pointers.");
+        jitc_raise("MetalThreadState::batched_gemm(): could not resolve buffers.");
 
     GemmBatch batch_eff = batch ? *batch : GemmBatch{};
+    size_t a_mat_elems = (size_t) M * K, b_mat_elems = (size_t) K * N;
 
-    // Zero the output buffer
-    {
-        size_t c_size = (size_t) grid_count * M * N * tsize;
-        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>) metal_queue;
-        id<MTLCommandBuffer> cb = [queue commandBuffer];
-        id<MTLBlitCommandEncoder> blit = [cb blitCommandEncoder];
-        [blit fillBuffer:c_buf range:NSMakeRange(c_buf_offset, c_size) value:0];
-        [blit endEncoding];
-        jitc_metal_commit_and_wait((__bridge void *) cb);
-    }
+    // A batched GEMM is a sequence of individual matrix multiplies. This helper
+    // steps through them: it turns a flat counter ``idx`` into the element
+    // offsets ``A_off`` and ``B_off`` of the operand sub-matrices, walking the
+    // ``ndims`` batch dimensions that start at ``base`` (the two callers pass
+    // either the grid range or the reduce range). Dimension ``base`` varies
+    // fastest. A zero stride marks a broadcast operand, whose offset stays put.
+    auto decode = [&](uint32_t idx, uint32_t base, uint32_t ndims,
+                      size_t &A_off, size_t &B_off) {
+        for (uint32_t d = 0; d < ndims; ++d) {
+            uint32_t dim = base + d, pos = idx % batch_eff.extent[dim];
+            idx /= batch_eff.extent[dim];
+            A_off += (size_t) pos * batch_eff.a_stride[dim];
+            B_off += (size_t) pos * batch_eff.b_stride[dim];
+        }
+    };
 
-    // Iterate over grid and reduce dimensions
-    for (uint32_t g = 0; g < grid_count; ++g) {
+    // MPS can multiply a whole stack of matrices in one dispatch, but only if
+    // they are evenly spaced by a fixed stride. That holds when the operand is
+    // one densely packed stack in grid-major order with no broadcasts:
+    // ``expect`` is the dense stride for each grid dim (the running product of
+    // inner extents times ``mat_elems``). Any mismatch — usually a broadcast
+    // (stride 0) — forces the fallback of one MPS multiply per output tile.
+    auto grid_dense = [&](const uint32_t *stride, size_t mat_elems) {
+        size_t expect = mat_elems;
+        for (uint32_t d = 0; d < batch_eff.n_bdims; ++d) {
+            if (batch_eff.extent[d] == 1)
+                continue;
+            if (stride[d] != expect)
+                return false;
+            expect *= batch_eff.extent[d];
+        }
+        return true;
+    };
+
+    bool uniform = grid_dense(batch_eff.a_stride, a_mat_elems) &&
+                   grid_dense(batch_eff.b_stride, b_mat_elems);
+
+    // Matrices stacked per dispatch: the whole grid when densely packed,
+    // otherwise one matrix per (grid, reduce) tile.
+    uint32_t matrices = uniform ? grid_count : 1;
+
+    // Physical (stored) shapes; MPS applies the transposes logically.
+    uint32_t a_rows = At ? K : M, a_cols = At ? M : K;
+    uint32_t b_rows = Bt ? N : K, b_cols = Bt ? K : N;
+    MPSDataType dt = (vt == VarType::Float16) ? MPSDataTypeFloat16
+                                              : MPSDataTypeFloat32;
+
+    MPSMatrixDescriptor *desc_a = [MPSMatrixDescriptor
+        matrixDescriptorWithRows:a_rows columns:a_cols matrices:matrices
+        rowBytes:(NSUInteger) a_cols * tsize
+        matrixBytes:(NSUInteger) a_rows * a_cols * tsize dataType:dt];
+    MPSMatrixDescriptor *desc_b = [MPSMatrixDescriptor
+        matrixDescriptorWithRows:b_rows columns:b_cols matrices:matrices
+        rowBytes:(NSUInteger) b_cols * tsize
+        matrixBytes:(NSUInteger) b_rows * b_cols * tsize dataType:dt];
+    MPSMatrixDescriptor *desc_c = [MPSMatrixDescriptor
+        matrixDescriptorWithRows:M columns:N matrices:matrices
+        rowBytes:(NSUInteger) N * tsize
+        matrixBytes:(NSUInteger) M * N * tsize dataType:dt];
+
+    // Close any open compute/blit encoder first
+    jitc_metal_close_encoder(this);
+    id<MTLCommandBuffer> cb =
+        (__bridge id<MTLCommandBuffer>) jitc_metal_acquire_cmdbuf(this);
+    id<MTLDevice> dev = (__bridge id<MTLDevice>) metal_device;
+
+    // Encode one ``C = A @ B`` at the given byte offsets. ``accumulate`` picks
+    // beta: the first reduce step overwrites (beta=0), later steps add (beta=1).
+    // MPS bakes alpha/beta into the object, so cache one per beta; the MPSMatrix
+    // views are cheap to recreate per call.
+    MPSMatrixMultiplication *gemm_overwrite = nil, *gemm_accumulate = nil;
+    auto encode = [&](size_t a_off, size_t b_off, size_t c_off, bool accumulate) {
+        MPSMatrixMultiplication *gemm =
+            accumulate ? gemm_accumulate : gemm_overwrite;
+        if (!gemm) {
+            gemm = [[MPSMatrixMultiplication alloc]
+                initWithDevice:dev transposeLeft:At transposeRight:Bt
+                resultRows:M resultColumns:N interiorColumns:K
+                alpha:1.0 beta:(accumulate ? 1.0 : 0.0)];
+            (accumulate ? gemm_accumulate : gemm_overwrite) = gemm;
+        }
+        MPSMatrix *ma = [[MPSMatrix alloc] initWithBuffer:a_buf
+            offset:a_off descriptor:desc_a];
+        MPSMatrix *mb = [[MPSMatrix alloc] initWithBuffer:b_buf
+            offset:b_off descriptor:desc_b];
+        MPSMatrix *mc = [[MPSMatrix alloc] initWithBuffer:c_buf
+            offset:c_off descriptor:desc_c];
+        [gemm encodeToCommandBuffer:cb leftMatrix:ma
+            rightMatrix:mb resultMatrix:mc];
+    };
+
+    if (uniform) {
+        // One dispatch per reduce step, each spanning the full grid; reduce
+        // steps accumulate into the same output batch.
         for (uint32_t r = 0; r < reduce_count; ++r) {
-            uint32_t a_offset_elems = 0, b_offset_elems = 0;
-            uint32_t combined = g * reduce_count + r;
-            uint32_t total_bdims = batch_eff.n_bdims + batch_eff.n_rdims;
-
-            uint32_t idx = combined;
-            for (int d = (int) total_bdims - 1; d >= 0; --d) {
-                uint32_t ext = batch_eff.extent[d];
-                uint32_t pos = idx % ext;
-                idx /= ext;
-                a_offset_elems += pos * batch_eff.a_stride[d];
-                b_offset_elems += pos * batch_eff.b_stride[d];
+            size_t A_off = 0, B_off = 0;
+            decode(r, batch_eff.n_bdims, batch_eff.n_rdims, A_off, B_off);
+            encode(a_buf_offset + A_off * tsize, b_buf_offset + B_off * tsize,
+                   c_buf_offset, r > 0);
+        }
+    } else {
+        // One dispatch per (grid, reduce) point; reduce steps fold into the tile.
+        for (uint32_t g = 0; g < grid_count; ++g) {
+            size_t A_off_grid = 0, B_off_grid = 0;
+            decode(g, 0, batch_eff.n_bdims, A_off_grid, B_off_grid);
+            size_t c_off = c_buf_offset + (size_t) g * M * N * tsize;
+            for (uint32_t r = 0; r < reduce_count; ++r) {
+                size_t A_off = A_off_grid, B_off = B_off_grid;
+                decode(r, batch_eff.n_bdims, batch_eff.n_rdims, A_off, B_off);
+                encode(a_buf_offset + A_off * tsize, b_buf_offset + B_off * tsize,
+                       c_off, r > 0);
             }
-
-            size_t a_byte_off = a_buf_offset + (size_t) a_offset_elems * tsize;
-            size_t b_byte_off = b_buf_offset + (size_t) b_offset_elems * tsize;
-            size_t c_byte_off = c_buf_offset + (size_t) g * M * N * tsize;
-
-            uint32_t a_rows = At ? K : M, a_cols = At ? M : K;
-            uint32_t b_rows = Bt ? N : K, b_cols = Bt ? K : N;
-
-            int mps_type = (vt == VarType::Float16) ? (0x10000000 | 16)
-                                                    : (0x10000000 | 32);
-
-            double alpha = 1.0, beta = (r > 0) ? 1.0 : 0.0;
-
-            jitc_metal_mps_gemm(
-                (__bridge void *) dev, metal_queue,
-                (__bridge void *) a_buf, a_byte_off,
-                (__bridge void *) b_buf, b_byte_off,
-                (__bridge void *) c_buf, c_byte_off,
-                M, N, K, At, Bt,
-                a_rows, a_cols, b_rows, b_cols,
-                tsize, mps_type, alpha, beta);
         }
     }
-
-    jitc_log(Debug,
-             "MetalThreadState::batched_gemm(type=%s, At=%d, Bt=%d, "
-             "M=%u, N=%u, K=%u, grid=%u, reduce=%u) via MPS",
-             type_name[(int) vt], (int) At, (int) Bt,
-             M, N, K, grid_count, reduce_count);
   }
 }
 
