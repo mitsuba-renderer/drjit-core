@@ -513,9 +513,14 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Sub: jitc_metal_render_binary(v, "-"); break;
         case VarKind::Mul: jitc_metal_render_binary(v, "*"); break;
         case VarKind::Div:
-        case VarKind::DivApprox:
             jitc_metal_render_binary(v, "/");
             break;
+        case VarKind::DivApprox: {
+            Variable *a0 = jitc_var(v->dep[0]),
+                     *a1 = jitc_var(v->dep[1]);
+            fmt("    $t $v = fast::divide($v, $v);\n", v, v, a0, a1);
+            break;
+        }
         case VarKind::Mod: jitc_metal_render_binary(v, "%"); break;
 
         case VarKind::MulHi: {
@@ -631,27 +636,29 @@ static void jitc_metal_render(Variable *v) {
         }
         case VarKind::Abs: jitc_metal_render_unary(v, "abs"); break;
 
-        case VarKind::Sqrt:
-        case VarKind::SqrtApprox:
-            jitc_metal_render_call(v, "sqrt", 1);
-            break;
+        case VarKind::Sqrt:       jitc_metal_render_call(v, "sqrt", 1); break;
+        case VarKind::SqrtApprox: jitc_metal_render_call(v, "fast::sqrt", 1); break;
 
-        // -- Math functions --
-        case VarKind::Sin:  jitc_metal_render_call(v, "sin",  1); break;
-        case VarKind::Cos:  jitc_metal_render_call(v, "cos",  1); break;
-        case VarKind::Exp2: jitc_metal_render_call(v, "exp2", 1); break;
-        case VarKind::Log2: jitc_metal_render_call(v, "log2", 1); break;
-        case VarKind::Tanh: jitc_metal_render_call(v, "tanh", 1); break;
+        // -- Fast builtin transcendentals --
+        case VarKind::Sin:  jitc_metal_render_call(v, "fast::sin",  1); break;
+        case VarKind::Cos:  jitc_metal_render_call(v, "fast::cos",  1); break;
+        case VarKind::Exp2: jitc_metal_render_call(v, "fast::exp2", 1); break;
+        case VarKind::Log2: jitc_metal_render_call(v, "fast::log2", 1); break;
+        case VarKind::Tanh: jitc_metal_render_call(v, "fast::tanh", 1); break;
 
         // -- Reciprocal --
         case VarKind::Rcp:
-        case VarKind::RcpApprox:
             fmt("    $t $v = ($t) 1.0 / $v;\n",
                 v, v, v, jitc_var(v->dep[0]));
             break;
 
+        case VarKind::RcpApprox:
+            fmt("    $t $v = fast::divide(($t) 1.0, $v);\n",
+                v, v, v, jitc_var(v->dep[0]));
+            break;
+
         case VarKind::RSqrtApprox:
-            jitc_metal_render_call(v, "rsqrt", 1);
+            jitc_metal_render_call(v, "fast::rsqrt", 1);
             break;
 
         // -- Casts --
