@@ -949,7 +949,7 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
 
                 case 'o': {
                         const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(v->param_offset);
+                        put_u32_unchecked(v->param_offset / (uint32_t) sizeof(void *) - 1);
                     }
                     break;
 

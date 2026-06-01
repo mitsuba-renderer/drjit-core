@@ -30,7 +30,7 @@
  *  $v/$V   Variable       v1234               Variable name
  *  $a      Variable       4                   Variable size in bytes
  *  $l      Variable       0x3f800000ull       Literal value (hex)
- *  $o      Variable       16                  Offset in the params buffer
+ *  $o      Variable       2                   Index into ``params.args[]``
  */
 
 #if defined(DRJIT_ENABLE_METAL)
@@ -187,7 +187,7 @@ static void jitc_metal_collect_scenes(uint32_t index,
 }
 
 void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
-                         uint32_t /*n_regs*/, uint32_t /*n_params*/) {
+                         uint32_t /*n_regs*/, uint32_t n_params) {
 
     // -------------------------------------------------------------------
     //   0. Discover all distinct scenes referenced by TraceRay nodes
@@ -237,6 +237,12 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         put("using namespace raytracing;\n");
     put("\n");
 
+    fmt_metal("struct Params {\n"
+              "    uint size;\n"
+              "    device void *args[$u];\n"
+              "};\n\n",
+              n_params > 1 ? n_params - 1 : 1);
+
     // Emit one comment per registered scene capturing the PSO link
     // identity: the intersection-function names that must be linked into
     // the pipeline plus the scene's geometry-type mask. ``kernel_hash``
@@ -263,12 +269,11 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     //   2. Kernel entry point
     //
     //   The kernel receives:
-    //     buffer(0)  -- flat parameter buffer (pointers + leading uint32 size)
+    //     buffer(0)  -- the ``Params`` argument buffer (size + args[])
     //     buffer(1)  -- (optional) instance acceleration structure
     //     [[thread_position_in_grid]] -- linear thread index
     //
-    //   The leading 32-bit word of the params buffer is the launch ``size``.
-    //   This matches the CUDA kernel calling convention.
+    //   ``params.size`` is the launch size.
     // -------------------------------------------------------------------
     // simdgroup_matrix MatVec fast path constrains every threadgroup to a
     // single SIMD-group (32 threads) so the per-kernel threadgroup memory
@@ -277,7 +282,7 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         put("[[max_total_threads_per_threadgroup(32)]]\n");
 
     fmt_metal("kernel void drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(\n"
-              "    device const uint8_t* params [[buffer(0)]],\n");
+              "    device const Params& params [[buffer(0)]],\n");
     // Multi-scene kernel signature: one ``accel_<i>`` per registered
     // scene at slots [1, N+1), then one ``ift_<i>`` for every scene
     // that has an ``intersection_fn_library`` (slots assigned by
@@ -307,12 +312,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     if (uses_simdgroup_matrix)
         put(",\n    uint sg_lane [[thread_index_in_simdgroup]]");
     put(") {\n");
-
-    // -------------------------------------------------------------------
-    //   3. Bounds check
-    // -------------------------------------------------------------------
-    put("    uint r2 = *(device const uint*) params;\n"
-        "    if (r0 >= r2) return;\n\n");
 
     // -------------------------------------------------------------------
     //   3b. Threadgroup memory for simdgroup_matrix matvec staging
@@ -360,7 +359,7 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
                 if (vt == VarType::Pointer) {
                     // Pointer literals must be loaded from params (not inlined)
                     // so frozen function replay can update the address
-                    fmt_metal("    $t $v = *(device const $t*)(params + $o);\n",
+                    fmt_metal("    $t $v = ($t) params.args[$o];\n",
                               v, v, v, v);
                 } else if (vt == VarType::Float32) {
                     fmt_metal("    $t $v = as_type<float>($lu);\n", v, v, v);
@@ -372,19 +371,18 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
                 continue;
             }
 
-            // ``device const T* p<r> = *(device const T* device const*)
-            //  (params + offset);``
-            // ``T v<r> = (size > 1) ? p<r>[r0] : *p<r>;``
-            fmt_metal("    device const $t* p$v = "
-                      "*(device const $t* device const*)(params + $o);\n",
-                      v, v, v, v);
-
             if (!v->is_array()) {
                 if (v->size > 1)
-                    fmt_metal("    $t $v = p$v[r0];\n", v, v, v);
+                    fmt_metal("    $t $v = ((device const $t*) params.args[$o])[r0];\n",
+                              v, v, v, v);
                 else
-                    fmt_metal("    $t $v = *p$v;\n", v, v, v);
+                    fmt_metal("    $t $v = *(device const $t*) params.args[$o];\n",
+                              v, v, v, v);
             } else {
+                // Array memcpy helpers reference the named ``p<r>`` pointer.
+                fmt_metal("    device const $t* p$v = "
+                          "(device const $t*) params.args[$o];\n",
+                          v, v, v, v);
                 jitc_metal_render_array_memcpy_in(v);
             }
             continue;
@@ -396,13 +394,14 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         jitc_metal_render(v);
 
         if (ptype == ParamType::Output) {
-            fmt_metal("    device $t* p$v = "
-                      "*(device $t* device const*)(params + $o);\n",
-                      v, v, v, v);
-
             if (!v->is_array()) {
-                fmt_metal("    p$v[r0] = $v;\n", v, v);
+                fmt_metal("    ((device $t*) params.args[$o])[r0] = $v;\n",
+                          v, v, v);
             } else {
+                // Array memcpy helpers reference the named ``p<r>`` pointer.
+                fmt_metal("    device $t* p$v = "
+                          "(device $t*) params.args[$o];\n",
+                          v, v, v, v);
                 jitc_metal_render_array_memcpy_out(v);
             }
         }
