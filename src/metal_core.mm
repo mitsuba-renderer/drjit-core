@@ -20,13 +20,11 @@
 #include "trace.h"
 #include "record_ts.h"
 #include "drjit-core/metal.h"
-#include "metal_kernels_src.h"
 
 // Suppress the obsolete Carbon <CarbonCore/Threads.h>, whose ThreadState collides with Dr.Jit
 #define __THREADS__
 #import <Metal/Metal.h>
 
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <mutex>
@@ -136,15 +134,34 @@ void *jitc_metal_unregister_buffer(void *ptr) {
 // ============================================================================
 //  Utility kernel library
 //
-//  The kernels in resources/metal_kernels.metal are compiled once per device
-//  at init time and cached in the MetalDevice struct for the process lifetime.
-//  Pipeline states are looked up by name via jitc_metal_get_pipeline().
+//  resources/metal_kernels.metal is compiled to a .metallib at build time (see
+//  resources/embed_metal_kernels.cmake) and embedded as a byte array. At init time
+//  each device instantiates the library from those bytes and eagerly creates a
+//  compute pipeline state for every utility kernel, stored in MetalDevice and
+//  indexed directly by MetalKernel (see state.metal_devices[...].pipelines).
 // ============================================================================
 
-/// Look up a precompiled pipeline state by kernel name. Returns nullptr (as a
-/// borrowed void*) if the kernel was not found, else an owned (+1) handle.
-static void *jitc_metal_get_pipeline_impl(id<MTLDevice> dev, id<MTLLibrary> lib,
-                                          const char *name) {
+/// Kernel function names, indexed by MetalKernel. The order must match the
+/// MetalKernel enum in internal.h.
+static const char *metal_kernel_names[(uint32_t) MetalKernel::Count] = {
+    "reduce_all_init",
+    "reduce_any_init",
+    "reduce_all",
+    "reduce_any",
+    "compress_scatter",
+    "mkperm_phase_1",
+    "mkperm_phase_3",
+    "mkperm_detect_offsets",
+    "aggregate_kernel",
+    "memset_u16",
+    "memset_u32",
+    "memset_u64"
+};
+
+/// Create a compute pipeline state for ``name`` from ``lib``. Returns an owned
+/// (+1) handle, or nullptr if the function or pipeline could not be created.
+static void *jitc_metal_create_pipeline(id<MTLDevice> dev, id<MTLLibrary> lib,
+                                        const char *name) {
     id<MTLFunction> func = [lib newFunctionWithName:@(name)];
     if (!func)
         return nullptr;
@@ -154,78 +171,12 @@ static void *jitc_metal_get_pipeline_impl(id<MTLDevice> dev, id<MTLLibrary> lib,
     if (!pso) {
         const char *desc = err ? err.localizedDescription.UTF8String
                                : "<unknown>";
-        jitc_log(Warn, "jitc_metal_get_pipeline(%s): pipeline creation "
+        jitc_log(Warn, "jitc_metal_create_pipeline(%s): pipeline creation "
                        "failed: %s",
                  name, desc);
         return nullptr;
     }
     return (__bridge_retained void *) pso;
-}
-
-namespace {
-    /// Cache: kernel name → pipeline state (owned +1), per device.
-    std::mutex g_pipeline_cache_mutex;
-    std::unordered_map<std::string, void *> g_pipeline_cache;
-}
-
-void *
-jitc_metal_get_pipeline(int device_id, const char *name) {
-    std::string key = std::to_string(device_id) + "/" + name;
-
-    {
-        std::lock_guard<std::mutex> g(g_pipeline_cache_mutex);
-        auto it = g_pipeline_cache.find(key);
-        if (it != g_pipeline_cache.end())
-            return it->second;
-    }
-
-    if (device_id < 0 || (size_t) device_id >= state.metal_devices.size())
-        return nullptr;
-    MetalDevice &md = state.metal_devices[device_id];
-    id<MTLLibrary> lib = (__bridge id<MTLLibrary>) md.binary_archive;
-    id<MTLDevice> dev = (__bridge id<MTLDevice>) md.device;
-    if (!lib)
-        return nullptr;
-
-    void *pso = jitc_metal_get_pipeline_impl(dev, lib, name);
-    if (pso) {
-        std::lock_guard<std::mutex> g(g_pipeline_cache_mutex);
-        g_pipeline_cache[key] = pso;
-    }
-    return pso;
-}
-
-/// Compile the utility kernels for ``md`` from the embedded MSL source. The
-/// source is generated at build time by ``cmake/embed_metal_kernels.cmake``
-/// from ``resources/metal_kernels.metal`` and exposed as
-/// ``drjit::metal_kernels_src`` — no runtime file I/O is needed.
-static bool jitc_metal_load_utility_kernels(MetalDevice &md) {
-    id<MTLDevice> dev = (__bridge id<MTLDevice>) md.device;
-    NSError *err = nil;
-    NSString *src = @(drjit::metal_kernels_src);
-
-    MTLCompileOptions *opts = [MTLCompileOptions new];
-    opts.languageVersion = MTLLanguageVersion3_0;
-    opts.mathMode = MTLMathModeSafe;
-
-    id<MTLLibrary> lib = [dev newLibraryWithSource:src options:opts error:&err];
-
-    if (!lib) {
-        const char *desc = err ? err.localizedDescription.UTF8String
-                               : "<unknown>";
-        jitc_log(Warn,
-                 "jitc_metal_load_utility_kernels(): compilation failed: %s",
-                 desc);
-        return false;
-    }
-
-    // Store the library in the MetalDevice (repurposing binary_archive).
-    md.binary_archive = (__bridge_retained void *) lib;
-
-    jitc_log(Info, "jit_metal_init(): compiled utility kernel library for "
-                   "device \"%s\".",
-             md.name);
-    return true;
 }
 
 // ============================================================================
@@ -252,42 +203,52 @@ bool jitc_metal_init() {
             }
 
             MetalDevice md;
-            md.device = (__bridge_retained void *) dev;
-            md.queue  = (__bridge_retained void *) [dev newCommandQueue];
-            md.event  = (__bridge_retained void *) [dev newSharedEvent];
-            md.event_value = 0;
-
+            md.device      = (__bridge_retained void *) dev;
+            md.queue       = (__bridge_retained void *) [dev newCommandQueue];
             md.max_threads_per_threadgroup =
                 (uint32_t) [dev maxThreadsPerThreadgroup].width;
-            md.max_threadgroup_memory =
-                (uint32_t) [dev maxThreadgroupMemoryLength];
-            md.simd_width = 32; // Apple Silicon
-            md.supports_metal3 = true;
             md.supports_ray_tracing = [dev supportsRaytracing];
-            md.supports_float_atomics =
-                [dev supportsFamily:MTLGPUFamilyApple7];
             const char *name = dev.name.UTF8String;
             size_t len = std::strlen(name);
             md.name = (char *) std::malloc(len + 1);
             std::memcpy(md.name, name, len + 1);
 
-            state.metal_devices.push_back(md);
+            // Instantiate the precompiled utility kernel library
+            NSError *err = nil;
+            dispatch_data_t lib_data = dispatch_data_create(
+                metal_kernels_metallib, metal_kernels_metallib_size, nullptr,
+                DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+            id<MTLLibrary> lib = [dev newLibraryWithData:lib_data error:&err];
+            if (!lib)
+                jitc_fail("jit_metal_init(): could not instantiate the utility "
+                          "kernel library for device \"%s\": %s",
+                          md.name, err ? err.localizedDescription.UTF8String
+                                       : "<unknown>");
+            md.utility_lib = (__bridge_retained void *) lib;
+
+            for (uint32_t i = 0; i < (uint32_t) MetalKernel::Count; ++i) {
+                md.pipelines[i] =
+                    jitc_metal_create_pipeline(dev, lib, metal_kernel_names[i]);
+                if (!md.pipelines[i])
+                    jitc_fail("jit_metal_init(): could not create pipeline "
+                              "state \"%s\" for device \"%s\".",
+                              metal_kernel_names[i], md.name);
+            }
+
+            // Query the SIMD execution width from a representative pipeline;
+            // threadExecutionWidth is a pipeline property, not a device one.
+            md.simd_width = (uint32_t)
+                ((__bridge id<MTLComputePipelineState>)
+                     md.pipelines[(uint32_t) MetalKernel::Aggregate])
+                    .threadExecutionWidth;
 
             jitc_log(Info,
                      "jit_metal_init(): registered device \"%s\" "
-                     "(simd=%u, max_threads=%u, rt=%s, float_atomic=%s)",
+                     "(simd=%u, max_threads=%u, rt=%s)",
                      md.name, md.simd_width, md.max_threads_per_threadgroup,
-                     md.supports_ray_tracing ? "yes" : "no",
-                     md.supports_float_atomics ? "yes" : "no");
-        }
+                     md.supports_ray_tracing ? "yes" : "no");
 
-        // Compile the utility kernel library for each device
-        for (MetalDevice &md : state.metal_devices) {
-            if (!jitc_metal_load_utility_kernels(md))
-                jitc_log(Warn,
-                         "jit_metal_init(): failed to compile utility kernels "
-                         "for device \"%s\".",
-                         md.name);
+            state.metal_devices.push_back(md);
         }
 
         return !state.metal_devices.empty();
@@ -296,21 +257,16 @@ bool jitc_metal_init() {
 
 void jitc_metal_shutdown() {
     @autoreleasepool {
-        // Release cached pipeline states
-        {
-            std::lock_guard<std::mutex> g(g_pipeline_cache_mutex);
-            for (auto &kv : g_pipeline_cache)
-                (void) (__bridge_transfer id<MTLComputePipelineState>) kv.second;
-            g_pipeline_cache.clear();
-        }
-
         for (MetalDevice &d : state.metal_devices) {
-            if (d.event)
-                (void) (__bridge_transfer id<MTLSharedEvent>) d.event;
+            for (void *&pso : d.pipelines) {
+                if (pso)
+                    (void) (__bridge_transfer id<MTLComputePipelineState>) pso;
+                pso = nullptr;
+            }
             if (d.queue)
                 (void) (__bridge_transfer id<MTLCommandQueue>) d.queue;
-            if (d.binary_archive)
-                (void) (__bridge_transfer id<MTLLibrary>) d.binary_archive;
+            if (d.utility_lib)
+                (void) (__bridge_transfer id<MTLLibrary>) d.utility_lib;
             if (d.device)
                 (void) (__bridge_transfer id<MTLDevice>) d.device;
             std::free(d.name);
@@ -330,7 +286,7 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
         if (state.metal_devices.empty())
             jitc_fail("jitc_metal_kernel_compile(): no Metal devices initialized.");
 
-        // Compile against the device of the calling thread (defaults to device 0).
+        // Compile against the device of the calling thread
         auto *ts = thread_state(JitBackend::Metal);
         id<MTLDevice> dev = (__bridge id<MTLDevice>) ts->metal_device;
 
@@ -339,9 +295,11 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
 
         MTLCompileOptions *opts = [MTLCompileOptions new];
         opts.languageVersion = MTLLanguageVersion3_2;
+
         // The relaxed/fast math modes are a little aggressive and break the Dr.Jit
-        // test suite. We instead opt in on a per instruction bases by calling
-        // math functions from the fast:: namespace
+        // test suite. We opt in on a per instruction basis by calling math functions
+        // from the ``fast::`` namespace
+
         opts.mathMode = MTLMathModeSafe;
         opts.libraryType = MTLLibraryTypeExecutable;
 
@@ -416,11 +374,10 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
 
         kernel.metal.pipeline    = (__bridge_retained void *) pso;
         kernel.metal.library     = (__bridge_retained void *) lib;
-        kernel.metal.scenes      = nullptr; // Set by eval.cpp after assemble
+        kernel.metal.scenes      = nullptr;
         kernel.metal.scene_count = 0;
         kernel.size = (uint32_t) std::strlen(source);
-
-        return false; // No on-disk cache hit (Phase 5 will hook into BinaryArchive)
+        return false;
     }
 }
 
@@ -439,36 +396,21 @@ void jitc_metal_kernel_free(Kernel &kernel) {
     }
 }
 
-/// Resolve a Metal kernel-history entry's execution_time by waiting on the
-/// stashed command buffer and reading its GPU times. Called from the
-/// backend-agnostic `KernelHistory::get()` in init.cpp. Returns the
-/// execution time in ms, or 0 if no buffer is attached. Consumes the +1 that
-/// ``launch`` added to the command buffer.
+/// Resolve a Metal kernel-history entry's execution_time
 float jitc_metal_finalize_kernel_history_entry(void *task_ptr) {
     @autoreleasepool {
         if (!task_ptr)
             return 0.f;
         id<MTLCommandBuffer> cb = (__bridge_transfer id<MTLCommandBuffer>) task_ptr;
         [cb waitUntilCompleted];
-        float ms = (float) ((cb.GPUEndTime - cb.GPUStartTime) * 1000.0);
-        return ms;
+        return (float) ((cb.GPUEndTime - cb.GPUStartTime) * 1000);
     }
 }
 
-/// Commit + waitUntilCompleted on a standalone command buffer (one not tied to
-/// the thread's pending ``metal_cb``).
-void jitc_metal_commit_and_wait(void *cb_ptr) {
-    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cb_ptr;
-    [cb commit];
-    [cb waitUntilCompleted];
-}
-
-/// Flush the thread's pending command buffer and wait for the GPU to finish so
-/// the CPU can read back results.
+/// Flush the thread's pending command buffer and wait for the GPU to finish
 void jitc_metal_sync(ThreadState *ts) {
-    if (auto *rts = dynamic_cast<RecordThreadState *>(ts))
-        ts = rts->m_internal;
-    ((MetalThreadState *) ts)->flush(/* wait = */ true);
+    // Unwrap recording/disabling wrappers (used by frozen functions)
+    ((MetalThreadState *) ts->actual_state())->flush(/* wait = */ true);
 }
 
 // ============================================================================

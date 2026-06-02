@@ -6,35 +6,15 @@
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 
-    --------------------------------------------------------------------------
-
-    Mirrors the LLVM cooperative-vector backend (src/llvm_coop_vec.cpp): each
-    coopvec variable lowers to ``array_length`` independent MSL scalar
-    locals named ``v<reg_index>_<element_index>``. Per-element ops emit one
-    MSL expression per element, relying on the Metal compiler to coalesce
-    consecutive scalar operations into the FFMA pipeline.
-
-    Implementation status — all coopvec ops are implemented:
-      * Pack / Load / Cast / Bitcast / Unary{Exp2,Log2,Tanh} /
-        Binary{Add,Sub,Mul,Min,Max,Step} / Ternary{Fma} -- per-element
-        scalar lowering.
-      * CoopVecMatVec -- unrolled scalar FMA path (out = (A or Aᵀ) @ x + b).
-      * CoopVecAccum / OuterProductAccum -- per-element atomic adds
-        (Float32/Int32/UInt32 native; Float16 via 32-bit-aligned CAS).
 */
 
-#if defined(DRJIT_ENABLE_METAL)
-
-#include <cstdio>
 #include "internal.h"
-#include "var.h"
 #include "eval.h"
-#include "log.h"
-#include "strbuf.h"
+#include "var.h"
 #include "coop_vec.h"
 #include "metal_coop_vec.h"
 
-#include "metal_eval.h" // provides the `fmt` / `put` macros
+#include "metal_eval.h"
 
 void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                                 const Variable *a1, const Variable *a2,
@@ -380,5 +360,3 @@ void jitc_metal_render_coop_vec_outer_product_accum(const Variable *v,
     if (!is_unmasked)
         put("    }\n");
 }
-
-#endif // DRJIT_ENABLE_METAL

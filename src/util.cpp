@@ -176,7 +176,7 @@ bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
         tmp = buf;
 
     jitc_all_async_4(backend, values, size, tmp);
-    jitc_sync_thread();
+    jitc_sync_thread(thread_state(backend));
 
     // Metal writes a single fully-reduced byte; the other backends leave four
     // partials in 'tmp' (4 bools packed per u32) that combine with a final AND.
@@ -199,7 +199,7 @@ bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
         tmp = buf;
 
     jitc_any_async_4(backend, values, size, tmp);
-    jitc_sync_thread();
+    jitc_sync_thread(thread_state(backend));
 
     bool result = (tmp[0] | tmp[1] | tmp[2] | tmp[3]) != 0;
 

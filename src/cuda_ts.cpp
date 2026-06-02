@@ -771,7 +771,7 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
 
         jitc_free(scratch);
     }
-    jitc_sync_thread();
+    jitc_sync_thread(this);
     uint32_t count_out_v = *count_out;
     jitc_free(count_out);
     return count_out_v;

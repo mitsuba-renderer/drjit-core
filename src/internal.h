@@ -584,43 +584,48 @@ struct WeakRef {
 
 struct KernelKey;
 
+/// Enumeration of the precompiled utility kernels in metal_kernels.metal. The
+/// order must match ``metal_kernel_names`` in metal_core.mm.
+enum class MetalKernel : uint32_t {
+    ReduceAllInit,
+    ReduceAnyInit,
+    ReduceAll,
+    ReduceAny,
+    CompressScatter,
+    MkpermPhase1,
+    MkpermPhase3,
+    MkpermDetectOffsets,
+    Aggregate,
+    MemsetU16,
+    MemsetU32,
+    MemsetU64,
+    Count
+};
+
 /// Caches basic information about a Metal device
 struct MetalDevice {
     /// MTLDevice handle (opaque pointer to keep Objective-C / Metal types out of shared headers)
-    void *device = nullptr;
+    void *device;
 
     /// id<MTLCommandQueue> used to submit work to the GPU
-    void *queue = nullptr;
+    void *queue;
 
-    /// id<MTLSharedEvent> used for synchronization (CPU/GPU)
-    void *event = nullptr;
+    /// id<MTLLibrary> holding the precompiled utility kernels
+    void *utility_lib;
 
-    /// Monotonic counter associated with the shared event
-    uint64_t event_value = 0;
+    /// Precompiled compute pipeline states (owned +1), indexed by MetalKernel
+    void *pipelines[(uint32_t) MetalKernel::Count];
 
-    /// Optional id<MTLBinaryArchive> used to cache compiled kernels on disk
-    void *binary_archive = nullptr;
+    /// Maximum number of threads per threadgroup
+    uint32_t max_threads_per_threadgroup;
 
-    /// Maximum number of threads per threadgroup (typically 1024)
-    uint32_t max_threads_per_threadgroup = 1024;
-
-    /// Maximum bytes of threadgroup memory available (typically 32768)
-    uint32_t max_threadgroup_memory = 32768;
-
-    /// SIMD execution width (32 on all current Apple Silicon GPUs)
-    uint32_t simd_width = 32;
-
-    /// True if the device supports Metal 3 (M1+ enforced as minimum)
-    bool supports_metal3 = false;
+    uint32_t simd_width;
 
     /// True if the device supports hardware ray tracing acceleration
-    bool supports_ray_tracing = false;
-
-    /// True if the device supports float atomic add (Metal 3.0+)
-    bool supports_float_atomics = false;
+    bool supports_ray_tracing;
 
     /// Cached human-readable device name (owned, freed at shutdown)
-    char *name = nullptr;
+    char *name;
 };
 
 /// Represents a single stream of a parallel communication
@@ -719,9 +724,6 @@ struct ThreadStateBase {
 
     /// id<MTLCommandQueue> used to submit work to the GPU
     void *metal_queue = nullptr;
-
-    /// id<MTLSharedEvent> used for synchronization
-    void *metal_event = nullptr;
 
     /// A id<MTLCommandBuffer> with pending work
     void *metal_cb = nullptr;
@@ -866,6 +868,10 @@ struct ThreadState : public ThreadStateBase {
     /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
     /// This is required for kernel freezing.
     virtual void notify_free(const void *ptr);
+
+    // The DisabledThreadState/RecordThreadState override this to return the
+    // wrapped thread state
+    virtual ThreadState *actual_state();
 
     /// Reset internal dynamic state
     void reset_state();

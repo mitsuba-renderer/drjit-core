@@ -39,8 +39,7 @@ MetalThreadState::~MetalThreadState() {
 enum class MetalEncoderKind : uint32_t {
     None = 0,
     Compute,
-    Blit,
-    Acceleration
+    Blit
 };
 
 void *MetalThreadState::ensure_cmdbuf() {
@@ -375,14 +374,14 @@ void MetalThreadState::memset_async(void *ptr, uint32_t size, uint32_t isize,
         } else {
             // Multi-byte pattern: write one element per thread via a dedicated
             // memset kernel for the element width (2, 4, or 8 bytes).
-            const char *name = isize == 2 ? "memset_u16"
-                             : isize == 4 ? "memset_u32"
-                                          : "memset_u64";
+            MetalKernel kernel = isize == 2 ? MetalKernel::MemsetU16
+                               : isize == 4 ? MetalKernel::MemsetU32
+                                            : MetalKernel::MemsetU64;
             id<MTLComputePipelineState> pso =
                 (__bridge id<MTLComputePipelineState>)
-                    jitc_metal_get_pipeline(this->device, name);
+                    state.metal_devices[this->device].pipelines[(uint32_t) kernel];
             if (!pso)
-                jitc_raise("jit_memset_async(): \"%s\" pipeline missing.", name);
+                jitc_raise("jit_memset_async(): memset pipeline missing.");
 
             struct {
                 uint64_t dst, value;
@@ -705,17 +704,18 @@ void MetalThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
 
         MetalHistoryScope hist(this, KernelType::BlockReduce, size);
 
-        const char *init_name = is_all ? "reduce_all_init" : "reduce_any_init";
-        const char *name      = is_all ? "reduce_all"      : "reduce_any";
+        MetalKernel init_kernel = is_all ? MetalKernel::ReduceAllInit
+                                         : MetalKernel::ReduceAnyInit;
+        MetalKernel kernel      = is_all ? MetalKernel::ReduceAll
+                                         : MetalKernel::ReduceAny;
         id<MTLComputePipelineState> init_pso =
             (__bridge id<MTLComputePipelineState>)
-                jitc_metal_get_pipeline(this->device, init_name);
+                state.metal_devices[this->device].pipelines[(uint32_t) init_kernel];
         id<MTLComputePipelineState> pso =
             (__bridge id<MTLComputePipelineState>)
-                jitc_metal_get_pipeline(this->device, name);
+                state.metal_devices[this->device].pipelines[(uint32_t) kernel];
         if (!init_pso || !pso)
-            jitc_raise("jit_block_reduce_bool(): kernel \"%s\" not found.",
-                       init_pso ? name : init_name);
+            jitc_raise("jit_block_reduce_bool(): reduction kernel not found.");
 
         size_t out_off = 0;
         id<MTLBuffer> out_buf =
@@ -1090,7 +1090,7 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
 
         id<MTLComputePipelineState> pso =
             (__bridge id<MTLComputePipelineState>)
-                jitc_metal_get_pipeline(this->device, "compress_scatter");
+                state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::CompressScatter];
         if (!pso)
             jitc_raise("jit_compress(): compress_scatter kernel "
                        "not found.");
@@ -1167,10 +1167,10 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
 
         id<MTLComputePipelineState> phase1_pso =
             (__bridge id<MTLComputePipelineState>)
-                jitc_metal_get_pipeline(this->device, "mkperm_phase_1");
+                state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::MkpermPhase1];
         id<MTLComputePipelineState> phase3_pso =
             (__bridge id<MTLComputePipelineState>)
-                jitc_metal_get_pipeline(this->device, "mkperm_phase_3");
+                state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::MkpermPhase3];
         if (!phase1_pso || !phase3_pso)
             jitc_raise("jit_block_mkperm(): kernels not found.");
 
@@ -1217,7 +1217,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
         if (offsets) {
             id<MTLComputePipelineState> detect_pso =
                 (__bridge id<MTLComputePipelineState>)
-                    jitc_metal_get_pipeline(this->device, "mkperm_detect_offsets");
+                    state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::MkpermDetectOffsets];
             if (!detect_pso)
                 jitc_raise("jit_block_mkperm(): mkperm_detect_offsets "
                            "kernel not found.");
@@ -1378,7 +1378,7 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
 
         id<MTLComputePipelineState> pso =
             (__bridge id<MTLComputePipelineState>)
-                jitc_metal_get_pipeline(this->device, "aggregate_kernel");
+                state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::Aggregate];
         if (!pso)
             jitc_fail("jit_aggregate(): aggregate_kernel "
                       "pipeline missing.");

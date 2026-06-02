@@ -442,6 +442,9 @@ public:
         this->recording_mode = KernelRecordingMode::Recorded;
     };
 
+    /// Synchronization should target the real backend thread state we wrap.
+    ThreadState *actual_state() override { return m_internal->actual_state(); }
+
     void barrier() override;
 
     Task *launch(Kernel kernel, KernelKey &key, XXH128_hash_t hash,

@@ -757,7 +757,7 @@ uint32_t LLVMThreadState::compress(const uint8_t *in, uint32_t size,
     );
 
     jitc_free(scratch);
-    jitc_sync_thread();
+    jitc_sync_thread(this);
 
     return count_out;
 }

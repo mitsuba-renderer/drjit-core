@@ -15,6 +15,14 @@
 
 struct ThreadState;
 struct Kernel;
+enum class MetalKernel : uint32_t;
+
+/// Precompiled utility-kernel ``.metallib`` archive, embedded as a byte array.
+/// Defined in the generated ``resources/metal_kernels.c`` (see
+/// ``resources/embed_metal_kernels.cmake``) and compiled as its own translation
+/// unit, so these have C linkage.
+extern "C" const unsigned char metal_kernels_metallib[];
+extern "C" const size_t metal_kernels_metallib_size;
 
 /// Initialize the Metal backend
 extern bool jitc_metal_init();
@@ -66,13 +74,6 @@ extern bool jitc_metal_kernel_compile(const char *source, size_t source_size,
 /// Free a previously compiled Metal kernel.
 extern void jitc_metal_kernel_free(Kernel &kernel);
 
-/// Retrieve a precompiled compute pipeline state from the utility kernel
-/// library by kernel name (e.g. "block_reduce_add_f32_1024"). Returns
-/// nullptr if the kernel is not found. Pipeline states are cached.
-/// (opaque ``id<MTLComputePipelineState>``)
-extern void *
-jitc_metal_get_pipeline(int device_id, const char *name);
-
 // ---------------------------------------------------------------------
 //  Command-buffer / encoder helpers
 // ---------------------------------------------------------------------
@@ -82,15 +83,8 @@ jitc_metal_get_pipeline(int device_id, const char *name);
 // ``ensure_compute_encoder`` / ``ensure_blit_encoder`` / ``flush`` in
 // metal_ts.h). ``jitc_metal_sync`` remains a free function because it is also
 // called with a generic ``ThreadState *`` (e.g. from malloc.cpp / init.cpp /
-// the record thread state).
-
-/// Flush the thread's pending command buffer and wait for GPU completion so
-/// the CPU can read back results. Routes a RecordThreadState to its internal
-/// thread state, then delegates to ``MetalThreadState::flush(true)``.
-extern void jitc_metal_sync(ThreadState *ts);
-
-/// Commit + wait on an ad-hoc (standalone) command buffer.
-extern void jitc_metal_commit_and_wait(void *cb_ptr);
+// the record thread state). It flushes the thread's pending command buffer and
+// waits for GPU completion so the CPU can read back results (declared above).
 
 /// Live-MetalScene registry. Used by ``MetalThreadState::launch`` during
 /// frozen-function replay to detect stale ``MetalScene*`` pointers (the
