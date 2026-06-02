@@ -92,6 +92,9 @@ struct MetalThreadState : ThreadState {
     void block_reduce_bool(uint8_t *values, uint32_t size, uint8_t *out,
                            ReduceOp op) override;
 
+    /// Narrow a float32 buffer to float16 (For Metal float16 scatter-reductions)
+    void narrow_f32_to_f16(void *dst, const void *src, uint32_t size) override;
+
     /// Implements various kinds of prefix reductions
     void block_prefix_reduce(VarType vt, ReduceOp op, uint32_t size,
                              uint32_t block_size, bool exclusive, bool reverse,

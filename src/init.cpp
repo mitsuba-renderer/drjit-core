@@ -922,6 +922,10 @@ void ThreadState::reduce_expanded(VarType, ReduceOp, void *, uint32_t, uint32_t)
     jitc_raise("ThreadState::reduce_expanded(): not supported by the current backend!");
 }
 
+void ThreadState::narrow_f32_to_f16(void *, const void *, uint32_t) {
+    jitc_raise("ThreadState::narrow_f32_to_f16(): not supported by the current backend!");
+}
+
 void ThreadState::notify_opaque_width(uint32_t, uint32_t) {}
 void ThreadState::notify_init_undefined(uint32_t) {}
 void ThreadState::block_reduce_bool(uint8_t *values, uint32_t size,

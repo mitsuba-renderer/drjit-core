@@ -692,6 +692,47 @@ void MetalThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
     }
 }
 
+void MetalThreadState::narrow_f32_to_f16(void *dst, const void *src,
+                                         uint32_t size) {
+    @autoreleasepool {
+        if (size == 0)
+            return;
+
+        jitc_log(Debug, "jit_narrow_f32_to_f16(size=%u)", size);
+
+        id<MTLComputePipelineState> pso =
+            (__bridge id<MTLComputePipelineState>)
+                state.metal_devices[this->device]
+                    .pipelines[(uint32_t) MetalKernel::ConvertF32F16];
+        if (!pso)
+            jitc_raise("jit_narrow_f32_to_f16(): convert pipeline missing.");
+
+        size_t src_off = 0, dst_off = 0;
+        id<MTLBuffer> src_buf =
+            (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) src, &src_off);
+        id<MTLBuffer> dst_buf =
+            (__bridge id<MTLBuffer>) jitc_metal_find_buffer(dst, &dst_off);
+        if (!src_buf || !dst_buf)
+            jitc_raise("jit_narrow_f32_to_f16(): buffer lookup failed.");
+
+        struct { uint64_t src, dst; } params;
+        params.src = (uint64_t) [src_buf gpuAddress] + src_off;
+        params.dst = (uint64_t) [dst_buf gpuAddress] + dst_off;
+
+        id<MTLComputeCommandEncoder> enc =
+            (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
+        [enc setComputePipelineState:pso];
+        [enc setBytes:&params length:sizeof(params) atIndex:0];
+        [enc useResource:src_buf usage:MTLResourceUsageRead];
+        [enc useResource:dst_buf usage:MTLResourceUsageWrite];
+
+        uint32_t tg = std::min((uint32_t) pso.maxTotalThreadsPerThreadgroup,
+                               round_pow2(size));
+        [enc dispatchThreads:MTLSizeMake(size, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+    }
+}
+
 void MetalThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
                                          uint8_t *out, ReduceOp op) {
     @autoreleasepool {

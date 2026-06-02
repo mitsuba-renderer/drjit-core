@@ -2781,6 +2781,34 @@ void jitc_var_reduce_expanded(uint32_t index) {
     jitc_var(index)->reduce_op = (uint32_t) ReduceOp::Identity;
 }
 
+void jitc_var_narrow_f32_to_f16(uint32_t index) {
+    Variable *v = jitc_var(index);
+    uint32_t shadow = v->dep[3];
+    if (!shadow)
+        return;
+
+    Variable *sv = jitc_var(shadow);
+    JitBackend backend = (JitBackend) v->backend;
+
+    if (sv->type != (uint32_t) VarType::Float32 ||
+        v->type != (uint32_t) VarType::Float16)
+        jitc_fail("jit_var_narrow_promoted(): expected a float32 shadow and a "
+                  "float16 target (got %s shadow, %s target).",
+                  type_name[sv->type], type_name[v->type]);
+
+    jitc_log(Debug, "jit_var_narrow_promoted(r%u <- r%u): f16[%u] = (half) f32",
+             index, shadow, v->size);
+
+    // Narrow the float32 shadow back into the float16 target buffer in place.
+    thread_state(backend)->narrow_f32_to_f16(v->data, sv->data, v->size);
+
+    v->dep[3] = 0;
+    jitc_var_dec_ref(shadow);
+
+    // Release the "keep dirty" side-effect reference added in jit_var_scatter().
+    jitc_var_dec_ref_se(index);
+}
+
 uint32_t jitc_var_reverse(uint32_t index) {
     if (index == 0)
         return 0;

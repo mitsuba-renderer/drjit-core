@@ -599,6 +599,7 @@ enum class MetalKernel : uint32_t {
     MemsetU16,
     MemsetU32,
     MemsetU64,
+    ConvertF32F16,
     Count
 };
 
@@ -842,6 +843,9 @@ struct ThreadState : public ThreadStateBase {
     /// LLVM: reduce a variable that was previously expanded due to dr.ReduceOp.Expand
     virtual void reduce_expanded(VarType vt, ReduceOp op, void *data,
                                  uint32_t exp, uint32_t size);
+
+    /// Narrow a float32 buffer to float16 (For Metal float16 scatter-reductions)
+    virtual void narrow_f32_to_f16(void *dst, const void *src, uint32_t size);
 
     /// Pack a set of matrices/vectors for use with the cooperative vector API
     virtual void coop_vec_pack(uint32_t count, const void *in,
