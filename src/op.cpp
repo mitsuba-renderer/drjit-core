@@ -2724,11 +2724,6 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
                      vt == VarType::Float64))
         return false;
 
-    // Metal: half-precision atomics use CAS on a 32-bit word, which
-    // is not reliably supported.
-    if (is_metal && vt == VarType::Float16)
-        return false;
-
     size_t compute_capability = (size_t) -1;
     if (is_cuda)
         compute_capability = thread_state(backend)->compute_capability;
@@ -2963,14 +2958,50 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // atomic memory operations, or to avoid them altogether. Check if the user
     // requested this.
     // Warning: this operation might invalidate variable pointers
-    bool reduce_expanded = false;
-    std::tie(mode, reduce_expanded) = jitc_var_infer_reduce_mode(
+    bool needs_reduce = false;
+    std::tie(mode, needs_reduce) = jitc_var_infer_reduce_mode(
         "jit_var_scatter", var_info.backend, target, index, op, mode);
 
     // Get a pointer to the array data. This evaluates the array if needed
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
-    ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 1));
+
+#if defined(DRJIT_ENABLE_METAL)
+    // Metal lacks FP16 atomics. When such an operation is detected, temporarily
+    // upgrade the target buffer to FP32 precision and then reduce back to FP16
+    // after the next kernel launch.
+    Ref value_promoted;
+    bool needs_narrow = false;
+    if (var_info.backend == JitBackend::Metal &&
+        vt == VarType::Float16 && op != ReduceOp::Identity) {
+        uint32_t shadow = jitc_var(target)->dep[3];
+        void *shadow_addr = nullptr;
+
+        if (shadow) {
+            // Variable already has a shadow buffer
+            shadow_addr = jitc_var(shadow)->data;
+        } else {
+            // First scatter to this target: allocate + widen the shadow.
+            Ref s = steal(jitc_var_cast(target, VarType::Float32, 0));
+            s = steal(jitc_var_data(s, false, &shadow_addr));
+            shadow = s.release();
+            jitc_var(target)->dep[3] = shadow;
+
+            // Keep the narrow target dirty until the shadow buffer is narrowed.
+            // jitc_var_narrow_f32_to_f16() reverts this.
+            jitc_var_inc_ref_se((uint32_t) target);
+            needs_narrow = true;
+        }
+
+        // Perform a FP32 scatter-reduction on the widened array
+        ptr = steal(jitc_var_pointer(var_info.backend, shadow_addr, shadow, 1));
+        value_promoted = steal(jitc_var_cast(value, VarType::Float32, 0));
+        value = value_promoted;
+    } else
+#endif
+    {
+        ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 1));
+    }
 
     // Apply default masks
     Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size));
@@ -2996,8 +3027,9 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     print_log(((uint32_t) target == target_) ? "direct" : "copied target",
               scatter_op);
 
-    if (reduce_expanded) {
-        // Potentially call jitc_var_reduce_expanded following evaluation
+#if defined(DRJIT_ENABLE_LLVM)
+    if (needs_reduce) {
+        // Counterpart to the expansion: narrow back to a regular array
         WeakRef wr(target, jitc_var(target)->counter);
         uintptr_t wr_i = memcpy_cast<uintptr_t>(wr);
 
@@ -3006,6 +3038,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             [](uint32_t, int free, void *p) {
                 if (free)
                     return;
+                // Weak ref. to guard against the target having been recycled
                 WeakRef wr = memcpy_cast<WeakRef>((uintptr_t) p);
                 if (!jitc_var(wr))
                     return;
@@ -3014,6 +3047,29 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             (void*) wr_i, true
         );
     }
+#endif
+
+#if defined(DRJIT_ENABLE_METAL)
+    if (needs_narrow) {
+        // Counterpart to the F16->F32 widening: narrow back to FP16
+        WeakRef wr(target, jitc_var(target)->counter);
+        uintptr_t wr_i = memcpy_cast<uintptr_t>(wr);
+
+        jitc_var_set_callback(
+            scatter_op,
+            [](uint32_t, int free, void *p) {
+                if (free)
+                    return;
+                // Weak ref. to guard against the target having been recycled
+                WeakRef wr = memcpy_cast<WeakRef>((uintptr_t) p);
+                if (!jitc_var(wr))
+                    return;
+                jitc_var_narrow_f32_to_f16(wr.index);
+            },
+            (void*) wr_i, true
+        );
+    }
+#endif
 
     jitc_var_mark_side_effect(scatter_op);
 

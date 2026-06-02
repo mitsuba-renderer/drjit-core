@@ -144,7 +144,7 @@ const char *op_type_name[(int) OpType::Count]{
     "ReduceExpanded", "Compress",          "MemcpyAsync",          "BlockMkperm",
     "BlockReduce",    "BlockPrefixReduce", "ReduceDot",            "BatchedGemm",
     "Aggregate",      "OpaqueWidth",       "InitUndefined",
-    "BoolReduceBoolAsync4", "Free"
+    "BoolReduceBoolAsync4", "NarrowF32ToF16", "Free"
 };
 
 /// Indicating, that we are replaying in dry-run mode. In this mode,
@@ -289,6 +289,7 @@ static ProfilerRegion pr_kernel_launch("KernelLaunch");
 static ProfilerRegion pr_barrier("Barrier");
 static ProfilerRegion pr_memset_async("MemsetAsync");
 static ProfilerRegion pr_reduce_expanded("ReduceExpanded");
+static ProfilerRegion pr_narrow_f32_to_f16("NarrowF32ToF16");
 static ProfilerRegion pr_expand("Expand");
 static ProfilerRegion pr_compress("Compress");
 static ProfilerRegion pr_memcpy_async("MemcpyAsync");
@@ -361,6 +362,10 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
                 break;
             case OpType::ReduceExpanded:
                 if (!replay_reduce_expanded(op))
+                    return false;
+                break;
+            case OpType::NarrowF32ToF16:
+                if (!replay_narrow_f32_to_f16(op))
                     return false;
                 break;
             case OpType::Expand:
@@ -1253,6 +1258,65 @@ int Recording::replay_reduce_expanded(Operation &op) {
 
     if (!dry_run)
         ts->reduce_expanded(vt, rop, data_var.data, exp, size);
+
+    return true;
+}
+
+/// Narrow a float32 scatter-accumulation shadow back to float16 (float16
+/// scatter-reduce emulation on Metal).
+void RecordThreadState::narrow_f32_to_f16(void *dst, const void *src,
+                                          uint32_t size) {
+    if (!paused()) {
+        try {
+            record_narrow_f32_to_f16(dst, src, size);
+        } catch (...) {
+            record_exception();
+        }
+    }
+    pause_scope pause(this);
+    return m_internal->narrow_f32_to_f16(dst, src, size);
+}
+
+void RecordThreadState::record_narrow_f32_to_f16(void *dst, const void *src,
+                                                 uint32_t size) {
+    jitc_log(LogLevel::Debug,
+             "record(): narrow_f32_to_f16(dst=%p, src=%p, size=%u)",
+             dst, src, size);
+
+    uint32_t start = (uint32_t) m_recording.dependencies.size();
+    add_in_param(src, VarType::Float32);
+    add_out_param(dst, VarType::Float16);
+    uint32_t end = (uint32_t) m_recording.dependencies.size();
+
+    Operation op;
+    op.type             = OpType::NarrowF32ToF16;
+    op.dependency_range = std::pair(start, end);
+    op.size             = size;
+    m_recording.operations.push_back(op);
+}
+
+int Recording::replay_narrow_f32_to_f16(Operation &op) {
+    ProfilerPhase profiler(pr_narrow_f32_to_f16);
+
+    uint32_t dependency_index = op.dependency_range.first;
+    AccessInfo src_info        = dependencies[dependency_index];
+    AccessInfo dst_info        = dependencies[dependency_index + 1];
+
+    ReplayVariable &src_var = replay_variables[src_info.slot];
+    ReplayVariable &dst_var = replay_variables[dst_info.slot];
+
+    uint32_t size = src_var.size(VarType::Float32);
+
+    // The float32 shadow (src) was produced earlier; allocate the float16
+    // target and narrow into it.
+    dst_var.alloc(backend, size, VarType::Float16);
+
+    jitc_log(LogLevel::Debug,
+             "replay(): narrow_f32_to_f16(dst=%p, src=%p, size=%u)",
+             dst_var.data, src_var.data, size);
+
+    if (!dry_run)
+        ts->narrow_f32_to_f16(dst_var.data, src_var.data, size);
 
     return true;
 }

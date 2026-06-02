@@ -155,7 +155,8 @@ static const char *metal_kernel_names[(uint32_t) MetalKernel::Count] = {
     "aggregate_kernel",
     "memset_u16",
     "memset_u32",
-    "memset_u64"
+    "memset_u64",
+    "convert_f32_f16"
 };
 
 /// Create a compute pipeline state for ``name`` from ``lib``. Returns an owned

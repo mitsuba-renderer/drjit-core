@@ -295,6 +295,12 @@ extern std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op
 /// Undo the above
 extern void jitc_var_reduce_expanded(uint32_t index);
 
+/// Narrow a float32 scatter-accumulation shadow (parked in ``index->dep[3]`` by
+/// jit_var_scatter()) back into the narrower target buffer, then release it.
+/// Used to emulate scatter-reductions for types without hardware atomics
+/// (e.g. float16 on Metal).
+extern void jitc_var_narrow_f32_to_f16(uint32_t index);
+
 /// Generate an informative error message about variables that remain dirty following evaluation
 extern void jitc_raise_dirty_error(uint32_t index);
 

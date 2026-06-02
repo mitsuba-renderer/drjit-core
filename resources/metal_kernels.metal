@@ -28,13 +28,13 @@ struct reduce_bool_params {
 };
 
 template <bool IsAll>
-kernel void reduce_bool_init(device const reduce_bool_params &p [[buffer(0)]]) {
+kernel void reduce_bool_init(constant reduce_bool_params &p [[buffer(0)]]) {
     *(device uint *) p.out = IsAll ? 1u : 0u;
 }
 
 template <bool IsAll>
 kernel void reduce_bool_kernel(
-    device const reduce_bool_params &p [[buffer(0)]],
+    constant reduce_bool_params &p [[buffer(0)]],
     uint gid [[thread_position_in_grid]],
     uint lid [[thread_position_in_threadgroup]]) {
     device const uchar *in  = (device const uchar *) p.in;
@@ -69,16 +69,16 @@ kernel void reduce_bool_kernel(
 }
 
 template [[host_name("reduce_all_init")]]
-kernel void reduce_bool_init<true>(device const reduce_bool_params &);
+kernel void reduce_bool_init<true>(constant reduce_bool_params &);
 template [[host_name("reduce_any_init")]]
-kernel void reduce_bool_init<false>(device const reduce_bool_params &);
+kernel void reduce_bool_init<false>(constant reduce_bool_params &);
 
 template [[host_name("reduce_all")]]
 kernel void reduce_bool_kernel<true>(
-    device const reduce_bool_params &, uint, uint);
+    constant reduce_bool_params &, uint, uint);
 template [[host_name("reduce_any")]]
 kernel void reduce_bool_kernel<false>(
-    device const reduce_bool_params &, uint, uint);
+    constant reduce_bool_params &, uint, uint);
 
 // ============================================================================
 //  compress_scatter — materialize a compacted index list from a prefix sum.
@@ -97,9 +97,8 @@ struct compress_scatter_params {
 };
 
 kernel void compress_scatter(
-    device const compress_scatter_params &p [[buffer(0)]],
-    uint tid [[thread_position_in_grid]])
-{
+    constant compress_scatter_params &p [[buffer(0)]],
+    uint tid [[thread_position_in_grid]]) {
     if (tid >= p.size) return;
     device const uint8_t *in = (device const uint8_t *) p.in;
     if (!in[tid]) return;
@@ -132,9 +131,8 @@ struct mkperm_params {
 };
 
 kernel void mkperm_phase_1(
-    device const mkperm_params &p [[buffer(0)]],
-    uint tid [[thread_position_in_grid]])
-{
+    constant mkperm_params &p [[buffer(0)]],
+    uint tid [[thread_position_in_grid]]) {
     if (tid >= p.size) return;
 
     device const uint *values  = (device const uint *) p.values;
@@ -145,9 +143,8 @@ kernel void mkperm_phase_1(
 }
 
 kernel void mkperm_phase_3(
-    device const mkperm_params &p [[buffer(0)]],
-    uint tid [[thread_position_in_grid]])
-{
+    constant mkperm_params &p [[buffer(0)]],
+    uint tid [[thread_position_in_grid]]) {
     if (tid >= p.size) return;
 
     device const uint *values  = (device const uint *) p.values;
@@ -175,9 +172,8 @@ struct mkperm_offsets_params {
 };
 
 kernel void mkperm_detect_offsets(
-    device const mkperm_offsets_params &p [[buffer(0)]],
-    uint tid [[thread_position_in_grid]])
-{
+    constant mkperm_offsets_params &p [[buffer(0)]],
+    uint tid [[thread_position_in_grid]]) {
     if (tid >= p.bucket_count) return;
 
     device const uint *buckets = (device const uint *) p.buckets;
@@ -219,8 +215,7 @@ kernel void aggregate_kernel(
     device uint8_t *dst [[buffer(0)]],
     device const AggregationEntry *entries [[buffer(1)]],
     constant uint &count [[buffer(2)]],
-    uint tid [[thread_position_in_grid]])
-{
+    uint tid [[thread_position_in_grid]]) {
     if (tid >= count) return;
     AggregationEntry e = entries[tid];
     device uint8_t *d = dst + e.offset;
@@ -250,15 +245,28 @@ struct memset_params {
 
 template <typename T>
 kernel void memset_kernel(
-    device const memset_params &p [[buffer(0)]],
-    uint tid [[thread_position_in_grid]])
-{
+    constant memset_params &p [[buffer(0)]],
+    uint tid [[thread_position_in_grid]]) {
     ((device T *) p.dst)[tid] = (T) p.value;
 }
 
 template [[host_name("memset_u16")]]
-kernel void memset_kernel<ushort>(device const memset_params &, uint);
+kernel void memset_kernel<ushort>(constant memset_params &, uint);
 template [[host_name("memset_u32")]]
-kernel void memset_kernel<uint>(device const memset_params &, uint);
+kernel void memset_kernel<uint>(constant memset_params &, uint);
 template [[host_name("memset_u64")]]
-kernel void memset_kernel<ulong>(device const memset_params &, uint);
+kernel void memset_kernel<ulong>(constant memset_params &, uint);
+
+// ============================================================================
+// Narrow a float32 buffer to float16 (For Metal float16 scatter-reductions)
+// ============================================================================
+
+struct convert_params {
+    ulong src; // device const float*
+    ulong dst; // device half*
+};
+
+kernel void convert_f32_f16(constant convert_params &p [[buffer(0)]],
+                            uint tid [[thread_position_in_grid]]) {
+    ((device half *) p.dst)[tid] = (half) ((device const float *) p.src)[tid];
+}

@@ -54,6 +54,7 @@ enum class OpType {
     OpaqueWidth,
     InitUndefined,
     BoolBlockReduceBool,
+    NarrowF32ToF16,
     Free,
     Count,
 };
@@ -329,6 +330,8 @@ struct Recording {
 
     int replay_reduce_expanded(Operation &op);
 
+    int replay_narrow_f32_to_f16(Operation &op);
+
     int replay_expand(Operation &op);
 
     int replay_compress(Operation &op);
@@ -515,6 +518,10 @@ public:
     void reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                          uint32_t exp, uint32_t size) override;
 
+    /// Narrow a float32 scatter shadow back to float16 (for Metal float16
+    /// scatter-reduce)
+    void narrow_f32_to_f16(void *dst, const void *src, uint32_t size) override;
+
     /// Pack a set of matrices/vectors for use with the cooperative vector API
     void coop_vec_pack(uint32_t count,const void *in,
                        const MatrixDescr *in_d, void *out,
@@ -642,6 +649,8 @@ public:
     void record_aggregate(void *dst, AggregationEntry *agg, uint32_t size);
     void record_reduce_expanded(VarType vt, ReduceOp reduce_op, void *data,
                                 uint32_t exp, uint32_t size);
+
+    void record_narrow_f32_to_f16(void *dst, const void *src, uint32_t size);
 
     void record_block_reduce_bool(uint8_t *values, uint32_t size, uint8_t *out,
                                   ReduceOp op);
