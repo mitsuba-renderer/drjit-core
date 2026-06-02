@@ -5,9 +5,6 @@
 
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
-
-    Supports: float, half, int, uint, ulong/long.
-    Excluded: double (no float64 on Metal GPU).
 */
 
 #include <metal_stdlib>
@@ -15,166 +12,73 @@
 #include <metal_atomic>
 using namespace metal;
 
-// MSL doesn't provide simd_shuffle_xor for 64-bit types. Emulate via two
-// 32-bit shuffles.
-inline ulong simd_shuffle_xor(ulong v, ushort mask) {
-    uint lo = (uint)(v & 0xFFFFFFFF);
-    uint hi = (uint)(v >> 32);
-    lo = simd_shuffle_xor(lo, mask);
-    hi = simd_shuffle_xor(hi, mask);
-    return ((ulong)hi << 32) | (ulong)lo;
+// ============================================================================
+//  any() / all() — reduce a boolean mask to a single value
+//
+//  ``reduce_*_init`` seeds the result with the identity;
+//  ``reduce_all``/``reduce_any`` then flip it via an atomic store on a hit. Each
+//  thread tests one coalesced 16-byte (uint4) packet, and a per-threadgroup
+//  reduction issues at most one store.
+// ============================================================================
+
+struct reduce_bool_params {
+    ulong in;
+    ulong out;
+    uint  size;
+};
+
+template <bool IsAll>
+kernel void reduce_bool_init(device const reduce_bool_params &p [[buffer(0)]]) {
+    *(device uint *) p.out = IsAll ? 1u : 0u;
 }
 
-inline long simd_shuffle_xor(long v, ushort mask) {
-    return (long)simd_shuffle_xor((ulong)v, mask);
-}
+template <bool IsAll>
+kernel void reduce_bool_kernel(
+    device const reduce_bool_params &p [[buffer(0)]],
+    uint gid [[thread_position_in_grid]],
+    uint lid [[thread_position_in_threadgroup]]) {
+    device const uchar *in  = (device const uchar *) p.in;
+    device atomic_uint *out = (device atomic_uint *) p.out;
 
-// ============================================================================
-//  Reduction operators
-// ============================================================================
+    threadgroup atomic_uint tg_found;
+    if (lid == 0)
+        atomic_store_explicit(&tg_found, 0u, memory_order_relaxed);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
 
-// Only bitwise Or/And reductions still run as custom kernels; sum / product /
-// minimum / maximum are dispatched through MPSGraph (see metal_ts.mm).
-
-template <typename T> struct reduction_or {
-    static T init() { return T(0); }
-    static T apply(T a, T b) { return a | b; }
-};
-
-template <typename T> struct reduction_and {
-    static T init() { return ~T(0); }
-    static T apply(T a, T b) { return a & b; }
-};
-
-// ============================================================================
-//  block_reduce kernel
-//
-//  Tree reduction using SIMD group shuffles + threadgroup shared memory.
-//
-//  1. Each thread loads one element (or identity if OOB).
-//  2. SIMD-group reduction via simd_shuffle_xor.
-//  3. If chunk > SIMD width, lane 0 writes to shared, then a second
-//     SIMD reduction over the partials.
-//  4. Thread 0 writes the scalar result.
-// ============================================================================
-
-struct block_reduce_params {
-    ulong  in;          // gpuAddress of input buffer
-    ulong  out;         // gpuAddress of output buffer
-    uint   size;        // total number of input elements
-    uint   block_size;  // how many elements per logical block
-    uint   chunk_count; // total number of output chunks
-};
-
-template <typename T, typename Red, uint ChunkSize>
-kernel void block_reduce_kernel(
-    device const block_reduce_params &p [[buffer(0)]],
-    threadgroup T *shared [[threadgroup(0)]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tg_id [[threadgroup_position_in_grid]])
-{
-    constexpr uint SimdWidth = 32;
-    constexpr bool MultiChunk = (ChunkSize < 128);
-    constexpr uint ThreadsPerGroup = MultiChunk ? 128 : ChunkSize;
-
-    device const T *in  = (device const T *) p.in;
-    device T       *out = (device T *)       p.out;
-
-    uint chunk, pos_in_chunk;
-    if (MultiChunk) {
-        uint chunks_per_tg = ThreadsPerGroup / ChunkSize;
-        chunk        = tg_id * chunks_per_tg + tid / ChunkSize;
-        pos_in_chunk = tid % ChunkSize;
-    } else {
-        chunk        = tg_id;
-        pos_in_chunk = tid;
+    // One coalesced 16-byte (uint4) packet per thread.
+    bool found = false;
+    uint n16 = p.size >> 4;
+    if (gid < n16) {
+        uint4 w = ((device const uint4 *) in)[gid];
+        found = IsAll ? !all(w == 0x01010101u) : any(w != 0u);
     }
 
-    uint chunks_per_block = (p.block_size + ChunkSize - 1) / ChunkSize;
-    uint block_id        = chunk / chunks_per_block;
-    uint chunk_in_block  = chunk % chunks_per_block;
-    uint pos_in_block    = chunk_in_block * ChunkSize + pos_in_chunk;
-    uint pos_in_input    = block_id * p.block_size + pos_in_block;
-    bool valid = (pos_in_block < p.block_size) && (pos_in_input < p.size);
-
-    T value = valid ? in[pos_in_input] : Red::init();
-
-    // SIMD-group reduction
-    constexpr uint Active = (ChunkSize >= SimdWidth) ? SimdWidth : ChunkSize;
-    for (uint k = 1; k < Active; k *= 2)
-        value = Red::apply(value, simd_shuffle_xor(value, (ushort)k));
-
-    constexpr uint ReducedChunkSize = ChunkSize / Active;
-
-    if (ReducedChunkSize > 1) {
-        if ((tid % SimdWidth) == 0)
-            shared[tid / Active] = value;
-
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-
-        if (tid >= ThreadsPerGroup / Active)
-            return;
-
-        value = shared[tid];
-
-        for (uint k = 1; k < ReducedChunkSize; k *= 2)
-            value = Red::apply(value, simd_shuffle_xor(value, (ushort)k));
-
-        if (MultiChunk) {
-            pos_in_chunk = tid % ReducedChunkSize;
-            uint chunks_per_tg = ThreadsPerGroup / ChunkSize;
-            chunk = tg_id * chunks_per_tg + tid / ReducedChunkSize;
-        }
+    // Thread 0 also mops up the < 16 tail bytes that don't fill a packet.
+    if (gid == 0) {
+        for (uint i = n16 << 4; i < p.size; ++i)
+            found = found || (IsAll ? (in[i] == 0u) : (in[i] != 0u));
     }
 
-    if (pos_in_chunk == 0 && chunk < p.chunk_count)
-        out[chunk] = value;
+    // OR 'found' across the threadgroup so lid 0 issues a single atomic store.
+    if (found)
+        atomic_store_explicit(&tg_found, 1u, memory_order_relaxed);
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    if (lid == 0 && atomic_load_explicit(&tg_found, memory_order_relaxed))
+        atomic_store_explicit(out, IsAll ? 0u : 1u, memory_order_relaxed);
 }
 
-// ============================================================================
-//  Instantiations (type × op × ChunkSize)
-// ============================================================================
+template [[host_name("reduce_all_init")]]
+kernel void reduce_bool_init<true>(device const reduce_bool_params &);
+template [[host_name("reduce_any_init")]]
+kernel void reduce_bool_init<false>(device const reduce_bool_params &);
 
-#define INSTANTIATE_RED(Name, T, Red)                                         \
-    template [[host_name("block_reduce_" Name "_2")]]                         \
-    kernel void block_reduce_kernel<T, Red<T>, 2>(                            \
-        device const block_reduce_params &, threadgroup T *, uint, uint);     \
-    template [[host_name("block_reduce_" Name "_4")]]                         \
-    kernel void block_reduce_kernel<T, Red<T>, 4>(                            \
-        device const block_reduce_params &, threadgroup T *, uint, uint);     \
-    template [[host_name("block_reduce_" Name "_8")]]                         \
-    kernel void block_reduce_kernel<T, Red<T>, 8>(                            \
-        device const block_reduce_params &, threadgroup T *, uint, uint);     \
-    template [[host_name("block_reduce_" Name "_16")]]                        \
-    kernel void block_reduce_kernel<T, Red<T>, 16>(                           \
-        device const block_reduce_params &, threadgroup T *, uint, uint);     \
-    template [[host_name("block_reduce_" Name "_32")]]                        \
-    kernel void block_reduce_kernel<T, Red<T>, 32>(                           \
-        device const block_reduce_params &, threadgroup T *, uint, uint);     \
-    template [[host_name("block_reduce_" Name "_64")]]                        \
-    kernel void block_reduce_kernel<T, Red<T>, 64>(                           \
-        device const block_reduce_params &, threadgroup T *, uint, uint);     \
-    template [[host_name("block_reduce_" Name "_128")]]                       \
-    kernel void block_reduce_kernel<T, Red<T>, 128>(                          \
-        device const block_reduce_params &, threadgroup T *, uint, uint);     \
-    template [[host_name("block_reduce_" Name "_256")]]                       \
-    kernel void block_reduce_kernel<T, Red<T>, 256>(                          \
-        device const block_reduce_params &, threadgroup T *, uint, uint);     \
-    template [[host_name("block_reduce_" Name "_512")]]                       \
-    kernel void block_reduce_kernel<T, Red<T>, 512>(                          \
-        device const block_reduce_params &, threadgroup T *, uint, uint);     \
-    template [[host_name("block_reduce_" Name "_1024")]]                      \
-    kernel void block_reduce_kernel<T, Red<T>, 1024>(                         \
-        device const block_reduce_params &, threadgroup T *, uint, uint);
-
-// Only bitwise Or/And remain as custom kernels (MPSGraph's reductionAnd/Or
-// accept boolean tensors only). uint8 covers boolean any()/all() reductions.
-INSTANTIATE_RED("or_u32",   uint,   reduction_or)
-INSTANTIATE_RED("and_u32",  uint,   reduction_and)
-INSTANTIATE_RED("or_u64",   ulong,  reduction_or)
-INSTANTIATE_RED("and_u64",  ulong,  reduction_and)
-INSTANTIATE_RED("or_u8",    uchar,  reduction_or)
-INSTANTIATE_RED("and_u8",   uchar,  reduction_and)
+template [[host_name("reduce_all")]]
+kernel void reduce_bool_kernel<true>(
+    device const reduce_bool_params &, uint, uint);
+template [[host_name("reduce_any")]]
+kernel void reduce_bool_kernel<false>(
+    device const reduce_bool_params &, uint, uint);
 
 // ============================================================================
 //  compress_scatter — materialize a compacted index list from a prefix sum.

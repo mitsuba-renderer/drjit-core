@@ -2156,7 +2156,6 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
     /// Revert to separate gathers in special various cases
     if (src_v->symbolic || // This will likely fail, let jitc_var_gather() generate an error
         !(flags & (uint32_t) JitFlag::PacketOps) ||      // Packet gathers are disabled
-        var_info.backend == JitBackend::Metal ||            // Metal: no packet ops
         (mask_v->is_literal() && mask_v->literal == 0) ||   // Masked load
         src_v->size == 1 ||                                 // Scalar load
         (var_info.size == 1 && var_info.literal) ||         // Memcpy
@@ -3140,7 +3139,9 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     bool use_packet_op = false;
 
     if (flags & (uint32_t) JitFlag::PacketOps) {
-        if (op == ReduceOp::Identity && backend != JitBackend::Metal) {
+        if (op == ReduceOp::Identity) {
+            // Plain packet scatter is supported on all backends (Metal stores
+            // are emitted in metal_packet.cpp; reductions remain scalar there).
             use_packet_op = mode == ReduceMode::Auto ||
                             mode == ReduceMode::Expand ||
                             mode == ReduceMode::Permute ||
