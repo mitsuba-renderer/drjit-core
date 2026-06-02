@@ -226,14 +226,17 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                        usage:MTLResourceUsageRead | MTLResourceUsageWrite];
         }
 
-        // Mark buffers referenced by vcall data sections
-        for (void *ptr : metal_call_resources) {
+        // Indicate additional resources detected during code generation
+        for (const CallResource &res : metal_extra_resources) {
             size_t off = 0;
             id<MTLBuffer> buf =
-                (__bridge id<MTLBuffer>) jitc_metal_find_buffer(ptr, &off);
-            [enc useResource:buf usage:MTLResourceUsageRead];
+                (__bridge id<MTLBuffer>) jitc_metal_find_buffer(res.ptr, &off);
+            [enc useResource:buf
+                       usage:res.write ? (MTLResourceUsageRead |
+                                          MTLResourceUsageWrite)
+                                       : MTLResourceUsageRead];
         }
-        metal_call_resources.clear();
+        metal_extra_resources.clear();
 
         // Bind per-scene TLAS + IFT for every scene referenced by this kernel.
         // The kernel was generated with ``accel_<i> [[buffer(1+i)]]`` for each

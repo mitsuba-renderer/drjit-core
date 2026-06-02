@@ -2781,33 +2781,79 @@ void jitc_var_reduce_expanded(uint32_t index) {
     jitc_var(index)->reduce_op = (uint32_t) ReduceOp::Identity;
 }
 
-void jitc_var_narrow_f32_to_f16(uint32_t index) {
+#if defined(DRJIT_ENABLE_METAL)
+// Metal lacks FP16 atomics, so FP16 scatter-reductions reduce
+// into an FP32 shadow buffer before being narrowed back.
+
+// Release the FP32 shadow, narrowing it back into the FP16 target first when
+// ``narrow`` is set (otherwise it is discarded, e.g. on a rolled-back trace).
+void jitc_var_shadow_narrow(uint32_t index, bool narrow) {
     Variable *v = jitc_var(index);
     uint32_t shadow = v->dep[3];
     if (!shadow)
         return;
 
     Variable *sv = jitc_var(shadow);
-    JitBackend backend = (JitBackend) v->backend;
+    jitc_assert(sv->type == (uint32_t) VarType::Float32 &&
+                v->type == (uint32_t) VarType::Float16,
+                "jit_var_shadow_narrow(): invalid input types!");
 
-    if (sv->type != (uint32_t) VarType::Float32 ||
-        v->type != (uint32_t) VarType::Float16)
-        jitc_fail("jit_var_narrow_promoted(): expected a float32 shadow and a "
-                  "float16 target (got %s shadow, %s target).",
-                  type_name[sv->type], type_name[v->type]);
-
-    jitc_log(Debug, "jit_var_narrow_promoted(r%u <- r%u): f16[%u] = (half) f32",
-             index, shadow, v->size);
-
-    // Narrow the float32 shadow back into the float16 target buffer in place.
-    thread_state(backend)->narrow_f32_to_f16(v->data, sv->data, v->size);
+    if (narrow) {
+        jitc_log(Debug, "jit_var_shadow_narrow(r%u <- r%u): f16[%u] = (half) f32",
+                 index, shadow, v->size);
+        thread_state((JitBackend) v->backend)
+            ->narrow_f32_to_f16(v->data, sv->data, v->size);
+    } else {
+        jitc_log(Debug, "jit_var_shadow_narrow(r%u): dropping shadow r%u",
+                 index, shadow);
+    }
 
     v->dep[3] = 0;
     jitc_var_dec_ref(shadow);
-
-    // Release the "keep dirty" side-effect reference added in jit_var_scatter().
     jitc_var_dec_ref_se(index);
 }
+
+uint32_t jitc_var_shadow_make(uint32_t target, bool &fresh) {
+    // Allocate (or reuse) an FP32 shadow for an evaluated FP16 ``target`` and
+    // return a new write-pointer into it. The shadow is parked in
+    // ``target->dep[3]`` and the target kept dirty until narrowed; ``fresh``
+    // flags a new allocation, so the caller registers
+    // jitc_var_shadow_setup_narrow().
+    fresh = false;
+    Variable *tv = jitc_var(target);
+    JitBackend backend = (JitBackend) tv->backend;
+    uint32_t shadow = tv->dep[3];
+    void *shadow_addr = nullptr;
+    if (shadow) {
+        shadow_addr = jitc_var(shadow)->data;
+    } else {
+        Ref s = steal(jitc_var_cast(target, VarType::Float32, 0));
+        s = steal(jitc_var_data(s, false, &shadow_addr));
+        shadow = s.release();
+        jitc_var(target)->dep[3] = shadow;
+        jitc_var_inc_ref_se(target);
+        fresh = true;
+    }
+    return jitc_var_pointer(backend, shadow_addr, shadow, 1);
+}
+
+void jitc_var_shadow_setup_narrow(uint32_t se_node, uint32_t target) {
+    WeakRef wr(target, jitc_var(target)->counter);
+    uintptr_t wr_i = 0;
+    memcpy(&wr_i, &wr, sizeof(wr));
+    jitc_var_set_callback(
+        se_node,
+        [](uint32_t, int free, void *p) {
+            WeakRef wr;
+            uintptr_t pi = (uintptr_t) p;
+            memcpy(&wr, &pi, sizeof(wr));
+            if (!jitc_var(wr))
+                return;
+            jitc_var_shadow_narrow(wr.index, /* narrow = */ !free);
+        },
+        (void *) wr_i, true);
+}
+#endif // defined(DRJIT_ENABLE_METAL)
 
 uint32_t jitc_var_reverse(uint32_t index) {
     if (index == 0)

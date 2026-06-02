@@ -14,7 +14,36 @@
 #include "op.h"
 #include "optix_api.h"
 #include "optix.h"
-#include "cuda.h"
+
+// Raise if the Metal backend is targeted but the device lacks Metal 4, which
+// the cooperative-vector matrix operations require.
+static void jitc_coop_vec_check_metal4(JitBackend backend) {
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend != JitBackend::Metal)
+        return;
+
+    const MetalDevice &dev = state.metal_devices[thread_state(backend)->device];
+    if (!dev.supports_metal4)
+        jitc_raise(
+            "jit_coop_vec: cooperative-vector matrix operations require a "
+            "Metal 4-capable device (Apple silicon on macOS 26+). The current "
+            "Metal device (\"%s\") does not support Metal 4.", dev.name);
+#else
+    (void) backend;
+#endif
+}
+
+#if defined(DRJIT_ENABLE_METAL)
+// On Metal, FP16 reduces into an FP32 buffer (narrowed back afterwards)
+static Ref jitc_coop_vec_metal_target(uint32_t target, bool &needs_narrow) {
+    needs_narrow = false;
+    const Variable *tv = jitc_var(target);
+    if ((JitBackend) tv->backend != JitBackend::Metal ||
+        (VarType) tv->type != VarType::Float16)
+        return Ref();
+    return steal(jitc_var_shadow_make(target, needs_narrow));
+}
+#endif
 
 // Strip away loop phi nodes to recover the nested memory buffer. This is needed
 // when cooperative vectors in symbolic loops/conditionals reference the buffer
@@ -480,6 +509,8 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
                 output_length, input_length, x_v->array_length);
     }
 
+    jitc_coop_vec_check_metal4(backend);
+
     A_index = unwrap(A_index);
     if (b_index)
         b_index = unwrap(b_index);
@@ -607,7 +638,18 @@ uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
 
     void *p = nullptr;
     target = steal(jitc_var_data(target, false, &p));
-    Ref target_ptr = steal(jitc_var_pointer(backend, p, target, 1));
+
+    Ref value = borrow(index);
+    Ref target_ptr;
+#if defined(DRJIT_ENABLE_METAL)
+    // On Metal, FP16 reduces into an FP32 buffer (narrowed back afterwards)
+    bool needs_narrow = false;
+    target_ptr = jitc_coop_vec_metal_target(target, needs_narrow);
+    if (target_ptr)
+        value = steal(jitc_coop_vec_cast(index, VarType::Float32));
+#endif
+    if (!target_ptr)
+        target_ptr = steal(jitc_var_pointer(backend, p, target, 1));
 
     Ref mask = steal(jitc_var_bool(backend, true));
     mask = steal(jitc_var_mask_apply(mask, size));
@@ -620,13 +662,17 @@ uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
     v.literal = offset;
     v.symbolic = jitc_flag(JitFlag::SymbolicScope);
     v.dep[0] = target_ptr;
-    v.dep[1] = index;
+    v.dep[1] = value;
     v.dep[2] = mask;
     jitc_var_inc_ref(target_ptr);
-    jitc_var_inc_ref(index);
+    jitc_var_inc_ref(value);
     jitc_var_inc_ref(mask);
 
     uint32_t result = jitc_var_new(v, true);
+#if defined(DRJIT_ENABLE_METAL)
+    if (needs_narrow)
+        jitc_var_shadow_setup_narrow(result, target);
+#endif
     jitc_var_mark_side_effect(result);
     return target.release();
 }
@@ -665,6 +711,8 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
         }
     }
 
+    jitc_coop_vec_check_metal4(backend);
+
     Ref target = borrow(target_);
     if (!target) {
         uint64_t z = 0;
@@ -685,7 +733,20 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
 
     void *p = nullptr;
     target = steal(jitc_var_data(target, false, &p));
-    Ref target_ptr = steal(jitc_var_pointer(backend, p, target, 1));
+
+    Ref va = borrow(a), vb = borrow(b);
+    Ref target_ptr;
+#if defined(DRJIT_ENABLE_METAL)
+    // On Metal, FP16 reduces into an FP32 buffer (narrowed back afterwards)
+    bool needs_narrow = false;
+    target_ptr = jitc_coop_vec_metal_target(target, needs_narrow);
+    if (target_ptr) {
+        va = steal(jitc_coop_vec_cast(a, VarType::Float32));
+        vb = steal(jitc_coop_vec_cast(b, VarType::Float32));
+    }
+#endif
+    if (!target_ptr)
+        target_ptr = steal(jitc_var_pointer(backend, p, target, 1));
 
     Ref mask = steal(jitc_var_bool(backend, true));
     mask = steal(jitc_var_mask_apply(mask, size));
@@ -697,17 +758,47 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
     v.backend = (uint32_t) backend;
     v.symbolic = jitc_flag(JitFlag::SymbolicScope);
     v.dep[0] = target_ptr;
-    v.dep[1] = a;
-    v.dep[2] = b;
+    v.dep[1] = va;
+    v.dep[2] = vb;
     v.dep[3] = mask;
     jitc_var_inc_ref(target_ptr);
-    jitc_var_inc_ref(a);
-    jitc_var_inc_ref(b);
+    jitc_var_inc_ref(va);
+    jitc_var_inc_ref(vb);
     jitc_var_inc_ref(mask);
 
-    drjit::unique_ptr<MatrixDescr> md = new MatrixDescr(*descr);
+    // The result owns the MatrixDescr (read by codegen via ``v->data``).
+    struct OuterProductCallback {
+        MatrixDescr *md;
+        WeakRef narrow_target;
+    };
 
-    uint32_t result = jitc_var_new_take_ownership(v, std::move(md), true);
+    auto *cb = new OuterProductCallback{ new MatrixDescr(*descr), WeakRef() };
+#if defined(DRJIT_ENABLE_METAL)
+    if (needs_narrow)
+        cb->narrow_target = WeakRef(target, jitc_var(target)->counter);
+#endif
+
+    jitc_var_set_data(v, cb->md);
+    uint32_t result = jitc_var_new(v, true);
+    jitc_var_set_callback(
+        result,
+        [](uint32_t, int free, void *p) {
+            auto *cb = (OuterProductCallback *) p;
+#if defined(DRJIT_ENABLE_METAL)
+            // Narrow the shadow on evaluation, or drop it if freed beforehand.
+            if (cb->narrow_target.index && jitc_var(cb->narrow_target)) {
+                jitc_var_shadow_narrow(cb->narrow_target.index,
+                                       /* narrow = */ !free);
+                cb->narrow_target = {};
+            }
+#endif
+            if (free) {
+                delete cb->md;
+                delete cb;
+            }
+        },
+        cb, true);
+
     jitc_var_mark_side_effect(result);
     return target.release();
 }
