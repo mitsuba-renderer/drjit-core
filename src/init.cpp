@@ -804,9 +804,7 @@ int jitc_flag(JitFlag flag) {
 KernelHistory::KernelHistory() : m_data(nullptr), m_size(0), m_capacity(0) { }
 
 KernelHistory::~KernelHistory() {
-    for (size_t i = 0; i < m_size; i++)
-        free(m_data[i].ir);
-    free(m_data);
+    clear();
 }
 
 void KernelHistory::append(const KernelHistoryEntry &value) {
