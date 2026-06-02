@@ -171,6 +171,33 @@ extern MetalScene *jitc_metal_get_scene(uint32_t scene_index);
 /// TraceRay node was found in this kernel).
 extern MetalScene *jitc_metal_active_scene();
 
+// ---------------------------------------------------------------------
+// Per-kernel ray-tracing scene layout. Populated by jitc_metal_assemble()'s
+// pre-walk (in metal_eval.cpp) and consumed during launch (in metal_core.mm),
+// so these live here rather than in the codegen-only metal_eval.h.
+
+/// Ordered list of distinct ``MetalScene*`` referenced by ``VarKind::TraceRay``
+/// nodes anywhere in the current kernel (top-level schedule + callable
+/// bodies + symbolic loops/conds). The position in this vector becomes the
+/// MSL slot index, i.e. scene at index ``i`` is bound to ``[[buffer(1+i)]]``
+/// and referenced as ``accel_<i>`` in the generated MSL.
+extern std::vector<MetalScene *> metal_kernel_scenes;
+
+/// Per-scene IFT buffer slot. Indexed by the same position as
+/// ``metal_kernel_scenes``. Value is the buffer index of that scene's
+/// ``ift_<i>`` argument (always >= 1 + N where N is the accel count), or
+/// ``-1`` if the scene has no ``intersection_fn_library``.
+extern std::vector<int32_t> metal_kernel_ift_slot;
+
+/// Register a scene with the kernel, assigning it the next free slot if it
+/// hasn't been seen yet. Returns the slot index. ``nullptr`` returns 0 and
+/// is not registered (caller is expected to handle that case).
+extern uint32_t metal_register_kernel_scene(MetalScene *scene);
+
+/// Compute IFT slot indices for every registered scene. Called once after
+/// the recursive pre-walk and before any signature emission.
+extern void jitc_metal_finalize_scene_layout();
+
 /// Lazily build (and cache) an ``MTLIntersectionFunctionTable`` for the
 /// given scene + compute pipeline. The function handles are derived from
 /// the pipeline so each pipeline needs its own IFT instance. Returns

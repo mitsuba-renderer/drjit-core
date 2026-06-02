@@ -44,6 +44,7 @@
 #include "metal_eval.h"
 
 #include "metal_scatter.h"
+#include "metal_packet.h"
 #include "metal_array.h"
 #include "metal_coop_vec.h"
 #include "array.h"
@@ -55,9 +56,6 @@
 #include "record_ts.h"
 
 #include <unordered_set>
-
-#define fmt(fmt, ...) buffer.fmt_metal(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
-#define put(...)      buffer.put(__VA_ARGS__)
 
 // Forward declaration
 static void jitc_metal_render(Variable *v);
@@ -710,6 +708,22 @@ static void jitc_metal_render(Variable *v) {
             break;
         }
 
+        case VarKind::PacketGather: {
+            Variable *ptr   = jitc_var(v->dep[0]);
+            Variable *index = jitc_var(v->dep[1]);
+            Variable *mask  = jitc_var(v->dep[2]);
+            jitc_metal_render_gather_packet(v, ptr, index, mask);
+            break;
+        }
+
+        case VarKind::PacketScatter: {
+            Variable *ptr   = jitc_var(v->dep[0]);
+            Variable *index = jitc_var(v->dep[1]);
+            Variable *mask  = jitc_var(v->dep[2]);
+            jitc_metal_render_scatter_packet(v, ptr, index, mask);
+            break;
+        }
+
         case VarKind::Scatter:
             jitc_metal_render_scatter(v);
             break;
@@ -736,7 +750,8 @@ static void jitc_metal_render(Variable *v) {
             uint32_t sub_index = (uint32_t) v->literal;
 
             if ((VarKind) src->kind == VarKind::TraceRay ||
-                (VarKind) src->kind == VarKind::ScatterCAS) {
+                (VarKind) src->kind == VarKind::ScatterCAS ||
+                (VarKind) src->kind == VarKind::PacketGather) {
                 // Extract from a multi-output op — reference the pre-declared outputs
                 fmt("    $t $v = $v_out_$u;\n",
                     v, v, src, sub_index);

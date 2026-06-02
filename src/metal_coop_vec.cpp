@@ -34,15 +34,12 @@
 #include "coop_vec.h"
 #include "metal_coop_vec.h"
 
-// Mirror the local convenience macro used in metal_eval.cpp so the generated
-// MSL is byte-for-byte consistent across translation units.
-#define fmt_metal(fmt, ...) buffer.fmt_metal(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
-#define put(...)            buffer.put(__VA_ARGS__)
+#include "metal_eval.h" // provides the `fmt` / `put` macros
 
 void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                                 const Variable *a1, const Variable *a2,
                                 const Variable *a3) {
-    fmt_metal("    // $s\n", var_kind_name[(uint32_t) v->kind]);
+    fmt("    // $s\n", var_kind_name[(uint32_t) v->kind]);
 
     switch ((VarKind) v->kind) {
         case VarKind::CoopVecLiteral: {
@@ -51,16 +48,16 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
             VarType vt = (VarType) v->type;
             for (uint32_t i = 0; i < v->array_length; ++i) {
                 if (vt == VarType::Float32)
-                    fmt_metal("    $t $v_$u = as_type<float>($lu);\n",
+                    fmt("    $t $v_$u = as_type<float>($lu);\n",
                               v, v, i, v);
                 else if (vt == VarType::Float16)
-                    fmt_metal("    $t $v_$u = as_type<half>((ushort) $lu);\n",
+                    fmt("    $t $v_$u = as_type<half>((ushort) $lu);\n",
                               v, v, i, v);
                 else if (vt == VarType::Bool)
-                    fmt_metal("    $t $v_$u = ($t) ($lu);\n",
+                    fmt("    $t $v_$u = ($t) ($lu);\n",
                               v, v, i, v, v);
                 else
-                    fmt_metal("    $t $v_$u = ($t) $lu;\n",
+                    fmt("    $t $v_$u = ($t) $lu;\n",
                               v, v, i, v, v);
             }
             break;
@@ -72,7 +69,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                 ((const CoopVecPackData *) v->data)->indices;
             for (uint32_t i = 0; i < (uint32_t) indices.size(); ++i) {
                 Variable *src = jitc_var(indices[i]);
-                fmt_metal("    $t $v_$u = $v;\n", v, v, i, src);
+                fmt("    $t $v_$u = $v;\n", v, v, i, src);
             }
             break;
         }
@@ -82,7 +79,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
             // (in elements). Load `array_length` consecutive elements into
             // the per-element locals.
             for (uint32_t i = 0; i < v->array_length; ++i) {
-                fmt_metal("    $t $v_$u = ((device const $t*) $v)[$u];\n",
+                fmt("    $t $v_$u = ((device const $t*) $v)[$u];\n",
                           v, v, i, v, a0,
                           (uint32_t) v->literal + i);
             }
@@ -92,7 +89,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
         case VarKind::CoopVecCast: {
             // Per-element type conversion. Mirrors VarKind::Cast.
             for (uint32_t i = 0; i < v->array_length; ++i)
-                fmt_metal("    $t $v_$u = ($t) $v_$u;\n",
+                fmt("    $t $v_$u = ($t) $v_$u;\n",
                           v, v, i, v, a0, i);
             break;
         }
@@ -103,13 +100,13 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
             // mismatched-size cases).
             for (uint32_t i = 0; i < v->array_length; ++i) {
                 if (v->type == a0->type)
-                    fmt_metal("    $t $v_$u = $v_$u;\n",
+                    fmt("    $t $v_$u = $v_$u;\n",
                               v, v, i, a0, i);
                 else if (type_size[v->type] == type_size[a0->type])
-                    fmt_metal("    $t $v_$u = as_type<$t>($v_$u);\n",
+                    fmt("    $t $v_$u = as_type<$t>($v_$u);\n",
                               v, v, i, v, a0, i);
                 else
-                    fmt_metal("    $t $v_$u = as_type<$t>(($b) $v_$u);\n",
+                    fmt("    $t $v_$u = as_type<$t>(($b) $v_$u);\n",
                               v, v, i, v, v, a0, i);
             }
             break;
@@ -128,7 +125,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                               (uint32_t) v->literal);
             }
             for (uint32_t i = 0; i < v->array_length; ++i)
-                fmt_metal("    $t $v_$u = $s($v_$u);\n",
+                fmt("    $t $v_$u = $s($v_$u);\n",
                           v, v, i, fn, a0, i);
             break;
         }
@@ -144,7 +141,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                                       : (op == JitOp::Sub) ? "-"
                                                            : "*";
                     for (uint32_t i = 0; i < v->array_length; ++i)
-                        fmt_metal("    $t $v_$u = $v_$u $s $v_$u;\n",
+                        fmt("    $t $v_$u = $v_$u $s $v_$u;\n",
                                   v, v, i, a0, i, infix, a1, i);
                     break;
                 }
@@ -153,7 +150,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                 case JitOp::Max: {
                     const char *fn = (op == JitOp::Min) ? "min" : "max";
                     for (uint32_t i = 0; i < v->array_length; ++i)
-                        fmt_metal("    $t $v_$u = $s($v_$u, $v_$u);\n",
+                        fmt("    $t $v_$u = $s($v_$u, $v_$u);\n",
                                   v, v, i, fn, a0, i, a1, i);
                     break;
                 }
@@ -161,7 +158,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                 case JitOp::Step:
                     // step(a, b) = (a < b) ? 0 : 1, applied per-element.
                     for (uint32_t i = 0; i < v->array_length; ++i)
-                        fmt_metal("    $t $v_$u = ($v_$u < $v_$u) ? "
+                        fmt("    $t $v_$u = ($v_$u < $v_$u) ? "
                                   "($t) 0 : ($t) 1;\n",
                                   v, v, i, a0, i, a1, i, v, v);
                     break;
@@ -181,7 +178,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                           "(only Fma is supported)",
                           (uint32_t) v->literal);
             for (uint32_t i = 0; i < v->array_length; ++i)
-                fmt_metal("    $t $v_$u = fma($v_$u, $v_$u, $v_$u);\n",
+                fmt("    $t $v_$u = fma($v_$u, $v_$u, $v_$u);\n",
                           v, v, i, a0, i, a1, i, a2, i);
             break;
         }
@@ -214,11 +211,11 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
             if (bias) {
                 uint32_t b_off = d->b_descr.offset;
                 for (uint32_t i = 0; i < m; ++i)
-                    fmt_metal("    $t $v_$u = ((device const $t*) $v)[$u];\n",
+                    fmt("    $t $v_$u = ((device const $t*) $v)[$u];\n",
                               v, v, i, v, bias, b_off + i);
             } else {
                 for (uint32_t i = 0; i < m; ++i)
-                    fmt_metal("    $t $v_$u = ($t) 0;\n", v, v, i, v);
+                    fmt("    $t $v_$u = ($t) 0;\n", v, v, i, v);
             }
 
             // 2. Accumulate A @ x. For non-transpose, A[i][j] lives at
@@ -228,7 +225,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                     uint32_t addr = a_off + (transpose
                                              ? (j * stride + i)
                                              : (i * stride + j));
-                    fmt_metal("    $v_$u = fma("
+                    fmt("    $v_$u = fma("
                               "((device const $t*) $v)[$u], $v_$u, $v_$u);\n",
                               v, i, v, a0, addr, a1, j, v, i);
                 }
@@ -247,7 +244,7 @@ void jitc_metal_render_coop_vec_unpack(const Variable *v,
     // a0 is the source coopvec; v->literal stores the element index.
     // The output variable's type matches the element type of the coopvec
     // (enforced by jitc_coop_vec_unpack), so a plain assignment suffices.
-    fmt_metal("    $t $v = $v_$u;\n", v, v, a0, (uint32_t) v->literal);
+    fmt("    $t $v = $v_$u;\n", v, v, a0, (uint32_t) v->literal);
 }
 
 // ---- Atomic-add helper (per-element) ---------------------------------------
@@ -264,24 +261,24 @@ void jitc_metal_render_coop_vec_unpack(const Variable *v,
 static void emit_atomic_add(VarType vt, const Variable *buf,
                             uint32_t elem_offset, const char *value_expr) {
     if (vt == VarType::Float32) {
-        fmt_metal("    atomic_fetch_add_explicit("
+        fmt("    atomic_fetch_add_explicit("
                   "(device atomic_float*) ((device float*) $v + $u), "
                   "$s, memory_order_relaxed);\n",
                   buf, elem_offset, value_expr);
     } else if (vt == VarType::Int32) {
-        fmt_metal("    atomic_fetch_add_explicit("
+        fmt("    atomic_fetch_add_explicit("
                   "(device atomic_int*) ((device int*) $v + $u), "
                   "$s, memory_order_relaxed);\n",
                   buf, elem_offset, value_expr);
     } else if (vt == VarType::UInt32) {
-        fmt_metal("    atomic_fetch_add_explicit("
+        fmt("    atomic_fetch_add_explicit("
                   "(device atomic_uint*) ((device uint*) $v + $u), "
                   "$s, memory_order_relaxed);\n",
                   buf, elem_offset, value_expr);
     } else if (vt == VarType::Float16) {
         // No native ``atomic_half`` in MSL — CAS on the containing 32-bit word.
         // Same construction as metal_scatter.cpp:129-171; see comments there.
-        fmt_metal("    {\n"
+        fmt("    {\n"
                   "        device ushort *_addr16 = "
                   "(device ushort*) $v + $u;\n"
                   "        bool _odd = ((ulong) _addr16 / 2u) & 1u;\n"
@@ -323,12 +320,12 @@ void jitc_metal_render_coop_vec_accum(const Variable *v,
     //
     // The output variable v is VarType::Void — Accum is a side-effect node,
     // so nothing materialises in the MSL kernel for v itself.
-    fmt_metal("    // coop_vec_accum (offset=$u, length=$u)\n",
+    fmt("    // coop_vec_accum (offset=$u, length=$u)\n",
               (uint32_t) v->literal, (uint32_t) value->array_length);
 
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
     if (!is_unmasked)
-        fmt_metal("    if ($v) {\n", mask);
+        fmt("    if ($v) {\n", mask);
 
     VarType vt = (VarType) value->type;
     uint32_t base = (uint32_t) v->literal;
@@ -361,12 +358,12 @@ void jitc_metal_render_coop_vec_outer_product_accum(const Variable *v,
     const MatrixDescr *d = (const MatrixDescr *) v->data;
     uint32_t m = a->array_length, n = b->array_length;
 
-    fmt_metal("    // coop_vec_outer_product_accum ($u x $u, "
+    fmt("    // coop_vec_outer_product_accum ($u x $u, "
               "offset=$u, stride=$u)\n", m, n, d->offset, d->stride);
 
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
     if (!is_unmasked)
-        fmt_metal("    if ($v) {\n", mask);
+        fmt("    if ($v) {\n", mask);
 
     VarType vt = (VarType) a->type;
 

@@ -17,22 +17,21 @@
 
 #if defined(DRJIT_ENABLE_METAL)
 
-#define fmt_metal(fmt, ...) buffer.fmt_metal(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
-#define put(...) buffer.put(__VA_ARGS__)
+#include "metal_eval.h" // provides the `fmt` / `put` macros
 
 void jitc_metal_render_array(Variable *v, Variable *pred) {
     if (pred && pred->array_state != (uint32_t) ArrayState::Conflicted) {
         v->reg_index = pred->reg_index;
         return;
     }
-    fmt_metal("    $t arr_$u[$u];\n",
+    fmt("    $t arr_$u[$u];\n",
               v, v->reg_index, (uint32_t) v->array_length);
 }
 
 void jitc_metal_render_array_init(Variable *v, Variable *pred, Variable *value) {
     v->reg_index = pred->reg_index;
 
-    fmt_metal("    for (uint _i = 0; _i < $uu; _i++)\n"
+    fmt("    for (uint _i = 0; _i < $uu; _i++)\n"
               "        arr_$u[_i] = $v;\n",
               (uint32_t) v->array_length,
               v->reg_index, value);
@@ -41,21 +40,21 @@ void jitc_metal_render_array_init(Variable *v, Variable *pred, Variable *value) 
 void jitc_metal_render_array_read(Variable *v, Variable *source, Variable *mask,
                                   Variable *offset) {
     if (!mask->is_literal())
-        fmt_metal("    $t $v = ($t) 0;\n", v, v, v);
+        fmt("    $t $v = ($t) 0;\n", v, v, v);
 
     if (offset) {
         if (!mask->is_literal())
-            fmt_metal("    if ($v) $v = arr_$u[$v];\n",
+            fmt("    if ($v) $v = arr_$u[$v];\n",
                       mask, v, source->reg_index, offset);
         else
-            fmt_metal("    $t $v = arr_$u[$v];\n",
+            fmt("    $t $v = arr_$u[$v];\n",
                       v, v, source->reg_index, offset);
     } else {
         if (!mask->is_literal())
-            fmt_metal("    if ($v) $v = arr_$u[$u];\n",
+            fmt("    if ($v) $v = arr_$u[$u];\n",
                       mask, v, source->reg_index, (uint32_t) v->literal);
         else
-            fmt_metal("    $t $v = arr_$u[$u];\n",
+            fmt("    $t $v = arr_$u[$u];\n",
                       v, v, source->reg_index, (uint32_t) v->literal);
     }
 }
@@ -72,7 +71,7 @@ void jitc_metal_render_array_write(Variable *v, Variable *target,
     if (copy) {
         target_buffer = jitc_array_buffer(v)->reg_index;
 
-        fmt_metal("    for (uint _i = 0; _i < $uu; _i++)\n"
+        fmt("    for (uint _i = 0; _i < $uu; _i++)\n"
                   "        arr_$u[_i] = arr_$u[_i];\n",
                   (uint32_t) v->array_length,
                   target_buffer, target->reg_index);
@@ -80,17 +79,17 @@ void jitc_metal_render_array_write(Variable *v, Variable *target,
 
     if (offset) {
         if (!mask->is_literal())
-            fmt_metal("    if ($v) arr_$u[$v] = $v;\n",
+            fmt("    if ($v) arr_$u[$v] = $v;\n",
                       mask, target_buffer, offset, value);
         else
-            fmt_metal("    arr_$u[$v] = $v;\n",
+            fmt("    arr_$u[$v] = $v;\n",
                       target_buffer, offset, value);
     } else {
         if (!mask->is_literal())
-            fmt_metal("    if ($v) arr_$u[$u] = $v;\n",
+            fmt("    if ($v) arr_$u[$u] = $v;\n",
                       mask, target_buffer, (uint32_t) v->literal, value);
         else
-            fmt_metal("    arr_$u[$u] = $v;\n",
+            fmt("    arr_$u[$u] = $v;\n",
                       target_buffer, (uint32_t) v->literal, value);
     }
 
@@ -99,9 +98,9 @@ void jitc_metal_render_array_write(Variable *v, Variable *target,
 
 void jitc_metal_render_array_memcpy_in(const Variable *v) {
     // Load array from global memory into thread-local storage
-    fmt_metal("    $t arr_$u[$u];\n",
+    fmt("    $t arr_$u[$u];\n",
               v, v->reg_index, (uint32_t) v->array_length);
-    fmt_metal("    for (uint _i = 0; _i < $uu; _i++)\n"
+    fmt("    for (uint _i = 0; _i < $uu; _i++)\n"
               "        arr_$u[_i] = ((device const $t*) p$v)[_i * params.size + r0];\n",
               (uint32_t) v->array_length,
               v->reg_index, v, v);
@@ -109,7 +108,7 @@ void jitc_metal_render_array_memcpy_in(const Variable *v) {
 
 void jitc_metal_render_array_memcpy_out(const Variable *v) {
     // Write thread-local array back to global memory
-    fmt_metal("    for (uint _i = 0; _i < $uu; _i++)\n"
+    fmt("    for (uint _i = 0; _i < $uu; _i++)\n"
               "        ((device $t*) p$v)[_i * params.size + r0] = arr_$u[_i];\n",
               (uint32_t) v->array_length,
               v, v, v->reg_index);
@@ -117,15 +116,12 @@ void jitc_metal_render_array_memcpy_out(const Variable *v) {
 
 void jitc_metal_render_array_select(Variable *v, Variable *mask, Variable *t, Variable *f) {
     uint32_t reg_index = jitc_array_buffer(v)->reg_index;
-    fmt_metal("    for (uint _i = 0; _i < $uu; _i++)\n"
+    fmt("    for (uint _i = 0; _i < $uu; _i++)\n"
               "        arr_$u[_i] = $v ? arr_$u[_i] : arr_$u[_i];\n",
               (uint32_t) f->array_length,
               reg_index, mask, t->reg_index, f->reg_index);
 
     v->reg_index = reg_index;
 }
-
-#undef fmt_metal
-#undef put
 
 #endif // defined(DRJIT_ENABLE_METAL)

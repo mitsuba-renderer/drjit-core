@@ -25,8 +25,7 @@
 #include "log.h"
 #include "strbuf.h"
 
-#define fmt_metal(fmt, ...) buffer.fmt_metal(count_args(__VA_ARGS__), fmt, ##__VA_ARGS__)
-#define put(...)            buffer.put(__VA_ARGS__)
+#include "metal_eval.h" // provides the `fmt` / `put` macros
 
 static const char *metal_reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
@@ -45,10 +44,10 @@ void jitc_metal_render_scatter(Variable *v) {
     if (op == ReduceOp::Identity) {
         // Plain scatter (no reduction)
         if (is_unmasked) {
-            fmt_metal("    ((device $t*) $v)[$v] = $v;\n",
+            fmt("    ((device $t*) $v)[$v] = $v;\n",
                       value, ptr, index, value);
         } else {
-            fmt_metal("    if ($v) ((device $t*) $v)[$v] = $v;\n",
+            fmt("    if ($v) ((device $t*) $v)[$v] = $v;\n",
                       mask, value, ptr, index, value);
         }
         return;
@@ -100,20 +99,20 @@ void jitc_metal_render_scatter(Variable *v) {
     }
 
     if (!is_unmasked)
-        fmt_metal("    if ($v) {\n    ", mask);
+        fmt("    if ($v) {\n    ", mask);
 
     if (atomic_fn && !use_cas) {
         // Direct atomic
         if (vt == VarType::Float32) {
-            fmt_metal("    $s((device atomic_float*)((device $t*) $v + $v), "
+            fmt("    $s((device atomic_float*)((device $t*) $v + $v), "
                       "$v, memory_order_relaxed);\n",
                       atomic_fn, value, ptr, index, value);
         } else if (vt == VarType::UInt32) {
-            fmt_metal("    $s((device atomic_uint*)((device $t*) $v + $v), "
+            fmt("    $s((device atomic_uint*)((device $t*) $v + $v), "
                       "$v, memory_order_relaxed);\n",
                       atomic_fn, value, ptr, index, value);
         } else if (vt == VarType::Int32) {
-            fmt_metal("    $s((device atomic_int*)((device $t*) $v + $v), "
+            fmt("    $s((device atomic_int*)((device $t*) $v + $v), "
                       "$v, memory_order_relaxed);\n",
                       atomic_fn, value, ptr, index, value);
         }
@@ -128,7 +127,7 @@ void jitc_metal_render_scatter(Variable *v) {
         // updates the expected value in-place on failure.
         if (vt == VarType::Float16) {
             // Half-precision: CAS via uint on the containing 32-bit word
-            fmt_metal("    {\n"
+            fmt("    {\n"
                       "        uint _idx = (uint)((ulong)((device ushort*) $v + $v) - "
                       "(ulong)((device ushort*) $v)) / 2u;\n"
                       "        bool _odd = _idx & 1u;\n"
@@ -145,13 +144,13 @@ void jitc_metal_render_scatter(Variable *v) {
 
             switch (op) {
                 case ReduceOp::Add:
-                    fmt_metal("            half _new_val = _val + $v;\n", value);
+                    fmt("            half _new_val = _val + $v;\n", value);
                     break;
                 case ReduceOp::Min:
-                    fmt_metal("            half _new_val = min(_val, $v);\n", value);
+                    fmt("            half _new_val = min(_val, $v);\n", value);
                     break;
                 case ReduceOp::Max:
-                    fmt_metal("            half _new_val = max(_val, $v);\n", value);
+                    fmt("            half _new_val = max(_val, $v);\n", value);
                     break;
                 default:
                     jitc_fail("jitc_metal_render_scatter(): unsupported ReduceOp "
@@ -171,7 +170,7 @@ void jitc_metal_render_scatter(Variable *v) {
                 "    }\n");
         } else {
             // 32-bit types (float32, int32, uint32): CAS via atomic_uint
-            fmt_metal("    {\n"
+            fmt("    {\n"
                       "        device atomic_uint *_addr = "
                       "(device atomic_uint*)((device $t*) $v + $v);\n"
                       "        uint _old = atomic_load_explicit(_addr, "
@@ -181,19 +180,19 @@ void jitc_metal_render_scatter(Variable *v) {
 
             switch (op) {
                 case ReduceOp::Add:
-                    fmt_metal("            $t _new = as_type<$t>(_old) + $v;\n",
+                    fmt("            $t _new = as_type<$t>(_old) + $v;\n",
                               value, value, value);
                     break;
                 case ReduceOp::Mul:
-                    fmt_metal("            $t _new = as_type<$t>(_old) * $v;\n",
+                    fmt("            $t _new = as_type<$t>(_old) * $v;\n",
                               value, value, value);
                     break;
                 case ReduceOp::Min:
-                    fmt_metal("            $t _new = min(as_type<$t>(_old), $v);\n",
+                    fmt("            $t _new = min(as_type<$t>(_old), $v);\n",
                               value, value, value);
                     break;
                 case ReduceOp::Max:
-                    fmt_metal("            $t _new = max(as_type<$t>(_old), $v);\n",
+                    fmt("            $t _new = max(as_type<$t>(_old), $v);\n",
                               value, value, value);
                     break;
                 default:
@@ -228,15 +227,15 @@ void jitc_metal_render_scatter_cas(Variable *v) {
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
     // Initialize outputs to zero
-    fmt_metal("    $t $v_out_0 = ($t) 0;\n"
+    fmt("    $t $v_out_0 = ($t) 0;\n"
               "    bool $v_out_1 = false;\n",
               value, v, value,
               v);
 
     if (!is_unmasked)
-        fmt_metal("    if ($v) {\n    ", mask);
+        fmt("    if ($v) {\n    ", mask);
 
-    fmt_metal("    {\n"
+    fmt("    {\n"
               "        device atomic_uint *_addr = (device atomic_uint*)"
               "((device $t*) $v + $v);\n"
               "        uint _expected = as_type<uint>($v);\n"
@@ -267,10 +266,10 @@ void jitc_metal_render_scatter_exch(Variable *v) {
     Variable *mask  = jitc_var(v->dep[3]);
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
-    fmt_metal("    $t $v = ($t) 0;\n", value, v, value);
+    fmt("    $t $v = ($t) 0;\n", value, v, value);
     if (!is_unmasked)
-        fmt_metal("    if ($v)\n    ", mask);
-    fmt_metal("    $v = as_type<$t>(atomic_exchange_explicit("
+        fmt("    if ($v)\n    ", mask);
+    fmt("    $v = as_type<$t>(atomic_exchange_explicit("
               "(device atomic_uint*)((device $t*) $v + $v), "
               "as_type<uint>($v), memory_order_relaxed));\n",
               v, value, value, ptr, index, value);
@@ -284,7 +283,7 @@ void jitc_metal_render_scatter_kahan(Variable *v) {
     Variable *index  = jitc_var(v->dep[2]);
     Variable *value  = jitc_var(v->dep[3]);
 
-    fmt_metal("    if ($v != 0.f) {\n"
+    fmt("    if ($v != 0.f) {\n"
               "        #pragma clang fp contract(off)\n"
               "        volatile float _kahan_before = atomic_fetch_add_explicit("
               "(device atomic_float*)((device float*) $v + $v), "
@@ -315,18 +314,15 @@ void jitc_metal_render_scatter_inc(Variable *v) {
 
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
-    fmt_metal("    uint $v = 0;\n", v);
+    fmt("    uint $v = 0;\n", v);
     if (!is_unmasked)
-        fmt_metal("    if ($v)\n    ", mask);
-    fmt_metal("    $v = atomic_fetch_add_explicit("
+        fmt("    if ($v)\n    ", mask);
+    fmt("    $v = atomic_fetch_add_explicit("
               "(device atomic_uint*)((device uint*) $v + $v), "
               "1u, memory_order_relaxed);\n",
               v, ptr, index);
 
     v->consumed = 1;
 }
-
-#undef fmt_metal
-#undef put
 
 #endif // defined(DRJIT_ENABLE_METAL)
