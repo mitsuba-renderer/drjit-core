@@ -17,6 +17,9 @@
 #import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
 
 MetalThreadState::~MetalThreadState() {
+    // Wait for any queued computation to finish
+    flush(/* wait = */ true);
+
     // Release the MPSGraph objects
     @autoreleasepool {
         for (const auto &kv : metal_graph_cache) {
@@ -26,8 +29,6 @@ MetalThreadState::~MetalThreadState() {
             for (void *p : g.out) if (p) (void) (__bridge_transfer id) p;
         }
     }
-
-    flush(/* wait = */ true);
 }
 
 // ============================================================================
@@ -201,10 +202,21 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
 
         [enc setComputePipelineState:pso];
 
-        // Upload kernel arguments within the command buffer
-        [enc setBytes:kernel_params.data()
-               length:kernel_params.size() * sizeof(void *)
-              atIndex:0];
+        // Prefer to include the parameters directly in the command buffer if
+        // <= 4KiB, otherwise stage them in a buffer.
+        size_t params_bytes = kernel_params.size() * sizeof(void *);
+        if (params_bytes <= 4096) {
+            [enc setBytes:kernel_params.data() length:params_bytes atIndex:0];
+        } else {
+            void *staging =
+                jitc_malloc(JitBackend::Metal, params_bytes, /*shared=*/true);
+            std::memcpy(staging, kernel_params.data(), params_bytes);
+            size_t staging_off = 0;
+            id<MTLBuffer> staging_buf = (__bridge id<MTLBuffer>)
+                jitc_metal_find_buffer(staging, &staging_off);
+            [enc setBuffer:staging_buf offset:staging_off atIndex:0];
+            jitc_free(staging);
+        }
 
         // Indicate Metal buffers used by this kernel
         for (size_t i = 1; i < kernel_params.size(); ++i) {
@@ -751,11 +763,12 @@ void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
                        "block_size=%u for size=%u.", block_size, size);
 
         if (block_size == 1) {
-            uint64_t z = 0;
-            if (exclusive)
-                memset_async(out, size, tsize, &z);
-            else if (in != out)
+            if (exclusive) {
+                uint64_t ident = jitc_reduce_identity(vt, op);
+                memset_async(out, size, tsize, &ident);
+            } else if (in != out) {
                 memcpy_async(out, in, (size_t) size * tsize);
+            }
             return;
         }
 
@@ -1101,7 +1114,8 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
         if (pre_buf) [enc useResource:pre_buf usage:MTLResourceUsageRead];
         if (out_buf) [enc useResource:out_buf usage:MTLResourceUsageWrite];
 
-        uint32_t tg = std::min(1024u, round_pow2(size));
+        uint32_t tg = std::min((uint32_t) pso.maxTotalThreadsPerThreadgroup,
+                               round_pow2(size));
         [enc dispatchThreads:MTLSizeMake(size, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
 
@@ -1187,7 +1201,9 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             if (bb) [enc useResource:bb usage:MTLResourceUsageRead |
                                               MTLResourceUsageWrite];
 
-            uint32_t tg = std::min(1024u, round_pow2(size));
+            uint32_t tg = std::min(
+                (uint32_t) phase1_pso.maxTotalThreadsPerThreadgroup,
+                round_pow2(size));
             [enc dispatchThreads:MTLSizeMake(size, 1, 1)
                 threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
         }
@@ -1256,7 +1272,9 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             [enc useResource:counter_buf usage:MTLResourceUsageRead |
                                                MTLResourceUsageWrite];
 
-            uint32_t tg = std::min(1024u, round_pow2(bucket_count));
+            uint32_t tg = std::min(
+                (uint32_t) detect_pso.maxTotalThreadsPerThreadgroup,
+                round_pow2(bucket_count));
             [enc dispatchThreads:MTLSizeMake(bucket_count, 1, 1)
                 threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
 
@@ -1314,7 +1332,9 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             if (perm_staging)
                 [enc useResource:perm_staging usage:MTLResourceUsageWrite];
 
-            uint32_t tg = std::min(1024u, round_pow2(size));
+            uint32_t tg = std::min(
+                (uint32_t) phase3_pso.maxTotalThreadsPerThreadgroup,
+                round_pow2(size));
             [enc dispatchThreads:MTLSizeMake(size, 1, 1)
                 threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
         }
@@ -1373,10 +1393,10 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
         [enc useResource:dst_buf usage:MTLResourceUsageWrite];
 
         // Mark each src buffer (negative-size entries: src is a device pointer)
-        // as resident so the GPU can dereference it.
-        auto *entries_ptr = (const AggregationEntry *) [entries_buf contents];
+        // as resident so the GPU can dereference it. Read from the host ``agg``
+        // array directly (``entries_buf`` is just a copy of it).
         for (uint32_t i = 0; i < size; ++i) {
-            const AggregationEntry &e = entries_ptr[i];
+            const AggregationEntry &e = agg[i];
             if (e.size < 0 && e.src) {
                 size_t off = 0;
                 id<MTLBuffer> src_buf = (__bridge id<MTLBuffer>)

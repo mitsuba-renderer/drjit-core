@@ -27,9 +27,6 @@ struct MetalGraph {
 };
 
 struct MetalThreadState : ThreadState {
-    /// Lazily initialized in jitc_init_thread_state(). The id<MTLCommandQueue>,
-    /// id<MTLDevice>, and id<MTLSharedEvent> are stored in the ThreadStateBase
-    /// fields ``metal_queue`` / ``metal_device`` / ``metal_event``.
     MetalThreadState() = default;
     ~MetalThreadState();
 
@@ -104,9 +101,7 @@ struct MetalThreadState : ThreadState {
     void reduce_dot(VarType type, const void *ptr_1, const void *ptr_2,
                     uint32_t size, void *out) override;
 
-    /// Row-major GEMM. Implemented via Metal Performance Shaders
-    /// (MPSMatrixMultiplication) on capable devices, with a fall-back
-    /// hand-written kernel for devices/types that MPS does not support.
+    /// Row-major GEMM
     void batched_gemm(VarType vt, bool At, bool Bt,
                       uint32_t M, uint32_t N, uint32_t K,
                       const GemmBatch *batch,
@@ -126,9 +121,7 @@ struct MetalThreadState : ThreadState {
     /// Asynchronous copy via the Metal command queue
     void memcpy_async(void *dst, const void *src, size_t size) override;
 
-    /// Asynchronously update a single element in memory. Metal's unified
-    /// memory model lets us do this directly via a CPU write when the buffer
-    /// is in shared mode, otherwise we route through a small staging copy.
+    /// Asynchronously update a single element in memory.
     void poke(void *dst, const void *src, uint32_t size) override;
 
     void aggregate(void *dst, AggregationEntry *agg, uint32_t size) override;

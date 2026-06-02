@@ -341,11 +341,12 @@ void LLVMThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
             "jit_block_prefix_reduce(): invalid block size (size=%u, block_size=%u)!",
             size, block_size);
     } else if (block_size == 1) {
-        uint64_t z = 0;
-        if (exclusive)
-            memset_async(out, size, tsize, &z);
-        else if (in != out)
+        if (exclusive) {
+            uint64_t ident = jitc_reduce_identity(vt, op);
+            memset_async(out, size, tsize, &ident);
+        } else if (in != out) {
             memcpy_async(out, in, size * tsize);
+        }
         return;
     }
 
