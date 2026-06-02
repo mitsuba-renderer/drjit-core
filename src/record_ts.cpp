@@ -2599,6 +2599,9 @@ struct DisabledThreadState : ThreadState {
         }
     }
 
+    /// Synchronization should target the real backend thread state we wrap.
+    ThreadState *actual_state() override { return m_internal->actual_state(); }
+
     void barrier() override { record_exception(); }
     Task *launch(Kernel /*kernel*/, KernelKey & /*key*/, XXH128_hash_t /*hash*/,
                  uint32_t /*size*/, std::vector<void *> & /*kernel_params*/,

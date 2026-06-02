@@ -407,7 +407,6 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->device = 0;
         ts->metal_device = dev.device;
         ts->metal_queue  = dev.queue;
-        ts->metal_event  = dev.event;
         ts->metal_simd_width  = dev.simd_width;
         ts->metal_max_threads = dev.max_threads_per_threadgroup;
         thread_state_metal = ts;
@@ -893,8 +892,8 @@ void KernelHistory::clear() {
 }
 
 /// Default implementations of ThreadState functions
-ThreadState::~ThreadState() {
-}
+ThreadState::~ThreadState() { }
+ThreadState *ThreadState::actual_state() { return this; }
 void ThreadState::barrier() { }
 void ThreadState::reset_state() {
     scheduled.clear();

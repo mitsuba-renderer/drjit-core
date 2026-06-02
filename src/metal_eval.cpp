@@ -33,8 +33,6 @@
  *  $o      Variable       2                   Index into ``params.args[]``
  */
 
-#if defined(DRJIT_ENABLE_METAL)
-
 #include "eval.h"
 #include "internal.h"
 #include "var.h"
@@ -222,7 +220,7 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         "#include <metal_atomic>\n");
 
     // Conditionally include the ray tracing header.
-    if (uses_metal_rt /* repurposed flag: TraceRay used */)
+    if (uses_metal_rt)
         put("#include <metal_raytracing>\n");
 
     put("using namespace metal;\n");
@@ -489,6 +487,10 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Nop:
             break;
 
+        case VarKind::Undefined:
+            fmt("    $t $v = ($t) 0;\n", v, v, v);
+            break;
+
         case VarKind::Literal: {
             VarType vt = (VarType) v->type;
             if (vt == VarType::Float32)
@@ -599,7 +601,7 @@ static void jitc_metal_render(Variable *v) {
             Variable *a0 = jitc_var(v->dep[0]),
                      *a1 = jitc_var(v->dep[1]);
             if (a0->type != a1->type)
-                fmt("    $t $v = as_type<$t>(($b)($v ? ($b) ~0u : as_type<$b>($v)));\n",
+                fmt("    $t $v = as_type<$t>(($b)($v ? ~($b) 0 : as_type<$b>($v)));\n",
                     v, v, v, v, a1, v, v, a0);
             else if (jitc_is_float(v))
                 fmt("    $t $v = as_type<$t>(($b)(as_type<$b>($v) | as_type<$b>($v)));\n",
@@ -1454,5 +1456,3 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
 
     put("\n");
 }
-
-#endif // defined(DRJIT_ENABLE_METAL)

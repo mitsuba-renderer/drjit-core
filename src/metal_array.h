@@ -2,8 +2,6 @@
 
 #include "common.h"
 
-#if defined(DRJIT_ENABLE_METAL)
-
 struct Variable;
 
 extern void jitc_metal_render_array(Variable *v, Variable *pred);
@@ -13,5 +11,3 @@ extern void jitc_metal_render_array_write(Variable *v, Variable *target, Variabl
 extern void jitc_metal_render_array_select(Variable *v, Variable *mask, Variable *t, Variable *f);
 extern void jitc_metal_render_array_memcpy_in(const Variable *v);
 extern void jitc_metal_render_array_memcpy_out(const Variable *v);
-
-#endif

@@ -409,7 +409,6 @@ void jit_metal_set_device(int device) {
     ts->device = device;
     ts->metal_device = md.device;
     ts->metal_queue  = md.queue;
-    ts->metal_event  = md.event;
     ts->metal_simd_width  = md.simd_width;
     ts->metal_max_threads = md.max_threads_per_threadgroup;
 #else

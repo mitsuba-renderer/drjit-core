@@ -1,4 +1,5 @@
 /.clangd
+/.claude
 /compile_commands.json
 *.cmake
 CMakeCache.txt
@@ -9,10 +10,6 @@ Makefile
 tests/**/*.out
 tests/**/*.raw
 Testing
-/kernels/kernels_*.ptx
-/kernels/generate
-/kernels/kernels.c
-/kernels/kernels.h
 build
 .vscode
 *.vcxproj
@@ -44,9 +41,4 @@ tests/microbenchmark
 /resources/pack
 /resources/kernels_75.ptx
 /resources/kernels.c
-metal_kernel
-metal_smoke
-.claude/
-ext/metal-cpp/Foundation/
-ext/metal-cpp/Metal/
-ext/metal-cpp/QuartzCore/
+/resources/metal_kernels.c

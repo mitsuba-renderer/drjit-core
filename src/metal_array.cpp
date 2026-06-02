@@ -10,14 +10,10 @@
 
 #include "eval.h"
 #include "metal_array.h"
-#include "var.h"
 #include "array.h"
 #include "log.h"
-#include "strbuf.h"
 
-#if defined(DRJIT_ENABLE_METAL)
-
-#include "metal_eval.h" // provides the `fmt` / `put` macros
+#include "metal_eval.h"
 
 void jitc_metal_render_array(Variable *v, Variable *pred) {
     if (pred && pred->array_state != (uint32_t) ArrayState::Conflicted) {
@@ -97,7 +93,6 @@ void jitc_metal_render_array_write(Variable *v, Variable *target,
 }
 
 void jitc_metal_render_array_memcpy_in(const Variable *v) {
-    // Load array from global memory into thread-local storage
     fmt("    $t arr_$u[$u];\n",
               v, v->reg_index, (uint32_t) v->array_length);
     fmt("    for (uint _i = 0; _i < $uu; _i++)\n"
@@ -107,7 +102,6 @@ void jitc_metal_render_array_memcpy_in(const Variable *v) {
 }
 
 void jitc_metal_render_array_memcpy_out(const Variable *v) {
-    // Write thread-local array back to global memory
     fmt("    for (uint _i = 0; _i < $uu; _i++)\n"
               "        ((device $t*) p$v)[_i * params.size + r0] = arr_$u[_i];\n",
               (uint32_t) v->array_length,
@@ -123,5 +117,3 @@ void jitc_metal_render_array_select(Variable *v, Variable *mask, Variable *t, Va
 
     v->reg_index = reg_index;
 }
-
-#endif // defined(DRJIT_ENABLE_METAL)
