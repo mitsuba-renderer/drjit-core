@@ -91,6 +91,10 @@ struct MetalThreadState : ThreadState {
     void block_reduce(VarType vt, ReduceOp op, uint32_t size,
                       uint32_t block_size, const void *in, void *out) override;
 
+    /// Reduce a boolean array to a single value (powers any()/all())
+    void block_reduce_bool(uint8_t *values, uint32_t size, uint8_t *out,
+                           ReduceOp op) override;
+
     /// Implements various kinds of prefix reductions
     void block_prefix_reduce(VarType vt, ReduceOp op, uint32_t size,
                              uint32_t block_size, bool exclusive, bool reverse,

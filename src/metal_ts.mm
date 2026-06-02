@@ -472,29 +472,6 @@ void MetalThreadState::poke(void *dst, const void *src, uint32_t size) {
 //  Reductions / scans / compaction
 // ============================================================================
 
-static VarType metal_make_unsigned(VarType vt) {
-    switch (vt) {
-        case VarType::Int8:  return VarType::UInt8;
-        case VarType::Int16: return VarType::UInt16;
-        case VarType::Int32: return VarType::UInt32;
-        case VarType::Int64: return VarType::UInt64;
-        default: return vt;
-    }
-}
-
-static const char *metal_type_suffix(VarType vt) {
-    switch (vt) {
-        case VarType::UInt8:   return "u8";
-        case VarType::Float16: return "f16";
-        case VarType::Float32: return "f32";
-        case VarType::UInt32:  return "u32";
-        case VarType::Int32:   return "i32";
-        case VarType::UInt64:  return "u64";
-        case VarType::Int64:   return "i64";
-        default: return nullptr;
-    }
-}
-
 static const char *metal_op_name(ReduceOp op) {
     switch (op) {
         case ReduceOp::Add: return "add";
@@ -645,12 +622,15 @@ void MetalThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
 
         uint32_t block_count = (size + block_size - 1) / block_size;
 
-        // Sum/product/minimum/maximum go through MPSGraph. Bitwise Or/And have
-        // no MPSGraph equivalent (reductionAnd/Or accept only boolean tensors),
-        // so they stay on the custom kernel path below.
+        // Bitwise Or/And block reductions are unsupported on Metal. (Boolean
+        // any()/all() is handled separately by block_reduce_bool().)
+        if (op == ReduceOp::Or || op == ReduceOp::And)
+            jitc_raise("jit_block_reduce(): 'Or'/'And' reductions are not "
+                       "supported on the Metal backend.");
+
+        // Sum/product/minimum/maximum go through MPSGraph.
         MPSDataType dt;
-        if (op != ReduceOp::Or && op != ReduceOp::And &&
-            metal_mps_dtype(vt, dt)) {
+        if (metal_mps_dtype(vt, dt)) {
             uint32_t padded = block_count * block_size;
             void *scratch = nullptr;
             const void *in_use =
@@ -693,100 +673,68 @@ void MetalThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
             return;
         }
 
-        // Custom-kernel path: bitwise Or/And. Signed variants reuse the unsigned
-        // kernel (identical bit pattern).
-        vt = metal_make_unsigned(vt);
-        const char *type_suffix = metal_type_suffix(vt);
-        const char *op_name = metal_op_name(op);
-        if (!type_suffix || !op_name)
-            jitc_raise("jit_block_reduce(): unsupported type=%s "
-                       "or op=%s.", type_name[(int) vt], op_name ? op_name : "?");
+        // The MPSGraph path handles every supported (type, op) combination and
+        // returns above; reaching here means the element type is not reducible
+        // on Metal (e.g. a 64-bit integer sum, which MPSGraph does not provide).
+        jitc_raise("jit_block_reduce(): unsupported type '%s' for op '%s' on "
+                   "the Metal backend.", type_name[(int) vt], metal_op_name(op));
+    }
+}
 
-        uint32_t chunk_size = round_pow2(std::min(block_size, 1024u));
+void MetalThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
+                                         uint8_t *out, ReduceOp op) {
+    @autoreleasepool {
+        bool is_all = (op == ReduceOp::And);
+        if (!is_all && op != ReduceOp::Or)
+            jitc_raise("jit_block_reduce_bool(): expected 'Or' or 'And'.");
 
-        // Build kernel name: e.g. "block_reduce_or_u32_1024"
-        char kernel_name[64];
-        snprintf(kernel_name, sizeof(kernel_name),
-                 "block_reduce_%s_%s_%u", op_name, type_suffix, chunk_size);
+        jitc_log(Debug, "jit_%s(" DRJIT_PTR ", size=%u)",
+                 is_all ? "all" : "any", (uintptr_t) values, size);
 
+        MetalHistoryScope hist(this, KernelType::BlockReduce, size);
+
+        const char *init_name = is_all ? "reduce_all_init" : "reduce_any_init";
+        const char *name      = is_all ? "reduce_all"      : "reduce_any";
+        id<MTLComputePipelineState> init_pso =
+            (__bridge id<MTLComputePipelineState>)
+                jitc_metal_get_pipeline(this->device, init_name);
         id<MTLComputePipelineState> pso =
             (__bridge id<MTLComputePipelineState>)
-                jitc_metal_get_pipeline(this->device, kernel_name);
-        if (!pso)
-            jitc_raise("jit_block_reduce(): kernel \"%s\" not "
-                       "found in the utility library.", kernel_name);
+                jitc_metal_get_pipeline(this->device, name);
+        if (!init_pso || !pso)
+            jitc_raise("jit_block_reduce_bool(): kernel \"%s\" not found.",
+                       init_pso ? name : init_name);
 
-        // Prepare parameter struct — matches block_reduce_params in the MSL kernel
-        struct {
-            uint64_t in;
-            uint64_t out;
-            uint32_t size;
-            uint32_t block_size;
-            uint32_t chunk_count;
-        } params;
-
-        uint32_t chunks_per_block = (block_size + chunk_size - 1) / chunk_size;
-
-        id<MTLBuffer> in_buf = metal_resolve(in, &params.in);
-        params.size = size;
-        params.block_size = block_size;
-        params.chunk_count = block_count * chunks_per_block;
-
-        bool need_recursive = (chunks_per_block > 1);
-        void *temp_out = nullptr;
-
-        if (need_recursive) {
-            // Allocate a temporary buffer for the per-chunk outputs
-            temp_out =
-                jitc_malloc(JitBackend::Metal, (size_t) params.chunk_count * tsize);
-        }
+        size_t out_off = 0;
         id<MTLBuffer> out_buf =
-            metal_resolve(need_recursive ? temp_out : out, &params.out);
+            (__bridge id<MTLBuffer>) jitc_metal_find_buffer(out, &out_off);
 
-        // Compute threadgroup configuration
-        uint32_t threads_per_group =
-            (chunk_size < 128) ? 128u : chunk_size;
-        uint32_t chunks_per_tg =
-            (chunk_size < 128) ? (threads_per_group / chunk_size) : 1u;
-        uint32_t grid_size =
-            ((params.chunk_count + chunks_per_tg - 1) / chunks_per_tg) *
-            threads_per_group;
-
-        // Shared memory: one value per SIMD group
-        uint32_t simd_groups_per_tg = threads_per_group / 32;
-        uint32_t smem_bytes = simd_groups_per_tg * tsize * chunks_per_tg;
+        struct { uint64_t in, out; uint32_t size; } params;
+        id<MTLBuffer> in_buf = metal_resolve(values, &params.in);
+        metal_resolve(out, &params.out);
+        params.size = size;
 
         id<MTLComputeCommandEncoder> enc =
-            (__bridge id<MTLComputeCommandEncoder>)
-                ensure_compute_encoder();
-        [enc setComputePipelineState:pso];
+            (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
         [enc setBytes:&params length:sizeof(params) atIndex:0];
-        [enc setThreadgroupMemoryLength:smem_bytes atIndex:0];
+        if (in_buf)  [enc useResource:in_buf  usage:MTLResourceUsageRead];
+        if (out_buf) [enc useResource:out_buf usage:MTLResourceUsageRead |
+                                                    MTLResourceUsageWrite];
 
-        // Mark input/output buffers as resident (resolved above)
-        if (in_buf)
-            [enc useResource:in_buf usage:MTLResourceUsageRead];
-        if (out_buf)
-            [enc useResource:out_buf usage:MTLResourceUsageWrite];
+        // 1. Seed the result with the reduction identity (one thread).
+        [enc setComputePipelineState:init_pso];
+        [enc dispatchThreads:MTLSizeMake(1, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
 
-        [enc dispatchThreads:MTLSizeMake(grid_size, 1, 1)
-            threadsPerThreadgroup:MTLSizeMake(threads_per_group, 1, 1)];
+        // 2. Reduce: one thread per coalesced 16-byte packet (thread 0 also
+        // handles the < 16 tail bytes). The grid is sized to the data and the
+        // hardware schedules occupancy; no grid-size heuristic is needed.
+        uint32_t tg = (uint32_t) pso.maxTotalThreadsPerThreadgroup;
+        uint32_t grid = std::max(size >> 4, 1u);
 
-        jitc_log(Debug,
-                 "jit_block_reduce(type=%s, op=%s, size=%u, block_size=%u) "
-                 "-> kernel \"%s\", grid=%u, tg=%u, smem=%u",
-                 type_name[(int) vt], op_name, size, block_size,
-                 kernel_name, grid_size, threads_per_group, smem_bytes);
-
-        if (need_recursive) {
-            // Close encoder and use a new one for the recursive call, avoiding a
-            // full commit+wait round-trip
-            close_encoder();
-
-            block_reduce(vt, op, params.chunk_count, chunks_per_block,
-                         temp_out, out);
-            jitc_free(temp_out);
-        }
+        [enc setComputePipelineState:pso];
+        [enc dispatchThreads:MTLSizeMake(grid, 1, 1)
+            threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
     }
 }
 

@@ -150,19 +150,21 @@ void jitc_all_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_
     thread_state(backend)->block_reduce_bool(values, size, out, ReduceOp::And);
 }
 
-/// 'Any' reduction for boolean arrays (asynchronous)
+/// 'Any' reduction for boolean arrays (internal)
 void jitc_any_async_4(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
     thread_state(backend)->block_reduce_bool(values, size, out, ReduceOp::Or);
 }
 
 void jitc_any_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
     jitc_any_async_4(backend, values, size, out);
-    jitc_block_reduce(backend, VarType::UInt8, ReduceOp::Or, 4, 4, out, out);
+    if (backend != JitBackend::Metal)
+        jitc_block_reduce(backend, VarType::UInt8, ReduceOp::Or, 4, 4, out, out);
 }
 
 void jitc_all_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t *out) {
     jitc_all_async_4(backend, values, size, out);
-    jitc_block_reduce(backend, VarType::UInt8, ReduceOp::And, 4, 4, out, out);
+    if (backend != JitBackend::Metal)
+        jitc_block_reduce(backend, VarType::UInt8, ReduceOp::And, 4, 4, out, out);
 }
 
 /// 'All' reduction for boolean arrays
@@ -176,7 +178,11 @@ bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
     jitc_all_async_4(backend, values, size, tmp);
     jitc_sync_thread();
 
-    bool result = (tmp[0] & tmp[1] & tmp[2] & tmp[3]) != 0;
+    // Metal writes a single fully-reduced byte; the other backends leave four
+    // partials in 'tmp' (4 bools packed per u32) that combine with a final AND.
+    bool result = (backend == JitBackend::Metal)
+                      ? (tmp[0] != 0)
+                      : ((tmp[0] & tmp[1] & tmp[2] & tmp[3]) != 0);
 
     if (jitc_is_device_backend(backend))
         jitc_free(tmp);
