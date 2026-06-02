@@ -30,9 +30,9 @@ struct MetalThreadState : ThreadState {
     MetalThreadState() = default;
     ~MetalThreadState();
 
-    /// GPU addresses of buffers referenced by vcall data sections that need
-    /// useResource() calls at kernel launch time.
-    std::vector<void *> metal_call_resources;
+    /// Additional used resources discovered while generating the kernel code.
+    struct CallResource { void *ptr; bool write; };
+    std::vector<CallResource> metal_extra_resources;
 
     /// Cache of compiled MPSGraphs (block reduce/prefix-reduce, dot product,
     /// compress), keyed by a packed (kind, device, op, type, flags) integer.

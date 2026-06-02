@@ -1244,9 +1244,10 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
                 ts_curr = rts->m_internal;
             auto *mts = static_cast<MetalThreadState *>(ts_curr);
             if (vt == VarType::Pointer) {
-                mts->metal_call_resources.push_back((void *) v->literal);
+                mts->metal_extra_resources.push_back(
+                    { (void *) v->literal, (bool) v->write_ptr });
             } else if (v->is_evaluated() && v->data) {
-                mts->metal_call_resources.push_back(v->data);
+                mts->metal_extra_resources.push_back({ v->data, false });
             }
 
             uint32_t offset = it->second - call->data_offset[inst];

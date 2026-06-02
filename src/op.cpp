@@ -2974,27 +2974,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     bool needs_narrow = false;
     if (var_info.backend == JitBackend::Metal &&
         vt == VarType::Float16 && op != ReduceOp::Identity) {
-        uint32_t shadow = jitc_var(target)->dep[3];
-        void *shadow_addr = nullptr;
-
-        if (shadow) {
-            // Variable already has a shadow buffer
-            shadow_addr = jitc_var(shadow)->data;
-        } else {
-            // First scatter to this target: allocate + widen the shadow.
-            Ref s = steal(jitc_var_cast(target, VarType::Float32, 0));
-            s = steal(jitc_var_data(s, false, &shadow_addr));
-            shadow = s.release();
-            jitc_var(target)->dep[3] = shadow;
-
-            // Keep the narrow target dirty until the shadow buffer is narrowed.
-            // jitc_var_narrow_f32_to_f16() reverts this.
-            jitc_var_inc_ref_se((uint32_t) target);
-            needs_narrow = true;
-        }
-
-        // Perform a FP32 scatter-reduction on the widened array
-        ptr = steal(jitc_var_pointer(var_info.backend, shadow_addr, shadow, 1));
+        // Perform a FP32 scatter-reduction on a widened shadow of the target
+        ptr = steal(jitc_var_shadow_make(target, needs_narrow));
         value_promoted = steal(jitc_var_cast(value, VarType::Float32, 0));
         value = value_promoted;
     } else
@@ -3027,9 +3008,10 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     print_log(((uint32_t) target == target_) ? "direct" : "copied target",
               scatter_op);
 
-#if defined(DRJIT_ENABLE_LLVM)
     if (needs_reduce) {
-        // Counterpart to the expansion: narrow back to a regular array
+        // Counterpart to the expansion: narrow back to a regular array. Fires
+        // for the LLVM 'Expand' reduce mode (the only backend setting
+        // 'needs_reduce').
         WeakRef wr(target, jitc_var(target)->counter);
         uintptr_t wr_i = memcpy_cast<uintptr_t>(wr);
 
@@ -3047,28 +3029,11 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
             (void*) wr_i, true
         );
     }
-#endif
 
 #if defined(DRJIT_ENABLE_METAL)
-    if (needs_narrow) {
+    if (needs_narrow)
         // Counterpart to the F16->F32 widening: narrow back to FP16
-        WeakRef wr(target, jitc_var(target)->counter);
-        uintptr_t wr_i = memcpy_cast<uintptr_t>(wr);
-
-        jitc_var_set_callback(
-            scatter_op,
-            [](uint32_t, int free, void *p) {
-                if (free)
-                    return;
-                // Weak ref. to guard against the target having been recycled
-                WeakRef wr = memcpy_cast<WeakRef>((uintptr_t) p);
-                if (!jitc_var(wr))
-                    return;
-                jitc_var_narrow_f32_to_f16(wr.index);
-            },
-            (void*) wr_i, true
-        );
-    }
+        jitc_var_shadow_setup_narrow(scatter_op, target);
 #endif
 
     jitc_var_mark_side_effect(scatter_op);

@@ -104,6 +104,7 @@ bool uses_optix = false;
 
 /// Does this Metal kernel use ray tracing?
 bool uses_metal_rt = false;
+bool uses_metal4 = false;
 
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 int32_t alloca_size = -1;
@@ -302,6 +303,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     indirect_callable_count = 0;
     indirect_callable_count_unique = 0;
     uses_metal_rt = false;
+    uses_metal4 = false;
 #if defined(DRJIT_ENABLE_METAL)
     jitc_metal_assemble_reset();
 #endif

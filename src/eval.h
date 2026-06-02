@@ -86,6 +86,9 @@ extern bool uses_optix;
 /// Does this Metal kernel use ray tracing?
 extern bool uses_metal_rt;
 
+/// Does this kernel use Metal 4 language features (e.g., matmul2d)?
+extern bool uses_metal4;
+
 /// Size and alignment of auxiliary buffer needed by virtual function calls
 extern int32_t alloca_size;
 extern int32_t alloca_align;

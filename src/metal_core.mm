@@ -13,6 +13,7 @@
 #include "metal.h"
 #include "metal_ts.h"
 #include "internal.h"
+#include "eval.h"
 #include "malloc.h"
 #include "log.h"
 #include "io.h"
@@ -209,6 +210,7 @@ bool jitc_metal_init() {
             md.max_threads_per_threadgroup =
                 (uint32_t) [dev maxThreadsPerThreadgroup].width;
             md.supports_ray_tracing = [dev supportsRaytracing];
+            md.supports_metal4 = [dev supportsFamily:MTLGPUFamilyMetal4];
             const char *name = dev.name.UTF8String;
             size_t len = std::strlen(name);
             md.name = (char *) std::malloc(len + 1);
@@ -245,9 +247,10 @@ bool jitc_metal_init() {
 
             jitc_log(Info,
                      "jit_metal_init(): registered device \"%s\" "
-                     "(simd=%u, max_threads=%u, rt=%s)",
+                     "(simd=%u, max_threads=%u, rt=%s, metal4=%s)",
                      md.name, md.simd_width, md.max_threads_per_threadgroup,
-                     md.supports_ray_tracing ? "yes" : "no");
+                     md.supports_ray_tracing ? "yes" : "no",
+                     md.supports_metal4 ? "yes" : "no");
 
             state.metal_devices.push_back(md);
         }
@@ -295,7 +298,9 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
         NSString *src = @(source);
 
         MTLCompileOptions *opts = [MTLCompileOptions new];
-        opts.languageVersion = MTLLanguageVersion3_2;
+
+        opts.languageVersion = uses_metal4 ? MTLLanguageVersion4_0
+                                           : MTLLanguageVersion3_2;
 
         // The relaxed/fast math modes are a little aggressive and break the Dr.Jit
         // test suite. We opt in on a per instruction basis by calling math functions

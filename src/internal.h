@@ -625,6 +625,9 @@ struct MetalDevice {
     /// True if the device supports hardware ray tracing acceleration
     bool supports_ray_tracing;
 
+    /// True if the device supports Metal 4 (tensor ops / cooperative vectors)
+    bool supports_metal4;
+
     /// Cached human-readable device name (owned, freed at shutdown)
     char *name;
 };
