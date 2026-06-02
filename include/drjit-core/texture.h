@@ -1,5 +1,5 @@
 /*
-    drjit-core/texture.h -- creating and querying of 1D/2D/3D textures on CUDA
+    drjit-core/texture.h -- creating and querying of 1D/2D/3D hardware textures
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -15,8 +15,14 @@
 extern "C" {
 #endif
 
+// ---------------------------------------------------------------------------
+//  Hardware textures. CUDA and Metal both expose hardware-filtered textures
+//  through this single set of entry points; the ``backend`` argument selects
+//  the implementation. Other backends raise an error.
+// ---------------------------------------------------------------------------
+
 /**
- * \brief Allocate CUDA texture memory
+ * \brief Allocate hardware texture memory
  *
  * Allocates memory for a texture of size \c ndim with a total of
  * <tt>shape[0] x ... x shape[ndim - 1]</tt> texels/voxels, where each
@@ -24,11 +30,9 @@ extern "C" {
  * The value of the \c n_channels argument must be greater or equal than 1.
  * The function returns an opaque texture handle.
  *
- * The \c format parameter supports the following options:
- * <ul>
- * <li><tt>format == 0</tt>: Single precision storage format </li>
- * <li><tt>format == 1</tt>: Half precision storage format </li>
- * <ul>
+ * The \c format parameter is a \ref VarType code and must be either
+ * <tt>VarType::Float32</tt> (single precision) or <tt>VarType::Float16</tt>
+ * (half precision).
  *
  * The \c filter_mode parameter supports the following options:
  *
@@ -47,78 +51,65 @@ extern "C" {
  *
  * Further modes (e.g. MIP-mapping) may be added in the future.
  */
-extern JIT_EXPORT void *jit_cuda_tex_create(size_t ndim, const size_t *shape,
-                                            size_t n_channels,
-                                            int format,
-                                            int filter_mode JIT_DEF(1),
-                                            int wrap_mode JIT_DEF(0));
-
+extern JIT_EXPORT void *jit_tex_create(JitBackend backend, size_t ndim,
+                                       const size_t *shape, size_t n_channels,
+                                       int format, int filter_mode JIT_DEF(1),
+                                       int wrap_mode JIT_DEF(0));
 
 /**
- * \brief Retrieves the shape (including channels) of an existing CUDA texture
- *
- * \param ndim
- *     Dimensionality of the texture
- *
- * \param texture_handle
- *     Texture handle (returned value of \ref jit_cuda_tex_create())
+ * \brief Retrieves the shape (including channels) of an existing texture
  *
  * \param shape
  *     Pointer to an array of size <tt>ndim + 1<\tt>, to which will be written
  *     the texture shape. The number of channels of the texture will be written
  *     at index \c ndim.
  */
-extern JIT_EXPORT void jit_cuda_tex_get_shape(size_t ndim,
-                                              const void *texture_handle,
-                                              size_t *shape);
+extern JIT_EXPORT void jit_tex_get_shape(JitBackend backend, size_t ndim,
+                                         const void *texture_handle,
+                                         size_t *shape);
 
 /**
  * \brief Retrieves the JIT indices of the underlying texture objects. This can
  * be used to traverse a texture for frozen function recording.
  *
- * \param texture_handle
- *     Texture handle (returned value of \ref jit_cuda_tex_create())
- *
  * \param indices
- *     Pointer to an array of size
- *     <tt>n_textures = 1 + ((m_channels - 1) / 4)</tt>, to which
- *     the JIT variable indices of the underlying textures will be written.
+ *     Pointer to an array to which the JIT variable indices of the underlying
+ *     texture objects are written. The required size is
+ *     <tt>n_textures = 1 + ((n_channels - 1) / 4)</tt> on CUDA; on Metal it is
+ *     one larger (a separate sampler handle is appended).
  */
-extern JIT_EXPORT void
-jit_cuda_tex_get_indices(const void *texture_handle, uint32_t *indices);
+extern JIT_EXPORT void jit_tex_get_indices(JitBackend backend,
+                                           const void *texture_handle,
+                                           uint32_t *indices);
 
 /**
  * \brief Copy from device to texture memory
  *
  * Fills the texture with data from device memory at \c src_ptr. The other
- * arguments are analogous to \ref jit_cuda_tex_create(). The operation runs
+ * arguments are analogous to \ref jit_tex_create(). The operation runs
  * asynchronously.
  */
-extern JIT_EXPORT void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
-                                               const void *src_ptr,
-                                               void *dst_texture_handle);
+extern JIT_EXPORT void jit_tex_memcpy_d2t(JitBackend backend, size_t ndim,
+                                          const size_t *shape,
+                                          const void *src_ptr,
+                                          void *dst_texture_handle);
 
 /**
  * \brief Copy from texture to device memory
  *
- * Implements the reverse of \ref jit_cuda_tex_memcpy_d2t
+ * Implements the reverse of \ref jit_tex_memcpy_d2t
  */
-extern JIT_EXPORT void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
-                                               const void *src_texture_handle,
-                                               void *dst_ptr);
+extern JIT_EXPORT void jit_tex_memcpy_t2d(JitBackend backend, size_t ndim,
+                                          const size_t *shape,
+                                          const void *src_texture_handle,
+                                          void *dst_ptr);
 
 /**
- * \brief Performs a CUDA texture lookup
- *
- * \param ndim
- *     Dimensionality of the texture
- *
- * \param texture_handle
- *     Texture handle (returned value of \ref jit_cuda_tex_create())
+ * \brief Performs a hardware texture lookup
  *
  * \param pos
- *     Pointer to a list of <tt>ndim - 1 </tt> float32 variable indices
- *     encoding the position of the texture lookup
+ *     Pointer to a list of \c ndim float32 variable indices encoding the
+ *     position of the texture lookup
  *
  * \param active
  *     A mask value that specified whether the texture fetch should be
@@ -129,11 +120,10 @@ extern JIT_EXPORT void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
  *     Pointer to an array of size equal to the number of channels in the
  *     texture, which will receive the lookup result.
  */
-extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
-                                           const void *texture_handle,
-                                           const uint32_t *pos,
-                                           uint32_t active,
-                                           uint32_t *out);
+extern JIT_EXPORT void jit_tex_lookup(JitBackend backend, size_t ndim,
+                                      const void *texture_handle,
+                                      const uint32_t *pos, uint32_t active,
+                                      uint32_t *out);
 
 /**
  * \brief Fetches the four texels that would be referenced in a texture lookup
@@ -141,12 +131,6 @@ extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
  *
  * This function exclusively operates on two-dimensional textures. A lower or
  * higher number of dimensions will raise an error.
- *
- * \param ndim
- *     Dimensionality of the texture
- *
- * \param texture_handle
- *     Texture handle (returned value of \ref jit_cuda_tex_create())
  *
  * \param pos
  *     Pointer to an array of two float32 variable indices encoding the position
@@ -162,14 +146,14 @@ extern JIT_EXPORT void jit_cuda_tex_lookup(size_t ndim,
  *     the texel indices. Starting at the lower left corner, the texels are
  *     written to the array in counter-clockwise order.
  */
-extern JIT_EXPORT void jit_cuda_tex_bilerp_fetch(size_t ndim,
-                                                 const void *texture_handle,
-                                                 const uint32_t *pos,
-                                                 uint32_t active,
-                                                 uint32_t *out);
+extern JIT_EXPORT void jit_tex_bilerp_fetch(JitBackend backend, size_t ndim,
+                                            const void *texture_handle,
+                                            const uint32_t *pos, uint32_t active,
+                                            uint32_t *out);
 
 /// Destroys the provided texture handle
-extern JIT_EXPORT void jit_cuda_tex_destroy(void *texture_handle);
+extern JIT_EXPORT void jit_tex_destroy(JitBackend backend,
+                                       void *texture_handle);
 
 #if defined(__cplusplus)
 }

@@ -1,5 +1,6 @@
 #include "metal_ts.h"
 #include "metal.h"
+#include "metal_tex.h"
 #include "log.h"
 #include "var.h"
 #include "malloc.h"
@@ -118,17 +119,9 @@ void MetalThreadState::barrier() {
 // ============================================================================
 //  Kernel-history timing
 //
-//  Metal exposes GPU timing per command buffer (GPUEndTime - GPUStartTime), not
-//  per kernel. To attribute a runtime to a single operation we therefore give it
-//  its own command buffer: commit any prior pending work before the operation
-//  (so it starts in a fresh buffer), and commit the operation's own work after.
-//  This is done for both the built-in operations (RAII wrapper below) and for
-//  individual kernel launches (see launch()), so that several kernels emitted by
-//  one jitc_eval() are timed separately rather than reporting the combined
-//  command-buffer time. The committing ``flush(false)`` is only issued while
-//  kernel history is enabled; each call site already knows that state (the scope
-//  caches it in ``enabled``; launch() has a non-null ``kernel_history_entry``),
-//  so we avoid re-reading the thread-local jit flags here.
+//  Metal exposes GPU timing per command buffer. To correctly track individual
+//  backend operations, we therefore package each in its own command buffer.
+//  The RAII guard ``MetalHistoryScope`` below automates this process.
 // ============================================================================
 
 struct MetalHistoryScope {
@@ -145,7 +138,7 @@ struct MetalHistoryScope {
             return;
         outermost = (ts->metal_history_depth++ == 0);
         if (outermost)
-            ts->flush(/* wait = */ false); // commit prior work -> fresh buffer
+            ts->flush(/* wait = */ false);
     }
 
     /// Append the history entry for this operation's command buffer. Must
@@ -174,7 +167,7 @@ struct MetalHistoryScope {
         ts->metal_history_depth--;
         if (outermost) {
             record();
-            ts->flush(/* wait = */ false); // commit this operation's buffer
+            ts->flush(/* wait = */ false);
         }
     }
 };
@@ -201,6 +194,47 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
 
         [enc setComputePipelineState:pso];
 
+        // Resolve and collect kernel-parameter resources. A buffer slot stays
+        // a plain pointer; every other kind is replaced by the owner's live
+        // gpuResourceID.
+        const KernelParamInfo *info = kernel.param_info;
+        for (uint32_t i = 1; i < kernel_params.size(); ++i) {
+            ResourceKind pk = (ResourceKind) info[i].kind;
+            void *owner = kernel_params[i];
+
+            switch (pk) {
+                case ResourceKind::Buffer: {
+                    // Preserve read/write information for Metal's hazard tracker
+                    metal_call_resources.push_back(
+                        { owner, ResourceKind::Buffer, info[i].write != 0 });
+                    break;
+                }
+
+                case ResourceKind::IFT: {
+                    id<MTLIntersectionFunctionTable> ift =
+                        (__bridge id<MTLIntersectionFunctionTable>)
+                            jitc_metal_get_or_create_ift_for_scene(
+                                (MetalScene *) owner, (__bridge void *) pso);
+                    kernel_params[i] = ift ? (void *) (uintptr_t)
+                        memcpy_cast<uint64_t>(ift.gpuResourceID) : nullptr;
+                    break;
+                }
+
+                // Accel and Texture are memory resources and must be made
+                // resident; a sampler is not.
+                case ResourceKind::Accel:
+                case ResourceKind::Texture:
+                    metal_call_resources.push_back({ owner, pk, /*write=*/false });
+                    [[fallthrough]];
+                case ResourceKind::Sampler: {
+                    void *rid = nullptr;
+                    jitc_metal_resource_id(owner, pk, &rid);
+                    kernel_params[i] = rid;
+                    break;
+                }
+            }
+        }
+
         // Prefer to include the parameters directly in the command buffer if
         // <= 4KiB, otherwise stage them in a buffer.
         size_t params_bytes = kernel_params.size() * sizeof(void *);
@@ -217,107 +251,59 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
             jitc_free(staging);
         }
 
-        // Indicate Metal buffers used by this kernel
-        for (size_t i = 1; i < kernel_params.size(); ++i) {
-            size_t offset = 0;
-            id<MTLBuffer> buf = (__bridge id<MTLBuffer>) jitc_metal_find_buffer(
-                kernel_params[i], &offset);
-            [enc useResource:buf
-                       usage:MTLResourceUsageRead | MTLResourceUsageWrite];
-        }
-
-        // Indicate additional resources detected during code generation
-        for (const CallResource &res : metal_extra_resources) {
-            size_t off = 0;
-            id<MTLBuffer> buf =
-                (__bridge id<MTLBuffer>) jitc_metal_find_buffer(res.ptr, &off);
-            [enc useResource:buf
-                       usage:res.write ? (MTLResourceUsageRead |
-                                          MTLResourceUsageWrite)
-                                       : MTLResourceUsageRead];
-        }
-        metal_extra_resources.clear();
-
-        // Bind per-scene TLAS + IFT for every scene referenced by this kernel.
-        // The kernel was generated with ``accel_<i> [[buffer(1+i)]]`` for each
-        // scene at slot ``i`` in ``kernel.metal.scenes``, plus (optionally)
-        // ``ift_<i>`` at packed slots in ``[1+N, 1+N+M)`` for scenes that have an
-        // intersection function library.
-        auto pick_scene = [](void *cand) -> MetalScene * {
-            if (!jitc_metal_is_live_scene(cand))
-                return nullptr;
-            auto *s = (MetalScene *) cand;
-            return s->tlas ? s : nullptr;
-        };
-
-        uint32_t n_scenes = kernel.metal.scene_count;
-        // Pass 1: bind accels at slots [1, 1+N).
-        std::vector<MetalScene *> resolved(n_scenes, nullptr);
-        for (uint32_t i = 0; i < n_scenes; ++i) {
-            auto *captured = (MetalScene *) kernel.metal.scenes[i];
-            MetalScene *scene = pick_scene(captured);
-
-            if (!scene) {
-                // Captured scene has gone stale. Slot 0 has a fallback to the
-                // ThreadState's active scene; slots >= 1 have no meaningful
-                // fallback — surface a Warn and leave the slot unbound.
-                if (i == 0) {
-                    scene = pick_scene(metal_active_scene);
-                    if (!scene)
-                        scene = (MetalScene *) jitc_metal_last_live_scene();
+        // Make every resource this kernel touches resident on the encoder
+        for (const CallResource &res : metal_call_resources) {
+            switch (res.kind) {
+                case ResourceKind::Buffer: {
+                    size_t off = 0;
+                    id<MTLBuffer> buf = (__bridge id<MTLBuffer>)
+                        jitc_metal_find_buffer(res.ptr, &off);
+                    [enc useResource:buf
+                               usage:MTLResourceUsageRead |
+                                     (res.write ? MTLResourceUsageWrite : 0)];
+                    break;
                 }
-                if (!scene) {
-                    jitc_log(LogLevel::Warn,
-                             "MetalThreadState::launch(): scene at slot %u "
-                             "is stale (rebuilt or freed since this kernel "
-                             "was compiled). Traces against this slot will "
-                             "miss. Re-evaluate / rebuild to pick up the "
-                             "new scene state.", i);
-                }
-            }
-            resolved[i] = scene;
-            if (!scene || !scene->tlas)
-                continue;
-
-            id<MTLAccelerationStructure> tlas =
-                (__bridge id<MTLAccelerationStructure>) scene->tlas;
-            [enc setAccelerationStructure:tlas atBufferIndex:1u + i];
-            [enc useResource:tlas usage:MTLResourceUsageRead];
-
-            for (void *res : scene->resources) {
-                if (res)
-                    [enc useResource:(__bridge id<MTLResource>) res
+                case ResourceKind::Accel:
+                case ResourceKind::IFT: {
+                    // Make the scene's TLAS, its BLAS / vertex / index buffers,
+                    // and (for custom-primitive scenes) its IFT + per-entry
+                    // buffers resident.
+                    auto *scene = (MetalScene *) res.ptr;
+                    [enc useResource:(__bridge id<MTLAccelerationStructure>) scene->tlas
                                usage:MTLResourceUsageRead];
-            }
-        }
+                    for (void *r : scene->resources)
+                        if (r)
+                            [enc useResource:(__bridge id<MTLResource>) r
+                                       usage:MTLResourceUsageRead];
+                    if (!scene->intersection_fn_library)
+                        break;
 
-        // Pass 2: bind IFTs at slots [1+N, 1+N+M).
-        uint32_t ift_slot = 1u + n_scenes;
-        for (uint32_t i = 0; i < n_scenes; ++i) {
-            auto *captured = (MetalScene *) kernel.metal.scenes[i];
-            bool kernel_reserved_ift =
-                captured && captured->intersection_fn_library;
-            if (!kernel_reserved_ift)
-                continue;
+                    id<MTLIntersectionFunctionTable> ift =
+                        (__bridge id<MTLIntersectionFunctionTable>)
+                            jitc_metal_get_or_create_ift_for_scene(
+                                scene, (__bridge void *) pso);
+                    if (!ift)
+                        break;
 
-            MetalScene *scene = resolved[i];
-            if (scene && scene->intersection_fn_library) {
-                id<MTLIntersectionFunctionTable> ift =
-                    (__bridge id<MTLIntersectionFunctionTable>)
-                        jitc_metal_get_or_create_ift_for_scene(
-                            scene, (__bridge void *) pso);
-                if (ift) {
-                    [enc setIntersectionFunctionTable:ift atBufferIndex:ift_slot];
                     [enc useResource:ift usage:MTLResourceUsageRead];
-                    for (void *bp : scene->intersection_fn_buffers) {
-                        id<MTLBuffer> buf = (__bridge id<MTLBuffer>) bp;
-                        if (buf)
+                    for (const IFTEntry &e : scene->intersection_fns)
+                        if (id<MTLBuffer> buf = (__bridge id<MTLBuffer>) e.buffer)
                             [enc useResource:buf usage:MTLResourceUsageRead];
-                    }
+                    break;
                 }
+
+                case ResourceKind::Texture: {
+                    id<MTLTexture> t = (__bridge id<MTLTexture>)
+                        ((MetalTexResource *) res.ptr)->object;
+                    [enc useResource:t usage:MTLResourceUsageRead];
+                    break;
+                }
+
+                case ResourceKind::Sampler:
+                    break; // Not a memory resource, skip.
             }
-            ift_slot++;
         }
+        metal_call_resources.clear();
 
         uint32_t threads_per_group = std::min<uint32_t>(
             (uint32_t) pso.maxTotalThreadsPerThreadgroup, metal_max_threads);
@@ -383,8 +369,6 @@ void MetalThreadState::memset_async(void *ptr, uint32_t size, uint32_t isize,
             id<MTLComputePipelineState> pso =
                 (__bridge id<MTLComputePipelineState>)
                     state.metal_devices[this->device].pipelines[(uint32_t) kernel];
-            if (!pso)
-                jitc_raise("jit_memset_async(): memset pipeline missing.");
 
             struct {
                 uint64_t dst, value;
@@ -707,8 +691,6 @@ void MetalThreadState::narrow_f32_to_f16(void *dst, const void *src,
             (__bridge id<MTLComputePipelineState>)
                 state.metal_devices[this->device]
                     .pipelines[(uint32_t) MetalKernel::ConvertF32F16];
-        if (!pso)
-            jitc_raise("jit_narrow_f32_to_f16(): convert pipeline missing.");
 
         size_t src_off = 0, dst_off = 0;
         id<MTLBuffer> src_buf =
@@ -758,8 +740,6 @@ void MetalThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
         id<MTLComputePipelineState> pso =
             (__bridge id<MTLComputePipelineState>)
                 state.metal_devices[this->device].pipelines[(uint32_t) kernel];
-        if (!init_pso || !pso)
-            jitc_raise("jit_block_reduce_bool(): reduction kernel not found.");
 
         size_t out_off = 0;
         id<MTLBuffer> out_buf =
@@ -1135,9 +1115,6 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
         id<MTLComputePipelineState> pso =
             (__bridge id<MTLComputePipelineState>)
                 state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::CompressScatter];
-        if (!pso)
-            jitc_raise("jit_compress(): compress_scatter kernel "
-                       "not found.");
 
         struct { uint64_t in, prefix, out; uint32_t size; } params;
         params.in     = (uint64_t)(uintptr_t) in;
@@ -1215,8 +1192,6 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
         id<MTLComputePipelineState> phase3_pso =
             (__bridge id<MTLComputePipelineState>)
                 state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::MkpermPhase3];
-        if (!phase1_pso || !phase3_pso)
-            jitc_raise("jit_block_mkperm(): kernels not found.");
 
         struct {
             uint64_t values, buckets, perm;
@@ -1405,14 +1380,26 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
         jitc_log(InfoSym, "jit_aggregate(" DRJIT_PTR " -> " DRJIT_PTR
                  ", size=%u)", (uintptr_t) agg, (uintptr_t) dst, size);
 
+        // Replace each opaque-resource handle with its owner's live id (resolved
+        // now, so frozen replay picks up the current handle) and queue the owner
+        // for residency. Shares jitc_metal_resource_id() with the launch path.
+        for (uint32_t i = 0; i < size; ++i) {
+            AggregationEntry &e = agg[i];
+            ResourceKind kind = (ResourceKind) e.resource_kind;
+            void *owner = (void *) e.src;
+            void *id;
+            if (e.size == 8 && jitc_metal_resource_id(owner, kind, &id)) {
+                e.src = id;
+                metal_call_resources.push_back({ owner, kind, /*write=*/false });
+            }
+        }
+
         // Resolve the destination MTLBuffer.
         size_t dst_off = 0;
         id<MTLBuffer> dst_buf =
             (__bridge id<MTLBuffer>) jitc_metal_find_buffer(dst, &dst_off);
 
-        // Stage entries in a Shared (CPU+GPU) buffer (copies the host bytes). The
-        // compute encoder retains it until the command buffer completes, so we can
-        // let ARC drop our reference at scope exit.
+        // Stage entries through a shared buffer
         id<MTLDevice> dev = (__bridge id<MTLDevice>) metal_device;
         size_t entries_bytes = sizeof(AggregationEntry) * (size_t) size;
         id<MTLBuffer> entries_buf =
@@ -1423,9 +1410,6 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
         id<MTLComputePipelineState> pso =
             (__bridge id<MTLComputePipelineState>)
                 state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::Aggregate];
-        if (!pso)
-            jitc_fail("jit_aggregate(): aggregate_kernel "
-                      "pipeline missing.");
 
         id<MTLComputeCommandEncoder> enc =
             (__bridge id<MTLComputeCommandEncoder>)

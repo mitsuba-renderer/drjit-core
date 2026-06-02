@@ -40,6 +40,7 @@
 #include "strbuf.h"
 #include "metal.h"
 #include "metal_eval.h"
+#include "metal_tex.h"
 
 #include "metal_scatter.h"
 #include "metal_packet.h"
@@ -47,185 +48,100 @@
 #include "metal_coop_vec.h"
 #include "array.h"
 #include "trace.h"
+#include "tex.h"
 #include "call.h"
 #include "metal_ts.h"
 #include "loop.h"
 #include "cond.h"
 #include "record_ts.h"
 
-#include <unordered_set>
-
 // Forward declaration
 static void jitc_metal_render(Variable *v);
 
 // ----------------------------------------------------------------------------
-//  Internal API to track of scenes that are used by the kernel being compiled
+// Keep track of scenes discovered during code generation
 // ----------------------------------------------------------------------------
+
 std::vector<MetalScene *> metal_kernel_scenes;
-std::vector<int32_t> metal_kernel_ift_slot;
 
 void jitc_metal_assemble_reset() {
     metal_kernel_scenes.clear();
-    metal_kernel_ift_slot.clear();
 }
 
-uint32_t metal_register_kernel_scene(MetalScene *scene) {
-    for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
-        if (metal_kernel_scenes[i] == scene)
-            return (uint32_t) i;
-    uint32_t slot = (uint32_t) metal_kernel_scenes.size();
+void metal_register_kernel_scene(MetalScene *scene) {
+    if (!scene)
+        return;
+    for (MetalScene *s : metal_kernel_scenes)
+        if (s == scene)
+            return;
     metal_kernel_scenes.push_back(scene);
-    return slot;
-}
-
-void jitc_metal_finalize_scene_layout() {
-    uint32_t n = (uint32_t) metal_kernel_scenes.size();
-    metal_kernel_ift_slot.assign(n, -1);
-    if (n == 0)
-        return;
-    // Layout: [[buffer(0)]] = params, [[buffer(1)]]..[[buffer(N)]] = accels,
-    // [[buffer(N+1)]]..[[buffer(N+M)]] = IFTs (only for scenes that have one).
-    uint32_t next = 1u + n;
-    for (uint32_t i = 0; i < n; ++i) {
-        if (metal_kernel_scenes[i] &&
-            metal_kernel_scenes[i]->intersection_fn_library)
-            metal_kernel_ift_slot[i] = (int32_t) next++;
-    }
-}
-
-void jitc_metal_persist_kernel_scenes(Kernel &kernel) {
-    delete[] kernel.metal.scenes;
-    uint32_t n = (uint32_t) metal_kernel_scenes.size();
-    if (n > 0) {
-        kernel.metal.scenes = new void *[n];
-        for (uint32_t i = 0; i < n; ++i)
-            kernel.metal.scenes[i] = metal_kernel_scenes[i];
-    } else {
-        kernel.metal.scenes = nullptr;
-    }
-    kernel.metal.scene_count = n;
 }
 
 // ----------------------------------------------------------------------------
-//  Recursive scene-discovery for the assemble pre-walk.
-//
-//  The Metal kernel signature must declare one ``accel_<i>`` argument per
-//  distinct ``MetalScene*`` referenced by any TraceRay node *anywhere* in
-//  the kernel — top-level schedule, callable bodies, symbolic loops, and
-//  symbolic conditionals. A naive top-level-only scan misses scenes used
-//  by virtual function calls (e.g. an area emitter's
-//  ``eval_parameterization`` ray-traces against a shape's
-//  separate parameterization scene from inside its sample_direction
-//  vcall body).
-//
-//  This walk traverses the variable DAG starting from each top-level
-//  schedule entry and visits, in addition to ordinary ``v->dep[]`` edges:
-//    - ``CallData::inner_out`` and ``::side_effects`` for VarKind::Call
-//    - ``LoopData::inner_out`` and ``::outer_in``   for VarKind::LoopStart
-//    - ``CondData::indices_t/_f`` and ``::se_t/_f`` for VarKind::CondStart
-//  A visited set keeps DAG/cycle traversal in linear time.
+//  Resource-handle helpers
 // ----------------------------------------------------------------------------
-static void jitc_metal_collect_scenes(uint32_t index,
-                                      std::unordered_set<uint32_t> &visited) {
-    if (!index || !visited.insert(index).second)
+
+/// MSL type name for an opaque resource of the given kind. For an IFT the
+/// template arguments follow the owning scene's geometry mix (curves vs. not).
+static const char *metal_resource_type_name(ResourceKind kind, MetalScene *scene) {
+    if (kind == ResourceKind::Accel)
+        return "metal::raytracing::instance_acceleration_structure";
+    bool curves = scene && (scene->geometry_types_mask & 0x4u) != 0;
+    return curves
+        ? "metal::raytracing::intersection_function_table<metal::raytracing::triangle_data, metal::raytracing::curve_data, metal::raytracing::instancing>"
+        : "metal::raytracing::intersection_function_table<metal::raytracing::triangle_data, metal::raytracing::instancing>";
+}
+
+/// Emit the in-shader reconstruction of a resource handle as a reference
+/// variable named after ``v``. The consuming ``TraceRay`` node then refers to
+/// it directly. Top level reinterprets the ``constant params.args[]`` slot; a
+/// callable reinterprets its ``device`` call-data section at ``data_offset``.
+static void jitc_metal_render_resource_handle(const Variable *v,
+                                              ResourceKind kind,
+                                              bool in_callable,
+                                              uint32_t data_offset) {
+    // Texture / sampler handles need no PSO linking or scene registration; the
+    // reinterpret type follows the consuming node (texture dimensionality from
+    // the owning MetalTexture; samplers carry filter/wrap, never baked here).
+    // Residency is handled at launch from the owner queued by ``aggregate``.
+    if (kind == ResourceKind::Texture ||
+        kind == ResourceKind::Sampler) {
+        const char *tname = "sampler";
+        if (kind == ResourceKind::Texture) {
+            MetalTexResource *rec = (MetalTexResource *) (uintptr_t) v->literal;
+            tname = (rec->parent->ndim == 3) ? "texture3d<float>"
+                                             : "texture2d<float>";
+        }
+        if (in_callable)
+            fmt("    device $s& $v = *(device $s*)(data + $u);\n",
+                tname, v, tname, data_offset);
+        else
+            fmt("    constant $s& $v = *(constant $s*) &params.args[$o];\n",
+                tname, v, tname, v);
         return;
-
-    Variable *v = jitc_var(index);
-    if (!v)
-        return;
-
-    VarKind kind = (VarKind) v->kind;
-
-    // Register this scene if the node is a TraceRay. dep[1] holds the
-    // scene_index variable returned by ``jit_metal_configure_scene``.
-    if (kind == VarKind::TraceRay && v->dep[1]) {
-        MetalScene *scene = jitc_metal_get_scene(v->dep[1]);
-        if (scene)
-            metal_register_kernel_scene(scene);
     }
 
-    // Ordinary data-flow dependencies.
-    for (uint32_t d : v->dep)
-        if (d) jitc_metal_collect_scenes(d, visited);
-
-    // Structured payloads — descend into the variable indices stored
-    // inside the corresponding sidecar struct.
-    if (kind == VarKind::Call) {
-        if (auto *call = (CallData *) v->data) {
-            for (uint32_t out : call->inner_out)
-                if (out) jitc_metal_collect_scenes(out, visited);
-            for (uint32_t se : call->side_effects)
-                if (se) jitc_metal_collect_scenes(se, visited);
-        }
-    } else if (kind == VarKind::LoopStart) {
-        if (auto *ld = (LoopData *) v->data) {
-            for (uint32_t out : ld->inner_out)
-                if (out) jitc_metal_collect_scenes(out, visited);
-            for (uint32_t in : ld->outer_in)
-                if (in) jitc_metal_collect_scenes(in, visited);
-        }
-    } else if (kind == VarKind::CondStart) {
-        if (auto *cd = (CondData *) v->data) {
-            for (uint32_t i : cd->indices_t)
-                if (i) jitc_metal_collect_scenes(i, visited);
-            for (uint32_t i : cd->indices_f)
-                if (i) jitc_metal_collect_scenes(i, visited);
-            for (uint32_t i : cd->se_t)
-                if (i) jitc_metal_collect_scenes(i, visited);
-            for (uint32_t i : cd->se_f)
-                if (i) jitc_metal_collect_scenes(i, visited);
-        }
-    }
+    MetalScene *scene = (MetalScene *) (uintptr_t) v->literal;
+    metal_register_kernel_scene(scene);
+    fmt_intrinsic(
+        "#include <metal_raytracing>\n"
+        "using namespace raytracing;");
+    const char *tname = metal_resource_type_name(kind, scene);
+    if (in_callable)
+        fmt("    device $s& $v = *(device $s*)(data + $u);\n",
+            tname, v, tname, data_offset);
+    else
+        fmt("    constant $s& $v = *(constant $s*) &params.args[$o];\n",
+            tname, v, tname, v);
 }
 
 void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
                          uint32_t /*n_regs*/, uint32_t n_params) {
 
-    // -------------------------------------------------------------------
-    //   0. Discover all distinct scenes referenced by TraceRay nodes
-    //      anywhere in the kernel (top-level + callable bodies +
-    //      symbolic loops/conds), and finalize the per-scene buffer
-    //      slot layout.
-    //
-    //   Each scene becomes a kernel argument: ``accel_<i>`` at slot
-    //   ``1 + i`` and (optionally) ``ift_<i>`` at the next available
-    //   slot in ``[1+N, 1+N+M)``. Per-TraceRay codegen routes each
-    //   intersect call to its scene's slot by linear-scanning
-    //   ``metal_kernel_scenes``; the launch path mirrors the same
-    //   layout when binding TLASes / IFTs.
-    // -------------------------------------------------------------------
-    {
-        std::unordered_set<uint32_t> visited;
-        for (uint32_t gi = group.start; gi != group.end; ++gi)
-            jitc_metal_collect_scenes(schedule[gi].index, visited);
-    }
-    jitc_metal_finalize_scene_layout();
-
-    // Cache the first scene on the ThreadState. It serves two purposes
-    // for the launch path: (1) it remains the single fallback for
-    // ``accel_0`` if the captured pointer goes stale (frozen replay
-    // after scene rebuild); (2) per-TraceRay codegen uses it as a
-    // backstop when an unregistered ``dep[1]`` slips through (defensive
-    // — pre-walk should normally cover everything).
-    MetalScene *scene =
-        metal_kernel_scenes.empty() ? nullptr : metal_kernel_scenes[0];
-    ts->metal_active_scene = scene;
-    if (auto *rts = dynamic_cast<RecordThreadState *>(ts))
-        rts->m_internal->metal_active_scene = scene;
-
-    // -------------------------------------------------------------------
-    //   1. MSL header
-    // -------------------------------------------------------------------
     put("#include <metal_stdlib>\n"
         "#include <metal_atomic>\n");
 
-    // Conditionally include the ray tracing header.
-    if (uses_metal_rt)
-        put("#include <metal_raytracing>\n");
-
     put("using namespace metal;\n");
-    if (uses_metal_rt)
-        put("using namespace raytracing;\n");
     put("\n");
 
     fmt("struct Params {\n"
@@ -234,58 +150,9 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         "};\n\n",
         n_params > 1 ? n_params - 1 : 1);
 
-    // Emit one comment per registered scene capturing the PSO link
-    // identity: the intersection-function names that must be linked into
-    // the pipeline plus the scene's geometry-type mask. ``kernel_hash``
-    // picks these up, so two kernels with identical MSL but different
-    // scenes hash to distinct cache keys (no separate flag-mixing
-    // required, c.f. the OptiX path which mixes pipeline-compile options
-    // into the cache flags). This iterates the same ``metal_kernel_scenes``
-    // list that drives the signature and the linker, so the cache key
-    // matches exactly what gets linked.
-    for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
-        MetalScene *si = metal_kernel_scenes[i];
-        fmt("// Scene properties: accel_$u mask=0x$x fns=[",
-            (uint32_t) i, si ? si->geometry_types_mask : 0u);
-        if (si) {
-            for (size_t j = 0; j < si->intersection_fn_names.size(); ++j) {
-                if (j) put(", ");
-                fmt("$s", si->intersection_fn_names[j].c_str());
-            }
-        }
-        put("]\n");
-    }
-
     fmt("kernel void drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(\n"
-        "    constant Params& params [[buffer(0)]],\n");
-
-    // Multi-scene kernel signature: one ``accel_<i>`` per registered
-    // scene at slots [1, N+1), then one ``ift_<i>`` for every scene
-    // that has an ``intersection_fn_library`` (slots assigned by
-    // ``jitc_metal_finalize_scene_layout``). Each IFT's template
-    // depends on the scene's geometry-type mix (triangle-only vs
-    // with-curves).
-
-    if (uses_metal_rt) {
-        for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
-            fmt("    instance_acceleration_structure accel_$u [[buffer($u)]],\n",
-                (uint32_t) i, (uint32_t) (1 + i));
-        for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
-            int32_t ift_slot = metal_kernel_ift_slot[i];
-            if (ift_slot < 0)
-                continue;
-            MetalScene *si = metal_kernel_scenes[i];
-            bool has_curves_i =
-                si && (si->geometry_types_mask & 0x4u) != 0;
-            const char *ift_template =
-                has_curves_i
-                    ? "intersection_function_table<triangle_data, curve_data, instancing>"
-                    : "intersection_function_table<triangle_data, instancing>";
-            fmt("    $s ift_$u [[buffer($u)]],\n",
-                ift_template, (uint32_t) i, (uint32_t) ift_slot);
-        }
-    }
-    put("    uint r0 [[thread_position_in_grid]]) {\n");
+        "    constant Params& params [[buffer(0)]],\n"
+        "    uint r0 [[thread_position_in_grid]]) {\n");
 
     // -------------------------------------------------------------------
     //   4. Render every variable in the schedule
@@ -322,6 +189,16 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
             if (v->is_literal()) {
                 VarType vt = (VarType) v->type;
                 if (vt == VarType::Pointer) {
+                    // An opaque ray-tracing resource handle reconstructs the
+                    // resource from its ``params.args[]`` slot in place (the
+                    // launch path writes the live ``gpuResourceID`` there).
+                    ResourceKind rkind = v->resource_kind();
+                    if (rkind != ResourceKind::Buffer) {
+                        jitc_metal_render_resource_handle(v, rkind,
+                                                          /*in_callable=*/false,
+                                                          /*data_offset=*/0);
+                        continue;
+                    }
                     // Pointer literals must be loaded from params (not inlined)
                     // so frozen function replay can update the address
                     fmt("    $t $v = ($t) params.args[$o];\n",
@@ -372,6 +249,27 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
 
     put("}\n");
 
+    // Emit one comment per render-discovered scene capturing its PSO-link
+    // identity: the intersection-function names linked into the pipeline plus
+    // its geometry-type mask. ``kernel_hash`` covers the whole buffer, so two
+    // kernels with identical MSL but different intersection-function sets (not
+    // visible in the MSL source — they are linked separately) hash to distinct
+    // cache keys. Emitted after the body so it sees scenes discovered while
+    // rendering both top-level traces and callable bodies. (A per-node emit
+    // would duplicate entries and miss scenes reached only through callables.)
+    for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
+        MetalScene *si = metal_kernel_scenes[i];
+        fmt("// Scene properties: scene_$u mask=0x$x fns=[",
+            (uint32_t) i, si ? si->geometry_types_mask : 0u);
+        if (si) {
+            for (size_t j = 0; j < si->intersection_fns.size(); ++j) {
+                if (j) put(", ");
+                fmt("$s", si->intersection_fns[j].name.c_str());
+            }
+        }
+        put("]\n");
+    }
+
     // -------------------------------------------------------------------
     //   5. Emit callable functions and globals
     // -------------------------------------------------------------------
@@ -403,11 +301,8 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     // kernel. MSL needs functions defined or declared before use.
     if (!globals_map.empty()) {
         size_t suffix_start = buffer.size();
-        // Find the insertion point: after "using namespace metal;\n"
-        // (or "using namespace raytracing;\n" if present)
-        const char *marker = uses_metal_rt
-            ? strstr(buffer.get(), "using namespace raytracing;\n")
-            : strstr(buffer.get(), "using namespace metal;\n");
+        // Find the insertion point: just after "using namespace metal;\n".
+        const char *marker = strstr(buffer.get(), "using namespace metal;\n");
         if (marker) {
             const char *eol = strchr(marker, '\n');
             size_t suffix_target = (eol - buffer.get()) + 1;
@@ -753,7 +648,9 @@ static void jitc_metal_render(Variable *v) {
 
             if ((VarKind) src->kind == VarKind::TraceRay ||
                 (VarKind) src->kind == VarKind::ScatterCAS ||
-                (VarKind) src->kind == VarKind::PacketGather) {
+                (VarKind) src->kind == VarKind::PacketGather ||
+                (VarKind) src->kind == VarKind::TexLookup ||
+                (VarKind) src->kind == VarKind::TexFetchBilerp) {
                 // Extract from a multi-output op — reference the pre-declared outputs
                 fmt("    $t $v = $v_out_$u;\n",
                     v, v, src, sub_index);
@@ -906,31 +803,22 @@ static void jitc_metal_render(Variable *v) {
 
         // -- Ray tracing (Metal inline intersection) --
         case VarKind::TraceRay: {
+            fmt_intrinsic(
+                "#include <metal_raytracing>\n"
+                "using namespace raytracing;");
+
             TraceData *td = (TraceData *) v->data;
             Variable *valid = jitc_var(v->dep[0]);
             bool is_unmasked = valid->is_literal() && valid->literal == 1;
 
-            // Resolve which kernel-bound ``accel_<i>`` / ``ift_<i>`` to
-            // use for THIS trace by linear-scanning ``metal_kernel_scenes``.
-            // If the scene wasn't registered (shouldn't happen, the
-            // recursive pre-walk visits every TraceRay reachable from the
-            // kernel), or no scene at all, fall back to the active scene
-            // at slot 0.
-            MetalScene *scene_local = nullptr;
-            if (v->dep[1])
-                scene_local = jitc_metal_get_scene(v->dep[1]);
-            if (!scene_local)
-                scene_local = jitc_metal_active_scene();
-
-            uint32_t accel_idx = 0;
-            if (scene_local) {
-                for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
-                    if (metal_kernel_scenes[i] == scene_local) {
-                        accel_idx = (uint32_t) i;
-                        break;
-                    }
-                }
-            }
+            // The accel (dep[1]) and optional IFT (dep[2]) handles were each
+            // rendered as a reconstructed reference variable named after the
+            // handle (``jitc_metal_render_resource_handle``); this trace simply
+            // names them in its ``intersect`` call. The owning scene is decoded
+            // from the accel handle's tagged literal for template selection.
+            Variable *accel_h = jitc_var(v->dep[2]);
+            Variable *ift_h   = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
+            MetalScene *scene_local = (MetalScene *) (uintptr_t) accel_h->literal;
 
             // Guard with active mask
             if (!is_unmasked)
@@ -946,7 +834,7 @@ static void jitc_metal_render(Variable *v) {
             Variable *tmin = jitc_var(td->indices[6]);
             Variable *tmax = jitc_var(td->indices[7]);
 
-            bool has_ift_local = scene_local && scene_local->intersection_fn_library;
+            bool has_ift_local = ift_h != nullptr;
             bool has_curves_local =
                 scene_local && (scene_local->geometry_types_mask & 0x4u) != 0;
             bool extended = has_ift_local || has_curves_local;
@@ -981,14 +869,14 @@ static void jitc_metal_render(Variable *v) {
                 "        _r.min_distance = $v;\n"
                 "        _r.max_distance = $v;\n",
                 ox, oy, oz, dx, dy, dz, tmin, tmax);
-            // Route the intersect call to this scene's kernel-bound
-            // accel + IFT (per-scene slots assigned at signature time).
+            // Route the intersect call to this trace's reconstructed accel
+            // (+ IFT) reference variables.
             if (has_ift_local)
-                fmt("        auto _hit = _inter.intersect(_r, accel_$u, ift_$u);\n",
-                    accel_idx, accel_idx);
+                fmt("        auto _hit = _inter.intersect(_r, $v, $v);\n",
+                    accel_h, ift_h);
             else
-                fmt("        auto _hit = _inter.intersect(_r, accel_$u);\n",
-                    accel_idx);
+                fmt("        auto _hit = _inter.intersect(_r, $v);\n",
+                    accel_h);
 
             // Hit-result extraction.
             // - Triangle hit: prim_uv = triangle_barycentric_coord
@@ -1041,16 +929,77 @@ static void jitc_metal_render(Variable *v) {
             break;
         }
 
-        case VarKind::TexLookup:
-            jitc_fail("jitc_metal_render(): texture lookup (VarKind::TexLookup) "
-                      "is not yet implemented on the Metal backend. Metal "
-                      "requires MTLTexture + sampler infrastructure (vs CUDA's "
-                      "CUtexObject).");
+        case VarKind::TexLookup: {
+            // dep[0] = texture handle, dep[1] = sampler handle (both
+            // reconstructed as reference variables in the input loop); the
+            // coordinates are carried in a side TexData payload. dep[2] is an
+            // optional active mask.
+            Variable *tex_h = jitc_var(v->dep[0]);
+            Variable *smp_h = jitc_var(v->dep[1]);
+            Variable *mask  = v->dep[2] ? jitc_var(v->dep[2]) : nullptr;
+            TexData *td = (TexData *) v->data;
+            size_t ndim = td->ndim;
+            Variable *p0 = jitc_var(td->indices[0]);
 
-        case VarKind::TexFetchBilerp:
-            jitc_fail("jitc_metal_render(): bilinear texel fetch "
-                      "(VarKind::TexFetchBilerp) is not yet implemented on "
-                      "the Metal backend.");
+            // For a masked lookup, default the result to zero and guard the
+            // sample with the mask, so the compiler can predicate off the fetch
+            // for inactive lanes.
+            if (mask) {
+                fmt("    float4 $v_s = float4(0.f);\n", v);
+                fmt("    if ($v) $v_s = ", mask, v);
+            } else {
+                fmt("    float4 $v_s = ", v);
+            }
+
+            if (ndim == 1)
+                // 1D is backed by a height-1 2D texture; sample the single row
+                // at its texel center (y = 0.5).
+                fmt("$v.sample($v, float2($v, 0.5f));\n", tex_h, smp_h, p0);
+            else if (ndim == 2)
+                fmt("$v.sample($v, float2($v, $v));\n",
+                    tex_h, smp_h, p0, jitc_var(td->indices[1]));
+            else
+                fmt("$v.sample($v, float3($v, $v, $v));\n",
+                    tex_h, smp_h, p0, jitc_var(td->indices[1]),
+                    jitc_var(td->indices[2]));
+
+            fmt("    float $v_out_0 = $v_s.x;\n"
+                "    float $v_out_1 = $v_s.y;\n"
+                "    float $v_out_2 = $v_s.z;\n"
+                "    float $v_out_3 = $v_s.w;\n",
+                v, v, v, v, v, v, v, v);
+            break;
+        }
+
+        case VarKind::TexFetchBilerp: {
+            // 2D-only; ``component`` selects the texture channel to gather. The
+            // four returned texels are ordered counter-clockwise from the lower
+            // left, matching CUDA's ``tld4``. dep[2] is an optional active mask.
+            Variable *tex_h = jitc_var(v->dep[0]);
+            Variable *smp_h = jitc_var(v->dep[1]);
+            Variable *mask  = v->dep[2] ? jitc_var(v->dep[2]) : nullptr;
+            TexData *td = (TexData *) v->data;
+            char comp = "xyzw"[td->component & 0x3u];
+
+            // For a masked fetch, default to zero and guard the gather with the
+            // mask, so the compiler can predicate off the fetch for inactive lanes.
+            if (mask) {
+                fmt("    float4 $v_s = float4(0.f);\n", v);
+                fmt("    if ($v) $v_s = ", mask, v);
+            } else {
+                fmt("    float4 $v_s = ", v);
+            }
+            fmt("$v.gather($v, float2($v, $v), int2(0), component::$c);\n",
+                tex_h, smp_h, jitc_var(td->indices[0]),
+                jitc_var(td->indices[1]), comp);
+
+            fmt("    float $v_out_0 = $v_s.x;\n"
+                "    float $v_out_1 = $v_s.y;\n"
+                "    float $v_out_2 = $v_s.z;\n"
+                "    float $v_out_3 = $v_s.w;\n",
+                v, v, v, v, v, v, v, v);
+            break;
+        }
 
         case VarKind::Call: {
             Variable *a0 = jitc_var(v->dep[0]),
@@ -1154,29 +1103,9 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
         put("thread const uint8_t* params, ");
     if (out_size)
         put("thread uint8_t* result, ");
-    // Callables receive every kernel-bound scene resource so that any
-    // TraceRay inside the callable body can reach any registered
-    // scene. Per-callable analysis (passing only the subset actually
-    // used) is a future optimization — Metal is generally good at
-    // eliminating unused parameters during pipeline compilation.
-    if (uses_metal_rt) {
-        for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
-            fmt("instance_acceleration_structure accel_$u, ",
-                (uint32_t) i);
-        for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
-            int32_t ift_slot = metal_kernel_ift_slot[i];
-            if (ift_slot < 0)
-                continue;
-            MetalScene *si = metal_kernel_scenes[i];
-            bool has_curves_i =
-                si && (si->geometry_types_mask & 0x4u) != 0;
-            const char *ift_template =
-                has_curves_i
-                    ? "intersection_function_table<triangle_data, curve_data, instancing>"
-                    : "intersection_function_table<triangle_data, instancing>";
-            fmt("$s ift_$u, ", ift_template, (uint32_t) i);
-        }
-    }
+    // No per-scene parameters: a TraceRay inside the callable body
+    // reconstructs its accel / IFT directly from the ``device`` call-data
+    // section (zero forwarding).
 
     // Remove trailing ", "
     buffer.delete_trailing_commas();
@@ -1233,6 +1162,24 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
                     "between the recording step and code generation (which is "
                     "happening now). This is not allowed.", sv.index);
 
+            uint32_t offset = it->second - call->data_offset[inst];
+
+            // An opaque ray-tracing resource handle reached from inside a
+            // callable reconstructs the resource directly from the ``device``
+            // call-data section (validated, zero forwarding). The scene is
+            // registered for launch-time residency; the live ``gpuResourceID``
+            // must be refreshed into the call-data section at launch (handled
+            // by the launch path — see Part A callables).
+            if (vt == VarType::Pointer) {
+                ResourceKind rkind = v->resource_kind();
+                if (rkind != ResourceKind::Buffer) {
+                    jitc_metal_render_resource_handle(v, rkind,
+                                                      /*in_callable=*/true,
+                                                      offset);
+                    continue;
+                }
+            }
+
             // Track device buffers referenced from callable data for
             // useResource(). During freeze recording the active TS is a
             // ``RecordThreadState`` (which does NOT inherit from
@@ -1244,13 +1191,14 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
                 ts_curr = rts->m_internal;
             auto *mts = static_cast<MetalThreadState *>(ts_curr);
             if (vt == VarType::Pointer) {
-                mts->metal_extra_resources.push_back(
-                    { (void *) v->literal, (bool) v->write_ptr });
+                mts->metal_call_resources.push_back(
+                    { (void *) v->literal, ResourceKind::Buffer,
+                      (bool) v->write_ptr });
             } else if (v->is_evaluated() && v->data) {
-                mts->metal_extra_resources.push_back({ v->data, false });
+                mts->metal_call_resources.push_back(
+                    { v->data, ResourceKind::Buffer, false });
             }
 
-            uint32_t offset = it->second - call->data_offset[inst];
             if (vt == VarType::Bool)
                 fmt("    bool $v = *(device uint8_t*)(data + $u) != 0;\n",
                     v, offset);
@@ -1380,16 +1328,8 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
             fmt("_in_$u, ", call_reg);
         if (out_size)
             fmt("_out_$u, ", call_reg);
-        // Forward every accel + IFT from the kernel-level bindings
-        // into the callable, matching the callable's signature.
-        if (uses_metal_rt) {
-            for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
-                fmt("accel_$u, ", (uint32_t) i);
-            for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
-                if (metal_kernel_ift_slot[i] >= 0)
-                    fmt("ift_$u, ", (uint32_t) i);
-            }
-        }
+        // No scene resources are forwarded: a callable reaches its accel / IFT
+        // directly from its ``device`` call-data section.
         buffer.delete_trailing_commas();
         put(");\n");
     } else {
@@ -1412,17 +1352,6 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
                 fmt("_in_$u, ", call_reg);
             if (out_size)
                 fmt("_out_$u, ", call_reg);
-            // Forward all kernel-bound scene resources into each
-            // switch-case branch (mirror of the single-instance path
-            // above).
-            if (uses_metal_rt) {
-                for (size_t i = 0; i < metal_kernel_scenes.size(); ++i)
-                    fmt("accel_$u, ", (uint32_t) i);
-                for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
-                    if (metal_kernel_ift_slot[i] >= 0)
-                        fmt("ift_$u, ", (uint32_t) i);
-                }
-            }
             buffer.delete_trailing_commas();
             put("); break;\n");
         }

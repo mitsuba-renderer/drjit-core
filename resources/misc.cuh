@@ -31,19 +31,20 @@ KERNEL void fill_64(uint64_t *out, uint32_t size, uint64_t value) {
         out[i] = value;
 }
 
-struct VCallDataRecord {
-    int32_t size;
+struct alignas(16) AggregationEntry {
+    int16_t size;
+    uint16_t resource_kind; // ignored
     uint32_t offset;
     const void *src;
 };
 
-KERNEL void aggregate(void *out, const VCallDataRecord *rec_, uint32_t size) {
+
+KERNEL void aggregate(void *out, const aggregationEntry *in, uint32_t size) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size)
         return;
 
-    VCallDataRecord rec = rec_[idx];
-
+    AggregationEntry rec = in[idx];
     const void *src = rec.src;
     void *dst = (uint8_t *) out + rec.offset;
 

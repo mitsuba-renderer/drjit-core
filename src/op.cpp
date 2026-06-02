@@ -248,14 +248,6 @@ template <typename Type> uint64_t v2i(Type value) {
     return result;
 }
 
-template <typename Dst, typename Src>
-Dst memcpy_cast(const Src &src) {
-    static_assert(sizeof(Src) == sizeof(Dst), "memcpy_cast: size mismatch!");
-    Dst dst;
-    memcpy((void*)&dst, &src, sizeof(Dst));
-    return dst;
-}
-
 template <typename T, typename... Ts> T first(T arg, Ts...) { return arg; }
 
 template <typename Func, typename... Args>
@@ -2786,8 +2778,8 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
 
     // Raise an error if the target array is currently stored in an expanded
     // form that isn't compatible with the operation to be performed.
-    uint32_t op_cur = jitc_var(target)->reduce_op;
-    if (op_cur && op_cur != (uint32_t) op)
+    ReduceOp op_cur = jitc_var(target)->reduce_op();
+    if (op_cur != ReduceOp::Identity && op_cur != op)
         jitc_raise(
             "%s(): it is not legal to mix different types of "
             "scatter-reductions when using dr.ReduceMode.Expand. Evaluate the "
@@ -2820,7 +2812,7 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
 
             // Track if this is the first time that 'jit_var_expand' is called
             reduce_expanded =
-                jitc_var(target)->reduce_op == (uint32_t) ReduceOp::Identity;
+                jitc_var(target)->reduce_op() == ReduceOp::Identity;
 
             // When capturing symbolic loops, side effects might be deleted
             // and re-recorded. So, even if `jit_var_expand` was already called

@@ -243,13 +243,14 @@ struct AccessInfo {
     bool test_uninit = true;
 
     struct {
-        /// Represents the offset of that parameter for aggregate operations.
-        uint32_t offset;
         /// Represents some literal data when aggregating literals.
         uint64_t data;
-        /// The type size, when the actual type is not known. For example for
-        /// the aggregate operation.
-        int32_t type_size;
+        /// Represents the offset of that parameter for aggregate operations.
+        uint32_t offset;
+        /// Type size, when the type is unknown, e.g., for the aggregate op.
+        int16_t type_size;
+        /// Backend resource-handle kind of an aggregate entry
+        uint16_t resource_kind = 0;
     } extra;
 
     AccessInfo() {}

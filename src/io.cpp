@@ -442,6 +442,8 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
 }
 
 void jitc_kernel_free(int device_id, const Kernel &kernel) {
+    delete[] kernel.param_info;
+
     if (device_id == -1) {
         if (kernel.llvm.n_reloc)
             free(kernel.llvm.reloc);

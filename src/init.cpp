@@ -910,9 +910,6 @@ void ThreadState::reset_state() {
     optix_pipeline = nullptr;
     optix_sbt = nullptr;
 #endif
-#if defined(DRJIT_ENABLE_METAL)
-    metal_active_scene = nullptr;
-#endif
 }
 void ThreadState::notify_free(const void *) { }
 void ThreadState::notify_expand(uint32_t) { }

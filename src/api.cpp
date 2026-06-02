@@ -40,6 +40,7 @@
 #if defined(DRJIT_ENABLE_METAL)
 #  include <drjit-core/metal.h>
 #  include "metal.h"
+#  include "metal_tex.h"
 #endif
 
 #include <nanothread/nanothread.h>
@@ -1420,73 +1421,129 @@ void jit_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
     jitc_llvm_ray_trace(func, scene, shadow_ray, in, out);
 }
 
+// Hardware textures dispatch to the CUDA or Metal implementation based on
+// ``backend``; any other backend (or one not compiled in) raises.
+static void jit_tex_unavailable(JitBackend backend) {
+    jitc_raise("jit_tex_*(): hardware textures are not available for the '%s' "
+               "backend (unsupported, or not compiled into this build).",
+               jitc_backend_name(backend));
+}
+
+void *jit_tex_create(JitBackend backend, size_t ndim, const size_t *shape,
+                     size_t n_channels, int format, int filter_mode,
+                     int wrap_mode) {
+    lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_CUDA)
-void *jit_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
-                          int format, int filter_mode, int wrap_mode) {
-    lock_guard guard(state.lock);
-    return jitc_cuda_tex_create(ndim, shape, n_channels, format, filter_mode, wrap_mode);
-}
-
-void jit_cuda_tex_get_shape(size_t ndim, const void *texture_handle,
-                            size_t *shape) {
-    lock_guard guard(state.lock);
-    jitc_cuda_tex_get_shape(ndim, texture_handle, shape);
-}
-
-void jit_cuda_tex_get_indices(const void *texture_handle, uint32_t *indices) {
-    lock_guard guard(state.lock);
-    jitc_cuda_tex_get_indices(texture_handle, indices);
-}
-
-void jit_cuda_tex_memcpy_d2t(size_t ndim, const size_t *shape,
-                             const void *src_ptr, void *dst_texture) {
-    lock_guard guard(state.lock);
-    jitc_cuda_tex_memcpy_d2t(ndim, shape, src_ptr, dst_texture);
-}
-
-void jit_cuda_tex_memcpy_t2d(size_t ndim, const size_t *shape,
-                             const void *src_texture, void *dst_ptr) {
-    lock_guard guard(state.lock);
-    jitc_cuda_tex_memcpy_t2d(ndim, shape, src_texture, dst_ptr);
-}
-
-void jit_cuda_tex_lookup(size_t ndim, const void *texture_handle,
-                         const uint32_t *pos, uint32_t active, uint32_t *out) {
-    lock_guard guard(state.lock);
-    jitc_cuda_tex_lookup(ndim, texture_handle, pos, active, out);
-}
-
-void jit_cuda_tex_bilerp_fetch(size_t ndim, const void *texture_handle,
-                               const uint32_t *pos, uint32_t active,
-                               uint32_t *out) {
-    lock_guard guard(state.lock);
-    jitc_cuda_tex_bilerp_fetch(ndim, texture_handle, pos, active, out);
-}
-
-void jit_cuda_tex_destroy(void *texture) {
-    lock_guard guard(state.lock);
-    jitc_cuda_tex_destroy(texture);
-}
-#else
-void *jit_cuda_tex_create(size_t, const size_t *, size_t, int, int, int) {
-    jit_cuda_unavailable(); return nullptr;
-}
-void jit_cuda_tex_get_shape(size_t, const void *, size_t *) { jit_cuda_unavailable(); }
-void jit_cuda_tex_get_indices(const void *, uint32_t *) { jit_cuda_unavailable(); }
-void jit_cuda_tex_memcpy_d2t(size_t, const size_t *, const void *, void *) {
-    jit_cuda_unavailable();
-}
-void jit_cuda_tex_memcpy_t2d(size_t, const size_t *, const void *, void *) {
-    jit_cuda_unavailable();
-}
-void jit_cuda_tex_lookup(size_t, const void *, const uint32_t *, uint32_t, uint32_t *) {
-    jit_cuda_unavailable();
-}
-void jit_cuda_tex_bilerp_fetch(size_t, const void *, const uint32_t *, uint32_t, uint32_t *) {
-    jit_cuda_unavailable();
-}
-void jit_cuda_tex_destroy(void *) { jit_cuda_unavailable(); }
+    if (backend == JitBackend::CUDA)
+        return jitc_cuda_tex_create(ndim, shape, n_channels, format,
+                                    filter_mode, wrap_mode);
 #endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        return jitc_metal_tex_create(ndim, shape, n_channels, format,
+                                     filter_mode, wrap_mode);
+#endif
+    jit_tex_unavailable(backend);
+    return nullptr;
+}
+
+void jit_tex_get_shape(JitBackend backend, size_t ndim,
+                       const void *texture_handle, size_t *shape) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_CUDA)
+    if (backend == JitBackend::CUDA)
+        return jitc_cuda_tex_get_shape(ndim, texture_handle, shape);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        return jitc_metal_tex_get_shape(ndim, texture_handle, shape);
+#endif
+    jit_tex_unavailable(backend);
+}
+
+void jit_tex_get_indices(JitBackend backend, const void *texture_handle,
+                         uint32_t *indices) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_CUDA)
+    if (backend == JitBackend::CUDA)
+        return jitc_cuda_tex_get_indices(texture_handle, indices);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        return jitc_metal_tex_get_indices(texture_handle, indices);
+#endif
+    jit_tex_unavailable(backend);
+}
+
+void jit_tex_memcpy_d2t(JitBackend backend, size_t ndim, const size_t *shape,
+                        const void *src_ptr, void *dst_texture) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_CUDA)
+    if (backend == JitBackend::CUDA)
+        return jitc_cuda_tex_memcpy_d2t(ndim, shape, src_ptr, dst_texture);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        return jitc_metal_tex_memcpy_d2t(ndim, shape, src_ptr, dst_texture);
+#endif
+    jit_tex_unavailable(backend);
+}
+
+void jit_tex_memcpy_t2d(JitBackend backend, size_t ndim, const size_t *shape,
+                        const void *src_texture, void *dst_ptr) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_CUDA)
+    if (backend == JitBackend::CUDA)
+        return jitc_cuda_tex_memcpy_t2d(ndim, shape, src_texture, dst_ptr);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        return jitc_metal_tex_memcpy_t2d(ndim, shape, src_texture, dst_ptr);
+#endif
+    jit_tex_unavailable(backend);
+}
+
+void jit_tex_lookup(JitBackend backend, size_t ndim, const void *texture_handle,
+                    const uint32_t *pos, uint32_t active, uint32_t *out) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_CUDA)
+    if (backend == JitBackend::CUDA)
+        return jitc_cuda_tex_lookup(ndim, texture_handle, pos, active, out);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        return jitc_metal_tex_lookup(ndim, texture_handle, pos, active, out);
+#endif
+    jit_tex_unavailable(backend);
+}
+
+void jit_tex_bilerp_fetch(JitBackend backend, size_t ndim,
+                          const void *texture_handle, const uint32_t *pos,
+                          uint32_t active, uint32_t *out) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_CUDA)
+    if (backend == JitBackend::CUDA)
+        return jitc_cuda_tex_bilerp_fetch(ndim, texture_handle, pos, active, out);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        return jitc_metal_tex_bilerp_fetch(ndim, texture_handle, pos, active, out);
+#endif
+    jit_tex_unavailable(backend);
+}
+
+void jit_tex_destroy(JitBackend backend, void *texture) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_CUDA)
+    if (backend == JitBackend::CUDA)
+        return jitc_cuda_tex_destroy(texture);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (backend == JitBackend::Metal)
+        return jitc_metal_tex_destroy(texture);
+#endif
+    jit_tex_unavailable(backend);
+}
 
 uint32_t jit_var_neg(uint32_t a0) {
     lock_guard guard(state.lock);

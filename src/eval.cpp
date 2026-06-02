@@ -19,6 +19,7 @@
 #include "call.h"
 #include "coop_vec.h"
 #include "trace.h"
+#include "tex.h"
 #include "op.h"
 #include "array.h"
 #include <tsl/robin_set.h>
@@ -84,6 +85,9 @@ static void jitc_visited_clear() {
 static std::vector<void *> kernel_params;
 static std::vector<uint32_t> kernel_param_ids;
 
+/// Metadata for kernel parameters
+std::vector<KernelParamInfo> kernel_param_info;
+
 /// Ensure uniqueness of globals/callables arrays
 GlobalsMap globals_map;
 
@@ -102,8 +106,6 @@ static uint32_t n_ops_total = 0;
 /// Are we recording an OptiX kernel?
 bool uses_optix = false;
 
-/// Does this Metal kernel use ray tracing?
-bool uses_metal_rt = false;
 bool uses_metal4 = false;
 
 /// Size and alignment of auxiliary buffer needed by virtual function calls
@@ -254,6 +256,16 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
             }
             break;
 
+        case VarKind::TexLookup:
+        case VarKind::TexFetchBilerp:
+            // Traverse TexData payload if present (only on the Metal backend)
+            if (v->data) {
+                TexData *td = (TexData *) v->data;
+                for (uint32_t i = 0; i < td->ndim; ++i)
+                    jitc_var_traverse(size, td->indices[i], depth);
+            }
+            break;
+
         case VarKind::ScatterCAS: {
                 ScatterCASDData *cas_data = (ScatterCASDData *) v->data;
                 jitc_var_traverse(size, cas_data->mask, depth);
@@ -297,12 +309,12 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     kernel_params.clear();
     kernel_param_ids.clear();
+    kernel_param_info.clear();
     globals.clear();
     globals_map.clear();
     alloca_size = alloca_align = -1;
     indirect_callable_count = 0;
     indirect_callable_count_unique = 0;
-    uses_metal_rt = false;
     uses_metal4 = false;
 #if defined(DRJIT_ENABLE_METAL)
     jitc_metal_assemble_reset();
@@ -320,15 +332,23 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
              n_regs         = 0,
              width = jitc_llvm_vector_width;
 
+    // Append a kernel parameter and its metadata. The two vectors grow in
+    // lockstep so ``kernel_param_info`` always stays parallel to ``kernel_params``
+    // (read-only plain buffer by default).
+    auto add_param = [](void *value, uint8_t write = 0, uint8_t kind = 0) {
+        kernel_params.push_back(value);
+        kernel_param_info.push_back({ write, kind });
+    };
+
     if (backend == JitBackend::CUDA || backend == JitBackend::Metal) {
-        kernel_params.push_back((void *) (uintptr_t) group.size);
+        add_param((void *) (uintptr_t) group.size);
 
         // The first 3 variables are reserved on the CUDA/Metal backend
         n_regs = 4;
     } else {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
         for (int i = 0; i < 3; ++i)
-            kernel_params.push_back(nullptr);
+            add_param(nullptr);
         n_regs = 1;
     }
 
@@ -338,7 +358,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         ScheduledVariable &sv = schedule[group_index];
         uint32_t index = sv.index;
         Variable *v = jitc_var(index);
-        v->ssa_f32_cast = 0;
 
         // Some sanity checks
         if (unlikely((JitBackend) v->backend != backend))
@@ -388,7 +407,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         if (v->is_evaluated()) {
             n_params_in++;
             v->param_type = ParamType::Input;
-            kernel_params.push_back(v->data);
+            add_param(v->data);
             kernel_param_ids.push_back(index);
         } else if (v->output_flag && v->size == group.size) {
             n_params_out++;
@@ -409,12 +428,15 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
             sv.data = jitc_malloc(backend, dsize); // Note: unsafe to access 'v' after jitc_malloc().
 
-            kernel_params.push_back(sv.data);
+            add_param(sv.data, /*write=*/1);
             kernel_param_ids.push_back(index);
         } else if (v->is_literal() && (VarType) v->type == VarType::Pointer) {
             n_params_in++;
             v->param_type = ParamType::Input;
-            kernel_params.push_back((void *) v->literal);
+            // A scatter target is written; resource_kind marks a GPU resource
+            // handle (texture / acceleration structure, currently Metal-only).
+            add_param((void *) v->literal, (uint8_t) v->write_ptr,
+                      (uint8_t) v->resource_kind());
             kernel_param_ids.push_back(index);
         } else {
             n_side_effects += (uint32_t) v->side_effect;
@@ -423,12 +445,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
             #if defined(DRJIT_ENABLE_OPTIX)
                 uses_optix |= v->optix;
-            #endif
-            #if defined(DRJIT_ENABLE_METAL)
-                if (backend == JitBackend::Metal &&
-                    ((VarKind) v->kind == VarKind::TraceRay ||
-                     (VarKind) v->kind == VarKind::Call))
-                    uses_metal_rt = true;
             #endif
         }
     }
@@ -641,10 +657,12 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             }
         }
 
-#if defined(DRJIT_ENABLE_METAL)
-        if (ts->backend == JitBackend::Metal)
-            jitc_metal_persist_kernel_scenes(kernel);
-#endif
+        // Persist per-slot parameter metadata (writability + resource kind)
+        // onto the kernel; freed in jitc_kernel_free().
+        size_t np = kernel_param_info.size();
+        kernel.param_info = new KernelParamInfo[np];
+        std::memcpy(kernel.param_info, kernel_param_info.data(),
+                    np * sizeof(KernelParamInfo));
 
 #if defined(DRJIT_ENABLE_CUDA)
         if (ts->backend == JitBackend::CUDA && !uses_optix) {

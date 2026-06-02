@@ -83,9 +83,6 @@ extern char kernel_name[52];
 /// Are we recording an OptiX kernel?
 extern bool uses_optix;
 
-/// Does this Metal kernel use ray tracing?
-extern bool uses_metal_rt;
-
 /// Does this kernel use Metal 4 language features (e.g., matmul2d)?
 extern bool uses_metal4;
 
@@ -107,6 +104,9 @@ extern std::vector<ScheduledVariable> schedule;
 
 /// Groups of variables with the same size
 extern std::vector<ScheduledGroup> schedule_groups;
+
+/// Track kernel parameter metadata (writability, GPU resource kind)
+extern std::vector<KernelParamInfo> kernel_param_info;
 
 /// Evaluate all computation that is queued on the current thread
 extern void jitc_eval(ThreadState *ts);
@@ -150,9 +150,6 @@ extern void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
 /// Reset per-kernel Metal assembly state at the start of jitc_eval()
 extern void jitc_metal_assemble_reset();
-
-/// Persist the per-kernel scene list into the compiled kernel record
-extern void jitc_metal_persist_kernel_scenes(Kernel &kernel);
 #endif
 
 /// Register a global declaration that will be included in the final program

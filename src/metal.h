@@ -9,7 +9,11 @@
 
 #pragma once
 
-#include "common.h"
+#include "internal.h"
+
+#include <string>
+#include <cstdint>
+#include <vector>
 
 #if defined(DRJIT_ENABLE_METAL)
 
@@ -18,9 +22,6 @@ struct Kernel;
 enum class MetalKernel : uint32_t;
 
 /// Precompiled utility-kernel ``.metallib`` archive, embedded as a byte array.
-/// Defined in the generated ``resources/metal_kernels.c`` (see
-/// ``resources/embed_metal_kernels.cmake``) and compiled as its own translation
-/// unit, so these have C linkage.
 extern "C" const unsigned char metal_kernels_metallib[];
 extern "C" const size_t metal_kernels_metallib_size;
 
@@ -29,6 +30,12 @@ extern bool jitc_metal_init();
 
 /// Release all resources held by the Metal backend.
 extern void jitc_metal_shutdown();
+
+/// Return the active ``id<MTLDevice>`` for the current thread.
+extern void *jitc_metal_context_impl();
+
+/// Return the active ``id<MTLCommandQueue>`` for the current thread.
+extern void *jitc_metal_command_queue_impl();
 
 /// Wait for all Metal work submitted on the current thread to complete.
 extern void jitc_metal_sync(ThreadState *ts);
@@ -39,10 +46,9 @@ extern void jitc_metal_sync(ThreadState *ts);
 /// Returns an owned (+1) ``id<MTLBuffer>`` handle. The ``ptr_out`` argument
 /// returns the CPU pointer (shared) or GPU address (private).
 ///
-/// ``metal_buffer_new``/``metal_buffer_free`` are called from
-/// ``jit_malloc``/``jit_free`` *without* holding the Dr.Jit lock — hence the
-/// ``metal_`` (rather than ``jitc_``) prefix.
-extern void *metal_buffer_new(void *device, size_t size, bool shared,
+/// The ``metal_*`` functions lack the ``jitc_`` prefix to indicate that they
+/// are called *without* holding the Dr.Jit lock.
+extern void *metal_buffer_new(void *dev, size_t size, bool shared,
                               void **ptr_out);
 
 /// Release a buffer handle allocated by ``metal_buffer_new``.
@@ -77,29 +83,6 @@ extern void jitc_metal_kernel_free(Kernel &kernel);
 // ---------------------------------------------------------------------
 //  Command-buffer / encoder helpers
 // ---------------------------------------------------------------------
-//
-// The per-thread command buffer / encoder lifecycle lives on
-// ``MetalThreadState`` (see ``ensure_cmdbuf`` / ``close_encoder`` /
-// ``ensure_compute_encoder`` / ``ensure_blit_encoder`` / ``flush`` in
-// metal_ts.h). ``jitc_metal_sync`` remains a free function because it is also
-// called with a generic ``ThreadState *`` (e.g. from malloc.cpp / init.cpp /
-// the record thread state). It flushes the thread's pending command buffer and
-// waits for GPU completion so the CPU can read back results (declared above).
-
-/// Live-MetalScene registry. Used by ``MetalThreadState::launch`` during
-/// frozen-function replay to detect stale ``MetalScene*`` pointers (the
-/// scene was rebuilt mid-recording) and fall back to the most-recently
-/// configured one.
-extern void jitc_metal_register_live_scene(void *scene);
-extern void jitc_metal_unregister_live_scene(void *scene);
-extern bool jitc_metal_is_live_scene(void *scene);
-extern void *jitc_metal_last_live_scene();
-
-#include <string>
-#include <unordered_map>
-#include <cstdint>
-#include <vector>
-
 
 /// Per-scene Metal ray-tracing state. One instance is allocated per call
 /// to ``jitc_metal_configure_scene`` and wrapped in a JIT variable; its
@@ -110,10 +93,31 @@ extern void *jitc_metal_last_live_scene();
 /// All fields are owned by the MetalScene — releasing the scene releases
 /// the IFT, the linked MTLLibrary, and any cached compute pipelines /
 /// per-entry buffers we hold strong references to.
+/// One intersection-function-table entry: an MSL intersection function and the
+/// optional per-entry data buffer bound when the table is built.
+struct IFTEntry {
+    /// MSL intersection-function name (linked into the PSO, looked up by name).
+    std::string name;
+
+    /// id<MTLBuffer> data buffer for this entry (may be null). Not retained —
+    /// the caller manages buffer lifetime.
+    void *buffer = nullptr;
+
+    /// MSL ``[[buffer(N)]]`` slot the data buffer binds to.
+    uint32_t slot = 0;
+
+    /// Byte offset into the buffer (added to ``setBuffer``'s offset arg). Lets
+    /// several entries bind the same combined buffer at different starting
+    /// positions — used by the multi-shape shape-group path so each child can
+    /// index into its own slice without a per-geometry uniform.
+    uint64_t offset = 0;
+};
+
 struct MetalScene {
-    /// id<MTLAccelerationStructure> (TLAS). Bound at [[buffer(1)]] for
-    /// every kernel that traces against this scene. Not retained — the
-    /// caller owns the TLAS lifetime.
+    /// id<MTLAccelerationStructure> (TLAS). Reconstructed in-shader from its
+    /// ``gpuResourceID`` in ``params.args[]`` and made resident via
+    /// useResource() at each launch. Not retained — the caller owns the TLAS
+    /// lifetime.
     void *tlas = nullptr;
 
     /// Resources referenced by the TLAS (BLAS handles, vertex/index
@@ -125,33 +129,19 @@ struct MetalScene {
     /// creation.
     void *intersection_fn_library = nullptr;
 
-    /// Per-IFT-entry MSL function names (heap-owned C strings).
-    std::vector<std::string> intersection_fn_names;
-
-    /// Per-IFT-entry data buffer (id<MTLBuffer>, may be null). NOT
-    /// retained — caller manages buffer lifetime.
-    std::vector<void *> intersection_fn_buffers;
-
-    /// Per-IFT-entry MSL [[buffer(N)]] slot indices.
-    std::vector<uint32_t> intersection_fn_buffer_slots;
-
-    /// Per-IFT-entry byte offset into the buffer (added to
-    /// ``setBuffer``'s offset arg). Lets two IFT entries bind the same
-    /// underlying combined buffer at different starting positions —
-    /// used by the multi-shape shape-group path so each child can index
-    /// into its own slice without needing a per-geometry uniform.
-    std::vector<uint64_t> intersection_fn_buffer_offsets;
+    /// One entry per custom intersection function (see IFTEntry).
+    std::vector<IFTEntry> intersection_fns;
 
     /// Bit 0 = triangle, bit 1 = bounding_box, bit 2 = curves. Used to
     /// specialize the MSL ``intersector<...>`` template at codegen time.
     uint32_t geometry_types_mask = 0;
 
-    /// Lazily created intersection function tables, keyed by the MSL
-    /// compute pipeline they were built for. We need separate IFT
-    /// instances per pipeline because each MTLIntersectionFunctionTable
-    /// is bound to function handles obtained from a specific
-    /// MTLComputePipelineState.
-    std::unordered_map<void *, void *> ift_cache;
+    /// Lazily created intersection function tables, paired with the MSL
+    /// compute pipeline they were built for. We need separate IFT instances
+    /// per pipeline because each MTLIntersectionFunctionTable is bound to
+    /// function handles obtained from a specific MTLComputePipelineState. At
+    /// most one entry per live PSO; each ``second`` is an owned (+1) IFT handle.
+    std::vector<std::pair<void *, void *>> ift_cache;
 };
 
 /// Look up the ``MetalScene`` attached to a JIT variable returned by
@@ -159,38 +149,27 @@ struct MetalScene {
 /// a scene (e.g. has been destroyed already, wrong type/kind, ...).
 extern MetalScene *jitc_metal_get_scene(uint32_t scene_index);
 
-/// Read the active scene that the current ThreadState's kernel is being
-/// assembled / launched against. Returns the MetalScene determined by
-/// the schedule walk in ``jitc_metal_assemble`` (or nullptr if no
-/// TraceRay node was found in this kernel).
-extern MetalScene *jitc_metal_active_scene();
+/// Wrap a raw owner pointer that is not itself a JIT variable (a scene / IFT)
+/// as a resource handle: mem-maps a fresh backing for ``ptr`` and delegates to
+/// jitc_var_resource_pointer(). Returns 0 if ``ptr`` is null.
+extern uint32_t jitc_metal_make_resource_handle(void *ptr, ResourceKind kind);
 
-// ---------------------------------------------------------------------
-// Per-kernel ray-tracing scene layout. Populated by jitc_metal_assemble()'s
-// pre-walk (in metal_eval.cpp) and consumed during launch (in metal_core.mm),
-// so these live here rather than in the codegen-only metal_eval.h.
+/// Resolve the live ``gpuResourceID`` of an opaque-resource ``owner`` of the
+/// given ``kind`` (an acceleration structure, texture, or sampler), writing it
+/// to ``*value_out`` and returning true. Returns false for IFT handles
+/// (PSO-dependent, refreshed at launch) and for ordinary buffers.
+extern bool jitc_metal_resource_id(void *owner, ResourceKind kind,
+                                   void **value_out);
 
-/// Ordered list of distinct ``MetalScene*`` referenced by ``VarKind::TraceRay``
-/// nodes anywhere in the current kernel (top-level schedule + callable
-/// bodies + symbolic loops/conds). The position in this vector becomes the
-/// MSL slot index, i.e. scene at index ``i`` is bound to ``[[buffer(1+i)]]``
-/// and referenced as ``accel_<i>`` in the generated MSL.
+/// Render-discovered set of distinct ``MetalScene*`` referenced by this
+/// kernel's ``VarKind::TraceRay`` nodes (top-level schedule + callable bodies).
+/// Populated during code generation (no separate pre-walk) and consumed at
+/// compile time for PSO intersection-function linking (metal_core.mm).
 extern std::vector<MetalScene *> metal_kernel_scenes;
 
-/// Per-scene IFT buffer slot. Indexed by the same position as
-/// ``metal_kernel_scenes``. Value is the buffer index of that scene's
-/// ``ift_<i>`` argument (always >= 1 + N where N is the accel count), or
-/// ``-1`` if the scene has no ``intersection_fn_library``.
-extern std::vector<int32_t> metal_kernel_ift_slot;
-
-/// Register a scene with the kernel, assigning it the next free slot if it
-/// hasn't been seen yet. Returns the slot index. ``nullptr`` returns 0 and
-/// is not registered (caller is expected to handle that case).
-extern uint32_t metal_register_kernel_scene(MetalScene *scene);
-
-/// Compute IFT slot indices for every registered scene. Called once after
-/// the recursive pre-walk and before any signature emission.
-extern void jitc_metal_finalize_scene_layout();
+/// Append ``scene`` to ``metal_kernel_scenes`` if not already present (linear
+/// dedup; at most a handful of scenes per kernel). ``nullptr`` is ignored.
+extern void metal_register_kernel_scene(MetalScene *scene);
 
 /// Lazily build (and cache) an ``MTLIntersectionFunctionTable`` for the
 /// given scene + compute pipeline. The function handles are derived from
@@ -219,11 +198,5 @@ extern uint32_t jitc_metal_configure_scene(void *accel, void **resources,
 extern void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
                                  uint32_t mask, uint32_t *out,
                                  uint32_t n_out, uint32_t scene);
-
-/// Return the active ``id<MTLDevice>`` for the current thread.
-extern void *jitc_metal_context_impl();
-
-/// Return the active ``id<MTLCommandQueue>`` for the current thread.
-extern void *jitc_metal_command_queue_impl();
 
 #endif // defined(DRJIT_ENABLE_METAL)

@@ -154,12 +154,12 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     size_t storage_format = 0;
     size_t tsize = 0;
 
-    switch (format) {
-        case 0:
+    switch ((VarType) format) {
+        case VarType::Float32:
             storage_format = CU_AD_FORMAT_FLOAT;
             tsize = sizeof(float);
             break;
-        case 1:
+        case VarType::Float16:
             storage_format = CU_AD_FORMAT_HALF;
             tsize = sizeof(uint16_t);
             break;
@@ -195,14 +195,15 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         res_desc.res.array.hArray = array;
         texture->arrays[tex] = array;
 
+        bool is_f32 = (VarType) format == VarType::Float32;
         if (tex_channels == 1)
-            view_desc.format = format == 0 ?
+            view_desc.format = is_f32 ?
                 CU_RES_VIEW_FORMAT_FLOAT_1X32 : CU_RES_VIEW_FORMAT_FLOAT_1X16;
         else if (tex_channels == 2)
-            view_desc.format = format == 0 ?
+            view_desc.format = is_f32 ?
                 CU_RES_VIEW_FORMAT_FLOAT_2X32 : CU_RES_VIEW_FORMAT_FLOAT_2X16;
         else
-            view_desc.format = format == 0 ?
+            view_desc.format = is_f32 ?
                 CU_RES_VIEW_FORMAT_FLOAT_4X32 : CU_RES_VIEW_FORMAT_FLOAT_4X16;
 
         cuda_check(cuTexObjectCreate(&(texture->textures[tex]), &res_desc,

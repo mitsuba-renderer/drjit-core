@@ -19,11 +19,27 @@ using OptixProgramGroup = void*;
 using OptixPipeline = void*;
 enum class JitBackend: uint32_t;
 
-/// Represents a compiled kernel for the three different backends
+/// Per kernel-parameter-slot metadata, indexed identically to the launch
+/// ``kernel_params`` vector. Built during code generation and persisted onto
+/// the ``Kernel``.
+struct KernelParamInfo {
+    /// 1 if the kernel writes this buffer (output or scatter target), else 0.
+    uint8_t write;
+    /// ``ResourceKind`` (raw, since the enum is defined later). Only Metal uses
+    /// non-``Buffer`` kinds.
+    uint8_t kind;
+};
+
+/// Represents a compiled kernel for the different backends
 struct Kernel {
     void *data;
     uint32_t size;
     uint32_t operation_count;
+
+    /// Per-slot parameter metadata, parallel to the launch ``kernel_params``
+    /// vector (see KernelParamInfo).
+    KernelParamInfo *param_info;
+
     union {
         /// 1. CUDA
         struct {
@@ -62,27 +78,11 @@ struct Kernel {
 
 #if defined(DRJIT_ENABLE_METAL)
         struct {
-            /// Compiled id<MTLComputePipelineState> (kept opaque)
+            /// id<MTLComputePipelineState>
             void *pipeline;
 
-            /// Owning id<MTLLibrary> (released at kernel teardown)
+            /// id<MTLLibrary>
             void *library;
-
-            /// Recommended threadgroup size, queried via
-            /// ``threadExecutionWidth`` and capped at 1024
-            uint32_t block_size;
-
-            /// Ordered list of ``MetalScene*`` used at codegen time, captured
-            /// here so a frozen function replay (which skips re-assemble) can
-            /// still bind the correct TLASes / IFTs at launch. Slot index
-            /// ``i`` ↔ MSL kernel argument ``accel_<i>``. The pointers are
-            /// owned externally (refcounted via the scene_index JIT variables
-            /// held by the recording's input set), so this kernel struct is a
-            /// non-owning reference array. ``scenes == nullptr`` for kernels
-            /// that do not perform ray tracing. The array is heap-allocated
-            /// via ``new[]`` and released in ``jitc_metal_kernel_free``.
-            void **scenes;
-            uint32_t scene_count;
         } metal;
 #endif
     };

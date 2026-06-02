@@ -191,44 +191,37 @@ kernel void mkperm_detect_offsets(
 
 // ============================================================================
 //  aggregate — populate a per-vcall data buffer from a list of entries.
-//
-//  Mirrors the host-side ``AggregationEntry`` (16 bytes, see jit.h):
-//    {int32 size; uint32 offset; const void *src}
-//
-//  Each thread handles one entry. Sign of ``size`` selects mode:
-//    - size > 0 : ``src`` packs the literal value; copy its low ``size`` bytes
-//                 to ``dst + offset``.
-//    - size < 0 : ``src`` is a device pointer; copy ``-size`` bytes from
-//                 ``*src`` to ``dst + offset``.
-//
-//  Supported sizes: ±1, ±2, ±4, ±8 (matches the CUDA implementation in
-//  resources/misc.cuh).
+//  Refer to the CUDA version of this kernel in misc.cuh for more details.
 // ============================================================================
 
-struct AggregationEntry {
-    int   size;     // 4 bytes, offset 0
-    uint  offset;   // 4 bytes, offset 4
-    ulong src;      // 8 bytes, offset 8 (value if size>0, device addr if size<0)
+struct alignas(16) AggregationEntry {
+    int16_t size;
+    uint16_t resource_kind; // ignored
+    uint32_t offset;
+    ulong src;
 };
+
+static_assert(sizeof(AggregationEntry) == 16, "Alignment issue");
 
 kernel void aggregate_kernel(
     device uint8_t *dst [[buffer(0)]],
-    device const AggregationEntry *entries [[buffer(1)]],
+    device const AggregationEntry *in [[buffer(1)]],
     constant uint &count [[buffer(2)]],
     uint tid [[thread_position_in_grid]]) {
-    if (tid >= count) return;
-    AggregationEntry e = entries[tid];
-    device uint8_t *d = dst + e.offset;
-    int sz = e.size;
-    switch (sz) {
-        case  1: *d                 = (uchar)  e.src; break;
-        case  2: *(device ushort*)d = (ushort) e.src; break;
-        case  4: *(device uint*)d   = (uint)   e.src; break;
-        case  8: *(device ulong*)d  = (ulong)  e.src; break;
-        case -1: *d                 = *(device const uchar*)  (e.src); break;
-        case -2: *(device ushort*)d = *(device const ushort*) (e.src); break;
-        case -4: *(device uint*)d   = *(device const uint*)   (e.src); break;
-        case -8: *(device ulong*)d  = *(device const ulong*)  (e.src); break;
+
+    AggregationEntry rec = in[tid];
+
+    device uint8_t *d = dst + rec.offset;
+
+    switch (rec.size) {
+        case  1: *d                 = (uchar)  rec.src; break;
+        case  2: *(device ushort*)d = (ushort) rec.src; break;
+        case  4: *(device uint*)d   = (uint)   rec.src; break;
+        case  8: *(device ulong*)d  = (ulong)  rec.src; break;
+        case -1: *d                 = *(device const uchar*)  (rec.src); break;
+        case -2: *(device ushort*)d = *(device const ushort*) (rec.src); break;
+        case -4: *(device uint*)d   = *(device const uint*)   (rec.src); break;
+        case -8: *(device ulong*)d  = *(device const ulong*)  (rec.src); break;
     }
 }
 
@@ -270,3 +263,47 @@ kernel void convert_f32_f16(constant convert_params &p [[buffer(0)]],
                             uint tid [[thread_position_in_grid]]) {
     ((device half *) p.dst)[tid] = (half) ((device const float *) p.src)[tid];
 }
+
+// ============================================================================
+// Metal has no 3-channel texture format, so a logical texture is split into
+// 1/2/4-channel sub-textures; these kernels rearrange the data on the GPU.
+// ============================================================================
+
+struct channel_pack_params {
+    ulong src;        // device const T* (source buffer base + byte offset)
+    ulong dst;        // device T*       (destination buffer base + byte offset)
+    uint  n_channels; // channels per texel in the interleaved layout
+    uint  ci;         // channels per texel in the packed layout (1, 2, or 4)
+    uint  tex_base;   // first interleaved channel of this sub-texture (tex * 4)
+    uint  c_valid;    // number of real channels to copy (1..4; rest are padding)
+};
+
+template <typename T>
+kernel void deinterleave_kernel(constant channel_pack_params &p [[buffer(0)]],
+                                uint tid [[thread_position_in_grid]]) {
+    uint pix = tid / p.ci;
+    uint c   = tid % p.ci;
+    device T *dst = (device T *) p.dst;
+    if (c < p.c_valid)
+        dst[tid] = ((device const T *) p.src)[pix * p.n_channels + p.tex_base + c];
+    else
+        dst[tid] = (T) 0;
+}
+
+template <typename T>
+kernel void interleave_kernel(constant channel_pack_params &p [[buffer(0)]],
+                              uint tid [[thread_position_in_grid]]) {
+    uint pix = tid / p.c_valid;
+    uint c   = tid % p.c_valid;
+    ((device T *) p.dst)[pix * p.n_channels + p.tex_base + c] =
+        ((device const T *) p.src)[pix * p.ci + c];
+}
+
+template [[host_name("deinterleave_u16")]]
+kernel void deinterleave_kernel<ushort>(constant channel_pack_params &, uint);
+template [[host_name("deinterleave_u32")]]
+kernel void deinterleave_kernel<uint>(constant channel_pack_params &, uint);
+template [[host_name("interleave_u16")]]
+kernel void interleave_kernel<ushort>(constant channel_pack_params &, uint);
+template [[host_name("interleave_u32")]]
+kernel void interleave_kernel<uint>(constant channel_pack_params &, uint);

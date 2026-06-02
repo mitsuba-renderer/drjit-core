@@ -26,7 +26,6 @@
 #define __THREADS__
 #import <Metal/Metal.h>
 
-#include <unordered_set>
 #include <vector>
 #include <mutex>
 #include <cstring>
@@ -38,12 +37,12 @@
 // Buffer API
 // ============================================================================
 //
-void *metal_buffer_new(void *device, size_t size, bool shared, void **ptr_out) {
+void *metal_buffer_new(void *dev, size_t size, bool shared, void **ptr_out) {
     @autoreleasepool {
-        id<MTLDevice> dev = (__bridge id<MTLDevice>) device;
+        id<MTLDevice> mtl_dev = (__bridge id<MTLDevice>) dev;
         MTLResourceOptions opts = shared ? MTLResourceStorageModeShared
                                          : MTLResourceStorageModePrivate;
-        id<MTLBuffer> buf = [dev newBufferWithLength:size options:opts];
+        id<MTLBuffer> buf = [mtl_dev newBufferWithLength:size options:opts];
         *ptr_out = shared ? [buf contents]
                           : (void *) (uintptr_t) [buf gpuAddress];
         return (__bridge_retained void *) buf;
@@ -157,7 +156,11 @@ static const char *metal_kernel_names[(uint32_t) MetalKernel::Count] = {
     "memset_u16",
     "memset_u32",
     "memset_u64",
-    "convert_f32_f16"
+    "convert_f32_f16",
+    "deinterleave_u16",
+    "deinterleave_u32",
+    "interleave_u16",
+    "interleave_u32"
 };
 
 /// Create a compute pipeline state for ``name`` from ``lib``. Returns an owned
@@ -205,8 +208,8 @@ bool jitc_metal_init() {
             }
 
             MetalDevice md;
-            md.device      = (__bridge_retained void *) dev;
-            md.queue       = (__bridge_retained void *) [dev newCommandQueue];
+            md.device = (__bridge_retained void *) dev;
+            md.queue  = (__bridge_retained void *) [dev newCommandQueue];
             md.max_threads_per_threadgroup =
                 (uint32_t) [dev maxThreadsPerThreadgroup].width;
             md.supports_ray_tracing = [dev supportsRaytracing];
@@ -326,11 +329,11 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
 
         // ---- Pipeline creation ---------------------------------------------
         // Link the union of custom intersection functions across every scene
-        // registered with this kernel (collected by ``jitc_metal_assemble``'s
-        // pre-walk into ``metal_kernel_scenes``). LinkedFunctions applies to
-        // the entire PSO, not per-IFT, so scenes with disjoint function name
-        // sets must all contribute. Per-scene IFTs are built lazily at launch
-        // time in ``jitc_metal_get_or_create_ift_for_scene``.
+        // registered with this kernel (collected into ``metal_kernel_scenes``
+        // during code generation). LinkedFunctions applies to the entire PSO,
+        // not per-IFT, so scenes with disjoint function name sets must all
+        // contribute. Per-scene IFTs are built lazily at launch time in
+        // ``jitc_metal_get_or_create_ift_for_scene``.
         err = nil;
         id<MTLComputePipelineState> pso = nil;
 
@@ -342,7 +345,8 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
                       : nil;
             if (!isect_lib)
                 continue;
-            for (const std::string &name : scene->intersection_fn_names) {
+            for (const IFTEntry &e : scene->intersection_fns) {
+                const std::string &name = e.name;
                 if (std::find(seen.begin(), seen.end(), name) != seen.end())
                     continue;
                 seen.push_back(name);
@@ -378,10 +382,8 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
             jitc_fail("jitc_metal_kernel_compile(): pipeline creation failed: %s", desc);
         }
 
-        kernel.metal.pipeline    = (__bridge_retained void *) pso;
-        kernel.metal.library     = (__bridge_retained void *) lib;
-        kernel.metal.scenes      = nullptr;
-        kernel.metal.scene_count = 0;
+        kernel.metal.pipeline      = (__bridge_retained void *) pso;
+        kernel.metal.library       = (__bridge_retained void *) lib;
         kernel.size = (uint32_t) std::strlen(source);
         return false;
     }
@@ -394,11 +396,8 @@ void jitc_metal_kernel_free(Kernel &kernel) {
                 kernel.metal.pipeline;
         if (kernel.metal.library)
             (void) (__bridge_transfer id<MTLLibrary>) kernel.metal.library;
-        delete[] kernel.metal.scenes;
-        kernel.metal.pipeline    = nullptr;
-        kernel.metal.library     = nullptr;
-        kernel.metal.scenes      = nullptr;
-        kernel.metal.scene_count = 0;
+        kernel.metal.pipeline      = nullptr;
+        kernel.metal.library       = nullptr;
     }
 }
 
@@ -433,7 +432,7 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
                                     const uint64_t *ift_buffer_offsets,
                                     uint32_t geometry_types_mask) {
     jitc_log(InfoSym,
-             "jitc_metal_configure_scene(accel=" DRJIT_PTR ", n_resources=%u, "
+             "jit_metal_configure_scene(accel=" DRJIT_PTR ", n_resources=%u, "
              "ift_lib=" DRJIT_PTR ", n_ift=%u, geom_mask=%u)",
              (uintptr_t) accel, n_resources,
              (uintptr_t) intersection_fn_library,
@@ -453,31 +452,13 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
         scene->intersection_fn_library = (__bridge_retained void *) isect_lib;
     }
 
-    if (n_ift_entries > 0) {
-        scene->intersection_fn_names.reserve(n_ift_entries);
-        for (uint32_t i = 0; i < n_ift_entries; ++i)
-            scene->intersection_fn_names.emplace_back(ift_function_names[i]);
-
-        if (ift_buffers) {
-            scene->intersection_fn_buffers.assign(
-                ift_buffers, ift_buffers + n_ift_entries);
-        } else {
-            scene->intersection_fn_buffers.assign(n_ift_entries, nullptr);
-        }
-
-        if (ift_buffer_slots) {
-            scene->intersection_fn_buffer_slots.assign(
-                ift_buffer_slots, ift_buffer_slots + n_ift_entries);
-        } else {
-            scene->intersection_fn_buffer_slots.assign(n_ift_entries, 0u);
-        }
-
-        if (ift_buffer_offsets) {
-            scene->intersection_fn_buffer_offsets.assign(
-                ift_buffer_offsets, ift_buffer_offsets + n_ift_entries);
-        } else {
-            scene->intersection_fn_buffer_offsets.assign(n_ift_entries, 0ull);
-        }
+    scene->intersection_fns.resize(n_ift_entries);
+    for (uint32_t i = 0; i < n_ift_entries; ++i) {
+        IFTEntry &e = scene->intersection_fns[i];
+        e.name   = ift_function_names[i];
+        e.buffer = ift_buffers        ? ift_buffers[i]        : nullptr;
+        e.slot   = ift_buffer_slots   ? ift_buffer_slots[i]   : 0u;
+        e.offset = ift_buffer_offsets ? ift_buffer_offsets[i] : 0ull;
     }
 
     uint32_t index =
@@ -491,7 +472,7 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
         jitc_log(InfoSym, "jit_metal_configure_scene(): freeing MetalScene "
                           "(ift_lib=" DRJIT_PTR ", n_ift=%zu, n_pso_cached=%zu)",
                  (uintptr_t) s->intersection_fn_library,
-                 s->intersection_fn_names.size(),
+                 s->intersection_fns.size(),
                  s->ift_cache.size());
         for (auto &kv : s->ift_cache) {
             if (kv.second)
@@ -500,49 +481,12 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
         }
         if (s->intersection_fn_library)
             (void) (__bridge_transfer id<MTLLibrary>) s->intersection_fn_library;
-        jitc_metal_unregister_live_scene(s);
         delete s;
     };
 
     jitc_var_set_callback(index, callback, scene, true);
-    jitc_metal_register_live_scene(scene);
 
     return index;
-}
-
-// ============================================================================
-//  Live MetalScene registry
-// ============================================================================
-namespace {
-    std::mutex g_live_scenes_mutex;
-    std::unordered_set<void *> g_live_scenes;
-    void *g_last_live_scene = nullptr;
-}
-
-void jitc_metal_register_live_scene(void *scene) {
-    std::lock_guard<std::mutex> g(g_live_scenes_mutex);
-    g_live_scenes.insert(scene);
-    g_last_live_scene = scene;
-}
-
-void jitc_metal_unregister_live_scene(void *scene) {
-    std::lock_guard<std::mutex> g(g_live_scenes_mutex);
-    g_live_scenes.erase(scene);
-    if (g_last_live_scene == scene) {
-        g_last_live_scene =
-            g_live_scenes.empty() ? nullptr : *g_live_scenes.begin();
-    }
-}
-
-bool jitc_metal_is_live_scene(void *scene) {
-    if (!scene) return false;
-    std::lock_guard<std::mutex> g(g_live_scenes_mutex);
-    return g_live_scenes.count(scene) != 0;
-}
-
-void *jitc_metal_last_live_scene() {
-    std::lock_guard<std::mutex> g(g_live_scenes_mutex);
-    return g_last_live_scene;
 }
 
 MetalScene *jitc_metal_get_scene(uint32_t scene_index) {
@@ -555,15 +499,14 @@ MetalScene *jitc_metal_get_scene(uint32_t scene_index) {
     return (MetalScene *) v->literal;
 }
 
-void jit_metal_invalidate_scene_tlas(uint32_t scene_index) {
-    MetalScene *scene = jitc_metal_get_scene(scene_index);
-    if (scene)
-        scene->tlas = nullptr;
-}
-
-MetalScene *jitc_metal_active_scene() {
-    auto *ts = thread_state(JitBackend::Metal);
-    return (MetalScene *) ts->metal_active_scene;
+uint32_t jitc_metal_make_resource_handle(void *ptr, ResourceKind kind) {
+    if (!ptr)
+        return 0;
+    uint32_t backing = jitc_var_mem_map(JitBackend::Metal, VarType::UInt64,
+                                        ptr, 1, /*free=*/0);
+    uint32_t handle = jitc_var_resource_pointer(backing, kind);
+    jitc_var_dec_ref(backing);
+    return handle;
 }
 
 /// Lazily build (and cache) an IntersectionFunctionTable for the given scene
@@ -573,34 +516,34 @@ MetalScene *jitc_metal_active_scene() {
 void *
 jitc_metal_get_or_create_ift_for_scene(MetalScene *scene, void *pso_) {
     id<MTLComputePipelineState> pso = (__bridge id<MTLComputePipelineState>) pso_;
-    if (!scene || !pso || scene->intersection_fn_names.empty())
+    if (!scene || !pso || scene->intersection_fns.empty())
         return nullptr;
 
     // Cache hit: we already built an IFT for this pipeline.
-    auto it = scene->ift_cache.find(pso_);
-    if (it != scene->ift_cache.end())
-        return it->second;
+    for (const auto &kv : scene->ift_cache)
+        if (kv.first == pso_)
+            return kv.second;
 
     id<MTLLibrary> isect_lib =
         (__bridge id<MTLLibrary>) scene->intersection_fn_library;
     if (!isect_lib)
         return nullptr;
 
-    uint32_t n_ift = (uint32_t) scene->intersection_fn_names.size();
+    uint32_t n_ift = (uint32_t) scene->intersection_fns.size();
 
     // Resolve unique function objects (deduplicate so we look up each function
     // only once even if the IFT references it multiple times).
     NSMutableDictionary<NSString *, id<MTLFunction>> *unique_fns =
         [NSMutableDictionary dictionary];
-    for (uint32_t i = 0; i < n_ift; ++i) {
-        NSString *name = @(scene->intersection_fn_names[i].c_str());
+    for (const IFTEntry &e : scene->intersection_fns) {
+        NSString *name = @(e.name.c_str());
         if (unique_fns[name])
             continue;
         id<MTLFunction> f = [isect_lib newFunctionWithName:name];
         if (!f)
             jitc_fail("jitc_metal_get_or_create_ift_for_scene(): intersection "
                       "function \"%s\" not found in user-supplied library.",
-                      scene->intersection_fn_names[i].c_str());
+                      e.name.c_str());
         unique_fns[name] = f;
     }
 
@@ -611,36 +554,25 @@ jitc_metal_get_or_create_ift_for_scene(MetalScene *scene, void *pso_) {
         [pso newIntersectionFunctionTableWithDescriptor:iftd];
 
     for (uint32_t i = 0; i < n_ift; ++i) {
-        NSString *name = @(scene->intersection_fn_names[i].c_str());
-        id<MTLFunction> f = unique_fns[name];
+        const IFTEntry &e = scene->intersection_fns[i];
+        id<MTLFunction> f = unique_fns[@(e.name.c_str())];
         id<MTLFunctionHandle> handle = [pso functionHandleWithFunction:f];
         [ift setFunction:handle atIndex:i];
 
-        if (i < scene->intersection_fn_buffers.size()) {
-            id<MTLBuffer> buf =
-                (__bridge id<MTLBuffer>) scene->intersection_fn_buffers[i];
-            uint32_t slot = (i < scene->intersection_fn_buffer_slots.size())
-                                ? scene->intersection_fn_buffer_slots[i] : 0u;
-            uint64_t offset =
-                (i < scene->intersection_fn_buffer_offsets.size())
-                    ? scene->intersection_fn_buffer_offsets[i] : 0ull;
-            if (buf)
-                [ift setBuffer:buf offset:offset atIndex:slot];
-        }
+        if (id<MTLBuffer> buf = (__bridge id<MTLBuffer>) e.buffer)
+            [ift setBuffer:buf offset:e.offset atIndex:e.slot];
     }
 
-    scene->ift_cache[pso_] = (__bridge_retained void *) ift;
-    return scene->ift_cache[pso_];
+    scene->ift_cache.push_back({ pso_, (__bridge_retained void *) ift });
+    return scene->ift_cache.back().second;
 }
 
 void *jitc_metal_context_impl() {
-    ThreadState *ts = thread_state(JitBackend::Metal);
-    return ts->metal_device;
+    return thread_state(JitBackend::Metal)->metal_device;
 }
 
 void *jitc_metal_command_queue_impl() {
-    ThreadState *ts = thread_state(JitBackend::Metal);
-    return ts->metal_queue;
+    return thread_state(JitBackend::Metal)->metal_queue;
 }
 
 void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
@@ -685,11 +617,28 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
         jitc_var_inc_ref(args[i]);
     }
 
-    // Create TraceRay node with valid mask as dep[0] and scene as dep[1].
-    Ref trace = steal(jitc_var_new_node_2(
-        JitBackend::Metal, VarKind::TraceRay, VarType::Void, size,
-        symbolic, valid, jitc_var(valid),
-        scene, jitc_var(scene), (uintptr_t) td));
+    // Build acceleration-structure and intersection-function-table handles
+    // The scene reference in dep[1] keeps MetalScene alive.
+    MetalScene *scene_obj = jitc_metal_get_scene(scene);
+    Ref accel_h = steal(jitc_metal_make_resource_handle(scene_obj,
+                                                        ResourceKind::Accel));
+    Ref ift_h = steal(jitc_metal_make_resource_handle(
+        scene_obj && scene_obj->intersection_fn_library ? scene_obj : nullptr,
+        ResourceKind::IFT));
+
+    // dep[0]=valid, dep[1]=scene, dep[2]=accel handle, dep[3]=IFT.
+    Ref trace;
+    if (ift_h)
+        trace = steal(jitc_var_new_node_4(
+            JitBackend::Metal, VarKind::TraceRay, VarType::Void, size, symbolic,
+            valid, jitc_var(valid), scene, jitc_var(scene),
+            accel_h, jitc_var(accel_h), ift_h, jitc_var(ift_h),
+            (uintptr_t) td));
+    else
+        trace = steal(jitc_var_new_node_3(
+            JitBackend::Metal, VarKind::TraceRay, VarType::Void, size, symbolic,
+            valid, jitc_var(valid), scene, jitc_var(scene),
+            accel_h, jitc_var(accel_h), (uintptr_t) td));
 
     // Register cleanup callback
     jitc_var_set_callback(
@@ -711,11 +660,10 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
         VarType::UInt32   // geometry_id
     };
 
-    for (uint32_t i = 0; i < 7; ++i) {
+    for (uint32_t i = 0; i < 7; ++i)
         out[i] = jitc_var_new_node_1(
             JitBackend::Metal, VarKind::Extract, out_types[i],
             size, symbolic, trace, jitc_var(trace), (uint64_t) i);
-    }
 }
 
 #endif // defined(DRJIT_ENABLE_METAL)
