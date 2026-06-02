@@ -33,37 +33,8 @@ inline long simd_shuffle_xor(long v, ushort mask) {
 //  Reduction operators
 // ============================================================================
 
-template <typename T> struct reduction_add {
-    static T init() { return T(0); }
-    static T apply(T a, T b) { return a + b; }
-};
-
-template <typename T> struct reduction_mul {
-    static T init() { return T(1); }
-    static T apply(T a, T b) { return a * b; }
-};
-
-template <typename T> struct reduction_min {
-    static T init();
-    static T apply(T a, T b) { return min(a, b); }
-};
-template <> float  reduction_min<float>::init()  { return INFINITY; }
-template <> half   reduction_min<half>::init()   { return half(INFINITY); }
-template <> int    reduction_min<int>::init()    { return INT_MAX; }
-template <> uint   reduction_min<uint>::init()   { return UINT_MAX; }
-template <> long   reduction_min<long>::init()   { return LONG_MAX; }
-template <> ulong  reduction_min<ulong>::init()  { return ULONG_MAX; }
-
-template <typename T> struct reduction_max {
-    static T init();
-    static T apply(T a, T b) { return max(a, b); }
-};
-template <> float  reduction_max<float>::init()  { return -INFINITY; }
-template <> half   reduction_max<half>::init()   { return half(-INFINITY); }
-template <> int    reduction_max<int>::init()    { return INT_MIN; }
-template <> uint   reduction_max<uint>::init()   { return 0u; }
-template <> long   reduction_max<long>::init()   { return LONG_MIN; }
-template <> ulong  reduction_max<ulong>::init()  { return 0ull; }
+// Only bitwise Or/And reductions still run as custom kernels; sum / product /
+// minimum / maximum are dispatched through MPSGraph (see metal_ts.mm).
 
 template <typename T> struct reduction_or {
     static T init() { return T(0); }
@@ -196,452 +167,41 @@ kernel void block_reduce_kernel(
     kernel void block_reduce_kernel<T, Red<T>, 1024>(                         \
         device const block_reduce_params &, threadgroup T *, uint, uint);
 
-// float32
-INSTANTIATE_RED("add_f32",  float,  reduction_add)
-INSTANTIATE_RED("mul_f32",  float,  reduction_mul)
-INSTANTIATE_RED("min_f32",  float,  reduction_min)
-INSTANTIATE_RED("max_f32",  float,  reduction_max)
-
-// float16
-INSTANTIATE_RED("add_f16",  half,   reduction_add)
-INSTANTIATE_RED("mul_f16",  half,   reduction_mul)
-INSTANTIATE_RED("min_f16",  half,   reduction_min)
-INSTANTIATE_RED("max_f16",  half,   reduction_max)
-
-// uint32
-INSTANTIATE_RED("add_u32",  uint,   reduction_add)
-INSTANTIATE_RED("mul_u32",  uint,   reduction_mul)
-INSTANTIATE_RED("min_u32",  uint,   reduction_min)
-INSTANTIATE_RED("max_u32",  uint,   reduction_max)
+// Only bitwise Or/And remain as custom kernels (MPSGraph's reductionAnd/Or
+// accept boolean tensors only). uint8 covers boolean any()/all() reductions.
 INSTANTIATE_RED("or_u32",   uint,   reduction_or)
 INSTANTIATE_RED("and_u32",  uint,   reduction_and)
-
-// int32
-INSTANTIATE_RED("min_i32",  int,    reduction_min)
-INSTANTIATE_RED("max_i32",  int,    reduction_max)
-
-// uint64
-INSTANTIATE_RED("add_u64",  ulong,  reduction_add)
-INSTANTIATE_RED("mul_u64",  ulong,  reduction_mul)
-INSTANTIATE_RED("min_u64",  ulong,  reduction_min)
-INSTANTIATE_RED("max_u64",  ulong,  reduction_max)
 INSTANTIATE_RED("or_u64",   ulong,  reduction_or)
 INSTANTIATE_RED("and_u64",  ulong,  reduction_and)
-
-// int64
-INSTANTIATE_RED("min_i64",  long,   reduction_min)
-INSTANTIATE_RED("max_i64",  long,   reduction_max)
-
-// uint8 (used for boolean and/or reductions)
 INSTANTIATE_RED("or_u8",    uchar,  reduction_or)
 INSTANTIATE_RED("and_u8",   uchar,  reduction_and)
 
 // ============================================================================
-//  block_prefix_reduce — inclusive / exclusive prefix scan within blocks
+//  compress_scatter — materialize a compacted index list from a prefix sum.
 //
-//  Each threadgroup handles one block of up to ChunkSize elements.
-//  Uses a work-efficient Hillis-Steele parallel prefix scan in
-//  threadgroup shared memory. For blocks larger than 1024, the C++
-//  dispatch splits into chunks and uses block_reduce to compute
-//  inter-chunk offsets (two-pass approach).
-//
-//  Parameters are passed via a struct matching the C++ layout.
+//  ``MetalThreadState::compress`` first builds the inclusive uint32 prefix sum
+//  of the boolean mask with MPSGraph; this kernel then writes the indices:
+//  for every ``tid`` whose mask is set, store ``tid`` at ``out[prefix[tid]-1]``
+//  (the inclusive prefix is 1-based, so the ``-1`` makes it 0-based).
 // ============================================================================
 
-struct block_prefix_reduce_params {
-    ulong  in;               // device const T *
-    ulong  out;              // device T *
-    ulong  offsets;          // device const T * (inter-chunk offsets, or 0)
-    uint   size;             // total number of input elements
-    uint   block_size;       // how many elements per logical block
-    uint   exclusive;        // 1 = exclusive prefix sum, 0 = inclusive
-    uint   reverse;          // 1 = reverse direction
-    uint   chunks_per_block; // number of chunks per logical block (1 for small blocks)
-};
-
-template <typename T, typename Red, uint ChunkSize>
-kernel void block_prefix_reduce_kernel(
-    device const block_prefix_reduce_params &p [[buffer(0)]],
-    threadgroup T *shared [[threadgroup(0)]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tg_id [[threadgroup_position_in_grid]])
-{
-    constexpr uint SimdWidth = 32;
-    constexpr bool MultiChunk = (ChunkSize < 128);
-    constexpr uint ThreadsPerGroup = MultiChunk ? 128 : ChunkSize;
-
-    device const T *in  = (device const T *) p.in;
-    device T       *out = (device T *)       p.out;
-    device const T *offsets = (device const T *) p.offsets;
-
-    uint chunk, pos_in_chunk;
-    if (MultiChunk) {
-        uint chunks_per_tg = ThreadsPerGroup / ChunkSize;
-        chunk        = tg_id * chunks_per_tg + tid / ChunkSize;
-        pos_in_chunk = tid % ChunkSize;
-    } else {
-        chunk        = tg_id;
-        pos_in_chunk = tid;
-    }
-
-    uint block_id       = chunk / p.chunks_per_block;
-    uint chunk_in_block = chunk % p.chunks_per_block;
-    uint pos_in_block   = chunk_in_block * ChunkSize + pos_in_chunk;
-    if (p.reverse)
-        pos_in_block = p.block_size - 1 - pos_in_block;
-
-    uint pos_in_input = block_id * p.block_size + pos_in_block;
-    bool valid = (pos_in_block < p.block_size) && (pos_in_input < p.size);
-
-    T value = valid ? in[pos_in_input] : Red::init();
-
-    // Inclusive prefix scan via shared memory (Hillis-Steele)
-    for (uint stride = 1; stride < ChunkSize; stride <<= 1) {
-        shared[tid] = value;
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        if (pos_in_chunk >= stride)
-            value = Red::apply(value, shared[tid - stride]);
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-
-    // Add inter-chunk offset if provided (from two-pass large reduction)
-    if (offsets && chunk_in_block > 0) {
-        T off = offsets[chunk];
-        value = Red::apply(value, off);
-    }
-
-    // Write result
-    if (valid) {
-        if (p.exclusive) {
-            // Shift right: exclusive[i] = inclusive[i-1], exclusive[0] = identity
-            shared[tid] = value;
-            threadgroup_barrier(mem_flags::mem_threadgroup);
-            T chunk_offset = Red::init();
-            if (offsets && chunk_in_block > 0)
-                chunk_offset = offsets[chunk];
-            value = (pos_in_chunk == 0) ? chunk_offset : shared[tid - 1];
-        }
-        out[pos_in_input] = value;
-    }
-}
-
-// Instantiation macro
-#define INSTANTIATE_PREFIX(Name, T, Red)                                       \
-    template [[host_name("block_prefix_" Name "_2")]]                         \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 2>(                     \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint); \
-    template [[host_name("block_prefix_" Name "_4")]]                         \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 4>(                     \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint); \
-    template [[host_name("block_prefix_" Name "_8")]]                         \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 8>(                     \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint); \
-    template [[host_name("block_prefix_" Name "_16")]]                        \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 16>(                    \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint); \
-    template [[host_name("block_prefix_" Name "_32")]]                        \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 32>(                    \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint); \
-    template [[host_name("block_prefix_" Name "_64")]]                        \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 64>(                    \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint); \
-    template [[host_name("block_prefix_" Name "_128")]]                       \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 128>(                   \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint); \
-    template [[host_name("block_prefix_" Name "_256")]]                       \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 256>(                   \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint); \
-    template [[host_name("block_prefix_" Name "_512")]]                       \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 512>(                   \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint); \
-    template [[host_name("block_prefix_" Name "_1024")]]                      \
-    kernel void block_prefix_reduce_kernel<T, Red<T>, 1024>(                  \
-        device const block_prefix_reduce_params &, threadgroup T *, uint, uint);
-
-// float32
-INSTANTIATE_PREFIX("add_f32", float, reduction_add)
-INSTANTIATE_PREFIX("mul_f32", float, reduction_mul)
-INSTANTIATE_PREFIX("min_f32", float, reduction_min)
-INSTANTIATE_PREFIX("max_f32", float, reduction_max)
-
-// float16
-INSTANTIATE_PREFIX("add_f16", half,  reduction_add)
-INSTANTIATE_PREFIX("mul_f16", half,  reduction_mul)
-INSTANTIATE_PREFIX("min_f16", half,  reduction_min)
-INSTANTIATE_PREFIX("max_f16", half,  reduction_max)
-
-// uint32
-INSTANTIATE_PREFIX("add_u32", uint,  reduction_add)
-INSTANTIATE_PREFIX("mul_u32", uint,  reduction_mul)
-INSTANTIATE_PREFIX("min_u32", uint,  reduction_min)
-INSTANTIATE_PREFIX("max_u32", uint,  reduction_max)
-INSTANTIATE_PREFIX("or_u32",  uint,  reduction_or)
-INSTANTIATE_PREFIX("and_u32", uint,  reduction_and)
-
-// int32
-INSTANTIATE_PREFIX("min_i32", int,   reduction_min)
-INSTANTIATE_PREFIX("max_i32", int,   reduction_max)
-
-// uint64
-INSTANTIATE_PREFIX("add_u64", ulong, reduction_add)
-INSTANTIATE_PREFIX("mul_u64", ulong, reduction_mul)
-INSTANTIATE_PREFIX("min_u64", ulong, reduction_min)
-INSTANTIATE_PREFIX("max_u64", ulong, reduction_max)
-INSTANTIATE_PREFIX("or_u64",  ulong, reduction_or)
-INSTANTIATE_PREFIX("and_u64", ulong, reduction_and)
-
-// int64
-INSTANTIATE_PREFIX("min_i64", long,  reduction_min)
-INSTANTIATE_PREFIX("max_i64", long,  reduction_max)
-
-// uint8 (boolean prefix scans)
-INSTANTIATE_PREFIX("or_u8",   uchar, reduction_or)
-INSTANTIATE_PREFIX("and_u8",  uchar, reduction_and)
-
-// ============================================================================
-//  extract_chunk_totals — gather the last element of each chunk from a
-//  pass-1 inclusive scan, on-device.
-//
-//  Replaces the CPU gather inside ``MetalThreadState::block_prefix_reduce``
-//  for blocks > chunk_size: previously the path was
-//      memcpy GPU→CPU(size)  →  CPU index loop  →  memcpy CPU→GPU(total_chunks)
-//  costing two stalls. The kernel below dispatches one thread per chunk
-//  and writes a flat ``(total_chunks,)`` device buffer the recursive
-//  ``block_prefix_reduce`` call then scans.
-//
-//  The kernel is byte-copy in disguise — the storage type ``T`` only
-//  determines the load/store width, not any arithmetic. Four
-//  instantiations cover every dtype (1, 2, 4, 8 bytes); the C++ caller
-//  picks by ``type_size[vt]``.
-// ============================================================================
-
-struct extract_chunk_totals_params {
-    ulong  in;               // device const T *  (pass-1 inclusive scan)
-    ulong  out;              // device T *        (flat (total_chunks,) dst)
-    uint   size;             // total elements in `in`
-    uint   block_size;
-    uint   chunk_size;
-    uint   chunks_per_block;
-    uint   total_chunks;
-    uint   reverse;          // 0 = forward, 1 = reverse
-};
-
-template <typename T>
-kernel void extract_chunk_totals_kernel(
-    device const extract_chunk_totals_params &p [[buffer(0)]],
-    uint c [[thread_position_in_grid]])
-{
-    if (c >= p.total_chunks) return;
-
-    device const T *in  = (device const T *) p.in;
-    device       T *out = (device       T *) p.out;
-
-    uint blk = c / p.chunks_per_block;
-    uint cib = c % p.chunks_per_block;
-    uint cap = (cib + 1) * p.chunk_size;
-    if (cap > p.block_size)
-        cap = p.block_size;
-
-    uint last;
-    if (p.reverse == 0)
-        last = blk * p.block_size + cap - 1;
-    else
-        last = blk * p.block_size + (p.block_size - cap);
-
-    out[c] = (last < p.size) ? in[last] : T(0);
-}
-
-template [[host_name("extract_chunk_totals_b1")]]
-kernel void extract_chunk_totals_kernel<uchar>(
-    device const extract_chunk_totals_params &, uint);
-template [[host_name("extract_chunk_totals_b2")]]
-kernel void extract_chunk_totals_kernel<ushort>(
-    device const extract_chunk_totals_params &, uint);
-template [[host_name("extract_chunk_totals_b4")]]
-kernel void extract_chunk_totals_kernel<uint>(
-    device const extract_chunk_totals_params &, uint);
-template [[host_name("extract_chunk_totals_b8")]]
-kernel void extract_chunk_totals_kernel<ulong>(
-    device const extract_chunk_totals_params &, uint);
-
-// ============================================================================
-//  compress_total — sum the last exclusive prefix entry with the last
-//  per-block count to produce the total compacted-output count, on-device.
-//
-//  Replaces the two ``memcpy GPU→CPU + CPU add`` round-trips inside
-//  ``MetalThreadState::compress``. Single-thread kernel; the C++ caller
-//  still issues one final sync before reading ``count_buf->contents()``.
-// ============================================================================
-
-struct compress_total_params {
-    ulong  prefix;       // device const uint* (exclusive prefix array)
-    ulong  counts;       // device const uint* (saved per-block counts)
-    ulong  out;          // device uint*       (count_buf — single value)
-    uint   block_count;
-};
-
-kernel void compress_total_kernel(
-    device const compress_total_params &p [[buffer(0)]])
-{
-    device const uint *prefix = (device const uint *) p.prefix;
-    device const uint *counts = (device const uint *) p.counts;
-    device       uint *out    = (device       uint *) p.out;
-    uint last = p.block_count - 1;
-    out[0] = prefix[last] + counts[last];
-}
-
-// ============================================================================
-//  compress — convert a boolean mask to a compacted index list
-//
-//  Two-pass approach:
-//    Pass 1 (compress_count): Each threadgroup counts true values in its
-//          chunk and writes the partial count to a scratch buffer.
-//    Between passes the CPU prefix-sums the per-block counts via
-//          block_prefix_reduce (or a simple CPU loop for small arrays).
-//    Pass 2 (compress_write): Each threadgroup does an intra-group
-//          exclusive prefix scan and writes indices offset by the
-//          block-level prefix.
-//
-//  For small arrays (≤ 4096 elements) the single-pass kernel
-//  compress_small performs the entire operation in one threadgroup.
-// ============================================================================
-
-struct compress_params {
-    ulong in;           // device const uint8_t *
-    ulong out;          // device uint32_t *
-    ulong scratch;      // device uint32_t * (per-block counts / prefix)
+struct compress_scatter_params {
+    ulong in;      // device const uint8_t * (mask)
+    ulong prefix;  // device const uint32_t * (inclusive prefix of the mask)
+    ulong out;     // device uint32_t *       (compacted indices)
     uint  size;
-    uint  count_offset; // offset into scratch where total count is stored
 };
 
-kernel void compress_small(
-    device const compress_params &p [[buffer(0)]],
-    threadgroup uint *shared [[threadgroup(0)]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tg_size [[threads_per_threadgroup]])
+kernel void compress_scatter(
+    device const compress_scatter_params &p [[buffer(0)]],
+    uint tid [[thread_position_in_grid]])
 {
+    if (tid >= p.size) return;
     device const uint8_t *in = (device const uint8_t *) p.in;
-    device uint *out         = (device uint *)          p.out;
-    device uint *scratch     = (device uint *)          p.scratch;
-
-    // Each thread processes 4 elements
-    uint base = tid * 4;
-    uint local_count = 0;
-    uint local_prefix[4];
-    for (uint i = 0; i < 4; i++) {
-        local_prefix[i] = local_count;
-        if (base + i < p.size)
-            local_count += in[base + i] ? 1 : 0;
-    }
-
-    // Exclusive scan via shared memory (Hillis-Steele)
-    uint si = tid;
-    shared[si] = 0;
-    si += tg_size;
-    shared[si] = local_count;
-
-    for (uint offset = 1; offset < tg_size; offset <<= 1) {
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        uint sum = shared[si] + shared[si - offset];
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        shared[si] = sum;
-    }
-
-    // Total count
-    if (tid == tg_size - 1)
-        scratch[p.count_offset] = shared[si];
-
-    uint block_prefix = shared[si] - local_count;
-    for (uint i = 0; i < 4; i++) {
-        if (base + i < p.size && in[base + i])
-            out[block_prefix + local_prefix[i]] = base + i;
-    }
-}
-
-kernel void compress_count(
-    device const compress_params &p [[buffer(0)]],
-    threadgroup uint *shared [[threadgroup(0)]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tg_id [[threadgroup_position_in_grid]],
-    uint tg_size [[threads_per_threadgroup]])
-{
-    device const uint8_t *in = (device const uint8_t *) p.in;
-    device uint *scratch     = (device uint *)          p.scratch;
-
-    uint items_per_thread = 16;
-    uint block_start = tg_id * tg_size * items_per_thread;
-
-    uint local_count = 0;
-    for (uint i = 0; i < items_per_thread; i++) {
-        uint idx = block_start + tid * items_per_thread + i;
-        if (idx < p.size)
-            local_count += in[idx] ? 1 : 0;
-    }
-
-    // SIMD reduction
-    for (uint k = 1; k < 32; k *= 2)
-        local_count += simd_shuffle_xor(local_count, (ushort)k);
-
-    // Write lane-0 to shared, then reduce across SIMD groups
-    if ((tid % 32) == 0)
-        shared[tid / 32] = local_count;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    if (tid < 32) {
-        uint val = (tid < tg_size / 32) ? shared[tid] : 0;
-        for (uint k = 1; k < 32; k *= 2)
-            val += simd_shuffle_xor(val, (ushort)k);
-        if (tid == 0)
-            scratch[tg_id] = val;
-    }
-}
-
-kernel void compress_write(
-    device const compress_params &p [[buffer(0)]],
-    threadgroup uint *shared [[threadgroup(0)]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tg_id [[threadgroup_position_in_grid]],
-    uint tg_size [[threads_per_threadgroup]])
-{
-    device const uint8_t *in = (device const uint8_t *) p.in;
-    device uint *out         = (device uint *)          p.out;
-    device uint *scratch     = (device uint *)          p.scratch;
-
-    const uint items_per_thread = 16;
-    uint block_start = tg_id * tg_size * items_per_thread;
-    uint block_prefix = scratch[tg_id]; // prefix-summed by prior pass
-
-    // Per-thread local exclusive scan over its items
-    uint local_prefix[items_per_thread];
-    uint local_count = 0;
-    for (uint i = 0; i < items_per_thread; i++) {
-        local_prefix[i] = local_count;
-        uint idx = block_start + tid * items_per_thread + i;
-        if (idx < p.size && in[idx])
-            local_count++;
-    }
-
-    // Block-level exclusive scan of per-thread counts (Hillis-Steele,
-    // double-buffered in shared memory; mirrors `compress_small`).
-    uint si = tid;
-    shared[si] = 0;
-    si += tg_size;
-    shared[si] = local_count;
-
-    for (uint offset = 1; offset < tg_size; offset <<= 1) {
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        uint sum = shared[si] + shared[si - offset];
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-        shared[si] = sum;
-    }
-
-    uint thread_prefix = shared[si] - local_count;  // exclusive
-
-    for (uint i = 0; i < items_per_thread; i++) {
-        uint idx = block_start + tid * items_per_thread + i;
-        if (idx < p.size && in[idx])
-            out[block_prefix + thread_prefix + local_prefix[i]] = idx;
-    }
+    if (!in[tid]) return;
+    device const uint *prefix = (device const uint *) p.prefix;
+    device uint *out          = (device uint *)       p.out;
+    out[prefix[tid] - 1] = tid;
 }
 
 // ============================================================================
@@ -730,70 +290,6 @@ kernel void mkperm_detect_offsets(
 }
 
 // ============================================================================
-//  reduce_dot — dot product of two arrays
-//
-//  Each threadgroup multiplies + reduces a tile, writing one partial result.
-//  The C++ dispatch then calls block_reduce(Add) on the partials.
-// ============================================================================
-
-struct reduce_dot_params {
-    ulong ptr_1;
-    ulong ptr_2;
-    uint  size;
-    ulong out;
-};
-
-template <typename T>
-kernel void reduce_dot_kernel(
-    device const reduce_dot_params &p [[buffer(0)]],
-    threadgroup T *shared [[threadgroup(0)]],
-    uint tid [[thread_index_in_threadgroup]],
-    uint tg_id [[threadgroup_position_in_grid]],
-    uint tg_size [[threads_per_threadgroup]])
-{
-    device const T *a = (device const T *) p.ptr_1;
-    device const T *b = (device const T *) p.ptr_2;
-    device T *out     = (device T *)       p.out;
-
-    // Each thread reduces two elements (standard trick for dot products)
-    uint idx = tg_id * tg_size * 2 + tid;
-    T sum = T(0);
-    if (idx < p.size)
-        sum = a[idx] * b[idx];
-    if (idx + tg_size < p.size)
-        sum += a[idx + tg_size] * b[idx + tg_size];
-
-    shared[tid] = sum;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-
-    // Tree reduction in shared memory
-    for (uint s = tg_size / 2; s > 0; s >>= 1) {
-        if (tid < s)
-            shared[tid] += shared[tid + s];
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-
-    if (tid == 0)
-        out[tg_id] = shared[0];
-}
-
-template [[host_name("reduce_dot_f32")]]
-kernel void reduce_dot_kernel<float>(
-    device const reduce_dot_params &, threadgroup float *, uint, uint, uint);
-
-template [[host_name("reduce_dot_f16")]]
-kernel void reduce_dot_kernel<half>(
-    device const reduce_dot_params &, threadgroup half *, uint, uint, uint);
-
-template [[host_name("reduce_dot_u32")]]
-kernel void reduce_dot_kernel<uint>(
-    device const reduce_dot_params &, threadgroup uint *, uint, uint, uint);
-
-template [[host_name("reduce_dot_i32")]]
-kernel void reduce_dot_kernel<int>(
-    device const reduce_dot_params &, threadgroup int *, uint, uint, uint);
-
-// ============================================================================
 //  aggregate — populate a per-vcall data buffer from a list of entries.
 //
 //  Mirrors the host-side ``AggregationEntry`` (16 bytes, see jit.h):
@@ -836,3 +332,29 @@ kernel void aggregate_kernel(
         case -8: *(device ulong*)d  = *(device const ulong*)  (e.src); break;
     }
 }
+
+// ============================================================================
+//  memset — fill a buffer with a replicated 2/4/8-byte pattern (one element per
+//  thread). The 1-byte case is handled by a blit ``fillBuffer`` on the host
+//  side; a dedicated kernel per element width avoids a per-thread branch.
+// ============================================================================
+
+struct memset_params {
+    ulong dst;     // device pointer (buffer gpuAddress + byte offset)
+    ulong value;   // replicated pattern; only the low sizeof(T) bytes are used
+};
+
+template <typename T>
+kernel void memset_kernel(
+    device const memset_params &p [[buffer(0)]],
+    uint tid [[thread_position_in_grid]])
+{
+    ((device T *) p.dst)[tid] = (T) p.value;
+}
+
+template [[host_name("memset_u16")]]
+kernel void memset_kernel<ushort>(device const memset_params &, uint);
+template [[host_name("memset_u32")]]
+kernel void memset_kernel<uint>(device const memset_params &, uint);
+template [[host_name("memset_u64")]]
+kernel void memset_kernel<ulong>(device const memset_params &, uint);

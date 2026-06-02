@@ -2488,14 +2488,38 @@ enum KernelType : uint32_t {
     /// JIT-compiled kernel
     JIT,
 
-    /// Kernel responsible for a horizontal reduction operation (e.g. hsum)
-    Reduce,
+    /// Block reduction, e.g. hsum (\ref jit_block_reduce())
+    BlockReduce,
+
+    /// Block prefix reduction / scan (\ref jit_block_prefix_reduce())
+    BlockPrefixReduce,
+
+    /// Dot product (\ref jit_reduce_dot())
+    Dot,
+
+    /// Batched matrix multiplication (\ref jit_batched_gemm())
+    BatchedGemm,
+
+    /// Mask compaction (\ref jit_compress())
+    Compress,
 
     /// Permutation kernel produced by \ref jit_block_mkperm()
-    CallReduce,
+    MkPerm,
 
-    /// Any other kernel
-    Other
+    /// Device memory copy (\ref jit_memcpy_async())
+    Memcpy,
+
+    /// Device memory initialization (\ref jit_memset_async())
+    Memset,
+
+    /// Single-element memory write (\ref jit_poke())
+    Poke,
+
+    /// Gather/scatter of host-provided entries (\ref jit_aggregate())
+    Aggregate,
+
+    /// Time spent in host callbacks invoked by the LLVM backend's thread pool
+    LLVMHostFunc
 };
 
 /**

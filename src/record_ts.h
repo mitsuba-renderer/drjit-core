@@ -415,7 +415,7 @@ public:
 #if defined(DRJIT_ENABLE_METAL)
         this->metal_device         = internal->metal_device;
         this->metal_queue          = internal->metal_queue;
-        // Intentionally NOT copying metal_command_buffer: the internal
+        // Intentionally NOT copying metal_cb: the internal
         // ThreadState owns the active command buffer at any time.  All
         // launch / memcpy / sync paths route through ``m_internal`` (see
         // RecordThreadState::launch in record_ts.cpp), so the record-side
@@ -423,7 +423,7 @@ public:
         // double-commit aborts ("commit an already committed command
         // buffer") when sync was triggered against the record TS first
         // and then again against the internal TS.
-        this->metal_command_buffer = nullptr;
+        this->metal_cb = nullptr;
         this->metal_max_threads    = internal->metal_max_threads;
         this->metal_simd_width     = internal->metal_simd_width;
 #endif

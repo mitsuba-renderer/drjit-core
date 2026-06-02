@@ -174,7 +174,7 @@ void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
                 dev.get_launch_config(&block_count, &thread_count, size_);
                 void *args[] = { &ptr, &size_, (void *) src };
                 CUfunction kernel = jitc_cuda_fill_64[dev.id];
-                submit_gpu(KernelType::Other, this->recording_mode, kernel,
+                submit_gpu(KernelType::Memset, this->recording_mode, kernel,
                            block_count, thread_count, 0, stream, args, nullptr,
                            size_);
             }
@@ -341,7 +341,7 @@ void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
     {
         scoped_set_context guard(context);
         void *args[] = { &params };
-        submit_gpu(KernelType::Reduce, this->recording_mode, func, grid_dim_x,
+        submit_gpu(KernelType::BlockReduce, this->recording_mode, func, grid_dim_x,
                    thread_count, smem_bytes, stream, args, nullptr, size,
                    grid_dim_y);
     }
@@ -379,7 +379,7 @@ void CUDAThreadState::reduce_dot(VarType vt, const void *ptr_1,
     if (block_count == 1) {
         void *args[] = { &ptr_1, &ptr_2, &size, &out };
 
-        submit_gpu(KernelType::Reduce, this->recording_mode, red_dot, 1,
+        submit_gpu(KernelType::Dot, this->recording_mode, red_dot, 1,
                    thread_count, shared_size, stream, args, nullptr, size);
     } else {
         // Reduce using multiple blocks
@@ -389,7 +389,7 @@ void CUDAThreadState::reduce_dot(VarType vt, const void *ptr_1,
         // First reduction
         void *args_1[] = { &ptr_1, &ptr_2, &size, &temp };
 
-        submit_gpu(KernelType::Reduce, this->recording_mode, red_dot,
+        submit_gpu(KernelType::Dot, this->recording_mode, red_dot,
                    block_count, thread_count, shared_size, stream, args_1,
                    nullptr, size);
 
@@ -533,7 +533,7 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
     // The kernel is launched as a flat group of 64 threads that internally
     // derives an 8 x 8 layout from ``threadIdx.x``. gridDim.z walks the
     // grid batch; the reduce batch is iterated inside the kernel body.
-    submit_gpu(KernelType::Other, this->recording_mode, func, grid_x,
+    submit_gpu(KernelType::BatchedGemm, this->recording_mode, func, grid_x,
                /* thread_count */ 64, /* shared_mem_bytes */ 0, stream, args,
                nullptr, /* width */ grid_count * M * N,
                /* block_count_y */ grid_y,
@@ -685,7 +685,7 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
     {
         scoped_set_context guard(context);
         void *args[] = { &params };
-        submit_gpu(KernelType::Reduce, this->recording_mode, func, grid_dim_x,
+        submit_gpu(KernelType::BlockPrefixReduce, this->recording_mode, func, grid_dim_x,
                    thread_count, smem_bytes, stream, args, nullptr, size,
                    grid_dim_y);
     }
@@ -724,7 +724,7 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
                                        stream));
 
         void *args[] = { &in, &out, &size, &count_out };
-        submit_gpu(KernelType::Other, this->recording_mode,
+        submit_gpu(KernelType::Compress, this->recording_mode,
                    jitc_cuda_compress_small[dev.id], 1, thread_count,
                    shared_size, stream, args, nullptr, size);
     } else {
@@ -753,7 +753,7 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
                                  scratch_items);
 
         void *args[] = { &scratch, &scratch_items };
-        submit_gpu(KernelType::Other, this->recording_mode,
+        submit_gpu(KernelType::Compress, this->recording_mode,
                    jitc_cuda_compress_large_init[dev.id], block_count_init,
                    thread_count_init, 0, stream, args, nullptr, scratch_items);
 
@@ -763,7 +763,7 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
 
         scratch += 32; // move beyond padding area
         void *args_2[] = { &in, &out, &scratch, &count_out };
-        submit_gpu(KernelType::Other, this->recording_mode,
+        submit_gpu(KernelType::Compress, this->recording_mode,
                    jitc_cuda_compress_large[dev.id], block_count, thread_count,
                    shared_size, stream, args_2, nullptr, scratch_items);
         scratch -= 32;
@@ -914,7 +914,7 @@ uint32_t CUDAThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
     void *args_1[] = { &ptr, &buckets_1, &size, &size_per_gpu_block,
                        &bucket_count, &block_size };
 
-    submit_gpu(KernelType::CallReduce, this->recording_mode, phase_1,
+    submit_gpu(KernelType::MkPerm, this->recording_mode, phase_1,
                gpu_block_count, thread_count, shared_size, stream, args_1,
                nullptr, size);
 
@@ -954,7 +954,7 @@ uint32_t CUDAThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
         void *args_3[] = { &buckets_1, &bucket_count, &bucket_count_rounded,
                            &size,      &counter,      &offsets };
 
-        submit_gpu(KernelType::CallReduce, this->recording_mode,
+        submit_gpu(KernelType::MkPerm, this->recording_mode,
                    jitc_cuda_block_mkperm_phase_3[dev.id], gpu_block_count_3,
                    thread_count_3, sizeof(uint32_t) * thread_count_3, stream,
                    args_3, nullptr, size);
@@ -970,7 +970,7 @@ uint32_t CUDAThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
     void *args_4[] = { &ptr, &buckets_1, &perm, &size, &size_per_gpu_block,
                        &bucket_count, &block_size };
 
-    submit_gpu(KernelType::CallReduce, this->recording_mode, phase_4,
+    submit_gpu(KernelType::MkPerm, this->recording_mode, phase_4,
                gpu_block_count, thread_count, shared_size, stream, args_4,
                nullptr, size);
 
@@ -1015,7 +1015,7 @@ void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
     const Device &dev = state.devices[device];
     CUfunction func = jitc_cuda_poke[(int) type][dev.id];
     void *args[] = { &dst, (void *) src };
-    submit_gpu(KernelType::Other, this->recording_mode, func, 1, 1, 0, stream,
+    submit_gpu(KernelType::Poke, this->recording_mode, func, 1, 1, 0, stream,
                args, nullptr, 1);
 }
 
@@ -1035,7 +1035,7 @@ void CUDAThreadState::aggregate(void *dst_, AggregationEntry *agg,
              (uintptr_t) agg, (uintptr_t) dst_, size, block_count,
              thread_count);
 
-    submit_gpu(KernelType::Other, this->recording_mode, func, block_count,
+    submit_gpu(KernelType::Aggregate, this->recording_mode, func, block_count,
                thread_count, 0, stream, args, nullptr, 1);
 }
 

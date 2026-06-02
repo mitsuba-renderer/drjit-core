@@ -6,12 +6,6 @@
     All rights reserved. Use of this source code is governed by a BSD-style
     license that can be found in the LICENSE file.
 
-    --------------------------------------------------------------------------
-
-    Mirrors the LLVM cooperative-vector backend (src/llvm_coop_vec.{h,cpp}):
-    each coopvec variable lowers to ``array_length`` independent MSL scalars
-    named ``$v_0, $v_1, ..., $v_{N-1}``, and per-element ops emit one MSL
-    expression per element.
 */
 
 #pragma once

@@ -318,8 +318,8 @@ void jitc_free(void *ptr) {
 
 #if defined(DRJIT_ENABLE_METAL)
     else if (backend == JitBackend::Metal) {
-        if (ts->metal_command_buffer)
-            jitc_metal_cmdbuf_free_on_complete(ts->metal_command_buffer,
+        if (ts->metal_cb)
+            jitc_metal_cmdbuf_free_on_complete(ts->metal_cb,
                                                rec.info, rec.ptr);
         else
             release_cb(&rec);
