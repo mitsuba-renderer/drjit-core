@@ -41,9 +41,20 @@ set_property(TARGET test_basics PROPERTY CXX_STANDARD 17)
 set_property(TARGET test_loop PROPERTY CXX_STANDARD 17)
 
 if (DRJIT_ENABLE_OPTIX)
- add_executable(triangle triangle.cpp optix_stubs.h optix_stubs.cpp)
- set_property(TARGET triangle PROPERTY CXX_STANDARD 17)
- target_link_libraries(triangle PRIVATE drjit-core)
+ add_executable(optix_triangle optix_triangle.cpp optix_stubs.h optix_stubs.cpp)
+ set_property(TARGET optix_triangle PROPERTY CXX_STANDARD 17)
+ target_link_libraries(optix_triangle PRIVATE drjit-core)
+endif()
+
+if (DRJIT_ENABLE_METAL)
+  # Metal analog of the OptiX `triangle` test. Native Objective-C++ (ARC).
+  add_executable(metal_triangle metal_triangle.mm)
+  set_property(TARGET metal_triangle PROPERTY CXX_STANDARD 17)
+  set_source_files_properties(metal_triangle.mm PROPERTIES COMPILE_FLAGS "-fobjc-arc")
+  target_link_libraries(metal_triangle PRIVATE drjit-core
+    "-framework Foundation" "-framework Metal")
+  add_test(NAME metal_triangle COMMAND metal_triangle
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 add_executable(microbenchmark microbenchmark.cpp)
