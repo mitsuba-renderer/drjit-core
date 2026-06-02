@@ -724,7 +724,7 @@ struct ThreadStateBase {
     void *metal_event = nullptr;
 
     /// A id<MTLCommandBuffer> with pending work
-    void *metal_command_buffer = nullptr;
+    void *metal_cb = nullptr;
 
     /// Current Metal command encoder and its kind (a ``MetalEncoderKind``).
     void *metal_encoder = nullptr;

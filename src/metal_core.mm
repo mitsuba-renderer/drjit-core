@@ -457,7 +457,7 @@ float jitc_metal_finalize_kernel_history_entry(void *task_ptr) {
 }
 
 /// Commit + waitUntilCompleted on a standalone command buffer (one not tied to
-/// the thread's pending ``metal_command_buffer``).
+/// the thread's pending ``metal_cb``).
 void jitc_metal_commit_and_wait(void *cb_ptr) {
     id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cb_ptr;
     [cb commit];

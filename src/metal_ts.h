@@ -17,6 +17,15 @@
 #include "log.h"
 #include "var.h"
 
+/// A cached MPSGraph together with the placeholder/result tensors needed to run
+/// it. Stored as opaque pointers so this header stays free of Metal types; the
+/// underlying Objective-C objects are retained (released in ~MetalThreadState).
+struct MetalGraph {
+    void *graph  = nullptr;                // MPSGraph*
+    void *in[2]  = { nullptr, nullptr };   // MPSGraphTensor* placeholders
+    void *out[2] = { nullptr, nullptr };   // MPSGraphTensor* results
+};
+
 struct MetalThreadState : ThreadState {
     /// Lazily initialized in jitc_init_thread_state(). The id<MTLCommandQueue>,
     /// id<MTLDevice>, and id<MTLSharedEvent> are stored in the ThreadStateBase
@@ -28,10 +37,29 @@ struct MetalThreadState : ThreadState {
     /// useResource() calls at kernel launch time.
     std::vector<void *> metal_call_resources;
 
+    /// Cache of compiled MPSGraphs (block reduce/prefix-reduce, dot product,
+    /// compress), keyed by a packed (kind, device, op, type, flags) integer.
+    /// Per-thread-state to avoid cross-thread races; released in the destructor.
+    tsl::robin_map<uint64_t, MetalGraph> metal_graph_cache;
+
+    /// Re-entrancy depth for kernel-history recording. Operations call into each
+    /// other (e.g. block_reduce recurses, block_mkperm uses block_prefix_reduce);
+    /// only the outermost records an entry so a single logical operation maps to
+    /// a single history entry. See MetalHistoryScope in metal_ts.mm.
+    uint32_t metal_history_depth = 0;
+
+    /// The most recently committed command buffer (retained id<MTLCommandBuffer>,
+    /// or null). A Metal command queue executes serially, so waiting on this
+    /// buffer waits for *all* committed work — that is how flush(wait=true)
+    /// synchronizes work that was already committed (e.g. an async copy committed
+    /// early, or kernel-history isolation commits) and is no longer the pending
+    /// ``metal_cb``. Released in the destructor.
+    void *metal_last_cb = nullptr;
+
     // -- Command buffer / encoder lifecycle (defined in metal_ts.mm) ---------
 
     /// Return the pending command buffer, opening one on first use. A non-null
-    /// ``metal_command_buffer`` is the "GPU work is queued" signal.
+    /// ``metal_cb`` is the "GPU work is queued" signal.
     void *ensure_cmdbuf();
 
     /// End and release the currently-open encoder, if any.
@@ -42,9 +70,9 @@ struct MetalThreadState : ThreadState {
     void *ensure_compute_encoder();
     void *ensure_blit_encoder();
 
-    /// Commit the pending command buffer (if one is open), optionally waiting
-    /// for GPU completion, and clear the slot. A no-op when no command buffer
-    /// is open, so a no-work sync is cheap.
+    /// Commit the pending command buffer (if one is open) and, when ``wait`` is
+    /// set, block until all committed GPU work has finished (see
+    /// ``metal_last_cb``). Clears the pending slot.
     void flush(bool wait);
 
     /// The Metal backend uses barrier() as a hint to submit the command buffer
