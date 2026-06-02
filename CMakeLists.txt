@@ -138,6 +138,8 @@ if (DRJIT_ENABLE_METAL)
     src/metal_ts.mm
     src/metal_scatter.h
     src/metal_scatter.cpp
+    src/metal_packet.h
+    src/metal_packet.cpp
     src/metal_array.h
     src/metal_array.cpp
     src/metal_coop_vec.h

@@ -11,7 +11,6 @@
 #if defined(DRJIT_ENABLE_METAL)
 
 #include "metal.h"
-#include "metal_eval.h"
 #include "metal_ts.h"
 #include "internal.h"
 #include "malloc.h"

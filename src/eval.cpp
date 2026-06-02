@@ -25,7 +25,6 @@
 
 #if defined(DRJIT_ENABLE_METAL)
 #  include "metal.h"
-#  include "metal_eval.h"
 #endif
 
 // ====================================================================

@@ -130,5 +130,27 @@ extern void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                                     uint32_t out_size, uint32_t out_align,
                                     uint32_t n_regs);
 
+#if defined(DRJIT_ENABLE_METAL)
+struct Kernel;
+
+/// Used by jitc_eval() to generate Metal Shading Language source code. Declared
+/// here (rather than in metal_eval.h) so that eval.cpp does not pull in that
+/// header's MSL codegen macros. Mirrors the CUDA/LLVM assemble entry points.
+extern void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
+                                uint32_t n_regs, uint32_t n_params);
+
+/// Used by jitc_call() to generate MSL source code for callables
+extern void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
+                                     uint32_t in_size, uint32_t in_align,
+                                     uint32_t out_size, uint32_t out_align,
+                                     uint32_t n_regs);
+
+/// Reset per-kernel Metal assembly state at the start of jitc_eval()
+extern void jitc_metal_assemble_reset();
+
+/// Persist the per-kernel scene list into the compiled kernel record
+extern void jitc_metal_persist_kernel_scenes(Kernel &kernel);
+#endif
+
 /// Register a global declaration that will be included in the final program
 extern void jitc_register_global(const char *str);
