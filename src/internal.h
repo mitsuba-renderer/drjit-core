@@ -208,6 +208,16 @@ enum class ArrayState : uint32_t {
     Conflicted
 };
 
+/// Classifies an opaque GPU resource referenced by a pointer-literal handle.
+/// Currently used only by the Metal backend.
+enum class ResourceKind : uint8_t {
+    Buffer  = 0, ///< Ordinary device buffer pointer (not an opaque resource).
+    Accel   = 1, ///< Acceleration structure.
+    IFT     = 2, ///< Intersection-function table.
+    Texture = 3, ///< Texture object.
+    Sampler = 4  ///< Sampler object.
+};
+
 /// Central variable data structure, which represents an assignment in SSA form
 struct alignas(64) Variable {
     /// Zero-initialize by default
@@ -286,8 +296,7 @@ struct alignas(64) Variable {
     // (+11 bits -> 32 bits with all the preceding individiual bits = 4 bytes)
     // (+2*4 = 8 bytes)
 
-    /// Tracks if an SSA (LLVM) implicit f32 cast has been performed during assembly
-    uint32_t ssa_f32_cast : 1;
+    uint32_t unused : 1;
 
     /// Argument type
     uint32_t param_type : 2;
@@ -298,11 +307,11 @@ struct alignas(64) Variable {
     /// Consumed bit for operations that should only be executed once
     uint32_t consumed : 1;
 
-    /// When nonzero, this flag specifies that the array is currently stored
-    /// in an expanded form to avoid write conflicts during scatter-reductions
-    /// (i.e. drjit.ReduceOp.Expand). The contents will later be reduced
-    /// according to the ReduceOp operation encoded by this integer.
-    uint32_t reduce_op : 3;
+    /// This field is used in two roles depending on context
+    /// 1. Expanded evaluated arrays (ReduceOp.Expand for scatters on LLVM)
+    /// 2. Tagged pointer arrays (to indicate GPU resource types on Metal)
+    /// Access via the \ref reduce_op() and \ref resource_kind() functions below
+    uint32_t reduce_op_or_resource_kind : 3;
 
     /// State of the variable array during compilation (see \ref ArrayState)
     uint32_t array_state : 3;
@@ -340,6 +349,11 @@ struct alignas(64) Variable {
     bool is_dirty()     const { return ref_count_se > 0; }
     bool is_array()     const { return array_state != (uint32_t) ArrayState::Invalid; }
     bool is_coop_vec_literal()   const { return kind == (uint32_t) VarKind::CoopVecLiteral; }
+
+    ReduceOp reduce_op() const { return (ReduceOp) reduce_op_or_resource_kind; }
+    void set_reduce_op(ReduceOp op) { reduce_op_or_resource_kind = (uint32_t) op; }
+    ResourceKind resource_kind() const { return (ResourceKind) reduce_op_or_resource_kind; }
+    void set_resource_kind(ResourceKind kind) { reduce_op_or_resource_kind = (uint32_t) kind; }
 };
 
 static_assert(sizeof(Variable) == 64);
@@ -600,6 +614,10 @@ enum class MetalKernel : uint32_t {
     MemsetU32,
     MemsetU64,
     ConvertF32F16,
+    DeinterleaveU16,
+    DeinterleaveU32,
+    InterleaveU16,
+    InterleaveU32,
     Count
 };
 
@@ -735,14 +753,6 @@ struct ThreadStateBase {
     /// Current Metal command encoder and its kind (a ``MetalEncoderKind``).
     void *metal_encoder = nullptr;
     uint32_t metal_encoder_kind = 0;
-
-    /// Active MetalScene (MetalScene*) for the kernel currently being
-    /// assembled / launched. Determined at `jitc_metal_assemble` time by
-    /// walking the schedule for a TraceRay node and reading its scene
-    /// dependency (dep[1]). Read by codegen, cache-key computation,
-    /// kernel compilation (for linked-function lists) and by
-    /// `MetalThreadState::launch` to bind the correct TLAS + IFT.
-    void *metal_active_scene = nullptr;
 
     /// SIMD execution width (typically 32)
     uint32_t metal_simd_width = 32;

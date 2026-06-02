@@ -136,6 +136,8 @@ if (DRJIT_ENABLE_METAL)
     src/metal_eval.cpp
     src/metal_ts.h
     src/metal_ts.mm
+    src/metal_tex.h
+    src/metal_tex.mm
     src/metal_scatter.h
     src/metal_scatter.cpp
     src/metal_packet.h
@@ -332,6 +334,7 @@ if (DRJIT_ENABLE_METAL)
   set_source_files_properties(
     src/metal_core.mm
     src/metal_ts.mm
+    src/metal_tex.mm
     PROPERTIES COMPILE_FLAGS "-fobjc-arc")
 endif()
 

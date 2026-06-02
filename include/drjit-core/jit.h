@@ -2357,7 +2357,11 @@ extern JIT_EXPORT uint32_t jit_block_mkperm(JIT_ENUM JitBackend backend,
 
 /// Helper data structure used to initialize the data block consumed by a vcall
 struct AggregationEntry {
-    int32_t size;
+    /// If positive, 'src' refers to a pointer address, otherwise it is a literal.
+    /// The magnitude (must be 1, 2, 4, 8) indicates the number of bytes to copy.
+    int16_t size;
+    /// Used to mark opaque GPU handles (e.g. a texture or acceleration data structure)
+    uint16_t resource_kind;
     uint32_t offset;
     const void *src;
 };

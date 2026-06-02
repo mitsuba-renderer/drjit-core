@@ -73,6 +73,12 @@ extern uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size
 extern uint32_t jitc_var_pointer(JitBackend backend, const void *value,
                                  uint32_t dep, int write);
 
+enum class ResourceKind : uint8_t; // defined in internal.h
+
+/// Create a read-only pointer literal referencing the variable ``backing``,
+/// tagged with the given opaque-resource ``kind``.
+extern uint32_t jitc_var_resource_pointer(uint32_t backing, ResourceKind kind);
+
 /// Wrap an input variable of a virtual function call before recording computation
 extern uint32_t jitc_var_call_input(uint32_t index);
 

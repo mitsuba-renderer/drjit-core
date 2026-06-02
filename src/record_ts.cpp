@@ -1101,7 +1101,7 @@ void RecordThreadState::record_expand(uint32_t index) {
         // Case where in jitc_var_expand, v->is_literal && v->literal ==
         // identity
         uint64_t identity =
-            jitc_reduce_identity((VarType) v->type, (ReduceOp) v->reduce_op);
+            jitc_reduce_identity((VarType) v->type, v->reduce_op());
 
         jitc_log(LogLevel::Debug,
                  "record(): expand(dst=s%u, src=literal 0x%llx)", dst_slot,
@@ -2130,6 +2130,7 @@ void RecordThreadState::record_aggregate(void *dst, AggregationEntry *agg,
             std::memcpy(&info.extra.data, &p.src, sizeof(uint64_t));
             info.extra.offset    = p.offset;
             info.extra.type_size = p.size;
+            info.extra.resource_kind = p.resource_kind;
             info.type            = ParamType::Register;
             info.pointer_access  = false;
             add_param(info);
@@ -2188,15 +2189,17 @@ int Recording::replay_aggregate(Operation &op) {
                          jitc_var_str(rv.index));
             }
 
-            p->size   = param.pointer_access
+            p->size   = (int16_t) (param.pointer_access
                             ? 8
-                            : -(int) type_size[(uint32_t) param.vtype];
+                            : -(int) type_size[(uint32_t) param.vtype]);
+            p->resource_kind = 0;
             p->offset = param.extra.offset;
             p->src    = rv.data;
         } else {
             jitc_log(LogLevel::Debug, " -> literal: offset=%u, size=%u",
                      param.extra.offset, param.extra.type_size);
             p->size   = param.extra.type_size;
+            p->resource_kind = param.extra.resource_kind;
             p->offset = param.extra.offset;
             p->src    = (void *) param.extra.data;
         }

@@ -275,7 +275,8 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
             const Variable *v = jitc_var(index);
             bool is_pointer = (VarType) v->type == VarType::Pointer;
             p->offset = offset;
-            p->size = is_pointer ? 8 : -(int) type_size[v->type];
+            p->size = is_pointer ? (int16_t) 8 : (int16_t) -(int) type_size[v->type];
+            p->resource_kind = is_pointer ? (uint16_t) v->resource_kind() : (uint16_t) 0;
             p->src = is_pointer ? (const void *) v->literal : v->data;
             p++;
         }

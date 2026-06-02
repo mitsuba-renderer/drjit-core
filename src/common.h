@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <cstring>
 #include <utility>
 #include <string>
 #include <errno.h>
@@ -25,6 +26,14 @@
 #endif
 
 #define DRJIT_PTR "<0x%" PRIxPTR ">"
+
+/// Reinterpret the bits of ``src`` as a same-sized value of type ``Dst``
+template <typename Dst, typename Src> Dst memcpy_cast(const Src &src) {
+    static_assert(sizeof(Src) == sizeof(Dst), "memcpy_cast: size mismatch!");
+    Dst dst;
+    std::memcpy((void *) &dst, &src, sizeof(Dst));
+    return dst;
+}
 
 /// Helper function for intense internal sanitation instrumentation
 #if defined(DRJIT_SANITIZE_INTENSE)

@@ -956,6 +956,14 @@ uint32_t jitc_var_pointer(JitBackend backend, const void *value,
     return result;
 }
 
+uint32_t jitc_var_resource_pointer(uint32_t backing, ResourceKind kind) {
+    const Variable *v = jitc_var(backing);
+    uint32_t handle = jitc_var_pointer((JitBackend) v->backend, v->data, backing,
+                                       /*write=*/0);
+    jitc_var(handle)->set_resource_kind(kind);
+    return handle;
+}
+
 uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size) {
     if (size == 0)
         return 0;
@@ -2709,7 +2717,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
         return { index, 1 };
     }
 
-    if (v->reduce_op == (uint32_t) op) {
+    if (v->reduce_op() == op) {
         jitc_var_inc_ref(index);
         return { index, index_scale };
     }
@@ -2736,7 +2744,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
     }
 
     Variable *v2 = jitc_var(dst);
-    v2->reduce_op = (uint32_t) op;
+    v2->set_reduce_op(op);
     v2->size = size;
 
     jitc_log(Debug, "jit_var_expand(): %s r%u[%zu] = expand(r%u, factor=%zu)",
@@ -2752,7 +2760,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
 void jitc_var_reduce_expanded(uint32_t index) {
     Variable *v = jitc_var(index);
 
-    if ((ReduceOp) v->reduce_op == ReduceOp::Identity)
+    if (v->reduce_op() == ReduceOp::Identity)
         return;
 
     JitBackend backend = (JitBackend) v->backend;
@@ -2772,13 +2780,13 @@ void jitc_var_reduce_expanded(uint32_t index) {
 
     jitc_reduce_expanded(
         (VarType) v->type,
-        (ReduceOp) v->reduce_op,
+        v->reduce_op(),
         v->data,
         exp,
         size
     );
 
-    jitc_var(index)->reduce_op = (uint32_t) ReduceOp::Identity;
+    jitc_var(index)->set_reduce_op(ReduceOp::Identity);
 }
 
 #if defined(DRJIT_ENABLE_METAL)
