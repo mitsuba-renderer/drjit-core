@@ -390,7 +390,7 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
             }
 
             free(label);
-            state_.unused_extra.push(index2);
+            state_.unused_extra.push_back(index2);
         }
 
         // Remove from unused variable list
@@ -736,14 +736,13 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
 
     if (likely(!lvn || lvn_key_inserted)) {
         bool reuse_indices = flags & (uint32_t) JitFlag::ReuseIndices;
-        UnusedPQ &unused = st.unused_variables;
+        FreeSlots &unused = st.unused_variables;
 
         if (unlikely(unused.empty() || !reuse_indices)) {
             index = (uint32_t) st.variables.size();
             st.variables.emplace_back();
         } else {
-            index = unused.top();
-            unused.pop();
+            index = unused.pop();
         }
 
         if (lvn_key_inserted)
@@ -2026,13 +2025,13 @@ VariableExtra *jitc_var_extra(Variable *v) {
 
     uint32_t index = v->extra;
     if (!index) {
-        UnusedPQ &unused = st.unused_extra;
+        std::vector<uint32_t> &unused = st.unused_extra;
         if (unused.empty()) {
             index = (uint32_t) st.extra.size();
             st.extra.emplace_back();
         } else {
-            index = unused.top();
-            unused.pop();
+            index = unused.back();
+            unused.pop_back();
         }
         v->extra = index;
         st.extra[index] = VariableExtra();

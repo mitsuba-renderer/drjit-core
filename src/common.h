@@ -134,6 +134,17 @@ inline uint32_t log2i_ceil(uint32_t x) {
 #endif
 }
 
+/// Portable trailing zero count
+inline uint32_t tzcnt_u64(uint64_t x) {
+#if defined(_MSC_VER)
+    unsigned long y;
+    _BitScanForward64(&y, x);
+    return (uint32_t) y;
+#else
+    return (uint32_t) __builtin_ctzll(x);
+#endif
+}
+
 // Precomputed integer division helper
 // Based on libidivide (https://github.com/ridiculousfish/libdivide)
 struct divisor {

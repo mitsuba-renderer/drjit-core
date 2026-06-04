@@ -18,7 +18,6 @@
 #include "llvm.h"
 #include "alloc.h"
 #include "io.h"
-#include <queue>
 #include <string.h>
 #include <nanothread/nanothread.h>
 
@@ -973,9 +972,38 @@ private:
     size_t m_capacity;
 };
 
-using UnusedPQ = std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>;
-
 using PointerMap = tsl::robin_map<const void *, uint32_t, PointerHasher>;
+
+/// Free-slot allocator based on a packed bit representation. Allocation returns
+/// the lowest set bit, which improves the overall cache and branch prediction
+/// behavior of Dr.Jit. A cursor marks the lowest word that may hold a free
+/// bit so that the scan can resume from there instead of from the start.
+struct FreeSlots {
+    std::vector<uint64_t> words; //< A set bit marks a free slot
+    uint32_t cursor = 0;         //< Lowest word that may contain a free bit
+    size_t count = 0;            //< Number of free slots
+
+    bool empty() const { return count == 0; }
+    size_t size() const { return count; }
+
+    void push(uint32_t i) {
+        uint32_t w = i / 64;
+        if (w >= words.size())
+            words.resize(w + 1, 0);
+        words[w] |= (uint64_t) 1 << (i % 64);
+        cursor = std::min(cursor, w);
+        count++;
+    }
+
+    uint32_t pop() {
+        while (words[cursor] == 0)
+            cursor++;
+        uint64_t bits = words[cursor];
+        words[cursor] = bits & (bits - 1); // clear lowest set bit
+        count--;
+        return cursor * 64 + tzcnt_u64(bits);
+    }
+};
 
 /// Records the full JIT compiler state (most frequently two used entries at top)
 struct State {
@@ -988,8 +1016,8 @@ struct State {
     /// A flat list of variable data structures, including unused one
     std::vector<Variable> variables;
 
-    /// A priority queue of indices into 'variables' that are currently unused
-    UnusedPQ unused_variables;
+    /// Bit-packed free list of indices into 'variables' that are currently unused
+    FreeSlots unused_variables;
 
     /// Maps from a key characterizing a variable to its index
     LVNMap lvn_map;
@@ -998,8 +1026,8 @@ struct State {
     /// definition for documentation). Includes unused ones.
     std::vector<VariableExtra> extra;
 
-    // A priority queu of indices into 'extra' that are currently unused
-    UnusedPQ unused_extra;
+    /// LIFO free list of indices into 'extra' that are currently unused
+    std::vector<uint32_t> unused_extra;
 
     /// Counter to create variable scopes that enforce a variable ordering
     uint32_t scope_ctr = 2;
