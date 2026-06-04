@@ -156,14 +156,14 @@ public:
      * \brief LLVM-specific formatting routine. Its syntax is described at the
      * top of eval_llvm.cpp
      */
-    void fmt_llvm(size_t nargs, const char *fmt, ...);
+    void fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...);
 
 #if defined(DRJIT_ENABLE_CUDA)
     /**
      * \brief CUDA-specific formatting routine. Its syntax is described at the
      * top of eval_cuda.cpp
      */
-    void fmt_cuda(size_t nargs, const char *fmt, ...);
+    void fmt_cuda(size_t nargs, size_t fmt_len, const char *fmt, ...);
 #endif
 
 #if defined(DRJIT_ENABLE_METAL)
@@ -171,7 +171,7 @@ public:
      * \brief Metal-specific formatting routine. Its syntax is described at
      * the top of metal_eval.cpp.
      */
-    void fmt_metal(size_t nargs, const char *fmt, ...);
+    void fmt_metal(size_t nargs, size_t fmt_len, const char *fmt, ...);
 #endif
 
     /**
@@ -230,3 +230,10 @@ extern StringBuffer buffer;
 template <typename... Ts> constexpr size_t count_args(const Ts &...) {
     return sizeof...(Ts);
 }
+
+/// Macro to compute the length of a string at compile time
+#if defined(_MSC_VER)
+#  define fmt_strlen(s) strlen(s)
+#else
+#  define fmt_strlen(s) __builtin_strlen(s)
+#endif
