@@ -2896,9 +2896,8 @@ const char *jitc_var_whos() {
 
         size_t mem_size = (size_t) v.size * (size_t) type_size[v.type];
 
-        var_buffer.fmt("  %-8zu %s %-5s ", index,
-                       (JitBackend) v.backend == JitBackend::CUDA ? "cuda"
-                                                                  : "llvm",
+        var_buffer.fmt("  %-8zu %-5s %-5s ", index,
+                       jitc_backend_name((JitBackend) v.backend),
                        type_name_short[v.type]);
 
         if (v.is_literal()) {
@@ -3107,7 +3106,7 @@ const char *jitc_var_graphviz() {
             color = "wheat";
 
         var_buffer.fmt("|{Type: %s %s|Size: %u}|{r%zu|Refs: %u}}",
-            (JitBackend) v.backend == JitBackend::CUDA ? "cuda" : "llvm",
+            jitc_backend_name((JitBackend) v.backend),
             type_name_short[v.type], v.size, index,
             (uint32_t) v.ref_count);
 
