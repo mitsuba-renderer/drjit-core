@@ -1157,9 +1157,231 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
         if (size == 0) return 0;
         if (bucket_count == 0)
             jitc_fail("jit_block_mkperm(): bucket_count cannot be zero!");
+        MetalDevice &md = state.metal_devices[this->device];
+        const uint32_t warp = metal_simd_width;
+
+        // ---- Stable "tiny" path: per-SIMD-group threadgroup histograms ------
+        // As many warps as fit (per-warp histograms cost warp_count *
+        // bucket_count * 4 bytes), else fall back to the global-atomic path.
+        id<MTLComputePipelineState> p1_tiny =
+            (__bridge id<MTLComputePipelineState>)
+                md.pipelines[(uint32_t) MetalKernel::MkpermPhase1Tiny];
+        id<MTLComputePipelineState> p4_tiny =
+            (__bridge id<MTLComputePipelineState>)
+                md.pipelines[(uint32_t) MetalKernel::MkpermPhase4Tiny];
+
+        uint32_t max_warps_pso =
+            std::max(1u, (uint32_t) p1_tiny.maxTotalThreadsPerThreadgroup / warp);
+        uint32_t max_warps_mem = md.threadgroup_memory_bytes / (bucket_count * 4u);
+        uint32_t warp_count =
+            std::min(std::min(8u, std::max(1u, metal_max_threads / warp)),
+                     std::min(max_warps_pso, max_warps_mem));
+
+        if (warp_count >= 1) {
+            uint32_t thread_count = warp_count * warp;
+            uint32_t n_blocks     = ceil_div(size, block_size);
+
+            // Sub-blocks per block. Smaller threadgroups (memory pressure) yield
+            // more sub-blocks, recovering parallelism.
+            const uint32_t ELEMS_PER_THREAD = 16;
+            uint32_t elems_per_blk = thread_count * ELEMS_PER_THREAD;
+            uint32_t gpu_blocks_per_group =
+                std::max(1u, ceil_div(block_size, elems_per_blk));
+
+            // The merge buffer holds one histogram count per (block, sub-block,
+            // warp, bucket) and the prefix sum scans them all. Bound that count
+            // so the merge stays a minority of element traffic -- a quarter of
+            // the input -- while still parallelizing a single large block.
+            uint32_t max_cells = std::max(1u, size / 4u);
+            uint64_t denom = (uint64_t) n_blocks * warp_count * bucket_count;
+            uint32_t max_sub = (uint32_t) std::max<uint64_t>(1, max_cells / denom);
+            gpu_blocks_per_group = std::min(gpu_blocks_per_group, max_sub);
+
+            uint32_t size_per_block =
+                ceil_div(ceil_div(block_size, gpu_blocks_per_group), warp) * warp;
+            uint32_t rows_per_group = gpu_blocks_per_group * warp_count;
+            uint32_t seg            = rows_per_group * bucket_count;
+            uint32_t total_cells    = n_blocks * seg;
+            uint32_t shared_bytes   = bucket_count * warp_count * 4u;
+
+            if (offsets && n_blocks != 1)
+                jitc_raise("jit_block_mkperm(): offset extraction requires "
+                           "block_size == size.");
+
+            jitc_log(Debug,
+                     "jit_block_mkperm(" DRJIT_PTR ", size=%u, block_size=%u, "
+                     "bucket_count=%u, variant=tiny, blocks=%u, sub/block=%u, "
+                     "warps=%u, size_per_block=%u)",
+                     (uintptr_t) values, size, block_size, bucket_count, n_blocks,
+                     gpu_blocks_per_group, warp_count, size_per_block);
+
+            MetalHistoryScope hist(this, KernelType::MkPerm, size);
+
+            void *buckets =
+                jitc_malloc(JitBackend::Metal, (size_t) total_cells * 4u);
+
+            struct {
+                uint64_t values, buckets, perm;
+                uint32_t size, size_per_block, bucket_count, block_size,
+                         rows_per_group;
+            } tp;
+            tp.values         = (uint64_t)(uintptr_t) values;
+            tp.buckets        = (uint64_t)(uintptr_t) buckets;
+            tp.perm           = 0; // patched before phase 4
+            tp.size           = size;
+            tp.size_per_block = size_per_block;
+            tp.bucket_count   = bucket_count;
+            tp.block_size     = block_size;
+            tp.rows_per_group = rows_per_group;
+
+            MTLSize grid = MTLSizeMake(gpu_blocks_per_group, n_blocks, 1);
+            MTLSize tgsz = MTLSizeMake(thread_count, 1, 1);
+
+            // Phase 1: per-SIMD-group histograms -> bucket-major global layout
+            {
+                id<MTLComputeCommandEncoder> enc =
+                    (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
+                [enc setComputePipelineState:p1_tiny];
+                [enc setBytes:&tp length:sizeof(tp) atIndex:0];
+                [enc setThreadgroupMemoryLength:shared_bytes atIndex:0];
+
+                size_t off = 0;
+                id<MTLBuffer> vb = (__bridge id<MTLBuffer>)
+                    jitc_metal_find_buffer((void *) values, &off);
+                id<MTLBuffer> bb = (__bridge id<MTLBuffer>)
+                    jitc_metal_find_buffer(buckets, &off);
+                if (vb) [enc useResource:vb usage:MTLResourceUsageRead];
+                if (bb) [enc useResource:bb usage:MTLResourceUsageRead |
+                                                  MTLResourceUsageWrite];
+                [enc dispatchThreadgroups:grid threadsPerThreadgroup:tgsz];
+            }
+
+            // Phase 2: per-group exclusive prefix sum (segment length = seg)
+            block_prefix_reduce(VarType::UInt32, ReduceOp::Add, total_cells, seg,
+                                /*exclusive=*/true, /*reverse=*/false, buckets,
+                                buckets);
+
+            // Phase 2.5 (optional, single block): detect non-empty buckets.
+            // The bucket-major layout puts bucket b's base at buckets[b*rows],
+            // so the detector strides by rows_per_group.
+            id<MTLBuffer> counter_buf = nil, offsets_staging = nil;
+            if (offsets) {
+                id<MTLComputePipelineState> detect_pso =
+                    (__bridge id<MTLComputePipelineState>)
+                        md.pipelines[(uint32_t) MetalKernel::MkpermDetectOffsets];
+                id<MTLDevice> dev_mtl = (__bridge id<MTLDevice>) metal_device;
+                counter_buf =
+                    [dev_mtl newBufferWithLength:sizeof(uint32_t)
+                                         options:MTLResourceStorageModeShared];
+                *(uint32_t *) [counter_buf contents] = 0;
+
+                size_t off_off = 0;
+                id<MTLBuffer> ob_buf = (__bridge id<MTLBuffer>)
+                    jitc_metal_find_buffer((void *) offsets, &off_off);
+                uint64_t offsets_gpu_addr;
+                if (ob_buf) {
+                    offsets_gpu_addr = [ob_buf gpuAddress] + off_off;
+                } else {
+                    offsets_staging = [dev_mtl
+                        newBufferWithLength:(size_t) bucket_count * 4u * sizeof(uint32_t)
+                                    options:MTLResourceStorageModeShared];
+                    offsets_gpu_addr = [offsets_staging gpuAddress];
+                }
+
+                struct {
+                    uint64_t buckets, offsets, counter;
+                    uint32_t bucket_count, perm_size, row_stride;
+                } op;
+                op.buckets      = (uint64_t)(uintptr_t) buckets;
+                op.offsets      = offsets_gpu_addr;
+                op.counter      = (uint64_t) [counter_buf gpuAddress];
+                op.bucket_count = bucket_count;
+                op.perm_size    = size;
+                op.row_stride   = rows_per_group;
+
+                id<MTLComputeCommandEncoder> enc =
+                    (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
+                [enc setComputePipelineState:detect_pso];
+                [enc setBytes:&op length:sizeof(op) atIndex:0];
+
+                size_t off = 0;
+                id<MTLBuffer> bb = (__bridge id<MTLBuffer>)
+                    jitc_metal_find_buffer(buckets, &off);
+                if (bb) [enc useResource:bb usage:MTLResourceUsageRead];
+                if (ob_buf) [enc useResource:ob_buf usage:MTLResourceUsageWrite];
+                if (offsets_staging)
+                    [enc useResource:offsets_staging usage:MTLResourceUsageWrite];
+                [enc useResource:counter_buf usage:MTLResourceUsageRead |
+                                                   MTLResourceUsageWrite];
+
+                uint32_t dtg = std::min(
+                    (uint32_t) detect_pso.maxTotalThreadsPerThreadgroup,
+                    round_pow2(bucket_count));
+                [enc dispatchThreads:MTLSizeMake(bucket_count, 1, 1)
+                    threadsPerThreadgroup:MTLSizeMake(dtg, 1, 1)];
+            }
+
+            // Phase 4: scatter the permutation (stage perm if host-only)
+            size_t perm_off = 0;
+            id<MTLBuffer> pb_caller = (__bridge id<MTLBuffer>)
+                jitc_metal_find_buffer((void *) perm, &perm_off);
+            id<MTLBuffer> perm_staging = nil;
+            if (pb_caller) {
+                tp.perm = [pb_caller gpuAddress] + perm_off;
+            } else {
+                id<MTLDevice> dev_mtl = (__bridge id<MTLDevice>) metal_device;
+                perm_staging = [dev_mtl
+                    newBufferWithLength:(size_t) size * sizeof(uint32_t)
+                                options:MTLResourceStorageModeShared];
+                tp.perm = [perm_staging gpuAddress];
+            }
+            {
+                id<MTLComputeCommandEncoder> enc =
+                    (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
+                [enc setComputePipelineState:p4_tiny];
+                [enc setBytes:&tp length:sizeof(tp) atIndex:0];
+                [enc setThreadgroupMemoryLength:shared_bytes atIndex:0];
+
+                size_t off = 0;
+                id<MTLBuffer> vb = (__bridge id<MTLBuffer>)
+                    jitc_metal_find_buffer((void *) values, &off);
+                id<MTLBuffer> bb = (__bridge id<MTLBuffer>)
+                    jitc_metal_find_buffer(buckets, &off);
+                if (vb) [enc useResource:vb usage:MTLResourceUsageRead];
+                if (bb) [enc useResource:bb usage:MTLResourceUsageRead];
+                if (pb_caller)
+                    [enc useResource:pb_caller usage:MTLResourceUsageWrite];
+                if (perm_staging)
+                    [enc useResource:perm_staging usage:MTLResourceUsageWrite];
+                [enc dispatchThreadgroups:grid threadsPerThreadgroup:tgsz];
+            }
+
+            // 'buckets' frees on completion of the command buffer just encoded
+            // (its last reader), so block only when results go back to the host.
+            jitc_free(buckets);
+            hist.record();
+            flush(/* wait = */ offsets || perm_staging);
+
+            uint32_t unique_count = 0;
+            if (offsets) {
+                unique_count = *(uint32_t *) [counter_buf contents];
+                if (offsets_staging)
+                    std::memcpy(offsets, [offsets_staging contents],
+                                (size_t) unique_count * 4u * sizeof(uint32_t));
+                offsets[4 * bucket_count] = unique_count;
+            }
+            if (perm_staging)
+                std::memcpy((void *) perm, [perm_staging contents],
+                            (size_t) size * sizeof(uint32_t));
+            return unique_count;
+        }
+
+        // ---- Fallback: global-atomic path (single block only) ------
         if (block_size != size)
-            jitc_raise("jit_block_mkperm(): per-block permutations "
-                       "(block_size != size) are not yet implemented on Metal.");
+            jitc_raise("jit_block_mkperm(): bucket_count=%u exceeds the stable "
+                       "threadgroup-memory path, and the global-atomic fallback "
+                       "does not support per-block permutations (block_size != "
+                       "size) on Metal.", bucket_count);
 
         // Suppress kernel-history recording for the nested block_prefix_reduce
         // (phase 2): block_mkperm synchronizes internally (flush+wait to read
@@ -1168,8 +1390,8 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
         MetalHistoryScope hist(this, KernelType::MkPerm, size);
 
         jitc_log(Debug, "jit_block_mkperm(" DRJIT_PTR ", size=%u, block_size=%u, "
-                 "bucket_count=%u)", (uintptr_t) values, size, block_size,
-                 bucket_count);
+                 "bucket_count=%u, variant=global)", (uintptr_t) values, size,
+                 block_size, bucket_count);
 
         // Allocate and zero-initialize histogram
         uint32_t bucket_bytes = bucket_count * sizeof(uint32_t);
@@ -1233,6 +1455,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
 
         // Phase 2.5 (optional): Detect non-empty buckets
         uint32_t unique_count = 0;
+        id<MTLBuffer> counter_buf = nil, staging_buf = nil;
         if (offsets) {
             id<MTLComputePipelineState> detect_pso =
                 (__bridge id<MTLComputePipelineState>)
@@ -1242,7 +1465,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
                            "kernel not found.");
 
             id<MTLDevice> dev_mtl = (__bridge id<MTLDevice>) metal_device;
-            id<MTLBuffer> counter_buf =
+            counter_buf =
                 [dev_mtl newBufferWithLength:sizeof(uint32_t)
                                      options:MTLResourceStorageModeShared];
             *(uint32_t *) [counter_buf contents] = 0;
@@ -1254,7 +1477,6 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             id<MTLBuffer> ob_buf =
                 (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) offsets, &off_off);
             size_t offsets_bytes = (size_t) bucket_count * 4u * sizeof(uint32_t);
-            id<MTLBuffer> staging_buf = nil;
             uint64_t offsets_gpu_addr;
             if (ob_buf) {
                 offsets_gpu_addr = [ob_buf gpuAddress] + off_off;
@@ -1266,13 +1488,14 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
 
             struct {
                 uint64_t buckets, offsets, counter;
-                uint32_t bucket_count, perm_size;
+                uint32_t bucket_count, perm_size, row_stride;
             } oparams;
             oparams.buckets = (uint64_t)(uintptr_t) buckets;
             oparams.offsets = offsets_gpu_addr;
             oparams.counter = (uint64_t) [counter_buf gpuAddress];
             oparams.bucket_count = bucket_count;
             oparams.perm_size = size;
+            oparams.row_stride = 1;
 
             id<MTLComputeCommandEncoder> enc =
                 (__bridge id<MTLComputeCommandEncoder>)
@@ -1296,20 +1519,6 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
                 round_pow2(bucket_count));
             [enc dispatchThreads:MTLSizeMake(bucket_count, 1, 1)
                 threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
-
-            hist.record(); // capture timing before the synchronizing flush below
-            flush(/* wait = */ true);
-            unique_count = *(uint32_t *) [counter_buf contents];
-
-            if (staging_buf) {
-                // Only the first `unique_count` entries were written; copy them
-                // (each entry = uint4 = 16 bytes) back to the Host pointer.
-                std::memcpy(offsets, [staging_buf contents],
-                            (size_t) unique_count * 4u * sizeof(uint32_t));
-            }
-
-            // Write unique_count into offsets[4 * bucket_count]
-            offsets[4 * bucket_count] = unique_count;
         }
 
         // Phase 3: Scatter indices using atomics on the prefix-summed histogram.
@@ -1358,13 +1567,21 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
                 threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
         }
 
-        hist.record(); // capture timing before the synchronizing flush below
-        flush(/* wait = */ true);
-        if (perm_staging) {
+        // Single flush: block only when results are read back to the host.
+        jitc_free(buckets);
+        hist.record();
+        flush(/* wait = */ offsets || perm_staging);
+
+        if (offsets) {
+            unique_count = *(uint32_t *) [counter_buf contents];
+            if (staging_buf)
+                std::memcpy(offsets, [staging_buf contents],
+                            (size_t) unique_count * 4u * sizeof(uint32_t));
+            offsets[4 * bucket_count] = unique_count;
+        }
+        if (perm_staging)
             std::memcpy((void *) perm, [perm_staging contents],
                         (size_t) size * sizeof(uint32_t));
-        }
-        jitc_free(buckets);
         return unique_count;
     }
 }

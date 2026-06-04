@@ -152,6 +152,8 @@ static const char *metal_kernel_names[(uint32_t) MetalKernel::Count] = {
     "mkperm_phase_1",
     "mkperm_phase_3",
     "mkperm_detect_offsets",
+    "mkperm_phase_1_tiny",
+    "mkperm_phase_4_tiny",
     "aggregate_kernel",
     "memset_u16",
     "memset_u32",
@@ -212,6 +214,8 @@ bool jitc_metal_init() {
             md.queue  = (__bridge_retained void *) [dev newCommandQueue];
             md.max_threads_per_threadgroup =
                 (uint32_t) [dev maxThreadsPerThreadgroup].width;
+            md.threadgroup_memory_bytes =
+                (uint32_t) [dev maxThreadgroupMemoryLength];
             md.supports_ray_tracing = [dev supportsRaytracing];
             md.supports_metal4 = [dev supportsFamily:MTLGPUFamilyMetal4];
             const char *name = dev.name.UTF8String;

@@ -82,11 +82,6 @@ kernel void reduce_bool_kernel<false>(
 
 // ============================================================================
 //  compress_scatter — materialize a compacted index list from a prefix sum.
-//
-//  ``MetalThreadState::compress`` first builds the inclusive uint32 prefix sum
-//  of the boolean mask with MPSGraph; this kernel then writes the indices:
-//  for every ``tid`` whose mask is set, store ``tid`` at ``out[prefix[tid]-1]``
-//  (the inclusive prefix is 1-based, so the ``-1`` makes it 0-based).
 // ============================================================================
 
 struct compress_scatter_params {
@@ -99,7 +94,6 @@ struct compress_scatter_params {
 kernel void compress_scatter(
     constant compress_scatter_params &p [[buffer(0)]],
     uint tid [[thread_position_in_grid]]) {
-    if (tid >= p.size) return;
     device const uint8_t *in = (device const uint8_t *) p.in;
     if (!in[tid]) return;
     device const uint *prefix = (device const uint *) p.prefix;
@@ -108,18 +102,11 @@ kernel void compress_scatter(
 }
 
 // ============================================================================
-//  mkperm — compute a permutation that groups equal-valued uint32 entries
+//  mkperm — group equal-valued uint32 entries into a permutation.
 //
-//  Simplified 3-phase approach (vs CUDA's 4-phase with transposition):
-//    Phase 1: Global-memory atomic histogram
-//    Phase 2: Exclusive prefix sum of histogram (via block_prefix_reduce,
-//             called from C++)
-//    Phase 3: Scatter indices into permutation array using atomics
-//
-//  This avoids shared-memory histogram complexity and is correct for all
-//  bucket counts. Performance is adequate for typical Dr.Jit workloads
-//  (virtual function dispatch with tens of buckets). A shared-memory
-//  variant can be added later if profiling warrants it.
+//  Global-atomic fallback (unstable) used when bucket_count is too large for
+//  the stable "tiny" variant below. Phases: atomic histogram, exclusive prefix
+//  sum (block_prefix_reduce, from C++), atomic scatter.
 // ============================================================================
 
 struct mkperm_params {
@@ -133,8 +120,6 @@ struct mkperm_params {
 kernel void mkperm_phase_1(
     constant mkperm_params &p [[buffer(0)]],
     uint tid [[thread_position_in_grid]]) {
-    if (tid >= p.size) return;
-
     device const uint *values  = (device const uint *) p.values;
     device atomic_uint *buckets = (device atomic_uint *) p.buckets;
 
@@ -145,8 +130,6 @@ kernel void mkperm_phase_1(
 kernel void mkperm_phase_3(
     constant mkperm_params &p [[buffer(0)]],
     uint tid [[thread_position_in_grid]]) {
-    if (tid >= p.size) return;
-
     device const uint *values  = (device const uint *) p.values;
     device atomic_uint *buckets = (device atomic_uint *) p.buckets;
     device uint *perm           = (device uint *)        p.perm;
@@ -169,23 +152,188 @@ struct mkperm_offsets_params {
     ulong counter;       // device atomic_uint * (running count of non-empty)
     uint  bucket_count;
     uint  perm_size;
+    uint  row_stride;    // stride between consecutive bucket bases
 };
 
 kernel void mkperm_detect_offsets(
     constant mkperm_offsets_params &p [[buffer(0)]],
     uint tid [[thread_position_in_grid]]) {
-    if (tid >= p.bucket_count) return;
-
     device const uint *buckets = (device const uint *) p.buckets;
     device uint4 *offsets      = (device uint4 *)      p.offsets;
     device atomic_uint *counter = (device atomic_uint *) p.counter;
 
-    uint a = buckets[tid];
-    uint b = (tid + 1 < p.bucket_count) ? buckets[tid + 1] : p.perm_size;
+    uint a = buckets[tid * p.row_stride];
+    uint b = (tid + 1 < p.bucket_count) ? buckets[(tid + 1) * p.row_stride]
+                                        : p.perm_size;
 
     if (a != b) {
         uint idx = atomic_fetch_add_explicit(counter, 1u, memory_order_relaxed);
         offsets[idx] = uint4(tid, a, b - a, 0);
+    }
+}
+
+// ============================================================================
+//  mkperm (stable "tiny" variant) — per-SIMD-group threadgroup histograms.
+//
+//  Each SIMD group keeps a private histogram in threadgroup memory and
+//  processes a contiguous element range, so a per-group segmented exclusive
+//  prefix sum over the bucket-major layout
+//
+//      buckets[group*seg + bucket*rows_per_group + (sub_block*warp_count + warp)]
+//
+//  (seg = rows_per_group * bucket_count) yields stable per-row base offsets.
+// ============================================================================
+
+struct mkperm_tiny_params {
+    ulong values;          // device const uint *
+    ulong buckets;         // device uint *
+    ulong perm;            // device uint *
+    uint  size;
+    uint  size_per_block;  // elements per sub-block (warp-aligned)
+    uint  bucket_count;
+    uint  block_size;      // user block size
+    uint  rows_per_group;  // gpu_blocks_per_group * warp_count
+};
+
+// Bitmask of active SIMD lanes that share 'value', found in O(key_bits) ballots
+// by intersecting per-bit agreement masks across the group.
+static inline uint mkperm_match_any(uint value, uint key_bits) {
+    uint peers = (uint) ((ulong) simd_active_threads_mask());
+    for (uint b = 0; b < key_bits; ++b) {
+        uint bit  = (value >> b) & 1u;
+        uint ones = (uint) ((ulong) simd_ballot(bit != 0u));
+        peers &= bit ? ones : ~ones;
+    }
+    return peers;
+}
+
+// Add 'value' to a warp-private histogram (one update per peer group).
+static inline void mkperm_count(uint value, uint lane, uint key_bits,
+                                threadgroup uint *buckets) {
+    uint peers = mkperm_match_any(value, key_bits);
+    if (lane == ctz(peers))
+        buckets[value] += popcount(peers);
+}
+
+// Accumulate 'value' into a warp-private histogram with a single update per
+// peer group; returns this lane's slot (base offset + rank among its peers).
+static inline uint mkperm_reduce(uint value, uint lane, uint key_bits,
+                                 threadgroup uint *buckets) {
+    uint peers  = mkperm_match_any(value, key_bits);
+    uint leader = ctz(peers);
+    uint rel    = popcount(peers & ((1u << lane) - 1u));
+    uint base   = 0u;
+    if (lane == leader) {
+        base = buckets[value];
+        buckets[value] = base + popcount(peers);
+    }
+    base = simd_shuffle(base, ushort(leader)); // per-group leader -> shuffle
+    return base + rel;
+}
+
+kernel void mkperm_phase_1_tiny(
+    constant mkperm_tiny_params &p [[buffer(0)]],
+    threadgroup uint *shared [[threadgroup(0)]],
+    uint3 tgid       [[threadgroup_position_in_grid]],
+    uint3 lid3       [[thread_position_in_threadgroup]],
+    uint3 tg3        [[threads_per_threadgroup]],
+    uint  warp_id    [[simdgroup_index_in_threadgroup]],
+    uint  lane       [[thread_index_in_simdgroup]],
+    uint  warp_count [[simdgroups_per_threadgroup]],
+    uint  warp_size  [[threads_per_simdgroup]]) {
+
+    device const uint *values = (device const uint *) p.values;
+    device uint *buckets       = (device uint *)       p.buckets;
+
+    uint lid = lid3.x, tcount = tg3.x;
+    uint group = tgid.y, sub_block = tgid.x, bc = p.bucket_count;
+
+    uint user_block_start = group * p.block_size;
+    uint user_block_end   = min(user_block_start + p.block_size, p.size);
+    uint block_start      = user_block_start + sub_block * p.size_per_block;
+    uint block_end        = min(block_start + p.size_per_block, user_block_end);
+
+    // Zero this threadgroup's per-warp histograms
+    for (uint i = lid; i < bc * warp_count; i += tcount)
+        shared[i] = 0u;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    threadgroup uint *shared_warp = shared + warp_id * bc;
+    uint key_bits = (bc <= 1u) ? 0u : (32u - clz(bc - 1u));
+
+    // Each warp processes a contiguous range for stable ordering
+    uint total = (block_end > block_start) ? (block_end - block_start) : 0u;
+    uint epw   = ((total + warp_count - 1u) / warp_count + warp_size - 1u) &
+                 ~(warp_size - 1u);
+    uint warp_start = block_start + warp_id * epw;
+    uint warp_end   = min(warp_start + epw, block_end);
+
+    // Uniform loop bound so the simdgroup barrier is reached by every lane.
+    for (uint base = warp_start; base < warp_start + epw; base += warp_size) {
+        uint i = base + lane;
+        if (i < warp_end)
+            mkperm_count(values[i], lane, key_bits, shared_warp);
+        simdgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    // Write per-warp histograms out in bucket-major layout
+    uint rows = p.rows_per_group, gbase = group * rows * bc;
+    for (uint i = lid; i < bc * warp_count; i += tcount) {
+        uint w = i / bc, b = i - w * bc;
+        uint row = sub_block * warp_count + w;
+        buckets[gbase + b * rows + row] = shared[i];
+    }
+}
+
+kernel void mkperm_phase_4_tiny(
+    constant mkperm_tiny_params &p [[buffer(0)]],
+    threadgroup uint *shared [[threadgroup(0)]],
+    uint3 tgid       [[threadgroup_position_in_grid]],
+    uint3 lid3       [[thread_position_in_threadgroup]],
+    uint3 tg3        [[threads_per_threadgroup]],
+    uint  warp_id    [[simdgroup_index_in_threadgroup]],
+    uint  lane       [[thread_index_in_simdgroup]],
+    uint  warp_count [[simdgroups_per_threadgroup]],
+    uint  warp_size  [[threads_per_simdgroup]]) {
+
+    device const uint *values = (device const uint *) p.values;
+    device const uint *buckets = (device const uint *) p.buckets;
+    device uint *perm          = (device uint *)       p.perm;
+
+    uint lid = lid3.x, tcount = tg3.x;
+    uint group = tgid.y, sub_block = tgid.x, bc = p.bucket_count;
+
+    uint user_block_start = group * p.block_size;
+    uint user_block_end   = min(user_block_start + p.block_size, p.size);
+    uint block_start      = user_block_start + sub_block * p.size_per_block;
+    uint block_end        = min(block_start + p.size_per_block, user_block_end);
+
+    // Load this threadgroup's per-warp base offsets from the bucket-major layout
+    uint rows = p.rows_per_group, gbase = group * rows * bc;
+    for (uint i = lid; i < bc * warp_count; i += tcount) {
+        uint w = i / bc, b = i - w * bc;
+        uint row = sub_block * warp_count + w;
+        shared[i] = buckets[gbase + b * rows + row];
+    }
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    threadgroup uint *shared_warp = shared + warp_id * bc;
+    uint key_bits = (bc <= 1u) ? 0u : (32u - clz(bc - 1u));
+
+    uint total = (block_end > block_start) ? (block_end - block_start) : 0u;
+    uint epw   = ((total + warp_count - 1u) / warp_count + warp_size - 1u) &
+                 ~(warp_size - 1u);
+    uint warp_start = block_start + warp_id * epw;
+    uint warp_end   = min(warp_start + epw, block_end);
+
+    for (uint base = warp_start; base < warp_start + epw; base += warp_size) {
+        uint i = base + lane;
+        if (i < warp_end) {
+            uint off = mkperm_reduce(values[i], lane, key_bits, shared_warp);
+            perm[user_block_start + off] = i;
+        }
+        simdgroup_barrier(mem_flags::mem_threadgroup);
     }
 }
 
