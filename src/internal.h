@@ -609,6 +609,8 @@ enum class MetalKernel : uint32_t {
     MkpermPhase1,
     MkpermPhase3,
     MkpermDetectOffsets,
+    MkpermPhase1Tiny,
+    MkpermPhase4Tiny,
     Aggregate,
     MemsetU16,
     MemsetU32,
@@ -639,6 +641,9 @@ struct MetalDevice {
     uint32_t max_threads_per_threadgroup;
 
     uint32_t simd_width;
+
+    /// Maximum threadgroup (shared) memory available to a kernel, in bytes
+    uint32_t threadgroup_memory_bytes;
 
     /// True if the device supports hardware ray tracing acceleration
     bool supports_ray_tracing;

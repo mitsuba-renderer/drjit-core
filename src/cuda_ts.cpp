@@ -915,9 +915,10 @@ uint32_t CUDAThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
     void *args_1[] = { &ptr, &buckets_1, &size, &size_per_gpu_block,
                        &bucket_count, &block_size };
 
+    // Grid: x = sub-block within a block, y = block
     submit_gpu(KernelType::MkPerm, this->recording_mode, phase_1,
-               gpu_block_count, thread_count, shared_size, stream, args_1,
-               nullptr, size);
+               gpu_blocks_per_group, thread_count, shared_size, stream, args_1,
+               nullptr, size, n_blocks);
 
     // Phase 2: exclusive prefix sum over transposed buckets.
     // Each sorting group's histograms are transposed and prefix-summed
@@ -972,8 +973,8 @@ uint32_t CUDAThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
                        &bucket_count, &block_size };
 
     submit_gpu(KernelType::MkPerm, this->recording_mode, phase_4,
-               gpu_block_count, thread_count, shared_size, stream, args_4,
-               nullptr, size);
+               gpu_blocks_per_group, thread_count, shared_size, stream, args_4,
+               nullptr, size, n_blocks);
 
     if (likely(offsets) && n_blocks == 1) {
         unlock_guard guard_2(state.lock);
