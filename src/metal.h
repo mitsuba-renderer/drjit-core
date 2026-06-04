@@ -171,6 +171,11 @@ extern std::vector<MetalScene *> metal_kernel_scenes;
 /// dedup; at most a handful of scenes per kernel). ``nullptr`` is ignored.
 extern void metal_register_kernel_scene(MetalScene *scene);
 
+/// Hashes of this kernel's indirect-callable functions (named ``func_<hash>``),
+/// ordered by callable index. Populated during code generation and consumed to
+/// build the kernel's visible function table.
+extern std::vector<XXH128_hash_t> metal_kernel_callables;
+
 /// Lazily build (and cache) an ``MTLIntersectionFunctionTable`` for the
 /// given scene + compute pipeline. The function handles are derived from
 /// the pipeline so each pipeline needs its own IFT instance. Returns

@@ -83,6 +83,10 @@ struct Kernel {
 
             /// id<MTLLibrary>
             void *library;
+
+            /// id<MTLVisibleFunctionTable> for indirect-call dispatch, or null
+            /// if the kernel performs no multi-target calls.
+            void *call_table_vft;
         } metal;
 #endif
     };

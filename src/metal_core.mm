@@ -363,6 +363,24 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
             }
         }
 
+        // Resolve the kernel's own [[visible]] callable functions (in callable-
+        // index order) and link them into the pipeline so they can be reached
+        // indirectly through a visible function table.
+        NSMutableArray<id<MTLFunction>> *callable_fns =
+            [NSMutableArray arrayWithCapacity:metal_kernel_callables.size()];
+        for (XXH128_hash_t hash : metal_kernel_callables) {
+            char name[64];
+            snprintf(name, sizeof(name), "func_%016llx%016llx",
+                     (unsigned long long) hash.high64,
+                     (unsigned long long) hash.low64);
+            id<MTLFunction> f = [lib newFunctionWithName:@(name)];
+            if (!f)
+                jitc_fail("jitc_metal_kernel_compile(): callable function \"%s\" "
+                          "not found in the compiled library.", name);
+            [callable_fns addObject:f];
+            [linked_fns addObject:f];
+        }
+
         if (linked_fns.count > 0) {
             MTLLinkedFunctions *lf = [MTLLinkedFunctions new];
             lf.functions = linked_fns;
@@ -386,8 +404,26 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
             jitc_fail("jitc_metal_kernel_compile(): pipeline creation failed: %s", desc);
         }
 
-        kernel.metal.pipeline      = (__bridge_retained void *) pso;
-        kernel.metal.library       = (__bridge_retained void *) lib;
+        // Build the visible function table used to dispatch indirect calls.
+        // Function handles are derived from the pipeline, so the table is
+        // PSO-specific; it is built once here and reused for every launch.
+        id<MTLVisibleFunctionTable> vft = nil;
+        if (callable_fns.count > 0) {
+            MTLVisibleFunctionTableDescriptor *vftd =
+                [MTLVisibleFunctionTableDescriptor new];
+            vftd.functionCount = callable_fns.count;
+            vft = [pso newVisibleFunctionTableWithDescriptor:vftd];
+            for (NSUInteger i = 0; i < callable_fns.count; ++i) {
+                id<MTLFunctionHandle> h =
+                    [pso functionHandleWithFunction:callable_fns[i]];
+                [vft setFunction:h atIndex:i];
+            }
+        }
+
+        kernel.metal.pipeline       = (__bridge_retained void *) pso;
+        kernel.metal.library        = (__bridge_retained void *) lib;
+        kernel.metal.call_table_vft = vft ? (__bridge_retained void *) vft
+                                          : nullptr;
         kernel.size = (uint32_t) std::strlen(source);
         return false;
     }
@@ -400,8 +436,12 @@ void jitc_metal_kernel_free(Kernel &kernel) {
                 kernel.metal.pipeline;
         if (kernel.metal.library)
             (void) (__bridge_transfer id<MTLLibrary>) kernel.metal.library;
-        kernel.metal.pipeline      = nullptr;
-        kernel.metal.library       = nullptr;
+        if (kernel.metal.call_table_vft)
+            (void) (__bridge_transfer id<MTLVisibleFunctionTable>)
+                kernel.metal.call_table_vft;
+        kernel.metal.pipeline       = nullptr;
+        kernel.metal.library        = nullptr;
+        kernel.metal.call_table_vft = nullptr;
     }
 }
 

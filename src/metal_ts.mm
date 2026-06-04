@@ -235,6 +235,15 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
             }
         }
 
+        // Append the kernel's visible function table as a trailing bindless
+        // ``params.args[]`` slot when it performs indirect calls.
+        if (id<MTLVisibleFunctionTable> vft =
+                (__bridge id<MTLVisibleFunctionTable>) kernel.metal.call_table_vft) {
+            kernel_params.push_back((void *) (uintptr_t)
+                memcpy_cast<uint64_t>(vft.gpuResourceID));
+            [enc useResource:vft usage:MTLResourceUsageRead];
+        }
+
         // Prefer to include the parameters directly in the command buffer if
         // <= 4KiB, otherwise stage them in a buffer.
         size_t params_bytes = kernel_params.size() * sizeof(void *);

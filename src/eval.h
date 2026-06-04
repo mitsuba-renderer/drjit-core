@@ -150,6 +150,10 @@ extern void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
 /// Reset per-kernel Metal assembly state at the start of jitc_eval()
 extern void jitc_metal_assemble_reset();
+
+/// Args index of the bindless slot reserved for the kernel's visible function
+/// table, or -1 if the kernel performs no calls. Set by jitc_assemble().
+extern int metal_vft_arg_index;
 #endif
 
 /// Register a global declaration that will be included in the final program

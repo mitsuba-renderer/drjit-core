@@ -183,6 +183,7 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
     call->outer_out.reserve(n_out);
     call->inner_out.reserve(n_inner_out);
     call->out_offset.resize(n_out, 0);
+    call->in_active.resize(n_in, 0);
 
     // Move recorded side effects & offsets into 'call'
     call->checkpoints.reserve(n_inst + 1);
@@ -479,6 +480,9 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
             (optimize && // Optimizations are on
                 (v->is_literal() || // Literals are propagated
                  v_in->ref_count == 1)); // CallInput is never used
+
+        call->in_active[i] = !unused;
+
         if (unused) {
             continue;
         }
@@ -512,7 +516,11 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
 
         uint32_t param_offset = (uint32_t) -1;
         Variable *v = jitc_var(call->outer_out[k.index]);
-        if ((v && v->reg_index) || !optimize) {
+        // Skip outputs that are already evaluated (param_type == Input): their
+        // data lives in memory and is read directly as a kernel input, so the
+        // call need not compute or return them.
+        bool live = v && v->reg_index && v->param_type != ParamType::Input;
+        if (live || !optimize) {
             param_offset = out_size;
             out_size += k.size;
             out_align = std::max(k.size, out_align);
@@ -683,20 +691,10 @@ void jitc_call_upload(ThreadState *ts) {
         memset(data, 0, call->offset_size);
 
         for (uint32_t i = 0; i < call->n_inst; ++i) {
-            uint32_t callable_index;
-#if defined(DRJIT_ENABLE_METAL)
-            if (ts->backend == JitBackend::Metal) {
-                // Metal uses per-call 0-based indices (matching the switch-case
-                // labels emitted by jitc_var_call_assemble_metal)
-                callable_index = i;
-            } else
-#endif
-            {
-                auto it = globals_map.find(GlobalKey(call->inst_hash[i], call->n_inst != 1 ? GlobalType::IndirectCallable : GlobalType::Callable));
-                if (it == globals_map.end())
-                    jitc_fail("jitc_call_upload(): could not find callable!");
-                callable_index = it->second.callable_index;
-            }
+            auto it = globals_map.find(GlobalKey(call->inst_hash[i], call->n_inst != 1 ? GlobalType::IndirectCallable : GlobalType::Callable));
+            if (it == globals_map.end())
+                jitc_fail("jitc_call_upload(): could not find callable!");
+            uint32_t callable_index = it->second.callable_index;
 
             // high part: instance data offset, low part: callable index
             data[call->inst_id[i]] =
