@@ -2653,10 +2653,9 @@ struct DisabledThreadState : ThreadState {
      */
     void rethrow_exception() {
         if (m_raised) {
-            const char *backend_name =
-                m_internal->backend == JitBackend::CUDA ? "CUDA" : "LLVM";
+            const char *backend_name = jitc_backend_name(m_internal->backend);
             const char *recording_backend =
-                m_recording_backend == JitBackend::CUDA ? "CUDA" : "LLVM";
+                jitc_backend_name(m_recording_backend);
             jitc_raise(
                 "The frozen function is being recorded for the %s backend, but "
                 "you tried to execute an operation for the %s backend, this is "

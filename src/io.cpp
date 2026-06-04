@@ -72,6 +72,25 @@ static uint32_t compute_padding(const CacheFileHeader &header) {
     return padding_size;
 }
 
+/// Lowercase backend identifier used as a cache file name suffix
+static const char *jitc_cache_suffix(JitBackend backend) {
+    switch (backend) {
+        case JitBackend::CUDA:  return "cuda";
+        case JitBackend::Metal: return "metal";
+        default:                return "llvm";
+    }
+}
+
+#if defined(_WIN32)
+static const wchar_t *jitc_cache_suffix_w(JitBackend backend) {
+    switch (backend) {
+        case JitBackend::CUDA:  return L"cuda";
+        case JitBackend::Metal: return L"metal";
+        default:                return L"llvm";
+    }
+}
+#endif
+
 bool jitc_kernel_load(const char *source, uint32_t source_size,
                       JitBackend backend, XXH128_hash_t hash, Kernel &kernel) {
     jitc_lz4_init();
@@ -81,7 +100,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
     if (unlikely(snprintf(filename, sizeof(filename), "%s/%016llx%016llx.%s.bin",
                           jitc_temp_path, (unsigned long long) hash.high64,
                           (unsigned long long) hash.low64,
-                          backend == JitBackend::CUDA ? "cuda" : "llvm") < 0))
+                          jitc_cache_suffix(backend)) < 0))
         jitc_fail("jit_kernel_load(): scratch space for filename insufficient!");
 
     int fd = open(filename, O_RDONLY);
@@ -113,7 +132,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
                         L"%s\\%016llx%016llx.%s.bin",
                         jitc_temp_path, (unsigned long long) hash.high64,
                         (unsigned long long) hash.low64,
-                        backend == JitBackend::CUDA ? L"cuda" : L"llvm");
+                        jitc_cache_suffix_w(backend));
 
     if (rv < 0 || rv == sizeof(filename) ||
         wcstombs(filename, filename_w, sizeof(filename)) == sizeof(filename))
@@ -263,7 +282,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     if (unlikely(snprintf(filename, sizeof(filename), "%s/%016llx%016llx.%s.bin",
                           jitc_temp_path, (unsigned long long) hash.high64,
                           (unsigned long long) hash.low64,
-                          backend == JitBackend::CUDA ? "cuda" : "llvm") < 0))
+                          jitc_cache_suffix(backend)) < 0))
         jitc_fail("jit_kernel_write(): scratch space for filename insufficient!");
 
     if (unlikely(snprintf(filename_tmp, sizeof(filename_tmp), "%s.tmp",
@@ -304,7 +323,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
                         L"%s\\%016llx%016llx.%s.bin",
                         jitc_temp_path, (unsigned long long) hash.high64,
                         (unsigned long long) hash.low64,
-                        backend == JitBackend::CUDA ? L"cuda" : L"llvm");
+                        jitc_cache_suffix_w(backend));
 
     if (rv < 0 || rv == sizeof(filename) ||
         wcstombs(filename, filename_w, sizeof(filename)) == sizeof(filename))
@@ -427,7 +446,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     snprintf(filename, sizeof(filename), "%s/.drjit/%016llx%016llx.%s.trn",
              getenv("HOME"), (unsigned long long) hash.high64,
              (unsigned long long) hash.low64,
-             backend == JitBackend::CUDA ? "cuda" : "llvm");
+             jitc_cache_suffix(backend));
     fd = open(filename, O_CREAT | O_WRONLY, mode);
     if (fd) {
         write_retry(temp_in, in_size);
