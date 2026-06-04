@@ -323,117 +323,20 @@ size_t StringBuffer::vfmt(const char *fmt, va_list args_) {
     } while (true);
 }
 
-void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
-    size_t len = 0;
+void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) {
+    va_list args2;
+    va_start(args2, fmt);
 
-    va_list args, args2;
-    va_start(args, fmt);
-    va_copy(args2, args);
+    // Bound the maximum output size: every directive other than the unbounded
+    // '$s' expands to at most 8 bytes per format character + 48 bytes per
+    // argument; '$s' grows the buffer on demand below.
+    size_t bound = fmt_len * 8 + nargs * 48;
+    if (unlikely(!m_cur || m_cur + bound >= m_end))
+        expand(bound);
 
-    // Phase 1: walk through the string and determine its maximal length
+    // Convert the format string
     const char *p = fmt;
-    size_t arg = 0;
     char c;
-    while ((c = *p++) != '\0') {
-        if (c != '$') {
-            len++;
-        } else {
-            c = *p++;
-            switch (c) {
-                case 'u': len += MAXSIZE_U32; (void) va_arg(args, uint32_t); arg++; break;
-
-                case 's':
-                    len += strlen(va_arg(args, const char *));
-                    arg++;
-                    break;
-
-                case 'w': len += MAXSIZE_U32; break;
-
-                case 't':
-                case 'd':
-                case 'b':
-                case 'm':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_TYPE;
-                    break;
-
-                case 'h':
-                case 'H':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_TYPE_ABBREV;
-                    break;
-
-                case 'T':
-                case 'D':
-                case 'B':
-                case 'M':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32 + MAXSIZE_TYPE + 5;
-                    break;
-
-
-                case 'v':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32 + MAXSIZE_TYPE_PREFIX;
-                    break;
-
-                case 'V':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += 2*MAXSIZE_U32 + MAXSIZE_TYPE_PREFIX + 6;
-                    break;
-
-                case 'l':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_X64 + 2;
-                    break;
-
-                case 'a':
-                case 'A':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32;
-                    break;
-
-                case 'o':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32;
-                    break;
-
-                case 'z':
-                    len += 15;
-                    break;
-
-                case '<':
-                    len += MAXSIZE_U32 + 4;
-                    break;
-
-                case '>':
-                    len += 1;
-                    break;
-
-                default:
-                    fprintf(stderr,
-                            "StringBuffer::fmt_llvm(): encountered unsupported "
-                            "character \"$%c\" in format string!\n", c);
-                    abort();
-            }
-        }
-    }
-
-    va_end(args);
-
-    if (nargs != arg) {
-        fprintf(stderr,
-                "StringBuffer::fmt_llvm(): given %zu args, format string "
-                "accessed %zu (%s)\n", nargs, arg, fmt);
-        abort();
-    }
-
-    // Enlarge the buffer if necessary
-    if (unlikely(!m_cur || m_cur + len >= m_end))
-        expand(len);
-
-    // Phase 2: convert the string
-    p = fmt;
     while ((c = *p++) != '\0') {
         if (c == '$') {
             switch (*p++) {
@@ -441,6 +344,11 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                 case 's': {
                         const char *s = va_arg(args2, const char *);
                         put(s, strlen(s));
+                        // '$s' is the only unbounded directive: 'put()' grew the
+                        // buffer to fit the string, so restore the worst-case
+                        // headroom assumed by the unchecked writes that follow.
+                        if (unlikely(m_cur + bound >= m_end))
+                            expand(bound);
                     }
                     break;
 
@@ -617,7 +525,10 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     break;
 
                 default:
-                    break;
+                    fprintf(stderr,
+                            "StringBuffer::fmt_llvm(): encountered unsupported "
+                            "character \"$%c\" in format string!\n", p[-1]);
+                    abort();
             }
         } else {
             *m_cur ++= c;
@@ -629,83 +540,18 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
 }
 
 #if defined(DRJIT_ENABLE_CUDA)
-void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
-    size_t len = 0;
+void StringBuffer::fmt_cuda(size_t nargs, size_t fmt_len, const char *fmt, ...) {
+    va_list args2;
+    va_start(args2, fmt);
 
-    va_list args, args2;
-    va_start(args, fmt);
-    va_copy(args2, args);
+    // Bound the maximum output size; see fmt_llvm().
+    size_t bound = fmt_len * 8 + nargs * 48;
+    if (unlikely(!m_cur || m_cur + bound >= m_end))
+        expand(bound);
 
-    // Phase 1: walk through the string and determine its maximal length
+    // Convert the format string
     const char *p = fmt;
-    size_t arg = 0;
     char c;
-    while ((c = *p++) != '\0') {
-        if (c != '$') {
-            len++;
-        } else {
-            c = *p++;
-            switch (c) {
-                case 'u': len += MAXSIZE_U32; (void) va_arg(args, uint32_t); arg++; break;
-                case 'Q': len += MAXSIZE_X64; (void) va_arg(args, uint64_t); arg++; break;
-
-                case 's':
-                    len += strlen(va_arg(args, const char *));
-                    arg++;
-                    break;
-
-                case 'B':
-                case 'b':
-                case 't':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_TYPE;
-                    break;
-
-                case 'v':
-                case 'V':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32 + MAXSIZE_TYPE_PREFIX;
-                    break;
-
-                case 'a':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32;
-                    break;
-
-                case 'l':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_X64 + 2;
-                    break;
-
-                case 'o':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32;
-                    break;
-
-                default:
-                    fprintf(stderr,
-                            "StringBuffer::fmt_cuda(): encountered unsupported "
-                            "character \"$%c\" in format string!\n", c);
-                    abort();
-            }
-        }
-    }
-
-    va_end(args);
-
-    if (nargs != arg) {
-        fprintf(stderr,
-                "StringBuffer::fmt_cuda(): given %zu args, format string "
-                "accessed %zu (%s)\n", nargs, arg, fmt);
-        abort();
-    }
-
-    // Enlarge the buffer if necessary
-    if (unlikely(!m_cur || m_cur + len >= m_end))
-        expand(len);
-
-    // Phase 2: convert the string
-    p = fmt;
     while ((c = *p++) != '\0') {
         if (c == '$') {
             switch (*p++) {
@@ -715,6 +561,11 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                 case 's': {
                         const char *s = va_arg(args2, const char *);
                         put(s, strlen(s));
+                        // '$s' is the only unbounded directive: 'put()' grew the
+                        // buffer to fit the string, so restore the worst-case
+                        // headroom assumed by the unchecked writes that follow.
+                        if (unlikely(m_cur + bound >= m_end))
+                            expand(bound);
                     }
                     break;
 
@@ -775,7 +626,10 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
                     break;
 
                 default:
-                    break;
+                    fprintf(stderr,
+                            "StringBuffer::fmt_cuda(): encountered unsupported "
+                            "character \"$%c\" in format string!\n", p[-1]);
+                    abort();
             }
         } else {
             *m_cur ++= c;
@@ -788,77 +642,18 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
 #endif
 
 #if defined(DRJIT_ENABLE_METAL)
-void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
-    size_t len = 0;
+void StringBuffer::fmt_metal(size_t nargs, size_t fmt_len, const char *fmt, ...) {
+    va_list args2;
+    va_start(args2, fmt);
 
-    va_list args, args2;
-    va_start(args, fmt);
-    va_copy(args2, args);
+    // Bound the maximum output size; see fmt_llvm().
+    size_t bound = fmt_len * 8 + nargs * 48;
+    if (unlikely(!m_cur || m_cur + bound >= m_end))
+        expand(bound);
 
-    // Phase 1: walk through the string and determine its maximal length
+    // Emit the formatted string
     const char *p = fmt;
-    size_t arg = 0;
     char c;
-    while ((c = *p++) != '\0') {
-        if (c != '$') {
-            len++;
-        } else {
-            c = *p++;
-            switch (c) {
-                case 'u': len += MAXSIZE_U32; (void) va_arg(args, uint32_t); arg++; break;
-
-                case 's':
-                    len += strlen(va_arg(args, const char *));
-                    arg++;
-                    break;
-
-                case 'b':
-                case 't':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_TYPE;
-                    break;
-
-                case 'v':
-                    (void) va_arg(args, const Variable *); arg++;
-                    // ``v<reg_index>`` -- one letter + 32-bit number
-                    len += 1 + MAXSIZE_U32;
-                    break;
-
-                case 'l':
-                    (void) va_arg(args, const Variable *); arg++;
-                    // ``0x.....ull`` worst case
-                    len += MAXSIZE_X64 + 5;
-                    break;
-
-                case 'o':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32;
-                    break;
-
-                default:
-                    fprintf(stderr,
-                            "StringBuffer::fmt_metal(): encountered unsupported "
-                            "character \"$%c\" in format string!\n", c);
-                    abort();
-            }
-        }
-    }
-
-    va_end(args);
-
-    if (nargs != arg) {
-        fprintf(stderr,
-                "StringBuffer::fmt_metal(): given %zu args, format string "
-                "accessed %zu (%s)\n", nargs, arg, fmt);
-        abort();
-    }
-
-    // Enlarge the buffer if necessary
-    if (unlikely(!m_cur || m_cur + len >= m_end))
-        expand(len);
-
-    // Phase 2: emit the formatted string
-    p = fmt;
     while ((c = *p++) != '\0') {
         if (c == '$') {
             switch (*p++) {
@@ -867,6 +662,11 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
                 case 's': {
                         const char *s = va_arg(args2, const char *);
                         put(s, strlen(s));
+                        // '$s' is the only unbounded directive: 'put()' grew the
+                        // buffer to fit the string, so restore the worst-case
+                        // headroom assumed by the unchecked writes that follow.
+                        if (unlikely(m_cur + bound >= m_end))
+                            expand(bound);
                     }
                     break;
 
@@ -904,7 +704,10 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
                     break;
 
                 default:
-                    break;
+                    fprintf(stderr,
+                            "StringBuffer::fmt_metal(): encountered unsupported "
+                            "character \"$%c\" in format string!\n", p[-1]);
+                    abort();
             }
         } else {
             *m_cur++ = c;

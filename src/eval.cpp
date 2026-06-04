@@ -571,11 +571,12 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         // buffer has a different size. We work around the issue by inserting a
         // unique callable that prevents this optimization.
 
-        buffer.fmt_cuda(2,
+        const char *id_fmt =
             "\n.visible .func (.param .align 8 .b8 result[16]) __direct_callable__id() {\n"
             "    st.param.u64 [result+0], 0x$Q;\n"
             "    st.param.u64 [result+8], 0x$Q;\n"
-            "}",
+            "}";
+        buffer.fmt_cuda(2, fmt_strlen(id_fmt), id_fmt,
             kernel_hash.low64,
             kernel_hash.high64
         );
@@ -713,8 +714,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         if (jitc_is_cuda(ts->backend) && !uses_optix) {
             // Locate the kernel entry point
             size_t offset = buffer.size();
-            buffer.fmt_cuda(2, "drjit_$Q$Q", kernel_hash.high64,
-                            kernel_hash.low64);
+            const char *name_fmt = "drjit_$Q$Q";
+            buffer.fmt_cuda(2, fmt_strlen(name_fmt), name_fmt,
+                            kernel_hash.high64, kernel_hash.low64);
             cuda_check(cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod,
                                            buffer.get() + offset));
             buffer.rewind_to(offset);
