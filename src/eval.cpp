@@ -343,8 +343,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     if (backend == JitBackend::CUDA || backend == JitBackend::Metal) {
         add_param((void *) (uintptr_t) group.size);
 
-        // The first 3 variables are reserved on the CUDA/Metal backend
-        n_regs = 4;
+        // CUDA reserves r0..r3 for the thread-index computation (ctaid/ntid/tid)
+        // and compound-op temporaries. Metal receives the thread index directly
+        // via [[thread_position_in_grid]] (r0), so locals can start at r1.
+        n_regs = (backend == JitBackend::Metal) ? 1 : 4;
     } else {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
         for (int i = 0; i < 3; ++i)
@@ -448,6 +450,21 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             #endif
         }
     }
+
+#if defined(DRJIT_ENABLE_METAL)
+    // If the kernel performs any call, reserve a trailing ``params.args[]`` slot
+    // for its visible function table. The slot is not an IR variable, so it stays
+    // out of ``kernel_param_ids``.
+    metal_vft_arg_index = -1;
+    if (backend == JitBackend::Metal) {
+        for (uint32_t gi = group.start; gi != group.end; ++gi) {
+            if ((VarKind) jitc_var(schedule[gi].index)->kind == VarKind::Call) {
+                metal_vft_arg_index = (int) kernel_params.size() - 1;
+                break;
+            }
+        }
+    }
+#endif
 
     if (unlikely(n_regs > 0xFFFFF))
         jitc_log(Warn,

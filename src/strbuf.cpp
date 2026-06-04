@@ -928,7 +928,7 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
                 case 'V':
                 case 'v': {
                         const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur++ = 'v';
+                        *m_cur++ = 'r';
                         put_u32_unchecked(v->reg_index);
                     }
                     break;

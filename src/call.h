@@ -35,6 +35,9 @@ struct CallData {
     std::vector<WeakRef> outer_out;
     /// Offset in return value buffer
     std::vector<uint32_t> out_offset;
+    /// Is input ``i`` actually passed to the callable (i.e. not pruned as a
+    /// literal, single-use, or unreferenced argument)?
+    std::vector<uint8_t> in_active;
 
     /// Per-instance offsets into the 'side_effects' list below
     std::vector<uint32_t> checkpoints;
