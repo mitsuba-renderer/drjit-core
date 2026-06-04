@@ -4,10 +4,76 @@
 #include "eval.h"
 #include <cstdarg>
 
+#if defined(_MSC_VER)
+#  include <intrin.h>
+#endif
+
 /// Global string buffer used to generate PTX/LLVM IR
 StringBuffer buffer { 1024 };
 
 static const char num[] = "0123456789abcdef";
+
+// Two-digit lookup table ("00010203...99") for fast unsigned->decimal conversion
+static const char digit_pairs[201] =
+    "00010203040506070809"
+    "10111213141516171819"
+    "20212223242526272829"
+    "30313233343536373839"
+    "40414243444546474849"
+    "50515253545556575859"
+    "60616263646566676869"
+    "70717273747576777879"
+    "80818283848586878889"
+    "90919293949596979899";
+
+static const uint32_t pow10_u32[10] = {
+    0, 10, 100, 1000, 10000,
+    100000, 1000000, 10000000, 100000000, 1000000000
+};
+
+static const uint64_t pow10_u64[20] = {
+    0ull, 10ull, 100ull, 1000ull, 10000ull, 100000ull, 1000000ull,
+    10000000ull, 100000000ull, 1000000000ull, 10000000000ull, 100000000000ull,
+    1000000000000ull, 10000000000000ull, 100000000000000ull, 1000000000000000ull,
+    10000000000000000ull, 100000000000000000ull, 1000000000000000000ull,
+    10000000000000000000ull
+};
+
+// Bit length of a *nonzero* 32-bit integer
+static inline unsigned bit_length(uint32_t n) {
+#if defined(_MSC_VER)
+    unsigned long i;
+    _BitScanReverse(&i, (unsigned long) n);
+    return (unsigned) i + 1;
+#else
+    return 32u - (unsigned) __builtin_clz(n);
+#endif
+}
+
+// Bit length of a *nonzero* 64-bit integer
+static inline unsigned bit_length(uint64_t n) {
+#if defined(_MSC_VER)
+    unsigned long i;
+    _BitScanReverse64(&i, n);
+    return (unsigned) i + 1;
+#else
+    return 64u - (unsigned) __builtin_clzll(n);
+#endif
+}
+
+// Number of decimal digits of a 32-bit unsigned value
+static inline unsigned digits10(uint32_t n) {
+    unsigned bits = bit_length(n | 1);
+    unsigned t = (bits * 1233) >> 12;
+    return t + 1 - (n < pow10_u32[t]);
+}
+
+// Number of decimal digits of a 64-bit unsigned value
+static inline unsigned digits10(uint64_t n) {
+    unsigned bits = bit_length(n | 1);
+    unsigned t = (bits * 1233) >> 12;
+    return t + 1 - (n < pow10_u64[t]);
+}
 
 StringBuffer::StringBuffer(size_t capacity)
     : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
@@ -140,23 +206,35 @@ void StringBuffer::put_x64(uint64_t value) {
 }
 
 void StringBuffer::put_u32_unchecked(uint32_t value) {
-    char *start = m_cur;
-    do {
-        *m_cur++ = num[value % 10];
-        value /= 10;
-    } while (value);
-
-    reverse_str(start, m_cur);
+    unsigned n = digits10(value);
+    char *end = m_cur + n, *p = end;
+    while (value >= 100) {
+        unsigned idx = (value % 100) * 2;
+        value /= 100;
+        p -= 2;
+        memcpy(p, &digit_pairs[idx], 2);
+    }
+    if (value < 10)
+        *--p = (char) ('0' + value);
+    else
+        memcpy(p - 2, &digit_pairs[value * 2], 2);
+    m_cur = end;
 }
 
 void StringBuffer::put_u64_unchecked(uint64_t value) {
-    char *start = m_cur;
-    do {
-        *m_cur++ = num[value % 10];
-        value /= 10;
-    } while (value);
-
-    reverse_str(start, m_cur);
+    unsigned n = digits10(value);
+    char *end = m_cur + n, *p = end;
+    while (value >= 100) {
+        unsigned idx = (unsigned) (value % 100) * 2;
+        value /= 100;
+        p -= 2;
+        memcpy(p, &digit_pairs[idx], 2);
+    }
+    if (value < 10)
+        *--p = (char) ('0' + value);
+    else
+        memcpy(p - 2, &digit_pairs[(unsigned) value * 2], 2);
+    m_cur = end;
 }
 
 void StringBuffer::put_x32_unchecked(uint32_t value) {
