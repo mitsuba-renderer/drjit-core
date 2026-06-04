@@ -3,6 +3,16 @@
 #if defined(__linux__) && !defined(DRJIT_USE_STD_MUTEX)
 #include <pthread.h>
 
+// Opaque per-thread token used to detect recursive lock acquisition.
+// Prefer __builtin_thread_pointer() over the slower pthread_self() if available.
+#if defined(__has_builtin) && __has_builtin(__builtin_thread_pointer)
+using lock_thread_id_t = void *; // __builtin_thread_pointer() returns void *
+inline lock_thread_id_t lock_thread_id() { return __builtin_thread_pointer(); }
+#else
+using lock_thread_id_t = pthread_t;
+inline lock_thread_id_t lock_thread_id() { return pthread_self(); }
+#endif
+
 /*
  * This recursive spinlock improves the efficiency of @dr.freeze and operations
  * that acquire a lock recursively to avoid repeated atomic memory transactions
@@ -27,7 +37,7 @@
 
 struct Lock {
     pthread_spinlock_t lock;
-    pthread_t owner;
+    lock_thread_id_t owner;
     size_t recursion_count;
 };
 
@@ -40,7 +50,7 @@ inline void lock_init(Lock &lock) {
 }
 inline void lock_destroy(Lock &lock) { pthread_spin_destroy(&lock.lock); }
 inline void lock_acquire(Lock &lock) {
-    pthread_t self = pthread_self();
+    lock_thread_id_t self = lock_thread_id();
     if (lock.owner == self) {
         lock.recursion_count++;
         return;
@@ -53,7 +63,7 @@ inline void lock_acquire(Lock &lock) {
 inline void lock_release(Lock &lock) {
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
-        lock.owner = (pthread_t) -1;
+        lock.owner = (lock_thread_id_t) -1;
         pthread_spin_unlock(&lock.lock);
     }
 }
