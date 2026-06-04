@@ -264,6 +264,16 @@ if (CMAKE_CXX_COMPILER_ID MATCHES "GNU")
   target_link_options(drjit-core PRIVATE -Wno-free-nonheap-object)
 endif()
 
+# Opt into faster TLS ABI (TLSDESC) on Linux
+if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
+    (CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang"))
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag(-mtls-dialect=gnu2 DRJIT_HAVE_MTLS_GNU2)
+  if (DRJIT_HAVE_MTLS_GNU2)
+    target_compile_options(drjit-core PRIVATE -mtls-dialect=gnu2)
+  endif()
+endif()
+
 # The following compiler flags are needed for Clang/GCC to autovectorize the
 # batched GEMM
 if (NOT MSVC)
