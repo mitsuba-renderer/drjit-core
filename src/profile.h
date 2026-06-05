@@ -7,6 +7,12 @@
     license that can be found in the LICENSE file.
 */
 
+/// Initialize profiler integration (samples whether a tool is listening).
+extern void jitc_profile_init();
+
+/// Release profiler-integration resources (paired with jitc_profile_init).
+extern void jitc_profile_shutdown();
+
 extern void *jitc_profile_register_string(const char *message);
 extern void jitc_profile_mark(const char *message);
 extern void jitc_profile_mark_handle(const void *handle);

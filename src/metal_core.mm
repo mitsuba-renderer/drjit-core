@@ -619,6 +619,76 @@ void *jitc_metal_command_queue_impl() {
     return thread_state(JitBackend::Metal)->metal_queue;
 }
 
+// ============================================================================
+// GPU profile capture
+// ============================================================================
+
+static id<MTLCaptureScope> metal_capture_scope = nil;
+static bool metal_capture_active = false;
+
+void jitc_metal_profile_start() {
+    if (metal_capture_active) {
+        jitc_log(Warn, "jit_profile_start(): a Metal capture is already active.");
+        return;
+    }
+
+    id<MTLCommandQueue> queue =
+        (__bridge id<MTLCommandQueue>) thread_state(JitBackend::Metal)->metal_queue;
+    /// CLAUDE: can this ever happen?
+    if (!queue) {
+        jitc_log(Warn, "jit_profile_start(): no active Metal command queue.");
+        return;
+    }
+
+    MTLCaptureManager *mgr = [MTLCaptureManager sharedCaptureManager];
+
+    metal_capture_scope = [mgr newCaptureScopeWithCommandQueue:queue];
+    metal_capture_scope.label = @"Dr.Jit";
+    mgr.defaultCaptureScope = metal_capture_scope;
+
+    // Attempt a programmatic capture so a .gputrace can be produced directly
+    // from the command line.
+    MTLCaptureDescriptor *desc = [MTLCaptureDescriptor new];
+    desc.captureObject = metal_capture_scope;
+
+    if ([mgr supportsDestination:MTLCaptureDestinationGPUTraceDocument]) {
+        const char *path_env = getenv("DRJIT_METAL_CAPTURE_PATH");
+        NSString *path = path_env ? @(path_env) : @"drjit.gputrace";
+        // A pre-existing document at the destination makes startCapture fail.
+        [[NSFileManager defaultManager] removeItemAtPath:path error:nil];
+        desc.destination = MTLCaptureDestinationGPUTraceDocument;
+        desc.outputURL = [NSURL fileURLWithPath:path];
+    }
+
+    NSError *error = nil;
+    if (![mgr startCaptureWithDescriptor:desc error:&error]) {
+        jitc_log(Debug,
+                 "jit_profile_start(): could not start a Metal GPU capture (%s). "
+                 "Set MTL_CAPTURE_ENABLED=1 for command-line capture, or trigger "
+                 "one from Xcode.",
+                 error ? error.localizedDescription.UTF8String : "unknown error");
+    }
+
+    [metal_capture_scope beginScope];
+    metal_capture_active = true;
+}
+
+void jitc_metal_profile_stop() {
+    if (!metal_capture_active)
+        return;
+
+    [metal_capture_scope endScope];
+
+    MTLCaptureManager *mgr = [MTLCaptureManager sharedCaptureManager];
+    if (mgr.isCapturing)
+        [mgr stopCapture];
+    if (mgr.defaultCaptureScope == metal_capture_scope)
+        mgr.defaultCaptureScope = nil;
+
+    metal_capture_scope = nil;
+    metal_capture_active = false;
+}
+
 void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
                           uint32_t mask, uint32_t *out,
                           uint32_t n_out, uint32_t scene) {

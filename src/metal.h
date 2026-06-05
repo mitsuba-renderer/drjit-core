@@ -37,6 +37,10 @@ extern void *jitc_metal_context_impl();
 /// Return the active ``id<MTLCommandQueue>`` for the current thread.
 extern void *jitc_metal_command_queue_impl();
 
+/// Begin/end a Metal GPU capture scope
+extern void jitc_metal_profile_start();
+extern void jitc_metal_profile_stop();
+
 /// Wait for all Metal work submitted on the current thread to complete.
 extern void jitc_metal_sync(ThreadState *ts);
 

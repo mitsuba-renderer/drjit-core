@@ -84,6 +84,8 @@ extern float timer_frequency_scale;
 
 /// Initialize core data structures of the JIT compiler
 void jitc_init(uint32_t backends) {
+    jitc_profile_init();
+
     ProfilerPhase profiler(profiler_region_init);
 
 #if defined(_WIN32)
@@ -359,6 +361,7 @@ void jitc_shutdown(int light) {
     jitc_registry_shutdown();
     jitc_malloc_shutdown();
     jitc_nvtx_shutdown();
+    jitc_profile_shutdown();
 
     jitc_log(Info, "jit_shutdown(light=%u): done", (uint32_t) light);
 
