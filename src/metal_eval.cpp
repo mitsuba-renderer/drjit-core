@@ -832,6 +832,12 @@ static void jitc_metal_render(Variable *v) {
                     fmt("$v = $v;\n", in, out);
             }
 
+            // Reset 'scratch' to not interfere with visited tracking in jit_eval()
+            for (uint32_t i = 0; i < size; ++i) {
+                jitc_var(ld->inner_in[i])->scratch = 0;
+                jitc_var(ld->inner_out[i])->scratch = 0;
+            }
+
             put("}\n");
             break;
         }

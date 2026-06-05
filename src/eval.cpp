@@ -22,7 +22,6 @@
 #include "tex.h"
 #include "op.h"
 #include "array.h"
-#include <tsl/robin_set.h>
 
 #if defined(DRJIT_ENABLE_METAL)
 #  include "metal.h"
@@ -47,38 +46,47 @@ struct VisitedKey {
     uint32_t depth;
     VisitedKey(uint32_t size, uint32_t index, uint32_t depth)
         : size(size), index(index), depth(depth) { }
-
-    bool operator==(VisitedKey k) const {
-        return k.size == size && k.index == index && k.depth == depth;
-    }
 };
 
-struct VisitedKeyHash {
-    size_t operator()(VisitedKey k) const {
-        return (size_t) fmix64((uint64_t(k.size ^ k.depth) << 32) |  k.index);
-    }
+/// A traversal "task": a root or side effect to be visited at a given size
+struct EvalTask {
+    uint32_t size;
+    uint32_t index;
+    bool side_effect;
 };
 
-/// Auxiliary data structure needed to compute 'schedule' and 'schedule_groups'
-static tsl::robin_set<VisitedKey, VisitedKeyHash> visited;
-static std::vector<VisitedKey> visited_keys;
+/// Roots & side effects collected at the start of jit_eval(), grouped by size
+static std::vector<EvalTask> eval_tasks;
 
-static bool jitc_visited_insert(uint32_t size, uint32_t index, uint32_t depth) {
-    VisitedKey key(size, index, depth);
-    auto [it, inserted] = visited.emplace(key);
-    (void) it;
-    if (inserted)
-        visited_keys.push_back(key);
-    return inserted;
-}
+/// Indices of the explicitly scheduled variables (to be marked as outputs)
+static std::vector<uint32_t> eval_roots;
 
-static void jitc_visited_clear() {
-    for (const VisitedKey &key : visited_keys) {
-        auto it = visited.find(key);
-        if (likely(it != visited.end()))
-            visited.erase_fast(it);
+/* Generation counter used by jitc_var_traverse() to detect already-visited
+   variables. The traversal stamps the current generation into 'Variable::scratch'
+   and treats a variable as visited iff its stamp equals 'visit_gen'. Starting a
+   new traversal then takes only a single increment of 'visit_gen', which makes
+   every existing stamp stale and so marks all variables unvisited.
+
+   jitc_eval_impl() starts a fresh generation for each group of equally-sized
+   variables, so the traversal visits (and schedules) a shared sub-expression
+   exactly once for each distinct kernel size it feeds into. The generation only
+   needs to encode size. The traversal size stays constant within a group, and a
+   variable's call/loop nesting depth never changes, so the traversal always
+   reaches it at the same depth.
+
+   Generation 0 serves as the "never visited" sentinel. A freshly constructed
+   variable has scratch == 0, and 'visit_gen' is never 0, so the traversal
+   correctly treats such a variable as unvisited. On the rare 32-bit wraparound,
+   reset all stamps to 0 and restart. */
+static uint32_t visit_gen = 0;
+
+static void jitc_visit_new_gen() {
+    if (unlikely(visit_gen == 0xFFFFFFFFu)) {
+        for (Variable &v : state.variables)
+            v.scratch = 0;
+        visit_gen = 0;
     }
-    visited_keys.clear();
+    ++visit_gen;
 }
 
 /// Kernel parameter buffer and variable ids
@@ -145,10 +153,10 @@ bool jitc_elide_scatter(uint32_t index, const Variable *v) {
 
 /// Recursively traverse the computation graph to find variables needed by a computation
 static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0) {
-    if (!jitc_visited_insert(size, index, depth))
-        return;
-
     Variable *v = jitc_var(index);
+    if (v->scratch == visit_gen)
+        return;
+    v->scratch = visit_gen;
     switch ((VarKind) v->kind) {
         case VarKind::Scatter:
             if (jitc_elide_scatter(index, v))
@@ -305,9 +313,10 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
             "operations.", index);
 
     if (depth == 0) {
-        // If we're visiting this variable the first time regardless of size
-        if (jitc_visited_insert(0, index, depth))
-            v->output_flag = false;
+        // A scheduled variable is an output only if it was explicitly requested;
+        // clear the flag here and let jitc_eval_impl() set it on the roots once
+        // all traversal is done.
+        v->output_flag = false;
         schedule.emplace_back(size, v->scope, index);
         jitc_var_inc_ref(index, v);
     }
@@ -825,42 +834,82 @@ void jitc_eval(ThreadState *ts) {
 }
 
 void jitc_eval_impl(ThreadState *ts) {
-    jitc_visited_clear();
     visit_later.clear();
     schedule.clear();
+    eval_tasks.clear();
+    eval_roots.clear();
 
 #if defined(DRJIT_ENABLE_OPTIX)
     jitc_optix_max_coopvec_size = 0;
 #endif
 
+    // Collect the roots (explicitly scheduled variables). 'ts->scheduled' only
+    // holds weak references, so take a temporary strong reference on each root.
     for (WeakRef wr: ts->scheduled) {
         // Skip variables that expired, or which we already evaluated
         Variable *v = jitc_var(wr);
         if (!v || v->is_evaluated())
             continue;
-        jitc_var_traverse(v->size, wr.index);
-        v->output_flag = true;
+        jitc_var_inc_ref(wr.index, v);
+        eval_tasks.push_back({ v->size, wr.index, false });
+        eval_roots.push_back(wr.index);
     }
 
     ts->scheduled.clear();
 
+    // ... and the side effects. A scatter whose target buffer has become
+    // unreferenced writes a result that nobody reads and can be elided.
     for (uint32_t index: ts->side_effects) {
         Variable *v = jitc_var(index);
 
         if (jitc_elide_scatter(index, v))
             jitc_var_dec_ref(index);
         else
-            jitc_var_traverse(v->size, index);
+            eval_tasks.push_back({ v->size, index, true });
     }
 
     ts->side_effects.clear();
 
-    // Should not be replaced by a range-based for loop,
-    // as the traversal may append further items
-    for (size_t i = 0; i < visit_later.size(); ++i) {
-        VisitedKey vk = visit_later[i];
-        jitc_var_traverse(vk.size, vk.index, vk.depth);
+    if (eval_tasks.empty())
+        return;
+
+    /* Traverse same-size tasks consecutively, each size under its own
+       generation. */
+    std::stable_sort(eval_tasks.begin(), eval_tasks.end(),
+                     [](const EvalTask &a, const EvalTask &b) {
+                         if (a.size != b.size)
+                             return a.size > b.size;
+                         return a.side_effect < b.side_effect;
+                     });
+
+    for (size_t i = 0, n = eval_tasks.size(); i < n; ) {
+        uint32_t group_size = eval_tasks[i].size;
+
+        // Advance generation counter per distinct size
+        jitc_visit_new_gen();
+
+        size_t j = i;
+        for (; j < n && eval_tasks[j].size == group_size; ++j)
+            jitc_var_traverse(group_size, eval_tasks[j].index);
+
+        // Process deferred nodes. Do not use a range-based for loop, as
+        // traversal adds items.
+        for (size_t k = 0; k < visit_later.size(); ++k) {
+            VisitedKey vk = visit_later[k];
+            jitc_var_traverse(vk.size, vk.index, vk.depth);
+        }
+        visit_later.clear();
+
+        i = j;
     }
+
+    // Mark roots as outputs
+    for (uint32_t index: eval_roots)
+        jitc_var(index)->output_flag = true;
+
+    // Release the temporary references taken during root collection.
+    for (uint32_t index: eval_roots)
+        jitc_var_dec_ref(index);
 
     if (schedule.empty())
         return;
@@ -980,7 +1029,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
                                  uint32_t out_size, uint32_t out_align) {
     ProfilerPhase profiler(profiler_region_assemble_func);
 
-    jitc_visited_clear();
+    jitc_visit_new_gen();
     visit_later.clear();
     schedule.clear();
     callable_depth++;

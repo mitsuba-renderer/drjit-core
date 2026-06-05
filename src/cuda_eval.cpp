@@ -460,6 +460,12 @@ void jitc_cuda_render_loop_end(Variable *a0) {
             fmt("    mov.$b $v, $v;\n", in, in, out);
     }
 
+    // Reset 'scratch' to not interfere with visited tracking in jit_eval()
+    for (uint32_t i = 0; i < size; ++i) {
+        jitc_var(ld->inner_in[i])->scratch = 0;
+        jitc_var(ld->inner_out[i])->scratch = 0;
+    }
+
     fmt("    bra l_$u_cond;\n\n"
         "l_$u_done:\n",
         a0->reg_index, a0->reg_index);
