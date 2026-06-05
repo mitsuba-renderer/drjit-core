@@ -26,7 +26,7 @@ enum CheckFlags {
     IsIntOrBool = 4,
     IsNotVoid = 8,
     IsFloat = 16,
-    IsGPU = 32,        // CUDA or Metal — used by hardware-intrinsic ops
+    IsGPU = 32,
     ArrayAllowed = 64,
     IgnoreTypes = 128
 };
@@ -135,8 +135,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
         if constexpr (bool(Flags & IsGPU)) {
             JitBackend b = (JitBackend) vi->backend;
             if (unlikely(b != JitBackend::CUDA && b != JitBackend::Metal)) {
-                err = "operation is only supported on GPU backends "
-                      "(CUDA or Metal)";
+                err = "operation is only supported on GPU backends (CUDA/Metal)";
                 goto fail;
             }
         }
@@ -3171,6 +3170,14 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
                              mode == ReduceMode::Local ||
                              mode == ReduceMode::Direct ||
                              mode == ReduceMode::Auto);
+        } else if (backend == JitBackend::Metal) {
+            // Metal lacks packet atomicas. Only use this strategy in local mode
+            // where the cost of finding peers can be amortized. This only works
+            // for certain types.
+            bool t32 = vt == VarType::UInt32 || vt == VarType::Int32 ||
+                       vt == VarType::Float32;
+            use_packet_op = t32 && (mode == ReduceMode::Local ||
+                                    mode == ReduceMode::Auto);
         }
     }
 

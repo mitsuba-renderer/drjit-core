@@ -12,6 +12,10 @@
 
 #include "eval.h"
 
+extern const char *cuda_reduce_op_name[];
+
+extern const char *jitc_cuda_reduce_tp(VarType &vt, ReduceOp op);
+
 extern void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value,
                                      const Variable *index,
@@ -26,6 +30,9 @@ extern void jitc_cuda_render_scatter_reduce(const Variable *v,
 extern void jitc_cuda_render_scatter_inc(Variable *v, const Variable *ptr,
                                          const Variable *index,
                                          const Variable *mask);
+extern void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values,
+                                         VarType vt, ReduceOp op,
+                                         bool use_packet_atomics);
 
 extern void jitc_cuda_render_scatter_add_kahan(const Variable *v,
                                                const Variable *ptr_1,
