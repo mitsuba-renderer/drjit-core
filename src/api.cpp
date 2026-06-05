@@ -2005,6 +2005,11 @@ void jit_profile_start() {
     cuProfilerStart();
 #  endif
 #endif
+#if defined(DRJIT_ENABLE_METAL)
+    if ((state.backends & (1u << (uint32_t) JitBackend::Metal)) &&
+        !state.metal_devices.empty())
+        jitc_metal_profile_start();
+#endif
 }
 
 void jit_profile_stop() {
@@ -2016,6 +2021,11 @@ void jit_profile_stop() {
 #  else
     cuProfilerStop();
 #  endif
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if ((state.backends & (1u << (uint32_t) JitBackend::Metal)) &&
+        !state.metal_devices.empty())
+        jitc_metal_profile_stop();
 #endif
 }
 
