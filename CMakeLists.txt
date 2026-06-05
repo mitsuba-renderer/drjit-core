@@ -274,6 +274,18 @@ if (CMAKE_SYSTEM_NAME STREQUAL "Linux" AND
   endif()
 endif()
 
+# The stack protector (on by default on some distributions) has a noticeable
+# runtime cost in Dr.Jit's hot tracing functions, with little benefit given its
+# threat model (nonexistent). Disable it in optimized builds only.
+if (CMAKE_CXX_COMPILER_ID MATCHES "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  include(CheckCXXCompilerFlag)
+  check_cxx_compiler_flag(-fno-stack-protector DRJIT_HAVE_NO_STACK_PROTECTOR)
+  if (DRJIT_HAVE_NO_STACK_PROTECTOR)
+    target_compile_options(drjit-core PRIVATE
+      $<$<OR:$<CONFIG:Release>,$<CONFIG:MinSizeRel>>:-fno-stack-protector>)
+  endif()
+endif()
+
 # The following compiler flags are needed for Clang/GCC to autovectorize the
 # batched GEMM
 if (NOT MSVC)
