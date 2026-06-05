@@ -294,7 +294,8 @@ void jitc_shutdown(int light) {
                 jitc_log(Warn,
                         " - id=%u: size=%u, type=%s, dep=[%u, "
                         "%u, %u, %u]",
-                        kv.second, kv.first.size, type_name[kv.first.type],
+                        kv.second, kv.first.size,
+                        type_name[(kv.first.packed >> 9) & 0x1f],
                         kv.first.dep[0], kv.first.dep[1], kv.first.dep[2],
                         kv.first.dep[3]);
 

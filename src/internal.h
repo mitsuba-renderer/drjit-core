@@ -383,31 +383,24 @@ struct VariableExtra {
 
 /// Abbreviated version of the Variable data structure for Local Value Numbering (LVN)
 struct VariableKey {
-    uint32_t size;
-    uint32_t dep[4];
-    uint32_t kind         : 8;
-    uint32_t backend      : 2;
-    uint32_t type         : 4;
-    uint32_t write_ptr    : 1;
-    uint32_t unused       : 1;
-    uint32_t array_length : 16;
+    // The first four members are laid out in *exactly* the same order as the
+    // corresponding fields of 'Variable'. Copy with a single vmovdqu 32-byte copy.
     uint32_t scope;
+    uint32_t dep[4];
     uint64_t literal;
+    uint32_t size;
 
-    // The LVN data structure is significantly more efficient when
-    // a single key fits into exactly 32 bytes. Hence the elaborate
-    // bit packing below.
+    /// Bits 0..14 hold (kind|backend|type|write_ptr), bit 15 is unused (zero),
+    /// and bits 16..31 hold the array length for array/coop-vec variables.
+    uint32_t packed;
+
     VariableKey(const Variable &v) {
-        size = v.size;
-        memcpy(dep, v.dep, sizeof(uint32_t)*4);
-        kind = v.kind;
-        backend = v.backend;
-        type = v.type;
-        write_ptr = v.write_ptr;
-        unused = 0;
-        scope = v.scope;
-        array_length = (v.is_array() || v.coop_vec) ? v.array_length : 0;
-        literal = v.literal;
+        memcpy((void *) this, (const void *) &v.scope, 32);
+        uint32_t array_length =
+            (v.is_array() || v.coop_vec) ? (uint32_t) v.array_length : 0u;
+        packed = (uint32_t) v.kind | ((uint32_t) v.backend << 7) |
+                 ((uint32_t) v.type << 9) | ((uint32_t) v.write_ptr << 14) |
+                 (array_length << 16);
     }
 
     bool operator==(const VariableKey &v) const {
@@ -416,12 +409,40 @@ struct VariableKey {
     }
 };
 
+/// Check condition required for fast VariableKey construction
+static_assert(
+    offsetof(VariableKey, scope)   == offsetof(Variable, scope)   - offsetof(Variable, scope) &&
+    offsetof(VariableKey, dep)     == offsetof(Variable, dep)     - offsetof(Variable, scope) &&
+    offsetof(VariableKey, literal) == offsetof(Variable, literal) - offsetof(Variable, scope) &&
+    offsetof(VariableKey, size)    == offsetof(Variable, size)    - offsetof(Variable, scope),
+    "The layout of Variable and VariableKey are incompatible (compiler aligment/packing issue)!");
+
+
 #pragma pack(pop)
 
 /// Helper class to hash VariableKey instances
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        return hash((const void *) &k, 9 * sizeof(uint32_t), 0);
+        // The VariableKey hasher is performance-critical and uses a custom
+        // implementation.
+        //
+        // 'mix' is based on wyhash: a full 64x64->128 bit multiply with the
+        // halves folded together. XOR-ing each input with a constant first
+        // avoids the degenerate all-zero multiply. We reuse xxHash's five
+        // 64-bit primes.
+        auto mix = [](uint64_t a, uint64_t b) -> uint64_t {
+            XXH128_hash_t r = XXH_mult64to128(a, b);
+            return r.low64 ^ r.high64;
+        };
+
+        uint64_t w[4];
+        memcpy(w, &k, sizeof(w));
+
+        // Three independent 128-bit multiplies, then fold + finalize.
+        uint64_t a = mix(w[0] ^ PRIME64_1, w[1] ^ PRIME64_2);
+        uint64_t b = mix(w[2] ^ PRIME64_3, w[3] ^ PRIME64_4);
+        uint64_t c = mix((uint64_t) k.packed ^ PRIME64_5, PRIME64_1);
+        return (size_t) mix(a ^ b ^ c, PRIME64_2);
     }
 };
 
