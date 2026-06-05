@@ -1,5 +1,20 @@
 #pragma once
 
+#include <atomic>
+
+/*
+ * The recursive locks below have a fast path that skips the atomic transaction
+ * when the current thread already holds the lock. This reads `lock.owner`
+ * without holding the lock, racing with other threads' stores.
+ *
+ * The code below uses a relaxed atomic to make this race-free in the C++ memory
+ * model. Relaxed ordering suffices because `owner` is only a same-thread
+ * recursion hint; all synchronization comes from the underlying lock. The only
+ * value that affects control flow is "equal to my own id", which can only be
+ * observed if this thread wrote it while holding the lock. `recursion_count`
+ * needs no atomic: it is only touched by the owning thread under the lock.
+ */
+
 #if defined(__linux__) && !defined(DRJIT_USE_STD_MUTEX)
 #include <pthread.h>
 
@@ -13,90 +28,69 @@ using lock_thread_id_t = pthread_t;
 inline lock_thread_id_t lock_thread_id() { return pthread_self(); }
 #endif
 
-/*
- * This recursive spinlock improves the efficiency of @dr.freeze and operations
- * that acquire a lock recursively to avoid repeated atomic memory transactions
- * when accessing JIT variables.
- *
- * The code contains unprotected reads/writes of members (`lock.owner`,
- * `lock.recursion_count`) that are likely to be flagged as data races when using
- * thread sanitizers or similar infrastructure. Here is a rationale on why this is
- * safe even on architectures with weakly ordered memory semantics like ARM:
- *
- * The check `lock.owner == self` in lock_acquire avoids taking out the lock if
- * the current thread already holds it. However, the read from `lock.owner` is a
- * data race. Other threads might be reading/writing this value, and there are no
- * guarantees of how these operations are ordered with respect to each other.
- *
- * However, only one possible value of this field matters, which is when
- * `lock.owner` matches the value of `pthread_self()`. This value can only be read
- * if the current thread wrote it, which means that it is still holding the lock.
- * This means that the body of the conditionals is effectively part of a previous
- * critical section.
- */
-
 struct Lock {
     pthread_spinlock_t lock;
-    lock_thread_id_t owner;
+    std::atomic<lock_thread_id_t> owner;
     size_t recursion_count;
 };
 
-// Danger zone: the drjit-core locks are held for an extremely short amount of
+// The drjit-core locks are held for an extremely short amount of
 // time and normally uncontended. Switching to a spin lock cuts tracing time 8-10%
 inline void lock_init(Lock &lock) {
     pthread_spin_init(&lock.lock, PTHREAD_PROCESS_PRIVATE);
-    lock.owner           = 0;
+    lock.owner.store(0, std::memory_order_relaxed);
     lock.recursion_count = 0;
 }
 inline void lock_destroy(Lock &lock) { pthread_spin_destroy(&lock.lock); }
 inline void lock_acquire(Lock &lock) {
     lock_thread_id_t self = lock_thread_id();
-    if (lock.owner == self) {
+    if (lock.owner.load(std::memory_order_relaxed) == self) {
         lock.recursion_count++;
         return;
     }
 
     pthread_spin_lock(&lock.lock);
-    lock.owner           = self;
+    lock.owner.store(self, std::memory_order_relaxed);
     lock.recursion_count = 1;
 }
 inline void lock_release(Lock &lock) {
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
-        lock.owner = (lock_thread_id_t) -1;
+        lock.owner.store(0, std::memory_order_relaxed);
         pthread_spin_unlock(&lock.lock);
     }
 }
 #elif defined(__APPLE__) && !defined(DRJIT_USE_STD_MUTEX)
 #include <os/lock.h>
+#include <pthread.h>
 
 struct Lock {
     os_unfair_lock_s lock;
-    pthread_t owner;
+    std::atomic<pthread_t> owner;
     size_t recursion_count;
 };
 
 inline void lock_init(Lock &lock) {
-    lock.lock            = OS_UNFAIR_LOCK_INIT;
-    lock.owner           = (pthread_t) -1;
+    lock.lock = OS_UNFAIR_LOCK_INIT;
+    lock.owner.store((pthread_t) -1, std::memory_order_relaxed);
     lock.recursion_count = 0;
 }
 inline void lock_destroy(Lock &) {}
 inline void lock_acquire(Lock &lock) {
     pthread_t self = pthread_self();
-    if (pthread_equal(lock.owner, self)) {
+    if (pthread_equal(lock.owner.load(std::memory_order_relaxed), self)) {
         lock.recursion_count++;
         return;
     }
 
     os_unfair_lock_lock(&lock.lock);
-    lock.owner           = self;
+    lock.owner.store(self, std::memory_order_relaxed);
     lock.recursion_count = 1;
 }
 inline void lock_release(Lock &lock) {
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
-        lock.owner = (pthread_t) -1;
+        lock.owner.store((pthread_t) -1, std::memory_order_relaxed);
         os_unfair_lock_unlock(&lock.lock);
     }
 }
@@ -106,39 +100,39 @@ inline void lock_release(Lock &lock) {
 #include <shared_mutex>
 struct Lock {
     std::shared_mutex lock; // Based on the faster Win7 SRWLOCK
-    std::thread::id owner;
+    std::atomic<std::thread::id> owner;
     size_t recursion_count;
 };
 #else
 #include <mutex>
 struct Lock {
     std::mutex lock;
-    std::thread::id owner;
+    std::atomic<std::thread::id> owner;
     size_t recursion_count;
 };
 #endif
 
 inline void lock_init(Lock &lock) {
-    lock.owner           = std::thread::id();
+    lock.owner.store(std::thread::id(), std::memory_order_relaxed);
     lock.recursion_count = 0;
 }
 
 inline void lock_destroy(Lock &) {}
 inline void lock_acquire(Lock &lock) {
     std::thread::id self = std::this_thread::get_id();
-    if (lock.owner == self) {
+    if (lock.owner.load(std::memory_order_relaxed) == self) {
         lock.recursion_count++;
         return;
     }
 
     lock.lock.lock();
-    lock.owner = self;
+    lock.owner.store(self, std::memory_order_relaxed);
     lock.recursion_count = 1;
 }
 inline void lock_release(Lock &lock) {
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
-        lock.owner = std::thread::id();
+        lock.owner.store(std::thread::id(), std::memory_order_relaxed);
         lock.lock.unlock();
     }
 }
