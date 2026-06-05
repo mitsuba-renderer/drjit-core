@@ -152,8 +152,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
         }
 
         case VarKind::CoopVecMatVec: {
-            // out = (A or A^T) @ x [+ b], evaluated per-thread with a single
-            // mpp::tensor_ops::matmul2d call
+            // out = (A or A^T) @ x [+ b]
 
             CoopVecMatVecData *d = (CoopVecMatVecData *) v->data;
             const Variable *bias = a3;
@@ -166,54 +165,86 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                      stride = d->A_descr.stride,
                      a_off  = d->A_descr.offset;
 
-            // The packed (2-arg) tensor constructor implies a dense layout
-            if (stride != cols)
-                jitc_fail("jitc_metal_render_coop_vec(): CoopVecMatVec requires "
-                          "a densely-packed weight matrix");
+            bool supports_metal4 =
+                state.metal_devices[thread_state(JitBackend::Metal)->device]
+                    .supports_metal4;
 
-            bool relaxed = (VarType) v->type == VarType::Float16;
+            if (supports_metal4) {
+                // Single mpp::tensor_ops::matmul2d call per thread.
 
-            fmt_intrinsic(
-                "#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>\n"
-                "using namespace mpp::tensor_ops;");
-            uses_metal4 = true;
+                // The packed (2-arg) tensor constructor implies a dense layout
+                if (stride != cols)
+                    jitc_fail("jitc_metal_render_coop_vec(): CoopVecMatVec "
+                              "requires a densely-packed weight matrix");
 
-            // Declare the output element locals consumed by downstream nodes.
-            for (uint32_t i = 0; i < m; ++i)
-                fmt("    $t $v_$u;\n", v, v, i);
+                bool relaxed = (VarType) v->type == VarType::Float16;
 
-            put("    {\n");
+                fmt_intrinsic(
+                    "#include <MetalPerformancePrimitives/MetalPerformancePrimitives.h>\n"
+                    "using namespace mpp::tensor_ops;");
+                uses_metal4 = true;
 
-            // Gather the input vector into an addressable thread array.
-            fmt("        $t $v_mm_in[$u];\n", a1, v, n);
-            for (uint32_t j = 0; j < n; ++j)
-                fmt("        $v_mm_in[$u] = $v_$u;\n", v, j, a1, j);
-
-            // Float accumulator (matmul destination).
-            fmt("        float $v_mm_acc[$u];\n", v, m);
-
-            fmt("        constexpr auto $v_mm_d = matmul2d_descriptor(1, $u, $u, false, $s, $s);\n",
-                v, m, n, transpose ? "false" : "true",
-                relaxed ? "true" : "false");
-            fmt("        matmul2d<$v_mm_d, execution_thread> $v_mm_op;\n", v, v);
-            fmt("        auto $v_mm_x = tensor($v_mm_in, dextents<int,2>($u, 1));\n", v, v, n);
-            fmt("        auto $v_mm_w = tensor((device $t*) $v + $u, dextents<int,2>($u, $u));\n", v, v, a0, a_off, cols, rows);
-            fmt("        auto $v_mm_o = tensor($v_mm_acc, dextents<int,2>($u, 1));\n", v, v, m);
-            fmt("        $v_mm_op.run($v_mm_x, $v_mm_w, $v_mm_o);\n",
-                v, v, v, v);
-
-            // Write results back to the output locals, folding in the bias.
-            if (bias) {
-                uint32_t b_off = d->b_descr.offset;
+                // Declare the output element locals consumed by downstream nodes.
                 for (uint32_t i = 0; i < m; ++i)
-                    fmt("        $v_$u = ($t)($v_mm_acc[$u] + (float)((device $t*) $v)[$u]);\n",
-                        v, i, v, v, i, v, bias, b_off + i);
+                    fmt("    $t $v_$u;\n", v, v, i);
+
+                put("    {\n");
+
+                // Gather the input vector into an addressable thread array.
+                fmt("        $t $v_mm_in[$u];\n", a1, v, n);
+                for (uint32_t j = 0; j < n; ++j)
+                    fmt("        $v_mm_in[$u] = $v_$u;\n", v, j, a1, j);
+
+                // Float accumulator (matmul destination).
+                fmt("        float $v_mm_acc[$u];\n", v, m);
+
+                fmt("        constexpr auto $v_mm_d = matmul2d_descriptor(1, $u, $u, false, $s, $s);\n",
+                    v, m, n, transpose ? "false" : "true",
+                    relaxed ? "true" : "false");
+                fmt("        matmul2d<$v_mm_d, execution_thread> $v_mm_op;\n", v, v);
+                fmt("        auto $v_mm_x = tensor($v_mm_in, dextents<int,2>($u, 1));\n", v, v, n);
+                fmt("        auto $v_mm_w = tensor((device $t*) $v + $u, dextents<int,2>($u, $u));\n", v, v, a0, a_off, cols, rows);
+                fmt("        auto $v_mm_o = tensor($v_mm_acc, dextents<int,2>($u, 1));\n", v, v, m);
+                fmt("        $v_mm_op.run($v_mm_x, $v_mm_w, $v_mm_o);\n",
+                    v, v, v, v);
+
+                // Write results back to the output locals, folding in the bias.
+                if (bias) {
+                    uint32_t b_off = d->b_descr.offset;
+                    for (uint32_t i = 0; i < m; ++i)
+                        fmt("        $v_$u = ($t)($v_mm_acc[$u] + (float)((device $t*) $v)[$u]);\n",
+                            v, i, v, v, i, v, bias, b_off + i);
+                } else {
+                    for (uint32_t i = 0; i < m; ++i)
+                        fmt("        $v_$u = ($t) $v_mm_acc[$u];\n", v, i, v, v, i);
+                }
+
+                put("    }\n");
             } else {
-                for (uint32_t i = 0; i < m; ++i)
-                    fmt("        $v_$u = ($t) $v_mm_acc[$u];\n", v, i, v, v, i);
-            }
+                // Scalar fallback: m*n unrolled FMAs.
 
-            put("    }\n");
+                // Initialize output elements with the bias, or zero.
+                if (bias) {
+                    uint32_t b_off = d->b_descr.offset;
+                    for (uint32_t i = 0; i < m; ++i)
+                        fmt("    $t $v_$u = ((device const $t*) $v)[$u];\n",
+                            v, v, i, v, bias, b_off + i);
+                } else {
+                    for (uint32_t i = 0; i < m; ++i)
+                        fmt("    $t $v_$u = ($t) 0;\n", v, v, i, v);
+                }
+
+                // Accumulate A @ x; transpose swaps the row/col offsets.
+                for (uint32_t i = 0; i < m; ++i) {
+                    for (uint32_t j = 0; j < n; ++j) {
+                        uint32_t addr = a_off + (transpose ? (j * stride + i)
+                                                           : (i * stride + j));
+                        fmt("    $v_$u = fma(((device const $t*) $v)[$u], "
+                            "$v_$u, $v_$u);\n",
+                            v, i, v, a0, addr, a1, j, v, i);
+                    }
+                }
+            }
             break;
         }
 
