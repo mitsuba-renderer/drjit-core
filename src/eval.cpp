@@ -38,7 +38,10 @@
 std::vector<ScheduledVariable> schedule;
 
 /// Groups of variables with the same size
-std::vector<ScheduledGroup> schedule_groups;
+static std::vector<ScheduledGroup> schedule_groups;
+
+/// Scratch buffer reused by the schedule sort
+static std::vector<ScheduledVariable> schedule_scratch;
 
 struct VisitedKey {
     uint32_t size;
@@ -788,6 +791,72 @@ static ProfilerRegion profiler_region_eval("jit_eval");
 // Forward declaration
 void jitc_eval_impl(ThreadState *ts);
 
+/// Implementation detail of jitc_schedule_sort()
+struct Bucket { uint32_t size, scope, count, offset; };
+static std::vector<Bucket> buckets;
+
+/// Stable count sort of ``schedule`` by size (descending) and scope (ascending).
+static void jitc_schedule_sort() {
+    auto less = [](const auto &a, const auto &b) {
+        return a.size != b.size ? a.size > b.size : a.scope < b.scope;
+    };
+
+    // A distinct (size, scope) key and the entries that map to it
+    buckets.clear();
+
+    // Locate the bucket for a key. Entries sharing a key are contiguous in the
+    // schedule, so the most recent match is the likeliest hit.
+    uint32_t hint = 0;
+    auto find = [&](const ScheduledVariable &sv) -> Bucket * {
+        if (hint < buckets.size() && buckets[hint].size == sv.size &&
+            buckets[hint].scope == sv.scope)
+            return &buckets[hint];
+        for (hint = 0; hint < buckets.size(); ++hint)
+            if (buckets[hint].size == sv.size && buckets[hint].scope == sv.scope)
+                return &buckets[hint];
+        return nullptr;
+    };
+
+    // Pass 1: tally the distinct keys
+    const uint32_t max_buckets = 32;
+    bool fallback = false;
+    for (const ScheduledVariable &sv : schedule) {
+        if (Bucket *b = find(sv)) {
+            b->count++;
+        } else if (likely(buckets.size() < max_buckets)) {
+            hint = (uint32_t) buckets.size();
+            buckets.push_back({ sv.size, sv.scope, 1, 0 });
+        } else {
+            fallback = true; // Pathological key count; use a comparison sort
+            break;
+        }
+    }
+
+    if (fallback) {
+        std::stable_sort(schedule.begin(), schedule.end(), less);
+        return;
+    }
+
+    // A single key means the schedule is already in the desired order
+    if (buckets.size() <= 1)
+        return;
+
+    // Order the (few) keys and turn their counts into output offsets
+    std::sort(buckets.begin(), buckets.end(), less);
+    uint32_t offset = 0;
+    for (Bucket &b : buckets) {
+        b.offset = offset;
+        offset += b.count;
+    }
+
+    // Pass 2: stably scatter each entry into its group, then swap into place
+    schedule_scratch.resize(schedule.size());
+    hint = 0;
+    for (const ScheduledVariable &sv : schedule)
+        schedule_scratch[find(sv)->offset++] = sv;
+    schedule.swap(schedule_scratch);
+}
+
 /// Evaluate all computation that is queued on the given ThreadState
 void jitc_eval(ThreadState *ts) {
     if (!ts || (ts->scheduled.empty() && ts->side_effects.empty()))
@@ -914,21 +983,8 @@ void jitc_eval_impl(ThreadState *ts) {
     if (schedule.empty())
         return;
 
-    // Order variables into groups of matching size
-    std::stable_sort(
-        schedule.begin(), schedule.end(),
-        [](const ScheduledVariable &a, const ScheduledVariable &b) {
-            if (a.size > b.size)
-                return true;
-            else if (a.size < b.size)
-                return false;
-            else if (a.scope > b.scope)
-                return false;
-            else if (a.scope < b.scope)
-                return true;
-            else
-                return false;
-        });
+    // Order variables into kernel groups (by size, then scope)
+    jitc_schedule_sort();
 
     // Partition into groups of matching size
     schedule_groups.clear();
