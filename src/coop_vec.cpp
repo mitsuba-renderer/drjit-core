@@ -15,24 +15,6 @@
 #include "optix_api.h"
 #include "optix.h"
 
-// Raise if the Metal backend is targeted but the device lacks Metal 4, which
-// the cooperative-vector matrix operations require.
-static void jitc_coop_vec_check_metal4(JitBackend backend) {
-#if defined(DRJIT_ENABLE_METAL)
-    if (backend != JitBackend::Metal)
-        return;
-
-    const MetalDevice &dev = state.metal_devices[thread_state(backend)->device];
-    if (!dev.supports_metal4)
-        jitc_raise(
-            "jit_coop_vec: cooperative-vector matrix operations require a "
-            "Metal 4-capable device (Apple silicon on macOS 26+). The current "
-            "Metal device (\"%s\") does not support Metal 4.", dev.name);
-#else
-    (void) backend;
-#endif
-}
-
 #if defined(DRJIT_ENABLE_METAL)
 // On Metal, FP16 reduces into an FP32 buffer (narrowed back afterwards)
 static Ref jitc_coop_vec_metal_target(uint32_t target, bool &needs_narrow) {
@@ -509,8 +491,6 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
                 output_length, input_length, x_v->array_length);
     }
 
-    jitc_coop_vec_check_metal4(backend);
-
     A_index = unwrap(A_index);
     if (b_index)
         b_index = unwrap(b_index);
@@ -710,8 +690,6 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
                            "must be in training-optimal layout!");
         }
     }
-
-    jitc_coop_vec_check_metal4(backend);
 
     Ref target = borrow(target_);
     if (!target) {
