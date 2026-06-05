@@ -80,6 +80,15 @@ void jitc_batched_gemm(JitBackend backend, VarType type, bool At, bool Bt,
         jitc_raise("jit_batched_gemm(): n_bdims + n_rdims exceeds "
                    "DRJIT_GEMM_MAX_BDIMS.");
 
+    // GEMM is restricted to floating-point element types on every backend.
+    // The Metal backend additionally rejects Float64 (no FP64 on Apple GPUs).
+    if (type != VarType::Float16 && type != VarType::Float32 &&
+        type != VarType::Float64)
+        jitc_raise("jit_batched_gemm(): unsupported element type '%s'. The "
+                   "matrix multiplication only supports the floating point "
+                   "types Float16, Float32, and Float64.",
+                   type_name[(int) type]);
+
     // Beyond pruning trivial (``extent == 1``) dimensions, some batch
     // shapes are mathematically equivalent to a non-batched (or
     // less-batched) GEMM whose ``M`` or ``K`` dimension has been

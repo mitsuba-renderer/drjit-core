@@ -340,11 +340,10 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
 }
 
 // -----------------------------------------------------------------------------
-// Kernel instantiations: 4 types x 4 tile sizes x 3 transpose variants
-// = 48 kernels, named ``gemm_<type>_<BM>_<tt>`` where ``<tt>`` is one of
+// Kernel instantiations: 3 types x 4 tile sizes x 3 transpose variants
+// = 36 kernels, named ``gemm_<type>_<BM>_<tt>`` where ``<tt>`` is one of
 // ``nn``, ``nt``, ``tn``. The ``tt`` case (At=Bt=true) is rewritten by
-// the caller via ``A^T @ B^T = (B @ A)^T``. The launcher routes int32
-// to the u32 kernel (same bit pattern under two's-complement mul/add).
+// the caller via ``A^T @ B^T = (B @ A)^T``.
 //
 // ``__launch_bounds__(64, GEMM_BLOCKS(BM))`` caps registers at the
 // computed budget. With 65536 regs/SM and 64 threads/block, asking for
@@ -377,7 +376,6 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
     GEMM_TILE(T_, TName, 32)                                                   \
     GEMM_TILE(T_, TName, 64)
 
-GEMM_TYPE(half,     f16)
-GEMM_TYPE(float,    f32)
-GEMM_TYPE(double,   f64)
-GEMM_TYPE(uint32_t, u32)
+GEMM_TYPE(half,   f16)
+GEMM_TYPE(float,  f32)
+GEMM_TYPE(double, f64)
