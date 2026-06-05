@@ -407,13 +407,6 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
     // inside the kernel body. ``jitc_gemm_batch_counts`` returns false on
     // any zero extent (empty batch -> no kernel launch).
 
-    bool type_ok = (vt == VarType::Float16 || vt == VarType::Float32 ||
-                    vt == VarType::Float64 || vt == VarType::Int32   ||
-                    vt == VarType::UInt32);
-    if (!type_ok)
-        jitc_raise("jit_batched_gemm(): unsupported element type '%s'.",
-                   type_name[(int) vt]);
-
     // The kernels below do not handle ``At == Bt == true``; the Python
     // caller reduces that case to a single-transpose call via
     // ``A^T @ B^T = (B @ A)^T`` before reaching this point.
@@ -428,10 +421,6 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
     // Effective batch spec: a zero-initialized struct represents the
     // no-batch case (n_bdims == n_rdims == 0), used when ``batch`` is null.
     GemmBatch batch_eff = batch ? *batch : GemmBatch{};
-
-    // int32 reuses the u32 kernel (identical two's-complement bit pattern
-    // for mul/add).
-    VarType vt_kernel = (vt == VarType::Int32) ? VarType::UInt32 : vt;
 
     uint32_t tsize = type_size[(int) vt];
 
@@ -483,7 +472,7 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
             continue;
         if (ceil_div(M, bm_try) > grid_y_cap)
             continue;
-        CUfunction f = jitc_cuda_gemm[(int) vt_kernel][l][t_idx][dev.id];
+        CUfunction f = jitc_cuda_gemm[(int) vt][l][t_idx][dev.id];
         if (!f)
             continue;
 

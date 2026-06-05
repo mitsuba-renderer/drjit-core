@@ -920,15 +920,13 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
                                     const GemmBatch *batch,
                                     const void *A, const void *B, void *C) {
     @autoreleasepool {
-        bool type_ok = (vt == VarType::Float16 || vt == VarType::Float32);
-        if (!type_ok) {
-            if (vt == VarType::Int32 || vt == VarType::UInt32)
-                jitc_raise("jit_batched_gemm(): integer GEMM unsupported on the "
-                           "Metal backend (only Float16 and Float32 are "
-                           "supported).");
-            jitc_raise("jit_batched_gemm(): unsupported type '%s'.",
-                       type_name[(int) vt]);
-        }
+        // Float16 / Float32 / Float64 are validated centrally in
+        // ``jitc_batched_gemm()``. Apple GPUs have no FP64, so the Metal
+        // backend additionally rejects Float64.
+        if (vt == VarType::Float64)
+            jitc_raise("jit_batched_gemm(): the Metal backend does not support "
+                       "double precision (Float64) matrix multiplication. Use "
+                       "Float16 or Float32 instead.");
 
         if (At && Bt)
             jitc_raise("jit_batched_gemm(): At=Bt=True should have "
@@ -1082,7 +1080,7 @@ void MetalThreadState::batched_gemm(VarType vt, bool At, bool Bt,
 }
 
 uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
-                                   uint32_t *out) {
+                                    uint32_t *out) {
     @autoreleasepool {
         if (size == 0) return 0;
 

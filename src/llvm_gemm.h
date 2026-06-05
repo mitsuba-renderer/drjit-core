@@ -128,7 +128,6 @@ template <typename T, uint32_t V> struct GemmVecImpl;
     };
 DRJIT_DECLARE_GEMM_VEC(float)
 DRJIT_DECLARE_GEMM_VEC(double)
-DRJIT_DECLARE_GEMM_VEC(uint32_t)
 #undef DRJIT_DECLARE_GEMM_VEC
 
 template <typename T, uint32_t V>
@@ -451,14 +450,11 @@ static GemmDispatch gemm_dispatch_pick(bool At, bool Bt) {
     return gemm_dispatch_fill<T, false, true>();
 }
 
-// Int32 and UInt32 share a kernel (identical under 2's-complement mul/add).
 static GemmDispatch gemm_dispatch(VarType vt, bool At, bool Bt) {
     switch (vt) {
         case VarType::Float16: return gemm_dispatch_pick<drjit::half>(At, Bt);
         case VarType::Float32: return gemm_dispatch_pick<float      >(At, Bt);
         case VarType::Float64: return gemm_dispatch_pick<double     >(At, Bt);
-        case VarType::Int32:
-        case VarType::UInt32:  return gemm_dispatch_pick<uint32_t   >(At, Bt);
         default: return GemmDispatch{};
     }
 }

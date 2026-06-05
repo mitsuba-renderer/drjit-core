@@ -2236,11 +2236,11 @@ struct GemmBatch {
  * in registers / L1 and avoids materializing a full expanded intermediate
  * tensor that a subsequent pass would have to reduce away.
  *
- * The supported element types are ``Float16``, ``Float32``, ``Float64``,
- * ``Int32`` and ``UInt32``. Half-precision inputs are accumulated in single
- * precision and truncated on write-back. Both the CUDA and LLVM (CPU)
- * backends implement this operation; the CPU path uses nanothread to
- * parallelize across output tiles.
+ * The supported element types are ``Float16``, ``Float32`` and ``Float64``.
+ * Half-precision inputs are accumulated in single precision and truncated on
+ * write-back. The CUDA and LLVM (CPU) backends implement all three types; the
+ * CPU path uses nanothread to parallelize across output tiles. The Metal
+ * backend supports ``Float16`` and ``Float32`` (Apple GPUs lack FP64).
  */
 extern JIT_EXPORT void jit_batched_gemm(JIT_ENUM JitBackend backend,
                                         JIT_ENUM VarType type, int At, int Bt,

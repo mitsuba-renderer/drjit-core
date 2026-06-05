@@ -515,9 +515,6 @@ void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
                    "should have been rewritten by the caller.");
 
     GemmDispatch d = gemm_dispatch(vt, At, Bt);
-    if (!d.row_sweep)
-        jitc_raise("jit_batched_gemm(): unsupported element type '%s'.",
-                   type_name[(int) vt]);
 
     uint32_t grid_count, reduce_count;
     if (!jitc_gemm_batch_counts(batch, grid_count, reduce_count))
