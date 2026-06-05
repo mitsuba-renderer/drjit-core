@@ -1,36 +1,32 @@
 /**
- * src/metal_eval.cpp -- MSL kernel generation
+ * This file contains the logic that assembles a Metal MSL representation from a
+ * recorded Dr.Jit computation graph. It implements a small template engine
+ * involving plentiful use of the 'fmt' formatting routine.
  *
- * Copyright (c) 2026 Wenzel Jakob <wenzel.jakob@epfl.ch>
+ * Its format interface supports the following format string characters.
  *
- * All rights reserved. Use of this source code is governed by a BSD-style
- * license that can be found in the LICENSE file.
- *
+ *  Format  Input          Example result    Description
  * --------------------------------------------------------------------------
- *
- * This file assembles a Metal Shading Language (MSL) kernel from a recorded
- * Dr.Jit computation graph. It is the Metal counterpart of
- * ``src/cuda_eval.cpp`` and follows the same overall structure.
- *
- * The format-string syntax accepted by ``buffer.fmt_metal`` mirrors
- * ``fmt_cuda`` but emits MSL-friendly identifiers (e.g. ``v5`` instead of
- * ``%f5``) and types (``float`` instead of ``f32``).
- *
- *  Format  Input          Example result      Description
+ *  $u      uint32_t      `1234`             Decimal number (32 bit)
+ *  $U      uint64_t      `1234`             Decimal number (64 bit)
  * --------------------------------------------------------------------------
- *  $u      uint32_t       1234                Decimal number (32 bit)
- *  $U      uint64_t       1234                Decimal number (64 bit)
- *  $x      uint32_t       4d2                 Hex number (32 bit)
- *  $X      uint64_t       4d2                 Hex number (64 bit)
- *  $Q      uint64_t       00000000000004d2    Zero-padded hex (64 bit)
- *  $s      const char *   foo                 Zero-terminated string
- *  $c      char           f                   Single character
- *  $t      Variable       float               Variable type (MSL)
- *  $b      Variable       uint                Binary view of the variable type
- *  $v/$V   Variable       v1234               Variable name
- *  $a      Variable       4                   Variable size in bytes
- *  $l      Variable       0x3f800000ull       Literal value (hex)
- *  $o      Variable       2                   Index into ``params.args[]``
+ *  $x      uint32_t      `4d2`              Hexadecimal number (32 bit)
+ *  $X      uint64_t      `4d2`              Hexadecimal number (64 bit)
+ *  $Q      uint64_t      `00000000000004d2` Hex. number, 0-filled (64 bit)
+ * --------------------------------------------------------------------------
+ *  $s      const char *  `foo`              Zero-terminated string
+ *  $c      char          `f`                A single ASCII character
+ * --------------------------------------------------------------------------
+ *  $t      Variable      `float`            Variable type
+ * --------------------------------------------------------------------------
+ *  $b      Variable      `uint`             Variable type, binary format
+ * --------------------------------------------------------------------------
+ *  $v      Variable      `r1234`            Variable name
+ *  $a      Variable      `4`                Variable alignment in bytes
+ * --------------------------------------------------------------------------
+ *  $l      Variable      `0x1`              Literal value of variable (hex)
+ *  $o      Variable      `2`                Index into ``params.args[]``
+ * --------------------------------------------------------------------------
  */
 
 #include "eval.h"
@@ -58,20 +54,14 @@
 // Forward declaration
 static void jitc_metal_render(Variable *v);
 
-// ----------------------------------------------------------------------------
 // Keep track of scenes discovered during code generation
-// ----------------------------------------------------------------------------
-
 std::vector<MetalScene *> metal_kernel_scenes;
 
 // Names of the kernel's indirect-callable functions, ordered by callable index.
-// Populated during code generation and consumed at PSO-link time to build the
-// kernel's visible function table (see jitc_metal_kernel_compile).
 std::vector<XXH128_hash_t> metal_kernel_callables;
 
-// Index into ``params.args[]`` of the bindless slot holding the kernel's
-// visible-function-table handle, or -1 if the kernel performs no calls. Set by
-// jitc_assemble() when it reserves the slot (eval.cpp).
+// Index into ``params.args[]`` when the kernel receives a
+// visible-function-table handle, or -1 otherwise.
 int metal_vft_arg_index = -1;
 
 void jitc_metal_assemble_reset() {
@@ -125,10 +115,10 @@ static void jitc_metal_render_resource_handle(const Variable *v,
                                              : "texture2d<float>";
         }
         if (in_callable)
-            fmt("    device $s& $v = *(device $s*)(data + $u);\n",
+            fmt("device $s& $v = *(device $s*)(data + $u);\n",
                 tname, v, tname, data_offset);
         else
-            fmt("    constant $s& $v = *(constant $s*) &params.args[$o];\n",
+            fmt("constant $s& $v = *(constant $s*) &params.args[$o];\n",
                 tname, v, tname, v);
         return;
     }
@@ -140,11 +130,110 @@ static void jitc_metal_render_resource_handle(const Variable *v,
         "using namespace raytracing;");
     const char *tname = metal_resource_type_name(kind, scene);
     if (in_callable)
-        fmt("    device $s& $v = *(device $s*)(data + $u);\n",
+        fmt("device $s& $v = *(device $s*)(data + $u);\n",
             tname, v, tname, data_offset);
     else
-        fmt("    constant $s& $v = *(constant $s*) &params.args[$o];\n",
+        fmt("constant $s& $v = *(constant $s*) &params.args[$o];\n",
             tname, v, tname, v);
+}
+
+/// Scratch buffer holding the formatted copy produced by jitc_metal_format()
+static StringBuffer metal_reindent_scratch;
+
+/// The Metal backend generates unformatted MSL since indentation tracking is
+/// costly during code generation. This function returns an indented copy if
+/// requested by JitFlags.PrintIR or the log level is high enough. In this case,
+/// the MSL is printed to the console where improved readability is desirable.
+///
+/// The function relies on three properties of the emitted MSL:
+///   1. Every ``{``/``}`` is related to control flow (i.e. braces don't occur
+///      in strings, initializer lists, etc.)
+///   2. The only comments are ``//`` line comments
+///   3. No statement is split across lines by a blank or comment line, which
+///      would reset the continuation state mid-statement.
+///
+/// These are currently satisfied. Violating them degrades indentation quality
+/// but never changes semantics.
+const char *jitc_metal_format() {
+    metal_reindent_scratch.swap(buffer);
+    buffer.clear();
+
+    const char *src = metal_reindent_scratch.get();
+    size_t n = metal_reindent_scratch.size();
+
+    int depth = 0;
+    bool stmt_open = false; // previous code line left a statement unterminated
+
+    for (size_t i = 0; i < n; ) {
+        // Carve out one line and trim its horizontal whitespace.
+        size_t b = i;
+        while (i < n && src[i] != '\n')
+            i++;
+        size_t e = i;
+        if (i < n)
+            i++; // consume '\n'
+        while (b < e && (src[b] == ' ' || src[b] == '\t'))
+            b++;
+        while (e > b && (src[e - 1] == ' ' || src[e - 1] == '\t'))
+            e--;
+
+        if (b == e) { // blank line
+            put('\n');
+            stmt_open = false;
+            continue;
+        }
+
+        bool is_comment = src[b] == '/' && b + 1 < e && src[b + 1] == '/';
+        bool is_preproc = src[b] == '#';
+
+        // Scan for brace deltas and the last significant character, stopping at
+        // a trailing ``//`` comment.
+        int opens = 0, closes = 0, leading_close = 0;
+        bool seen = false;
+        char last = 0;
+        for (size_t k = b; k < e; k++) {
+            char c = src[k];
+            if (c == '/' && k + 1 < e && src[k + 1] == '/')
+                break;
+            if (c == '{') {
+                opens++;
+                seen = true;
+            } else if (c == '}') {
+                closes++;
+                if (!seen)
+                    leading_close++;
+            } else if (c != ' ' && c != '\t') {
+                seen = true;
+            }
+            if (c != ' ' && c != '\t')
+                last = c;
+        }
+
+        int indent = depth - leading_close;
+        if (indent < 0)
+            indent = 0;
+        if (stmt_open && !is_preproc && !is_comment)
+            indent++; // hanging indent for continuation lines
+
+        if (indent > 0)
+            put(' ', (size_t) indent * 4);
+        put(src + b, e - b);
+        put('\n');
+
+        depth += opens - closes;
+        if (depth < 0)
+            depth = 0;
+
+        stmt_open = !(is_comment || is_preproc || last == ';' || last == '{' ||
+                      last == '}');
+    }
+
+    jitc_assert(depth == 0, "jitc_metal_format(): mismatched braces!");
+
+    // Restore the unformatted source to ``buffer`` and keep the formatted copy in
+    // the scratch buffer, whose contents we return.
+    metal_reindent_scratch.swap(buffer);
+    return metal_reindent_scratch.get();
 }
 
 void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
@@ -187,13 +276,13 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
 
         // Declare output variables for TraceRay nodes before they're used
         if (kind == VarKind::TraceRay) {
-            fmt("    bool  $v_out_0 = false;\n"
-                "    float $v_out_1 = 0.0f;\n"
-                "    float $v_out_2 = 0.0f;\n"
-                "    float $v_out_3 = 0.0f;\n"
-                "    uint  $v_out_4 = 0u;\n"
-                "    uint  $v_out_5 = 0u;\n"
-                "    uint  $v_out_6 = 0u;\n",
+            fmt("bool  $v_out_0 = false;\n"
+                "float $v_out_1 = 0.0f;\n"
+                "float $v_out_2 = 0.0f;\n"
+                "float $v_out_3 = 0.0f;\n"
+                "uint  $v_out_4 = 0u;\n"
+                "uint  $v_out_5 = 0u;\n"
+                "uint  $v_out_6 = 0u;\n",
                 v, v, v, v, v, v, v);
         }
 
@@ -216,28 +305,28 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
                     }
                     // Pointer literals must be loaded from params (not inlined)
                     // so frozen function replay can update the address
-                    fmt("    $t $v = ($t) params.args[$o];\n",
+                    fmt("$t $v = ($t) params.args[$o];\n",
                               v, v, v, v);
                 } else if (vt == VarType::Float32) {
-                    fmt("    $t $v = as_type<float>($lu);\n", v, v, v);
+                    fmt("$t $v = as_type<float>($lu);\n", v, v, v);
                 } else if (vt == VarType::Float16) {
-                    fmt("    $t $v = as_type<half>((ushort) $lu);\n", v, v, v);
+                    fmt("$t $v = as_type<half>((ushort) $lu);\n", v, v, v);
                 } else {
-                    fmt("    $t $v = ($t) $lu;\n", v, v, v, v);
+                    fmt("$t $v = ($t) $lu;\n", v, v, v, v);
                 }
                 continue;
             }
 
             if (!v->is_array()) {
                 if (v->size > 1)
-                    fmt("    $t $v = ((device const $t*) params.args[$o])[r0];\n",
+                    fmt("$t $v = ((device const $t*) params.args[$o])[r0];\n",
                               v, v, v, v);
                 else
-                    fmt("    $t $v = *(device const $t*) params.args[$o];\n",
+                    fmt("$t $v = *(device const $t*) params.args[$o];\n",
                               v, v, v, v);
             } else {
                 // Array memcpy helpers reference the named ``p<r>`` pointer.
-                fmt("    device const $t* p$v = (device const $t*) params.args[$o];\n",
+                fmt("device const $t* p$v = (device const $t*) params.args[$o];\n",
                     v, v, v, v);
                 jitc_metal_render_array_memcpy_in(v);
             }
@@ -251,11 +340,11 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
 
         if (ptype == ParamType::Output) {
             if (!v->is_array()) {
-                fmt("    ((device $t*) params.args[$o])[r0] = $v;\n",
+                fmt("((device $t*) params.args[$o])[r0] = $v;\n",
                     v, v, v);
             } else {
                 // Array memcpy helpers reference the named ``p<r>`` pointer.
-                fmt("    device $t* p$v = (device $t*) params.args[$o];\n",
+                fmt("device $t* p$v = (device $t*) params.args[$o];\n",
                     v, v, v, v);
                 jitc_metal_render_array_memcpy_out(v);
             }
@@ -368,19 +457,19 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
 
 static void jitc_metal_render_unary(Variable *v, const char *op) {
     Variable *a = jitc_var(v->dep[0]);
-    fmt("    $t $v = $s($v);\n", v, v, op, a);
+    fmt("$t $v = $s($v);\n", v, v, op, a);
 }
 
 static void jitc_metal_render_binary(Variable *v, const char *op) {
     Variable *a = jitc_var(v->dep[0]);
     Variable *b = jitc_var(v->dep[1]);
-    fmt("    $t $v = $v $s $v;\n", v, v, a, op, b);
+    fmt("$t $v = $v $s $v;\n", v, v, a, op, b);
 }
 
 static void jitc_metal_render_call(Variable *v, const char *fn,
                                    uint32_t n_args) {
     Variable *a0 = jitc_var(v->dep[0]);
-    fmt("    $t $v = $s($v", v, v, fn, a0);
+    fmt("$t $v = $s($v", v, v, fn, a0);
     if (n_args >= 2) {
         Variable *a1 = jitc_var(v->dep[1]);
         fmt(", $v", a1);
@@ -406,24 +495,24 @@ static void jitc_metal_render(Variable *v) {
             break;
 
         case VarKind::Undefined:
-            fmt("    $t $v = ($t) 0;\n", v, v, v);
+            fmt("$t $v = ($t) 0;\n", v, v, v);
             break;
 
         case VarKind::Literal: {
             VarType vt = (VarType) v->type;
             if (vt == VarType::Float32)
-                fmt("    $t $v = as_type<float>($lu);\n", v, v, v);
+                fmt("$t $v = as_type<float>($lu);\n", v, v, v);
             else if (vt == VarType::Float16)
-                fmt("    $t $v = as_type<half>((ushort) $lu);\n", v, v, v);
+                fmt("$t $v = as_type<half>((ushort) $lu);\n", v, v, v);
             else if (vt == VarType::Bool)
-                fmt("    $t $v = ($t) ($lu);\n", v, v, v, v);
+                fmt("$t $v = ($t) ($lu);\n", v, v, v, v);
             else
-                fmt("    $t $v = ($t) $lu;\n", v, v, v, v);
+                fmt("$t $v = ($t) $lu;\n", v, v, v, v);
             break;
         }
 
         case VarKind::Counter:
-            fmt("    $t $v = ($t) r0;\n", v, v, v);
+            fmt("$t $v = ($t) r0;\n", v, v, v);
             break;
 
         // -- Arithmetic --
@@ -436,7 +525,7 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::DivApprox: {
             Variable *a0 = jitc_var(v->dep[0]),
                      *a1 = jitc_var(v->dep[1]);
-            fmt("    $t $v = fast::divide($v, $v);\n", v, v, a0, a1);
+            fmt("$t $v = fast::divide($v, $v);\n", v, v, a0, a1);
             break;
         }
         case VarKind::Mod: jitc_metal_render_binary(v, "%"); break;
@@ -444,7 +533,7 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::MulHi: {
             Variable *a = jitc_var(v->dep[0]);
             Variable *b = jitc_var(v->dep[1]);
-            fmt("    $t $v = mulhi($v, $v);\n", v, v, a, b);
+            fmt("$t $v = mulhi($v, $v);\n", v, v, a, b);
             break;
         }
 
@@ -452,7 +541,7 @@ static void jitc_metal_render(Variable *v) {
             // 32-bit × 32-bit → 64-bit
             Variable *a = jitc_var(v->dep[0]);
             Variable *b = jitc_var(v->dep[1]);
-            fmt("    $t $v = ($t)$v * ($t)$v;\n", v, v, v, a, v, b);
+            fmt("$t $v = ($t)$v * ($t)$v;\n", v, v, v, a, v, b);
             break;
         }
 
@@ -461,9 +550,9 @@ static void jitc_metal_render(Variable *v) {
                      *a1 = jitc_var(v->dep[1]),
                      *a2 = jitc_var(v->dep[2]);
             if (jitc_is_float(v))
-                fmt("    $t $v = fma($v, $v, $v);\n", v, v, a0, a1, a2);
+                fmt("$t $v = fma($v, $v, $v);\n", v, v, a0, a1, a2);
             else
-                fmt("    $t $v = $v * $v + $v;\n", v, v, a0, a1, a2);
+                fmt("$t $v = $v * $v + $v;\n", v, v, a0, a1, a2);
             break;
         }
         case VarKind::Min:  jitc_metal_render_call(v, "min",  2); break;
@@ -488,7 +577,7 @@ static void jitc_metal_render(Variable *v) {
             Variable *cond = jitc_var(v->dep[0]);
             Variable *a    = jitc_var(v->dep[1]);
             Variable *b    = jitc_var(v->dep[2]);
-            fmt("    $t $v = $v ? $v : $v;\n", v, v, cond, a, b);
+            fmt("$t $v = $v ? $v : $v;\n", v, v, cond, a, b);
             break;
         }
 
@@ -498,7 +587,7 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Ctz:   jitc_metal_render_call(v, "ctz", 1); break;
         case VarKind::Brev: {
             Variable *a = jitc_var(v->dep[0]);
-            fmt("    $t $v = reverse_bits($v);\n", v, v, a);
+            fmt("$t $v = reverse_bits($v);\n", v, v, a);
             break;
         }
 
@@ -506,12 +595,12 @@ static void jitc_metal_render(Variable *v) {
             Variable *a0 = jitc_var(v->dep[0]),
                      *a1 = jitc_var(v->dep[1]);
             if (a0->type != a1->type)
-                fmt("    $t $v = $v ? $v : ($t) 0;\n", v, v, a1, a0, v);
+                fmt("$t $v = $v ? $v : ($t) 0;\n", v, v, a1, a0, v);
             else if (jitc_is_float(v))
-                fmt("    $t $v = as_type<$t>(($b)(as_type<$b>($v) & as_type<$b>($v)));\n",
+                fmt("$t $v = as_type<$t>(($b)(as_type<$b>($v) & as_type<$b>($v)));\n",
                     v, v, v, v, v, a0, v, a1);
             else
-                fmt("    $t $v = $v & $v;\n", v, v, a0, a1);
+                fmt("$t $v = $v & $v;\n", v, v, a0, a1);
             break;
         }
 
@@ -519,13 +608,13 @@ static void jitc_metal_render(Variable *v) {
             Variable *a0 = jitc_var(v->dep[0]),
                      *a1 = jitc_var(v->dep[1]);
             if (a0->type != a1->type)
-                fmt("    $t $v = as_type<$t>(($b)($v ? ~($b) 0 : as_type<$b>($v)));\n",
+                fmt("$t $v = as_type<$t>(($b)($v ? ~($b) 0 : as_type<$b>($v)));\n",
                     v, v, v, v, a1, v, v, a0);
             else if (jitc_is_float(v))
-                fmt("    $t $v = as_type<$t>(($b)(as_type<$b>($v) | as_type<$b>($v)));\n",
+                fmt("$t $v = as_type<$t>(($b)(as_type<$b>($v) | as_type<$b>($v)));\n",
                     v, v, v, v, v, a0, v, a1);
             else
-                fmt("    $t $v = $v | $v;\n", v, v, a0, a1);
+                fmt("$t $v = $v | $v;\n", v, v, a0, a1);
             break;
         }
 
@@ -533,10 +622,10 @@ static void jitc_metal_render(Variable *v) {
             Variable *a0 = jitc_var(v->dep[0]),
                      *a1 = jitc_var(v->dep[1]);
             if (jitc_is_float(v))
-                fmt("    $t $v = as_type<$t>(($b)(as_type<$b>($v) ^ as_type<$b>($v)));\n",
+                fmt("$t $v = as_type<$t>(($b)(as_type<$b>($v) ^ as_type<$b>($v)));\n",
                     v, v, v, v, v, a0, v, a1);
             else
-                fmt("    $t $v = $v ^ $v;\n", v, v, a0, a1);
+                fmt("$t $v = $v ^ $v;\n", v, v, a0, a1);
             break;
         }
         case VarKind::Shl: jitc_metal_render_binary(v, "<<"); break;
@@ -547,9 +636,9 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Not: {
             Variable *a = jitc_var(v->dep[0]);
             if ((VarType) v->type == VarType::Bool)
-                fmt("    $t $v = !$v;\n", v, v, a);
+                fmt("$t $v = !$v;\n", v, v, a);
             else
-                fmt("    $t $v = ~$v;\n", v, v, a);
+                fmt("$t $v = ~$v;\n", v, v, a);
             break;
         }
         case VarKind::Abs: jitc_metal_render_unary(v, "abs"); break;
@@ -566,12 +655,12 @@ static void jitc_metal_render(Variable *v) {
 
         // -- Reciprocal --
         case VarKind::Rcp:
-            fmt("    $t $v = ($t) 1.0 / $v;\n",
+            fmt("$t $v = ($t) 1.0 / $v;\n",
                 v, v, v, jitc_var(v->dep[0]));
             break;
 
         case VarKind::RcpApprox:
-            fmt("    $t $v = fast::divide(($t) 1.0, $v);\n",
+            fmt("$t $v = fast::divide(($t) 1.0, $v);\n",
                 v, v, v, jitc_var(v->dep[0]));
             break;
 
@@ -582,18 +671,18 @@ static void jitc_metal_render(Variable *v) {
         // -- Casts --
         case VarKind::Cast: {
             Variable *a = jitc_var(v->dep[0]);
-            fmt("    $t $v = ($t) $v;\n", v, v, v, a);
+            fmt("$t $v = ($t) $v;\n", v, v, v, a);
             break;
         }
 
         case VarKind::Bitcast: {
             Variable *a = jitc_var(v->dep[0]);
             if (v->type == a->type)
-                fmt("    $t $v = $v;\n", v, v, a);
+                fmt("$t $v = $v;\n", v, v, a);
             else if (type_size[v->type] == type_size[a->type])
-                fmt("    $t $v = as_type<$t>($v);\n", v, v, v, a);
+                fmt("$t $v = as_type<$t>($v);\n", v, v, v, a);
             else
-                fmt("    $t $v = as_type<$t>(($b) $v);\n", v, v, v, v, a);
+                fmt("$t $v = as_type<$t>(($b) $v);\n", v, v, v, v, a);
             break;
         }
 
@@ -603,9 +692,9 @@ static void jitc_metal_render(Variable *v) {
             Variable *mask   = jitc_var(v->dep[1]);
             Variable *buf    = jitc_var(v->dep[2]);
             uint32_t size    = (uint32_t) v->literal;
-            fmt("    bool $v = $v && ($v < (uint) $uu);\n"
-                "    if ($v && !$v)\n"
-                "        atomic_store_explicit((device atomic_uint*) $v, $v, memory_order_relaxed);\n",
+            fmt("bool $v = $v && ($v < (uint) $uu);\n"
+                "if ($v && !$v)\n"
+                "    atomic_store_explicit((device atomic_uint*) $v, $v, memory_order_relaxed);\n",
                 v, mask, index, size,
                 mask, v,
                 buf, index);
@@ -619,10 +708,10 @@ static void jitc_metal_render(Variable *v) {
             Variable *mask  = jitc_var(v->dep[2]);
             bool is_unmasked = mask->is_literal() && mask->literal == 1;
             if (is_unmasked)
-                fmt("    $t $v = ((device const $t*) $v)[$v];\n",
+                fmt("$t $v = ((device const $t*) $v)[$v];\n",
                     v, v, v, src, index);
             else
-                fmt("    $t $v = ($v) ? "
+                fmt("$t $v = ($v) ? "
                           "((device const $t*) $v)[$v] : ($t) 0;\n",
                     v, v, mask, v, src, index, v);
             break;
@@ -675,10 +764,10 @@ static void jitc_metal_render(Variable *v) {
                 (VarKind) src->kind == VarKind::TexLookup ||
                 (VarKind) src->kind == VarKind::TexFetchBilerp) {
                 // Extract from a multi-output op — reference the pre-declared outputs
-                fmt("    $t $v = $v_out_$u;\n",
+                fmt("$t $v = $v_out_$u;\n",
                     v, v, src, sub_index);
             } else {
-                fmt("    $t $v = $v; // extract[$u]\n",
+                fmt("$t $v = $v; // extract[$u]\n",
                     v, v, src, sub_index);
             }
             break;
@@ -694,17 +783,17 @@ static void jitc_metal_render(Variable *v) {
                     inner_in->is_array())
                     continue;
                 if (outer_in->reg_index)
-                    fmt("    $t $v = $v;\n", inner_in, inner_in, outer_in);
+                    fmt("$t $v = $v;\n", inner_in, inner_in, outer_in);
                 else
-                    fmt("    $t $v = ($t) 0;\n", inner_in, inner_in, inner_in);
+                    fmt("$t $v = ($t) 0;\n", inner_in, inner_in, inner_in);
             }
-            put("    while (true) {\n");
+            put("while (true) {\n");
             break;
         }
 
         case VarKind::LoopCond: {
             Variable *cond = jitc_var(v->dep[1]);
-            fmt("        if (!$v) break;\n", cond);
+            fmt("if (!$v) break;\n", cond);
             break;
         }
 
@@ -735,7 +824,7 @@ static void jitc_metal_render(Variable *v) {
                 if (in == out || !in->reg_index || !out->reg_index ||
                     in->is_array() || out->scratch != 1)
                     continue;
-                fmt("    $t $v_tmp = $v;\n", in, in, out);
+                fmt("$t $v_tmp = $v;\n", in, in, out);
                 out->scratch = 2;
             }
 
@@ -746,12 +835,12 @@ static void jitc_metal_render(Variable *v) {
                     in->is_array())
                     continue;
                 if (out->scratch == 2)
-                    fmt("    $v = $v_tmp;\n", in, in);
+                    fmt("$v = $v_tmp;\n", in, in);
                 else
-                    fmt("    $v = $v;\n", in, out);
+                    fmt("$v = $v;\n", in, out);
             }
 
-            put("    }\n");
+            put("}\n");
             break;
         }
 
@@ -774,7 +863,7 @@ static void jitc_metal_render(Variable *v) {
                 if (outer_out == v) {
                     Variable *inner_in = jitc_var(ld->inner_in[i]);
                     if (v->reg_index && inner_in->reg_index)
-                        fmt("    $t $v = $v;\n", v, v, inner_in);
+                        fmt("$t $v = $v;\n", v, v, inner_in);
                     break;
                 }
             }
@@ -789,9 +878,9 @@ static void jitc_metal_render(Variable *v) {
             for (size_t i = 0; i < cd->indices_out.size(); ++i) {
                 Variable *vo = jitc_var(cd->indices_out[i]);
                 if (vo && vo->reg_index)
-                    fmt("    $t $v;\n", vo, vo);
+                    fmt("$t $v;\n", vo, vo);
             }
-            fmt("    if ($v) {\n", cond);
+            fmt("if ($v) {\n", cond);
             break;
         }
 
@@ -802,9 +891,9 @@ static void jitc_metal_render(Variable *v) {
                 Variable *vt = jitc_var(cd->indices_t[i]),
                          *vo = jitc_var(cd->indices_out[i]);
                 if (vo && vo->reg_index && vt->reg_index)
-                    fmt("    $v = $v;\n", vo, vt);
+                    fmt("$v = $v;\n", vo, vt);
             }
-            put("    } else {\n");
+            put("} else {\n");
             break;
         }
 
@@ -815,9 +904,9 @@ static void jitc_metal_render(Variable *v) {
                 Variable *vf = jitc_var(cd->indices_f[i]),
                          *vo = jitc_var(cd->indices_out[i]);
                 if (vo && vo->reg_index && vf->reg_index)
-                    fmt("    $v = $v;\n", vo, vf);
+                    fmt("$v = $v;\n", vo, vf);
             }
-            put("    }\n");
+            put("}\n");
             break;
         }
 
@@ -845,7 +934,7 @@ static void jitc_metal_render(Variable *v) {
 
             // Guard with active mask
             if (!is_unmasked)
-                fmt("    if ($v) {\n", valid);
+                fmt("if ($v) {\n", valid);
 
             // Read ray parameters from TraceData indices
             Variable *ox   = jitc_var(td->indices[0]);
@@ -868,37 +957,37 @@ static void jitc_metal_render(Variable *v) {
             // - Mixed (any non-triangle): drop the assume hint so curves and
             //   bounding-box geometry are also tested. The IFT is passed only
             //   when custom-intersection shapes are present.
-            put("    {\n");
+            put("{\n");
             if (extended) {
                 if (has_curves_local) {
-                    put("        metal::raytracing::intersector<metal::raytracing::triangle_data, "
+                    put("metal::raytracing::intersector<metal::raytracing::triangle_data, "
                         "metal::raytracing::curve_data, metal::raytracing::instancing> _inter;\n");
                 } else {
-                    put("        metal::raytracing::intersector<metal::raytracing::triangle_data, "
+                    put("metal::raytracing::intersector<metal::raytracing::triangle_data, "
                         "metal::raytracing::instancing> _inter;\n");
                 }
-                put("        _inter.force_opacity(metal::raytracing::forced_opacity::opaque);\n"
-                    "        _inter.accept_any_intersection(false);\n");
+                put("_inter.force_opacity(metal::raytracing::forced_opacity::opaque);\n"
+                    "_inter.accept_any_intersection(false);\n");
             } else {
-                put("        metal::raytracing::intersector<metal::raytracing::triangle_data, "
+                put("metal::raytracing::intersector<metal::raytracing::triangle_data, "
                     "metal::raytracing::instancing> _inter;\n"
-                    "        _inter.assume_geometry_type(metal::raytracing::geometry_type::triangle);\n"
-                    "        _inter.force_opacity(metal::raytracing::forced_opacity::opaque);\n"
-                    "        _inter.accept_any_intersection(false);\n");
+                    "_inter.assume_geometry_type(metal::raytracing::geometry_type::triangle);\n"
+                    "_inter.force_opacity(metal::raytracing::forced_opacity::opaque);\n"
+                    "_inter.accept_any_intersection(false);\n");
             }
-            fmt("        metal::raytracing::ray _r;\n"
-                "        _r.origin = float3($v, $v, $v);\n"
-                "        _r.direction = float3($v, $v, $v);\n"
-                "        _r.min_distance = $v;\n"
-                "        _r.max_distance = $v;\n",
+            fmt("metal::raytracing::ray _r;\n"
+                "_r.origin = float3($v, $v, $v);\n"
+                "_r.direction = float3($v, $v, $v);\n"
+                "_r.min_distance = $v;\n"
+                "_r.max_distance = $v;\n",
                 ox, oy, oz, dx, dy, dz, tmin, tmax);
             // Route the intersect call to this trace's reconstructed accel
             // (+ IFT) reference variables.
             if (has_ift_local)
-                fmt("        auto _hit = _inter.intersect(_r, $v, $v);\n",
+                fmt("auto _hit = _inter.intersect(_r, $v, $v);\n",
                     accel_h, ift_h);
             else
-                fmt("        auto _hit = _inter.intersect(_r, $v);\n",
+                fmt("auto _hit = _inter.intersect(_r, $v);\n",
                     accel_h);
 
             // Hit-result extraction.
@@ -916,39 +1005,39 @@ static void jitc_metal_render(Variable *v) {
                 // across backends (otherwise backface tests on rays starting
                 // inside a curve report a spurious hit at t=0 with
                 // garbage curve_parameter).
-                fmt("        auto _ht = _hit.type;\n"
-                    "        bool _zero_curve_hit = (_ht == metal::raytracing::intersection_type::curve) && (_hit.distance <= 0.0f);\n"
-                    "        $v_out_0 = (_ht != metal::raytracing::intersection_type::none) && !_zero_curve_hit;\n"
-                    "        $v_out_1 = _hit.distance;\n"
-                    "        $v_out_2 = (_ht == metal::raytracing::intersection_type::triangle)\n"
-                    "                   ? _hit.triangle_barycentric_coord.x\n"
-                    "                   : ((_ht == metal::raytracing::intersection_type::curve)\n"
-                    "                      ? _hit.curve_parameter : 0.0f);\n"
-                    "        $v_out_3 = (_ht == metal::raytracing::intersection_type::triangle)\n"
-                    "                   ? _hit.triangle_barycentric_coord.y : 0.0f;\n"
-                    "        $v_out_4 = _hit.instance_id;\n"
-                    "        $v_out_5 = _hit.primitive_id;\n"
-                    "        $v_out_6 = _hit.geometry_id;\n"
-                    "    }\n",
+                fmt("    auto _ht = _hit.type;\n"
+                    "    bool _zero_curve_hit = (_ht == metal::raytracing::intersection_type::curve) && (_hit.distance <= 0.0f);\n"
+                    "    $v_out_0 = (_ht != metal::raytracing::intersection_type::none) && !_zero_curve_hit;\n"
+                    "    $v_out_1 = _hit.distance;\n"
+                    "    $v_out_2 = (_ht == metal::raytracing::intersection_type::triangle)\n"
+                    "               ? _hit.triangle_barycentric_coord.x\n"
+                    "               : ((_ht == metal::raytracing::intersection_type::curve)\n"
+                    "                  ? _hit.curve_parameter : 0.0f);\n"
+                    "    $v_out_3 = (_ht == metal::raytracing::intersection_type::triangle)\n"
+                    "               ? _hit.triangle_barycentric_coord.y : 0.0f;\n"
+                    "    $v_out_4 = _hit.instance_id;\n"
+                    "    $v_out_5 = _hit.primitive_id;\n"
+                    "    $v_out_6 = _hit.geometry_id;\n"
+                    "}\n",
                     v, v, v, v, v, v, v);
             } else {
                 // No curves — both the triangle-only fast path and the
                 // triangle+bbox extended path can use the same extraction:
                 // triangle_barycentric_coord is correct for triangle hits and
                 // unused (overwritten) for bbox hits.
-                fmt("        $v_out_0 = (_hit.type != metal::raytracing::intersection_type::none);\n"
-                          "        $v_out_1 = _hit.distance;\n"
-                          "        $v_out_2 = _hit.triangle_barycentric_coord.x;\n"
-                          "        $v_out_3 = _hit.triangle_barycentric_coord.y;\n"
-                          "        $v_out_4 = _hit.instance_id;\n"
-                          "        $v_out_5 = _hit.primitive_id;\n"
-                          "        $v_out_6 = _hit.geometry_id;\n"
-                          "    }\n",
+                fmt("    $v_out_0 = (_hit.type != metal::raytracing::intersection_type::none);\n"
+                          "    $v_out_1 = _hit.distance;\n"
+                          "    $v_out_2 = _hit.triangle_barycentric_coord.x;\n"
+                          "    $v_out_3 = _hit.triangle_barycentric_coord.y;\n"
+                          "    $v_out_4 = _hit.instance_id;\n"
+                          "    $v_out_5 = _hit.primitive_id;\n"
+                          "    $v_out_6 = _hit.geometry_id;\n"
+                          "}\n",
                           v, v, v, v, v, v, v);
             }
 
             if (!is_unmasked)
-                put("    }\n");
+                put("}\n");
             break;
         }
 
@@ -968,10 +1057,10 @@ static void jitc_metal_render(Variable *v) {
             // sample with the mask, so the compiler can predicate off the fetch
             // for inactive lanes.
             if (mask) {
-                fmt("    float4 $v_s = float4(0.f);\n", v);
-                fmt("    if ($v) $v_s = ", mask, v);
+                fmt("float4 $v_s = float4(0.f);\n", v);
+                fmt("if ($v) $v_s = ", mask, v);
             } else {
-                fmt("    float4 $v_s = ", v);
+                fmt("float4 $v_s = ", v);
             }
 
             if (ndim == 1)
@@ -986,10 +1075,10 @@ static void jitc_metal_render(Variable *v) {
                     tex_h, smp_h, p0, jitc_var(td->indices[1]),
                     jitc_var(td->indices[2]));
 
-            fmt("    float $v_out_0 = $v_s.x;\n"
-                "    float $v_out_1 = $v_s.y;\n"
-                "    float $v_out_2 = $v_s.z;\n"
-                "    float $v_out_3 = $v_s.w;\n",
+            fmt("float $v_out_0 = $v_s.x;\n"
+                "float $v_out_1 = $v_s.y;\n"
+                "float $v_out_2 = $v_s.z;\n"
+                "float $v_out_3 = $v_s.w;\n",
                 v, v, v, v, v, v, v, v);
             break;
         }
@@ -1007,19 +1096,19 @@ static void jitc_metal_render(Variable *v) {
             // For a masked fetch, default to zero and guard the gather with the
             // mask, so the compiler can predicate off the fetch for inactive lanes.
             if (mask) {
-                fmt("    float4 $v_s = float4(0.f);\n", v);
-                fmt("    if ($v) $v_s = ", mask, v);
+                fmt("float4 $v_s = float4(0.f);\n", v);
+                fmt("if ($v) $v_s = ", mask, v);
             } else {
-                fmt("    float4 $v_s = ", v);
+                fmt("float4 $v_s = ", v);
             }
             fmt("$v.gather($v, float2($v, $v), int2(0), component::$c);\n",
                 tex_h, smp_h, jitc_var(td->indices[0]),
                 jitc_var(td->indices[1]), comp);
 
-            fmt("    float $v_out_0 = $v_s.x;\n"
-                "    float $v_out_1 = $v_s.y;\n"
-                "    float $v_out_2 = $v_s.z;\n"
-                "    float $v_out_3 = $v_s.w;\n",
+            fmt("float $v_out_0 = $v_s.x;\n"
+                "float $v_out_1 = $v_s.y;\n"
+                "float $v_out_2 = $v_s.z;\n"
+                "float $v_out_3 = $v_s.w;\n",
                 v, v, v, v, v, v, v, v);
             break;
         }
@@ -1039,7 +1128,7 @@ static void jitc_metal_render(Variable *v) {
             break;
 
         case VarKind::CallSelf:
-            fmt("    uint $v = self;\n", v);
+            fmt("uint $v = self;\n", v);
             break;
 
         case VarKind::CallInput:
@@ -1157,7 +1246,7 @@ static void jitc_metal_emit_ret_struct(const CallData *call) {
     for (uint32_t i = 0; i < call->n_out; ++i) {
         if (call->out_offset[i] == (uint32_t) -1)
             continue;
-        fmt("    $t r$u;\n", jitc_var(call->inner_out[i]), k);
+        fmt("$t r$u;\n", jitc_var(call->inner_out[i]), k);
         k++;
     }
     put("};");
@@ -1211,7 +1300,7 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
     put(" func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(");
     jitc_metal_callable_signature(call, /*with_names=*/true);
     put(") {\n");
-    fmt("    // Call: $s\n", call->name.c_str());
+    fmt("// Call: $s\n", call->name.c_str());
 
     for (size_t i = 0; i < schedule.size(); ++i) {
         ScheduledVariable &sv = schedule[i];
@@ -1221,18 +1310,18 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
         // Pre-declare TraceRay output variables in callable functions
         if (kind == VarKind::TraceRay) {
-            fmt("    bool  $v_out_0 = false;\n"
-                "    float $v_out_1 = 0.0f;\n"
-                "    float $v_out_2 = 0.0f;\n"
-                "    float $v_out_3 = 0.0f;\n"
-                "    uint  $v_out_4 = 0u;\n"
-                "    uint  $v_out_5 = 0u;\n"
-                "    uint  $v_out_6 = 0u;\n",
+            fmt("bool  $v_out_0 = false;\n"
+                "float $v_out_1 = 0.0f;\n"
+                "float $v_out_2 = 0.0f;\n"
+                "float $v_out_3 = 0.0f;\n"
+                "uint  $v_out_4 = 0u;\n"
+                "uint  $v_out_5 = 0u;\n"
+                "uint  $v_out_6 = 0u;\n",
                 v, v, v, v, v, v, v);
         }
 
         if (kind == VarKind::Counter) {
-            fmt("    $t $v = ($t) index;\n", v, v, v);
+            fmt("$t $v = ($t) index;\n", v, v, v);
         } else if (kind == VarKind::CallInput) {
             // Read the typed by-value parameter named after the input index
             // (this node is call->inner_in[i]).
@@ -1240,9 +1329,9 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
             for (; in_i < call->n_in; ++in_i)
                 if (call->inner_in[in_i] == sv.index)
                     break;
-            fmt("    $t $v = a$u;\n", v, v, in_i);
+            fmt("$t $v = a$u;\n", v, v, in_i);
         } else if (kind == VarKind::CallSelf) {
-            fmt("    uint $v = self;\n", v);
+            fmt("uint $v = self;\n", v);
         } else if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
             uint64_t key = (uint64_t) sv.index + (((uint64_t) inst) << 32);
             auto it = call->data_map.find(key);
@@ -1299,14 +1388,14 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
             }
 
             if (vt == VarType::Bool)
-                fmt("    bool $v = *(device uint8_t*)(data + $u) != 0;\n",
+                fmt("bool $v = *(device uint8_t*)(data + $u) != 0;\n",
                     v, offset);
             else if (vt == VarType::Pointer)
-                fmt("    device uint8_t* $v = "
+                fmt("device uint8_t* $v = "
                     "*(device uint8_t* device const*)(data + $u);\n",
                     v, offset);
             else
-                fmt("    $t $v = *(device $t*)(data + $u);\n",
+                fmt("$t $v = *(device $t*)(data + $u);\n",
                     v, v, v, offset);
         } else if (v->is_literal()) {
             jitc_metal_render(v);
@@ -1325,10 +1414,10 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
             if (call->out_offset[i] == (uint32_t) -1)
                 continue;
             const Variable *v = jitc_var(call->inner_out[inst * call->n_out + i]);
-            fmt("    ret.r$u = $v;\n", k, v);
+            fmt("ret.r$u = $v;\n", k, v);
             k++;
         }
-        put("    return ret;\n");
+        put("return ret;\n");
     }
 
     put("}\n");
@@ -1346,7 +1435,7 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     Variable *mask = jitc_var(jitc_var(call->id)->dep[1]);
     bool is_masked = !mask->is_literal() || mask->literal != 1;
 
-    fmt("\n    // VCall: $s\n", call->name.c_str());
+    fmt("\n// VCall: $s\n", call->name.c_str());
 
     // The return struct is registered while assembling the callable bodies,
     // which precede this dispatch, so it is not (re)emitted here.
@@ -1374,7 +1463,7 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     // struct into them; when masked, the ``else`` branch below zeros them on
     // lanes that did not call.
     for (auto [v, field] : out_regs)
-        fmt("    $t $v;\n", v, v);
+        fmt("$t $v;\n", v, v);
 
     // =====================================================
     // 3. Masked guard + offset table lookup
@@ -1383,7 +1472,7 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     const char *indent = is_masked ? "            " : "        ";
 
     if (is_masked)
-        fmt("    if (r$u) {\n", mask_reg);
+        fmt("if (r$u) {\n", mask_reg);
 
     // Load the uint64_t entry: (data_offset << 32) | callable_index
     fmt("$sulong _oe_$u = ((device const ulong*) r$u)[r$u];\n"
@@ -1467,11 +1556,11 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
         // Lanes that did not call still need defined outputs: zero them in the
         // ``else`` branch.
         if (!out_regs.empty()) {
-            put("    } else {\n");
+            put("} else {\n");
             for (auto [v, field] : out_regs)
                 fmt("$s$v = ($t) 0;\n", indent, v, v);
         }
-        put("    }\n");
+        put("}\n");
     }
 
     put("\n");

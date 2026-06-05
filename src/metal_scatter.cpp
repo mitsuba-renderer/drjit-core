@@ -65,9 +65,9 @@ static void jitc_metal_emit_warp_match(const char *t, const Variable *ptr,
                                        const Variable *index, uint32_t shiftamt) {
     const char *tid = callable_depth > 0 ? "index" : "r0";
     jitc_metal_emit_peer_mask_helper();
-    fmt("        uint lane = ($s) & 31u;\n"
-        "        uint key = (uint) (((ulong) ((device $s*) $v + $v)) >> $u);\n"
-        "        uint peers = drjit_peer_mask(key);\n",
+    fmt("uint lane = ($s) & 31u;\n"
+        "uint key = (uint) (((ulong) ((device $s*) $v + $v)) >> $u);\n"
+        "uint peers = drjit_peer_mask(key);\n",
         tid, t, ptr, index, shiftamt);
 }
 
@@ -98,76 +98,76 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
     // Per-channel butterfly combine ``wval_i <op>= shuf_i``
     auto emit_combine = [&](uint32_t i) {
         switch (op) {
-            case ReduceOp::Add: fmt("                wval$u = wval$u + shuf$u;\n", i, i, i); break;
-            case ReduceOp::Min: fmt("                wval$u = min(wval$u, shuf$u);\n", i, i, i); break;
-            case ReduceOp::Max: fmt("                wval$u = max(wval$u, shuf$u);\n", i, i, i); break;
-            case ReduceOp::And: fmt("                wval$u = wval$u & shuf$u;\n", i, i, i); break;
-            case ReduceOp::Or:  fmt("                wval$u = wval$u | shuf$u;\n", i, i, i); break;
+            case ReduceOp::Add: fmt("wval$u = wval$u + shuf$u;\n", i, i, i); break;
+            case ReduceOp::Min: fmt("wval$u = min(wval$u, shuf$u);\n", i, i, i); break;
+            case ReduceOp::Max: fmt("wval$u = max(wval$u, shuf$u);\n", i, i, i); break;
+            case ReduceOp::And: fmt("wval$u = wval$u & shuf$u;\n", i, i, i); break;
+            case ReduceOp::Or:  fmt("wval$u = wval$u | shuf$u;\n", i, i, i); break;
             default: jitc_fail("jitc_metal_emit_reduce_block(): unsupported reduction.");
         }
     };
 
-    put("    {\n");
+    put("{\n");
 
     if (aggregate)
         jitc_metal_emit_warp_match(t, ptr, index, log2i_ceil(type_size[(int) vt]));
 
     for (uint32_t i = 0; i < n; ++i)
-        fmt("        $s wval$u = $v;\n", t, i, jitc_var(values[i]));
+        fmt("$s wval$u = $v;\n", t, i, jitc_var(values[i]));
 
     if (aggregate) {
         // Precompute the peer group structure once and then reuse across the packet
-        put("        uint rank = popcount(peers & ((1u << lane) - 1u));\n"
-            "        uint remaining = peers;\n"
-            "        while (simd_any(popcount(remaining) > 1u)) {\n"
-            "            bool in_group  = ((remaining >> lane) & 1u) != 0u;\n"
-            "            uint upper     = remaining & ((lane >= 31u) ? 0u : (~0u << (lane + 1u)));\n"
-            "            uint next_lane = upper ? ctz(upper) : lane;\n"
-            "            bool recv      = in_group && (rank & 1u) == 0u && upper != 0u;\n");
+        put("uint rank = popcount(peers & ((1u << lane) - 1u));\n"
+            "uint remaining = peers;\n"
+            "while (simd_any(popcount(remaining) > 1u)) {\n"
+            "    bool in_group  = ((remaining >> lane) & 1u) != 0u;\n"
+            "    uint upper     = remaining & ((lane >= 31u) ? 0u : (~0u << (lane + 1u)));\n"
+            "    uint next_lane = upper ? ctz(upper) : lane;\n"
+            "    bool recv      = in_group && (rank & 1u) == 0u && upper != 0u;\n");
         for (uint32_t i = 0; i < n; ++i)
-            fmt("            $s shuf$u = simd_shuffle(wval$u, (ushort) next_lane);\n", t, i, i);
-        put("            if (recv) {\n");
+            fmt("$s shuf$u = simd_shuffle(wval$u, (ushort) next_lane);\n", t, i, i);
+        put("if (recv) {\n");
         for (uint32_t i = 0; i < n; ++i)
             emit_combine(i);
-        put("            }\n"
-            "            uint drop = (uint) ((simd_vote::vote_t) simd_ballot(in_group && (rank & 1u) != 0u));\n"
-            "            remaining &= ~drop;\n"
-            "            if (in_group) rank >>= 1;\n"
-            "        }\n"
-            "        if (lane == ctz(peers)) {\n");
+        put("    }\n"
+            "    uint drop = (uint) ((simd_vote::vote_t) simd_ballot(in_group && (rank & 1u) != 0u));\n"
+            "    remaining &= ~drop;\n"
+            "    if (in_group) rank >>= 1;\n"
+            "}\n"
+            "if (lane == ctz(peers)) {\n");
     }
 
     for (uint32_t i = 0; i < n; ++i) {
         if (native) {
-            fmt("            atomic_fetch_$s_explicit((device $s*)((device $t*) $v + ($v + $u)), "
+            fmt("atomic_fetch_$s_explicit((device $s*)((device $t*) $v + ($v + $u)), "
                 "wval$u, memory_order_relaxed);\n",
                 op_name, atomic_t, v0, ptr, index, i, i);
         } else {
             // CAS loop fallback (float32 min/max).
-            fmt("            {\n"
-                "                device atomic_uint *_addr = (device atomic_uint*)((device $t*) $v + ($v + $u));\n"
-                "                uint _old = atomic_load_explicit(_addr, memory_order_relaxed);\n"
-                "                while (true) {\n",
+            fmt("{\n"
+                "    device atomic_uint *_addr = (device atomic_uint*)((device $t*) $v + ($v + $u));\n"
+                "    uint _old = atomic_load_explicit(_addr, memory_order_relaxed);\n"
+                "    while (true) {\n",
                 v0, ptr, index, i);
             if (op == ReduceOp::Min)
-                fmt("                    $t _new = min(as_type<$t>(_old), wval$u);\n", v0, v0, i);
+                fmt("$t _new = min(as_type<$t>(_old), wval$u);\n", v0, v0, i);
             else if (op == ReduceOp::Max)
-                fmt("                    $t _new = max(as_type<$t>(_old), wval$u);\n", v0, v0, i);
+                fmt("$t _new = max(as_type<$t>(_old), wval$u);\n", v0, v0, i);
             else
                 jitc_fail("jitc_metal_emit_reduce_block(): unsupported ReduceOp "
                           "%s for the CAS fallback.", op_name);
-            put("                    uint _expected = _old;\n"
-                "                    if (atomic_compare_exchange_weak_explicit(_addr, &_expected, as_type<uint>(_new), memory_order_relaxed, memory_order_relaxed)) break;\n"
-                "                    _old = _expected;\n"
-                "                }\n"
-                "            }\n");
+            put("        uint _expected = _old;\n"
+                "        if (atomic_compare_exchange_weak_explicit(_addr, &_expected, as_type<uint>(_new), memory_order_relaxed, memory_order_relaxed)) break;\n"
+                "        _old = _expected;\n"
+                "    }\n"
+                "}\n");
         }
     }
 
     if (aggregate)
-        put("        }\n");
+        put("}\n");
 
-    put("    }\n");
+    put("}\n");
 }
 
 void jitc_metal_render_scatter(Variable *v) {
@@ -182,23 +182,23 @@ void jitc_metal_render_scatter(Variable *v) {
 
     if (op == ReduceOp::Identity) {
         if (is_unmasked)
-            fmt("    ((device $t*) $v)[$v] = $v;\n",
+            fmt("((device $t*) $v)[$v] = $v;\n",
                       value, ptr, index, value);
         else
-            fmt("    if ($v) ((device $t*) $v)[$v] = $v;\n",
+            fmt("if ($v) ((device $t*) $v)[$v] = $v;\n",
                       mask, value, ptr, index, value);
         return;
     }
 
     if (!is_unmasked)
-        fmt("    if ($v) {\n", mask);
+        fmt("if ($v) {\n", mask);
 
     // Treat as a single-channel packet reduce
     uint32_t vi = v->dep[1];
     jitc_metal_emit_reduce_block(1, &vi, ptr, index, op, mode == ReduceMode::Local);
 
     if (!is_unmasked)
-        put("    }\n");
+        put("}\n");
 }
 
 void jitc_metal_render_scatter_cas(Variable *v) {
@@ -212,21 +212,21 @@ void jitc_metal_render_scatter_cas(Variable *v) {
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
     // Initialize outputs to zero
-    fmt("    $t $v_out_0 = ($t) 0;\n"
-              "    bool $v_out_1 = false;\n",
+    fmt("$t $v_out_0 = ($t) 0;\n"
+              "bool $v_out_1 = false;\n",
               value, v, value,
               v);
 
     if (!is_unmasked)
-        fmt("    if ($v) {\n    ", mask);
+        fmt("if ($v) {\n", mask);
 
-    fmt("    {\n"
-              "        device atomic_uint *_addr = (device atomic_uint*) ((device $t*) $v + $v);\n"
-              "        uint _expected = as_type<uint>($v);\n"
-              "        bool _swapped = atomic_compare_exchange_weak_explicit(_addr, &_expected, as_type<uint>($v), memory_order_relaxed, memory_order_relaxed);\n"
-              "        $v_out_0 = as_type<$t>(_expected);\n"
-              "        $v_out_1 = _swapped;\n"
-              "    }\n",
+    fmt("{\n"
+              "    device atomic_uint *_addr = (device atomic_uint*) ((device $t*) $v + $v);\n"
+              "    uint _expected = as_type<uint>($v);\n"
+              "    bool _swapped = atomic_compare_exchange_weak_explicit(_addr, &_expected, as_type<uint>($v), memory_order_relaxed, memory_order_relaxed);\n"
+              "    $v_out_0 = as_type<$t>(_expected);\n"
+              "    $v_out_1 = _swapped;\n"
+              "}\n",
               value, ptr, index,
               compare,
               value,
@@ -234,7 +234,7 @@ void jitc_metal_render_scatter_cas(Variable *v) {
               v);
 
     if (!is_unmasked)
-        put("    }\n");
+        put("}\n");
 
     v->consumed = 1;
 }
@@ -246,10 +246,10 @@ void jitc_metal_render_scatter_exch(Variable *v) {
     Variable *mask  = jitc_var(v->dep[3]);
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
-    fmt("    $t $v = ($t) 0;\n", value, v, value);
+    fmt("$t $v = ($t) 0;\n", value, v, value);
     if (!is_unmasked)
-        fmt("    if ($v)\n    ", mask);
-    fmt("    $v = as_type<$t>(atomic_exchange_explicit((device atomic_uint*)((device $t*) $v + $v), as_type<uint>($v), memory_order_relaxed));\n",
+        fmt("if ($v)\n", mask);
+    fmt("$v = as_type<$t>(atomic_exchange_explicit((device atomic_uint*)((device $t*) $v + $v), as_type<uint>($v), memory_order_relaxed));\n",
               v, value, value, ptr, index, value);
 
     v->consumed = 1;
@@ -261,19 +261,19 @@ void jitc_metal_render_scatter_kahan(Variable *v) {
     Variable *index  = jitc_var(v->dep[2]);
     Variable *value  = jitc_var(v->dep[3]);
 
-    fmt("    if ($v != 0.f) {\n"
-              "        #pragma clang fp contract(off)\n"
-              "        volatile float _kahan_before = atomic_fetch_add_explicit("
+    fmt("if ($v != 0.f) {\n"
+              "    #pragma clang fp contract(off)\n"
+              "    volatile float _kahan_before = atomic_fetch_add_explicit("
               "(device atomic_float*)((device float*) $v + $v), "
               "$v, memory_order_relaxed);\n"
-              "        volatile float _kahan_after = _kahan_before + $v;\n"
-              "        volatile float _kahan_c1 = (_kahan_before - _kahan_after) + $v;\n"
-              "        volatile float _kahan_c2 = ($v - _kahan_after) + _kahan_before;\n"
-              "        float _kahan_comp = abs(_kahan_before) >= abs($v) ? _kahan_c1 : _kahan_c2;\n"
-              "        atomic_fetch_add_explicit("
+              "    volatile float _kahan_after = _kahan_before + $v;\n"
+              "    volatile float _kahan_c1 = (_kahan_before - _kahan_after) + $v;\n"
+              "    volatile float _kahan_c2 = ($v - _kahan_after) + _kahan_before;\n"
+              "    float _kahan_comp = abs(_kahan_before) >= abs($v) ? _kahan_c1 : _kahan_c2;\n"
+              "    atomic_fetch_add_explicit("
               "(device atomic_float*)((device float*) $v + $v), "
               "_kahan_comp, memory_order_relaxed);\n"
-              "    }\n",
+              "}\n",
               value,
               ptr_t, index,
               value,
@@ -291,26 +291,26 @@ void jitc_metal_render_scatter_inc(Variable *v) {
 
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
-    fmt("    uint $v = 0;\n", v);
+    fmt("uint $v = 0;\n", v);
 
     if (!is_unmasked)
-        fmt("    if ($v) {\n", mask);
+        fmt("if ($v) {\n", mask);
 
     // Perform a warp-aggregated atomic increment
-    put("    {\n");
+    put("{\n");
     jitc_metal_emit_warp_match("uint", ptr, index, 2);
-    fmt("        uint rank = popcount(peers & ((1u << lane) - 1u));\n"
-        "        uint base = 0;\n"
-        "        if (rank == 0u)\n"
-        "            base = atomic_fetch_add_explicit((device atomic_uint*)((device uint*) $v + $v), popcount(peers), memory_order_relaxed);\n"
-        "        base = simd_shuffle(base, (ushort) ctz(peers));\n"
-        "        $v = base + rank;\n"
-        "    }\n",
+    fmt("    uint rank = popcount(peers & ((1u << lane) - 1u));\n"
+        "    uint base = 0;\n"
+        "    if (rank == 0u)\n"
+        "        base = atomic_fetch_add_explicit((device atomic_uint*)((device uint*) $v + $v), popcount(peers), memory_order_relaxed);\n"
+        "    base = simd_shuffle(base, (ushort) ctz(peers));\n"
+        "    $v = base + rank;\n"
+        "}\n",
         ptr, index,
         v);
 
     if (!is_unmasked)
-        put("    }\n");
+        put("}\n");
 
     v->consumed = 1;
 }

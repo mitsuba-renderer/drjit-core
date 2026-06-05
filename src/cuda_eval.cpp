@@ -29,7 +29,7 @@
  * --------------------------------------------------------------------------
  *  $a      Variable      `4`                Variable alignment in bytes
  * --------------------------------------------------------------------------
- *  $l      Variable      `1`                Literal value of variable (hex)
+ *  $l      Variable      `0x1`              Literal value of variable (hex)
  * --------------------------------------------------------------------------
  *  The following format strings facilitate loading/storing of predicates,
  *  which are a somewhat of a corner case in PTX.

@@ -571,13 +571,21 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         );
     }
 
+    // PrintIR / high log levels dump the generated IR to the console.
+    // In the case of Metal, properly indent the generated MSL so that it is
+    // easier to read.
     if (unlikely(trace || (jitc_flags() & (uint32_t) JitFlag::PrintIR))) {
-        buffer.put('\n');
+        const char *ir = buffer.get();
+#if defined(DRJIT_ENABLE_METAL)
+        if (backend == JitBackend::Metal)
+            ir = jitc_metal_format();
+#endif
         if (state.log_callback)
-            state.log_callback(LogLevel::Info, buffer.get());
-        else
-            fputs(buffer.get(), stderr);
-        buffer.rewind_to(buffer.size() - 1);
+            state.log_callback(LogLevel::Info, ir);
+        else {
+            fputs(ir, stderr);
+            fputc('\n', stderr);
+        }
     }
 
     float codegen_time = timer();
@@ -601,8 +609,17 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_history_entry.recording_mode = ts->recording_mode;
         kernel_history_entry.hash[0] = kernel_hash.low64;
         kernel_history_entry.hash[1] = kernel_hash.high64;
-        kernel_history_entry.ir = (char *) malloc_check(buffer.size() + 1);
-        memcpy(kernel_history_entry.ir, buffer.get(), buffer.size() + 1);
+        // Store syntax-formatted MSL for Metal (see jitc_metal_format()).
+        const char *ir = buffer.get();
+        size_t ir_size = buffer.size();
+#if defined(DRJIT_ENABLE_METAL)
+        if (backend == JitBackend::Metal) {
+            ir = jitc_metal_format();
+            ir_size = strlen(ir);
+        }
+#endif
+        kernel_history_entry.ir = (char *) malloc_check(ir_size + 1);
+        memcpy(kernel_history_entry.ir, ir, ir_size + 1);
         kernel_history_entry.uses_optix = uses_optix;
         kernel_history_entry.size = group.size;
         kernel_history_entry.input_count = n_params_in;

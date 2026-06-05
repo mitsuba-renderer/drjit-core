@@ -20,23 +20,23 @@
 void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                                 const Variable *a1, const Variable *a2,
                                 const Variable *a3) {
-    fmt("    // $s\n", var_kind_name[(uint32_t) v->kind]);
+    fmt("// $s\n", var_kind_name[(uint32_t) v->kind]);
 
     switch ((VarKind) v->kind) {
         case VarKind::CoopVecLiteral: {
             VarType vt = (VarType) v->type;
             for (uint32_t i = 0; i < v->array_length; ++i) {
                 if (vt == VarType::Float32)
-                    fmt("    $t $v_$u = as_type<float>($lu);\n",
+                    fmt("$t $v_$u = as_type<float>($lu);\n",
                         v, v, i, v);
                 else if (vt == VarType::Float16)
-                    fmt("    $t $v_$u = as_type<half>((ushort) $lu);\n",
+                    fmt("$t $v_$u = as_type<half>((ushort) $lu);\n",
                         v, v, i, v);
                 else if (vt == VarType::Bool)
-                    fmt("    $t $v_$u = ($t) ($lu);\n",
+                    fmt("$t $v_$u = ($t) ($lu);\n",
                         v, v, i, v, v);
                 else
-                    fmt("    $t $v_$u = ($t) $lu;\n",
+                    fmt("$t $v_$u = ($t) $lu;\n",
                         v, v, i, v, v);
             }
             break;
@@ -47,14 +47,14 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                 ((const CoopVecPackData *) v->data)->indices;
             for (uint32_t i = 0; i < (uint32_t) indices.size(); ++i) {
                 Variable *src = jitc_var(indices[i]);
-                fmt("    $t $v_$u = $v;\n", v, v, i, src);
+                fmt("$t $v_$u = $v;\n", v, v, i, src);
             }
             break;
         }
 
         case VarKind::CoopVecLoad: {
             for (uint32_t i = 0; i < v->array_length; ++i) {
-                fmt("    $t $v_$u = ((device const $t*) $v)[$u];\n",
+                fmt("$t $v_$u = ((device const $t*) $v)[$u];\n",
                     v, v, i, v, a0,
                     (uint32_t) v->literal + i);
             }
@@ -63,7 +63,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
 
         case VarKind::CoopVecCast: {
             for (uint32_t i = 0; i < v->array_length; ++i)
-                fmt("    $t $v_$u = ($t) $v_$u;\n",
+                fmt("$t $v_$u = ($t) $v_$u;\n",
                     v, v, i, v, a0, i);
             break;
         }
@@ -71,13 +71,13 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
         case VarKind::Bitcast: {
             for (uint32_t i = 0; i < v->array_length; ++i) {
                 if (v->type == a0->type)
-                    fmt("    $t $v_$u = $v_$u;\n",
+                    fmt("$t $v_$u = $v_$u;\n",
                         v, v, i, a0, i);
                 else if (type_size[v->type] == type_size[a0->type])
-                    fmt("    $t $v_$u = as_type<$t>($v_$u);\n",
+                    fmt("$t $v_$u = as_type<$t>($v_$u);\n",
                         v, v, i, v, a0, i);
                 else
-                    fmt("    $t $v_$u = as_type<$t>(($b) $v_$u);\n",
+                    fmt("$t $v_$u = as_type<$t>(($b) $v_$u);\n",
                         v, v, i, v, v, a0, i);
             }
             break;
@@ -95,7 +95,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                               (uint32_t) v->literal);
             }
             for (uint32_t i = 0; i < v->array_length; ++i)
-                fmt("    $t $v_$u = $s($v_$u);\n",
+                fmt("$t $v_$u = $s($v_$u);\n",
                     v, v, i, fn, a0, i);
             break;
         }
@@ -111,7 +111,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                                       : (op == JitOp::Sub) ? "-"
                                                            : "*";
                     for (uint32_t i = 0; i < v->array_length; ++i)
-                        fmt("    $t $v_$u = $v_$u $s $v_$u;\n",
+                        fmt("$t $v_$u = $v_$u $s $v_$u;\n",
                             v, v, i, a0, i, infix, a1, i);
                     break;
                 }
@@ -120,14 +120,14 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                 case JitOp::Max: {
                     const char *fn = (op == JitOp::Min) ? "min" : "max";
                     for (uint32_t i = 0; i < v->array_length; ++i)
-                        fmt("    $t $v_$u = $s($v_$u, $v_$u);\n",
+                        fmt("$t $v_$u = $s($v_$u, $v_$u);\n",
                             v, v, i, fn, a0, i, a1, i);
                     break;
                 }
 
                 case JitOp::Step:
                     for (uint32_t i = 0; i < v->array_length; ++i)
-                        fmt("    $t $v_$u = ($v_$u < $v_$u) ? ($t) 0 : ($t) 1;\n",
+                        fmt("$t $v_$u = ($v_$u < $v_$u) ? ($t) 0 : ($t) 1;\n",
                             v, v, i, a0, i, a1, i, v, v);
                     break;
 
@@ -146,7 +146,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                           "(only Fma is supported)",
                           (uint32_t) v->literal);
             for (uint32_t i = 0; i < v->array_length; ++i)
-                fmt("    $t $v_$u = fma($v_$u, $v_$u, $v_$u);\n",
+                fmt("$t $v_$u = fma($v_$u, $v_$u, $v_$u);\n",
                     v, v, i, a0, i, a1, i, a2, i);
             break;
         }
@@ -186,40 +186,40 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
 
                 // Declare the output element locals consumed by downstream nodes.
                 for (uint32_t i = 0; i < m; ++i)
-                    fmt("    $t $v_$u;\n", v, v, i);
+                    fmt("$t $v_$u;\n", v, v, i);
 
-                put("    {\n");
+                put("{\n");
 
                 // Gather the input vector into an addressable thread array.
-                fmt("        $t $v_mm_in[$u];\n", a1, v, n);
+                fmt("$t $v_mm_in[$u];\n", a1, v, n);
                 for (uint32_t j = 0; j < n; ++j)
-                    fmt("        $v_mm_in[$u] = $v_$u;\n", v, j, a1, j);
+                    fmt("$v_mm_in[$u] = $v_$u;\n", v, j, a1, j);
 
                 // Float accumulator (matmul destination).
-                fmt("        float $v_mm_acc[$u];\n", v, m);
+                fmt("float $v_mm_acc[$u];\n", v, m);
 
-                fmt("        constexpr auto $v_mm_d = matmul2d_descriptor(1, $u, $u, false, $s, $s);\n",
+                fmt("constexpr auto $v_mm_d = matmul2d_descriptor(1, $u, $u, false, $s, $s);\n",
                     v, m, n, transpose ? "false" : "true",
                     relaxed ? "true" : "false");
-                fmt("        matmul2d<$v_mm_d, execution_thread> $v_mm_op;\n", v, v);
-                fmt("        auto $v_mm_x = tensor($v_mm_in, dextents<int,2>($u, 1));\n", v, v, n);
-                fmt("        auto $v_mm_w = tensor((device $t*) $v + $u, dextents<int,2>($u, $u));\n", v, v, a0, a_off, cols, rows);
-                fmt("        auto $v_mm_o = tensor($v_mm_acc, dextents<int,2>($u, 1));\n", v, v, m);
-                fmt("        $v_mm_op.run($v_mm_x, $v_mm_w, $v_mm_o);\n",
+                fmt("matmul2d<$v_mm_d, execution_thread> $v_mm_op;\n", v, v);
+                fmt("auto $v_mm_x = tensor($v_mm_in, dextents<int,2>($u, 1));\n", v, v, n);
+                fmt("auto $v_mm_w = tensor((device $t*) $v + $u, dextents<int,2>($u, $u));\n", v, v, a0, a_off, cols, rows);
+                fmt("auto $v_mm_o = tensor($v_mm_acc, dextents<int,2>($u, 1));\n", v, v, m);
+                fmt("$v_mm_op.run($v_mm_x, $v_mm_w, $v_mm_o);\n",
                     v, v, v, v);
 
                 // Write results back to the output locals, folding in the bias.
                 if (bias) {
                     uint32_t b_off = d->b_descr.offset;
                     for (uint32_t i = 0; i < m; ++i)
-                        fmt("        $v_$u = ($t)($v_mm_acc[$u] + (float)((device $t*) $v)[$u]);\n",
+                        fmt("$v_$u = ($t)($v_mm_acc[$u] + (float)((device $t*) $v)[$u]);\n",
                             v, i, v, v, i, v, bias, b_off + i);
                 } else {
                     for (uint32_t i = 0; i < m; ++i)
-                        fmt("        $v_$u = ($t) $v_mm_acc[$u];\n", v, i, v, v, i);
+                        fmt("$v_$u = ($t) $v_mm_acc[$u];\n", v, i, v, v, i);
                 }
 
-                put("    }\n");
+                put("}\n");
             } else {
                 // Scalar fallback: m*n unrolled FMAs.
 
@@ -227,11 +227,11 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                 if (bias) {
                     uint32_t b_off = d->b_descr.offset;
                     for (uint32_t i = 0; i < m; ++i)
-                        fmt("    $t $v_$u = ((device const $t*) $v)[$u];\n",
+                        fmt("$t $v_$u = ((device const $t*) $v)[$u];\n",
                             v, v, i, v, bias, b_off + i);
                 } else {
                     for (uint32_t i = 0; i < m; ++i)
-                        fmt("    $t $v_$u = ($t) 0;\n", v, v, i, v);
+                        fmt("$t $v_$u = ($t) 0;\n", v, v, i, v);
                 }
 
                 // Accumulate A @ x; transpose swaps the row/col offsets.
@@ -239,7 +239,7 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                     for (uint32_t j = 0; j < n; ++j) {
                         uint32_t addr = a_off + (transpose ? (j * stride + i)
                                                            : (i * stride + j));
-                        fmt("    $v_$u = fma(((device const $t*) $v)[$u], "
+                        fmt("$v_$u = fma(((device const $t*) $v)[$u], "
                             "$v_$u, $v_$u);\n",
                             v, i, v, a0, addr, a1, j, v, i);
                     }
@@ -256,14 +256,14 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
 
 void jitc_metal_render_coop_vec_unpack(const Variable *v,
                                        const Variable *a0) {
-    fmt("    $t $v = $v_$u;\n", v, v, a0, (uint32_t) v->literal);
+    fmt("$t $v = $v_$u;\n", v, v, a0, (uint32_t) v->literal);
 }
 
 void jitc_metal_render_coop_vec_accum(const Variable *v,
                                       const Variable *target,
                                       const Variable *value,
                                       const Variable *mask) {
-    fmt("    // coop_vec_accum (offset=$u, length=$u)\n",
+    fmt("// coop_vec_accum (offset=$u, length=$u)\n",
               (uint32_t) v->literal, (uint32_t) value->array_length);
 
     jitc_assert((VarType) value->type == VarType::Float32,
@@ -271,16 +271,16 @@ void jitc_metal_render_coop_vec_accum(const Variable *v,
 
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
     if (!is_unmasked)
-        fmt("    if ($v) {\n", mask);
+        fmt("if ($v) {\n", mask);
 
     uint32_t base = (uint32_t) v->literal;
     for (uint32_t i = 0; i < value->array_length; ++i)
-        fmt("    atomic_fetch_add_explicit((device atomic_float*) "
+        fmt("atomic_fetch_add_explicit((device atomic_float*) "
             "((device float*) $v + $u), $v_$u, memory_order_relaxed);\n",
             target, base + i, value, i);
 
     if (!is_unmasked)
-        put("    }\n");
+        put("}\n");
 }
 
 void jitc_metal_render_coop_vec_outer_product_accum(const Variable *v,
@@ -291,7 +291,7 @@ void jitc_metal_render_coop_vec_outer_product_accum(const Variable *v,
     const MatrixDescr *d = (const MatrixDescr *) v->data;
     uint32_t m = a->array_length, n = b->array_length;
 
-    fmt("    // coop_vec_outer_product_accum ($u x $u, "
+    fmt("// coop_vec_outer_product_accum ($u x $u, "
               "offset=$u, stride=$u)\n", m, n, d->offset, d->stride);
 
     jitc_assert((VarType) a->type == VarType::Float32,
@@ -300,14 +300,14 @@ void jitc_metal_render_coop_vec_outer_product_accum(const Variable *v,
 
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
     if (!is_unmasked)
-        fmt("    if ($v) {\n", mask);
+        fmt("if ($v) {\n", mask);
 
     for (uint32_t i = 0; i < m; ++i)
         for (uint32_t j = 0; j < n; ++j)
-            fmt("    atomic_fetch_add_explicit((device atomic_float*) "
+            fmt("atomic_fetch_add_explicit((device atomic_float*) "
                 "((device float*) $v + $u), $v_$u * $v_$u, memory_order_relaxed);\n",
                 target, d->offset + i * d->stride + j, a, i, b, j);
 
     if (!is_unmasked)
-        put("    }\n");
+        put("}\n");
 }
