@@ -80,7 +80,7 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
     }
 
     for (uint32_t i = 0; i < n_in; ++i) {
-        const Variable *v = jitc_var(in[i]);
+        Variable *v = jitc_var(in[i]);
         if ((VarKind) v->kind == VarKind::CallInput) {
             if (!v->dep[0])
                 jitc_raise("jit_var_call(): symbolic variable r%u does not "
@@ -95,6 +95,8 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
             // Literal field, read temporarily stashed size (see
             // jitc_var_call_input in var.cpp)
             size = std::max(size, v->scratch);
+            // Reset 'scratch' to not interfere with visited tracking in jit_eval()
+            v->scratch = 0;
         }
 
         if (v->size != 1)
