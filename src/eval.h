@@ -21,6 +21,8 @@ struct ScheduledVariable {
     uint32_t scope;
     void *data;
 
+    ScheduledVariable() = default;
+
     ScheduledVariable(uint32_t size, uint32_t scope, uint32_t index)
         : size(size), index(index), scope(scope), data(nullptr) { }
 };
@@ -101,9 +103,6 @@ extern uint32_t callable_depth;
 
 /// Ordered list of variables that should be computed
 extern std::vector<ScheduledVariable> schedule;
-
-/// Groups of variables with the same size
-extern std::vector<ScheduledGroup> schedule_groups;
 
 /// Track kernel parameter metadata (writability, GPU resource kind)
 extern std::vector<KernelParamInfo> kernel_param_info;
