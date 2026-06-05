@@ -89,15 +89,41 @@ void jitc_metal_render_gather_packet(const Variable *v, const Variable *ptr,
     }
 }
 
+// CLAUDE: should this go to a header file? (metal_*.h?)
+// SIMD-local scatter-reduction over n packet channels (defined in
+// metal_scatter.cpp; shared with the scalar path). ``values`` are variable indices.
+extern void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
+                                         const Variable *ptr, const Variable *index,
+                                         ReduceOp op, bool aggregate);
+
+/// Render the MSL to scatter-reduce a variable packet
+static void jitc_metal_render_scatter_reduce_packet(const Variable *ptr,
+                                                    const Variable *index,
+                                                    const Variable *mask,
+                                                    PacketScatterData *psd) {
+    const std::vector<uint32_t> &values = psd->values;
+    bool is_masked = !mask->is_literal() || mask->literal != 1;
+
+    if (is_masked)
+        fmt("    if ($v) {\n", mask);
+
+    jitc_metal_emit_reduce_block((uint32_t) values.size(), values.data(), ptr,
+                                 index, psd->op, psd->mode == ReduceMode::Local);
+
+    if (is_masked)
+        put("    }\n");
+}
+
 void jitc_metal_render_scatter_packet(const Variable *v, const Variable *ptr,
                                      const Variable *index, const Variable *mask) {
     PacketScatterData *psd              = (PacketScatterData *) v->data;
     const std::vector<uint32_t> &values = psd->values;
     const Variable *v0                  = jitc_var(values[0]);
 
-    if (psd->op != ReduceOp::Identity)
-        jitc_fail("jitc_metal_render_scatter_packet(): Packet atomics are not "
-                  "supported on the Metal backend.\n");
+    if (psd->op != ReduceOp::Identity) {
+        jitc_metal_render_scatter_reduce_packet(ptr, index, mask, psd);
+        return;
+    }
 
     bool is_masked = !mask->is_literal() || mask->literal != 1;
     VarType vt     = (VarType) v0->type;
