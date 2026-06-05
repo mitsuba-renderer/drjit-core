@@ -398,9 +398,13 @@ struct VariableKey {
         memcpy((void *) this, (const void *) &v.scope, 32);
         uint32_t array_length =
             (v.is_array() || v.coop_vec) ? (uint32_t) v.array_length : 0u;
-        packed = (uint32_t) v.kind | ((uint32_t) v.backend << 7) |
-                 ((uint32_t) v.type << 9) | ((uint32_t) v.write_ptr << 14) |
-                 (array_length << 16);
+        // The bitfields kind:7|backend:2|type:5|write_ptr:1 occupy bits 0..14 of
+        // the 32-bit word immediately after 'scratch' (LSB-first packing), which
+        // is exactly the layout 'packed' wants. Reading the raw word and masking
+        // avoids extracting and re-assembling each field (~14 dependent insns).
+        uint32_t flag_word;
+        memcpy(&flag_word, &v.scratch + 1, sizeof(flag_word));
+        packed = (flag_word & 0x7FFFu) | (array_length << 16);
     }
 
     bool operator==(const VariableKey &v) const {
