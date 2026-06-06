@@ -741,38 +741,65 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
 
     v.scope = ts->scope;
 
-    // Check if this exact statement already exists ..
-    LVNMap::iterator key_it;
-    bool lvn_key_inserted = false;
-    if (lvn)
-        std::tie(key_it, lvn_key_inserted) =
-            st.lvn_map.try_emplace(VariableKey(v), 0);
+    // Allocate a variable slot and move 'v' into it. This is done speculatively
+    // assuming that the LVN lookup below misses, which permits overlapping the
+    // OoO latency of the two steps. In the case of a hit, return the slot.
+    bool reuse_indices = flags & (uint32_t) JitFlag::ReuseIndices;
+    FreeSlots &unused = st.unused_variables;
 
     uint32_t index;
-    Variable *vo;
+    bool from_unused;
+    if (unlikely(unused.empty() || !reuse_indices)) {
+        index = (uint32_t) st.variables.size();
+        st.variables.emplace_back();
+        from_unused = false;
+    } else {
+        index = unused.pop();
+        from_unused = true;
+    }
 
-    if (likely(!lvn || lvn_key_inserted)) {
-        bool reuse_indices = flags & (uint32_t) JitFlag::ReuseIndices;
-        FreeSlots &unused = st.unused_variables;
+    Variable *vo = &st.variables[index];
+    jitc_assert(vo->ref_count == 0 && vo->ref_count_se == 0,
+                "jit_var_new(): selected entry of variable r%u "
+                "is already used.", index);
 
-        if (unlikely(unused.empty() || !reuse_indices)) {
-            index = (uint32_t) st.variables.size();
-            st.variables.emplace_back();
-        } else {
-            index = unused.pop();
+    // Snapshot the LVN key before overwriting the slot
+    VariableKey key(v);
+    v.counter = vo->counter;
+    *vo = v;
+
+    bool cse_hit = false;
+    if (lvn) {
+        auto [it, inserted] = st.lvn_map.try_emplace(key, index);
+
+        if (unlikely(!inserted)) {
+            // CSE hit: undo the speculative allocation and reuse the existing
+            // variable. The slot's contents do not matter while it is unused
+            // (its generation 'counter' was preserved by the write above).
+            cse_hit = true;
+            if (from_unused)
+                unused.push(index);
+            else
+                st.variables.pop_back();
+
+            if (likely(!v.write_ptr)) {
+                for (int i = 0; i < 4; ++i)
+                    jitc_var_dec_ref(v.dep[i]);
+            } else {
+                jitc_var_dec_ref_se(v.dep[3]);
+            }
+
+            index = it.value();
+            vo = &st.variables[index];
+            jitc_assert(VariableKey(*vo) == key,
+                        "jit_var_new(): LVN data structure is out of sync! (1)");
+            jitc_assert(vo->ref_count != 0 || vo->ref_count_se != 0,
+                        "jit_var_new(): LVN data structure is out of sync! (2)");
         }
+    }
 
-        if (lvn_key_inserted)
-            key_it.value() = index;
-
-        vo = &st.variables[index];
-        jitc_assert(vo->ref_count == 0 && vo->ref_count_se == 0,
-                    "jit_var_new(): selected entry of variable r%u "
-                    "is already used.", index);
-
-        v.counter = vo->counter;
-        *vo = v;
-
+    // If a new variable was created, attach an optional label
+    if (likely(!cse_hit)) {
         bool has_prefix = ts->prefix != nullptr,
              has_loc = (flags & (uint32_t) JitFlag::Debug) && (source_location_buf[0] != '\0');
 
@@ -795,20 +822,6 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         }
 
         st.variable_counter++;
-    } else {
-        if (likely(!v.write_ptr)) {
-            for (int i = 0; i < 4; ++i)
-                jitc_var_dec_ref(v.dep[i]);
-        } else {
-            jitc_var_dec_ref_se(v.dep[3]);
-        }
-
-        index = key_it.value();
-        vo = &st.variables[index];
-        jitc_assert(VariableKey(*vo) == VariableKey(v),
-                    "jit_var_new(): LVN data structure is out of sync! (1)");
-        jitc_assert(vo->ref_count != 0 || vo->ref_count_se != 0,
-                    "jit_var_new(): LVN data structure is out of sync! (2)");
     }
 
     if (unlikely(std::max(st.log_level_stderr, st.log_level_callback) >=
@@ -838,7 +851,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
             var_buffer.put(")");
         }
 
-        bool lvn_hit = lvn && !lvn_key_inserted,
+        bool lvn_hit = cse_hit,
              show_lit = v.is_node() && !v.is_undefined() &&
                         (VarKind) v.kind != VarKind::BoundsCheck &&
                         (VarType) v.type != VarType::Void && v.literal;
@@ -873,7 +886,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     jitc_sanitation_checkpoint();
 #endif
 
-#ifndef NDEBUG
+#if !defined(NDEBUG)
     if (v.is_evaluated())
         state.ptr_to_variable.insert({ v.data, index });
 #endif
