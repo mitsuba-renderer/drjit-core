@@ -4,16 +4,12 @@
 #include "eval.h"
 #include <cstdarg>
 
-#if defined(_MSC_VER)
-#  include <intrin.h>
-#endif
-
 /// Global string buffer used to generate PTX/LLVM IR
 StringBuffer buffer { 1024 };
 
 static const char num[] = "0123456789abcdef";
 
-// Two-digit lookup table ("00010203...99") for fast unsigned->decimal conversion
+// Two-digit lookup table for jeaii unsigned->decimal conversion
 static const char digit_pairs[201] =
     "00010203040506070809"
     "10111213141516171819"
@@ -26,54 +22,23 @@ static const char digit_pairs[201] =
     "80818283848586878889"
     "90919293949596979899";
 
-static const uint32_t pow10_u32[10] = {
-    0, 10, 100, 1000, 10000,
-    100000, 1000000, 10000000, 100000000, 1000000000
-};
+// Version with doubled leading  digits for values < 10
+static const char digit_pairs_lead[201] =
+    "00112233445566778899"
+    "10111213141516171819"
+    "20212223242526272829"
+    "30313233343536373839"
+    "40414243444546474849"
+    "50515253545556575859"
+    "60616263646566676869"
+    "70717273747576777879"
+    "80818283848586878889"
+    "90919293949596979899";
 
-static const uint64_t pow10_u64[20] = {
-    0ull, 10ull, 100ull, 1000ull, 10000ull, 100000ull, 1000000ull,
-    10000000ull, 100000000ull, 1000000000ull, 10000000000ull, 100000000000ull,
-    1000000000000ull, 10000000000000ull, 100000000000000ull, 1000000000000000ull,
-    10000000000000000ull, 100000000000000000ull, 1000000000000000000ull,
-    10000000000000000000ull
-};
-
-// Bit length of a *nonzero* 32-bit integer
-static inline unsigned bit_length(uint32_t n) {
-#if defined(_MSC_VER)
-    unsigned long i;
-    _BitScanReverse(&i, (unsigned long) n);
-    return (unsigned) i + 1;
-#else
-    return 32u - (unsigned) __builtin_clz(n);
-#endif
-}
-
-// Bit length of a *nonzero* 64-bit integer
-static inline unsigned bit_length(uint64_t n) {
-#if defined(_MSC_VER)
-    unsigned long i;
-    _BitScanReverse64(&i, n);
-    return (unsigned) i + 1;
-#else
-    return 64u - (unsigned) __builtin_clzll(n);
-#endif
-}
-
-// Number of decimal digits of a 32-bit unsigned value
-static inline unsigned digits10(uint32_t n) {
-    unsigned bits = bit_length(n | 1);
-    unsigned t = (bits * 1233) >> 12;
-    return t + 1 - (n < pow10_u32[t]);
-}
-
-// Number of decimal digits of a 64-bit unsigned value
-static inline unsigned digits10(uint64_t n) {
-    unsigned bits = bit_length(n | 1);
-    unsigned t = (bits * 1233) >> 12;
-    return t + 1 - (n < pow10_u64[t]);
-}
+// Fixed-point fractional masks used by the division-free integer formatter.
+static const uint64_t mask24 = (1ull << 24) - 1,
+                      mask32 = (1ull << 32) - 1,
+                      mask57 = (1ull << 57) - 1;
 
 StringBuffer::StringBuffer(size_t capacity)
     : m_start(nullptr), m_cur(nullptr), m_end(nullptr) {
@@ -180,6 +145,70 @@ static void reverse_str(char *start, char *end) {
     }
 }
 
+// Division-free unsigned to decimal conversion based on James Anhalt ("jeaiii",
+// https://github.com/jeaiii/itoa). A magnitude cascade produces a a scaled
+// fixed-point number whose representation can be used to produce the output two
+// digits at a time. The 2-byte stores may spill one byte past the end, which
+// usage in StringBuffer permits.
+static inline char *w_u32(char *b, uint32_t n) {
+    if (n < 100) {
+        memcpy(b, &digit_pairs_lead[n * 2], 2);
+        return n < 10 ? b + 1 : b + 2;
+    }
+    if (n < 10000) {
+        uint32_t f0 = (uint32_t) (10 * (1 << 24) / 1e3 + 1) * n;
+        memcpy(b, &digit_pairs_lead[(f0 >> 24) * 2], 2);
+        b -= n < 1000;
+        uint32_t f2 = (f0 & mask24) * 100; memcpy(b + 2, &digit_pairs[(f2 >> 24) * 2], 2);
+        return b + 4;
+    }
+    if (n < 1000000) {
+        uint64_t f0 = (uint64_t) (10 * (1ull << 32) / 1e5 + 1) * n;
+        memcpy(b, &digit_pairs_lead[(f0 >> 32) * 2], 2);
+        b -= n < 100000;
+        uint64_t f2 = (f0 & mask32) * 100; memcpy(b + 2, &digit_pairs[(f2 >> 32) * 2], 2);
+        uint64_t f4 = (f2 & mask32) * 100; memcpy(b + 4, &digit_pairs[(f4 >> 32) * 2], 2);
+        return b + 6;
+    }
+    if (n < 100000000) {
+        uint64_t f0 = (uint64_t) (10 * (1ull << 48) / 1e7 + 1) * n >> 16;
+        memcpy(b, &digit_pairs_lead[(f0 >> 32) * 2], 2);
+        b -= n < 10000000;
+        uint64_t f2 = (f0 & mask32) * 100; memcpy(b + 2, &digit_pairs[(f2 >> 32) * 2], 2);
+        uint64_t f4 = (f2 & mask32) * 100; memcpy(b + 4, &digit_pairs[(f4 >> 32) * 2], 2);
+        uint64_t f6 = (f4 & mask32) * 100; memcpy(b + 6, &digit_pairs[(f6 >> 32) * 2], 2);
+        return b + 8;
+    }
+    // 9-10 digits: a single fixed-point cascade scaled by 2^57.
+    uint64_t f0 = (uint64_t) (10 * (1ull << 57) / 1e9 + 1) * n;
+    memcpy(b, &digit_pairs_lead[(f0 >> 57) * 2], 2);
+    b -= n < 1000000000u;
+    uint64_t f2 = (f0 & mask57) * 100; memcpy(b + 2, &digit_pairs[(f2 >> 57) * 2], 2);
+    uint64_t f4 = (f2 & mask57) * 100; memcpy(b + 4, &digit_pairs[(f4 >> 57) * 2], 2);
+    uint64_t f6 = (f4 & mask57) * 100; memcpy(b + 6, &digit_pairs[(f6 >> 57) * 2], 2);
+    uint64_t f8 = (f6 & mask57) * 100; memcpy(b + 8, &digit_pairs[(f8 >> 57) * 2], 2);
+    return b + 10;
+}
+
+// Write 'z' in [0, 1e8) as eight zero-padded digits, division-free (jeaiii).
+static inline void eight_digits(char *b, uint32_t z) {
+    uint64_t f0 = ((uint64_t) ((1ull << 48) / 1e6 + 1) * z >> 16) + 1;
+    memcpy(b, &digit_pairs[(f0 >> 32) * 2], 2);
+    uint64_t f2 = (f0 & mask32) * 100; memcpy(b + 2, &digit_pairs[(f2 >> 32) * 2], 2);
+    uint64_t f4 = (f2 & mask32) * 100; memcpy(b + 4, &digit_pairs[(f4 >> 32) * 2], 2);
+    uint64_t f6 = (f4 & mask32) * 100; memcpy(b + 6, &digit_pairs[(f6 >> 32) * 2], 2);
+}
+
+// 64-bit unsigned decimal to string conversion based on the jeaiii implementation
+static inline char *w_u64(char *b, uint64_t value) {
+    if (value <= 0xFFFFFFFFull)
+        return w_u32(b, (uint32_t) value);
+    uint32_t z = (uint32_t) (value % 100000000u);
+    b = w_u64(b, value / 100000000u);
+    eight_digits(b, z);
+    return b + 8;
+}
+
 void StringBuffer::put_u32(uint32_t value) {
     if (unlikely(!m_cur || m_cur + MAXSIZE_U32 >= m_end))
         expand(MAXSIZE_U32);
@@ -205,74 +234,47 @@ void StringBuffer::put_x64(uint64_t value) {
     put_x64_unchecked(value);
 }
 
-void StringBuffer::put_u32_unchecked(uint32_t value) {
-    unsigned n = digits10(value);
-    char *end = m_cur + n, *p = end;
-    while (value >= 100) {
-        unsigned idx = (value % 100) * 2;
-        value /= 100;
-        p -= 2;
-        memcpy(p, &digit_pairs[idx], 2);
-    }
-    if (value < 10)
-        *--p = (char) ('0' + value);
-    else
-        memcpy(p - 2, &digit_pairs[value * 2], 2);
-    m_cur = end;
+void StringBuffer::put_u32_unchecked(uint32_t value) { m_cur = w_u32(m_cur, value); }
+
+void StringBuffer::put_u64_unchecked(uint64_t value) { m_cur = w_u64(m_cur, value); }
+
+// Cursor-passing cores of the hex/string writers, returning the advanced cursor.
+static inline char *w_x32(char *d, uint32_t value) {
+    char *start = d;
+    do { *d++ = num[value % 16]; value /= 16; } while (value);
+    reverse_str(start, d);
+    return d;
 }
 
-void StringBuffer::put_u64_unchecked(uint64_t value) {
-    unsigned n = digits10(value);
-    char *end = m_cur + n, *p = end;
-    while (value >= 100) {
-        unsigned idx = (unsigned) (value % 100) * 2;
-        value /= 100;
-        p -= 2;
-        memcpy(p, &digit_pairs[idx], 2);
-    }
-    if (value < 10)
-        *--p = (char) ('0' + value);
-    else
-        memcpy(p - 2, &digit_pairs[(unsigned) value * 2], 2);
-    m_cur = end;
+static inline char *w_x64(char *d, uint64_t value) {
+    char *start = d;
+    do { *d++ = num[value % 16]; value /= 16; } while (value);
+    reverse_str(start, d);
+    return d;
 }
 
-void StringBuffer::put_x32_unchecked(uint32_t value) {
-    char *start = m_cur;
-    do {
-        *m_cur++ = num[value % 16];
-        value /= 16;
-    } while (value);
-
-    reverse_str(start, m_cur);
-}
-
-void StringBuffer::put_x64_unchecked(uint64_t value) {
-    char *start = m_cur;
-    do {
-        *m_cur++ = num[value % 16];
-        value /= 16;
-    } while (value);
-
-    reverse_str(start, m_cur);
-}
-
-void StringBuffer::put_q64_unchecked(uint64_t value) {
+static inline char *w_q64(char *d, uint64_t value) {
     for (uint32_t i = 0; i < 16; ++i) {
-        *(m_cur + 15 - i) = num[value % 16];
+        *(d + 15 - i) = num[value % 16];
         value /= 16;
     }
-    m_cur += 16;
+    return d + 16;
 }
 
-void StringBuffer::put_unchecked(const char *str) {
-    while (true) {
-        char c = *str++;
-        if (!c)
-            break;
-        *m_cur++ = c;
-    }
+static inline char *w_str(char *d, const char *str) {
+    char c;
+    while ((c = *str++) != '\0')
+        *d++ = c;
+    return d;
 }
+
+void StringBuffer::put_x32_unchecked(uint32_t value) { m_cur = w_x32(m_cur, value); }
+
+void StringBuffer::put_x64_unchecked(uint64_t value) { m_cur = w_x64(m_cur, value); }
+
+void StringBuffer::put_q64_unchecked(uint64_t value) { m_cur = w_q64(m_cur, value); }
+
+void StringBuffer::put_unchecked(const char *str) { m_cur = w_str(m_cur, str); }
 
 size_t StringBuffer::fmt(const char *fmt, ...) {
     do {
@@ -345,203 +347,200 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
             continue;
         }
 
-        m_cur = cur;
-        {
-            switch (*p++) {
-                case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
-                case 's': {
-                        const char *s = va_arg(args2, const char *);
-                        put(s, strlen(s));
-                        // '$s' is the only unbounded directive: 'put()' grew the
-                        // buffer to fit the string, so restore the worst-case
-                        // headroom assumed by the unchecked writes that follow.
-                        if (unlikely(m_cur + bound >= m_end))
-                            expand(bound);
+        // '$' directive: writes go through 'cur' via the w_*() helpers; only
+        // '$s' (put()/expand()) touches the m_cur member.
+        switch (*p++) {
+            case 'u': cur = w_u32(cur, va_arg(args2, uint32_t)); break;
+            case 's': {
+                    const char *s = va_arg(args2, const char *);
+                    m_cur = cur;
+                    put(s, strlen(s));
+                    // '$s' is unbounded: put() may have grown the buffer, so
+                    // re-reserve the headroom the unchecked writes assume.
+                    if (unlikely(m_cur + bound >= m_end))
+                        expand(bound);
+                    cur = m_cur;
+                }
+                break;
+
+            case 'w':
+                cur = w_u32(cur, jitc_llvm_vector_width);
+                break;
+
+            case 't': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_name_llvm[v->type]);
+                }
+                break;
+
+            case 'b': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_name_llvm_bin[v->type]);
+                }
+                break;
+
+            case 'd': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_name_llvm_big[v->type]);
+                }
+                break;
+
+            case 'H': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, v->type == (uint32_t) VarType::Bool
+                                         ? "i8"
+                                         : type_name_llvm_abbrev[v->type]);
+                }
+                break;
+
+            case 'h': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_name_llvm_abbrev[v->type]);
+                }
+                break;
+
+            case 'm': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    uint32_t type = v->type == (uint32_t) VarType::Bool
+                                        ? (uint32_t) VarType::UInt8
+                                        : v->type;
+                    cur = w_str(cur, type_name_llvm[type]);
+                }
+                break;
+
+            case 'T': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    *cur++ = '<';
+                    cur = w_u32(cur, jitc_llvm_vector_width);
+                    *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
+                    cur = w_str(cur, type_name_llvm[v->type]);
+                    *cur++ = '>';
+                }
+                break;
+
+            case 'B': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    *cur++ = '<';
+                    cur = w_u32(cur, jitc_llvm_vector_width);
+                    *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
+                    cur = w_str(cur, type_name_llvm_bin[v->type]);
+                    *cur++ = '>';
+                }
+                break;
+
+            case 'D': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    *cur++ = '<';
+                    cur = w_u32(cur, jitc_llvm_vector_width);
+                    *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
+                    cur = w_str(cur, type_name_llvm_big[v->type]);
+                    *cur++ = '>';
+                }
+                break;
+
+            case 'M': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    uint32_t type = v->type == (uint32_t) VarType::Bool
+                                        ? (uint32_t) VarType::UInt8
+                                        : v->type;
+                    *cur++ = '<';
+                    cur = w_u32(cur, jitc_llvm_vector_width);
+                    *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
+                    cur = w_str(cur, type_name_llvm[type]);
+                    *cur++ = '>';
+                }
+                break;
+
+            case 'v': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_prefix[v->type]);
+                    cur = w_u32(cur, v->reg_index);
+                }
+                break;
+
+            case 'V': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    *cur++ = '<';
+                    cur = w_u32(cur, jitc_llvm_vector_width);
+                    *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
+                    cur = w_str(cur, type_name_llvm[v->type]);
+                    *cur++ = '>';
+                    *cur++ = ' ';
+                    cur = w_str(cur, type_prefix[v->type]);
+                    cur = w_u32(cur, v->reg_index);
+                }
+                break;
+
+            case 'l': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    VarType vt = (VarType) v->type;
+                    uint64_t literal = v->literal;
+
+                    if (vt == VarType::Float32) {
+                        float f;
+                        memcpy(&f, &literal, sizeof(float));
+                        double d = f;
+                        memcpy(&literal, &d, sizeof(uint64_t));
+                        vt = VarType::Float64;
+                    } else if (vt == VarType::Float16) {
+                        drjit::half h;
+                        memcpy((void*)&h, &literal, sizeof(drjit::half));
+                        double d = float(h);
+                        memcpy(&literal, &d, sizeof(uint64_t));
+                        vt = VarType::Float64;
                     }
-                    break;
 
-                case 'w':
-                    put_u32_unchecked(jitc_llvm_vector_width);
-                    break;
-
-                case 't': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_llvm[v->type]);
+                    if (vt == VarType::Float64) {
+                        *cur++ = '0';
+                        *cur++ = 'x';
+                        cur = w_x64(cur, literal);
+                    } else {
+                        cur = w_u64(cur, literal);
                     }
-                    break;
+                };
+                break;
 
-                case 'b': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_llvm_bin[v->type]);
-                    }
-                    break;
+            case 'a': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_u32(cur, v->unaligned ? 1 : type_size[v->type]);
+                }
+                break;
 
-                case 'd': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_llvm_big[v->type]);
-                    }
-                    break;
+            case 'A': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_u32(cur, v->unaligned ? 1 : (type_size[v->type] * jitc_llvm_vector_width));
+                }
+                break;
 
-                case 'H': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(v->type == (uint32_t) VarType::Bool
-                                          ? "i8"
-                                          : type_name_llvm_abbrev[v->type]);
-                    }
-                    break;
+            case 'o': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_u32(cur, v->param_offset / (uint32_t) sizeof(void *));
+                }
+                break;
 
-                case 'h': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_llvm_abbrev[v->type]);
-                    }
-                    break;
+            case 'z':
+                cur = w_str(cur, "zeroinitializer");
+                break;
 
-                case 'm': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        uint32_t type = v->type == (uint32_t) VarType::Bool
-                                            ? (uint32_t) VarType::UInt8
-                                            : v->type;
-                        put_unchecked(type_name_llvm[type]);
-                    }
-                    break;
+            case '<':
+                if (callable_depth > 0) {
+                    *cur++ = '<';
+                    cur = w_u32(cur, jitc_llvm_vector_width);
+                    *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
+                }
+                break;
 
-                case 'T': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur ++= '<';
-                        put_u32_unchecked(jitc_llvm_vector_width);
-                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
-                        put_unchecked(type_name_llvm[v->type]);
-                        *m_cur ++= '>';
-                    }
-                    break;
+            case '>':
+                if (callable_depth > 0)
+                    *cur++ = '>';
+                break;
 
-                case 'B': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur ++= '<';
-                        put_u32_unchecked(jitc_llvm_vector_width);
-                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
-                        put_unchecked(type_name_llvm_bin[v->type]);
-                        *m_cur ++= '>';
-                    }
-                    break;
-
-                case 'D': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur ++= '<';
-                        put_u32_unchecked(jitc_llvm_vector_width);
-                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
-                        put_unchecked(type_name_llvm_big[v->type]);
-                        *m_cur ++= '>';
-                    }
-                    break;
-
-                case 'M': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        uint32_t type = v->type == (uint32_t) VarType::Bool
-                                            ? (uint32_t) VarType::UInt8
-                                            : v->type;
-                        *m_cur ++= '<';
-                        put_u32_unchecked(jitc_llvm_vector_width);
-                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
-                        put_unchecked(type_name_llvm[type]);
-                        *m_cur ++= '>';
-                    }
-                    break;
-
-                case 'v': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_prefix[v->type]);
-                        put_u32_unchecked(v->reg_index);
-                    }
-                    break;
-
-                case 'V': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur ++= '<';
-                        put_u32_unchecked(jitc_llvm_vector_width);
-                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
-                        put_unchecked(type_name_llvm[v->type]);
-                        *m_cur ++= '>';
-                        *m_cur ++= ' ';
-                        put_unchecked(type_prefix[v->type]);
-                        put_u32_unchecked(v->reg_index);
-                    }
-                    break;
-
-                case 'l': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        VarType vt = (VarType) v->type;
-                        uint64_t literal = v->literal;
-
-                        if (vt == VarType::Float32) {
-                            float f;
-                            memcpy(&f, &literal, sizeof(float));
-                            double d = f;
-                            memcpy(&literal, &d, sizeof(uint64_t));
-                            vt = VarType::Float64;
-                        } else if (vt == VarType::Float16) {
-                            drjit::half h;
-                            memcpy((void*)&h, &literal, sizeof(drjit::half));
-                            double d = float(h);
-                            memcpy(&literal, &d, sizeof(uint64_t));
-                            vt = VarType::Float64;
-                        }
-
-                        if (vt == VarType::Float64) {
-                            *m_cur ++= '0';
-                            *m_cur ++= 'x';
-                            put_x64_unchecked(literal);
-                        } else {
-                            put_u64_unchecked(literal);
-                        }
-                    };
-                    break;
-
-                case 'a': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(v->unaligned ? 1 : type_size[v->type]);
-                    }
-                    break;
-
-                case 'A': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(v->unaligned ? 1 : (type_size[v->type] * jitc_llvm_vector_width));
-                    }
-                    break;
-
-                case 'o': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(v->param_offset / (uint32_t) sizeof(void *));
-                    }
-                    break;
-
-                case 'z':
-                    put_unchecked("zeroinitializer");
-                    break;
-
-                case '<':
-                    if (callable_depth > 0) {
-                        *m_cur ++= '<';
-                        put_u32_unchecked(jitc_llvm_vector_width);
-                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
-                    }
-                    break;
-
-                case '>':
-                    if (callable_depth > 0)
-                        *m_cur ++= '>';
-                    break;
-
-                default:
-                    fprintf(stderr,
-                            "StringBuffer::fmt_llvm(): encountered unsupported "
-                            "character \"$%c\" in format string!\n", p[-1]);
-                    abort();
-            }
+            default:
+                fprintf(stderr,
+                        "StringBuffer::fmt_llvm(): encountered unsupported "
+                        "character \"$%c\" in format string!\n", p[-1]);
+                abort();
         }
-
-        // Update 'cur' in case one of the put_*() functions overwrote it
-        cur = m_cur;
     }
     va_end(args2);
 
@@ -570,89 +569,86 @@ void StringBuffer::fmt_cuda(size_t nargs, size_t fmt_len, const char *fmt, ...) 
             continue;
         }
 
-        m_cur = cur;
-        {
-            switch (*p++) {
-                case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
-                case 'Q': put_q64_unchecked(va_arg(args2, uint64_t)); break;
+        // '$' directive: writes go through 'cur' via the w_*() helpers; only
+        // '$s' (put()/expand()) touches the m_cur member.
+        switch (*p++) {
+            case 'u': cur = w_u32(cur, va_arg(args2, uint32_t)); break;
+            case 'Q': cur = w_q64(cur, va_arg(args2, uint64_t)); break;
 
-                case 's': {
-                        const char *s = va_arg(args2, const char *);
-                        put(s, strlen(s));
-                        // '$s' is the only unbounded directive: 'put()' grew the
-                        // buffer to fit the string, so restore the worst-case
-                        // headroom assumed by the unchecked writes that follow.
-                        if (unlikely(m_cur + bound >= m_end))
-                            expand(bound);
+            case 's': {
+                    const char *s = va_arg(args2, const char *);
+                    m_cur = cur;
+                    put(s, strlen(s));
+                    // '$s' is unbounded: put() may have grown the buffer, so
+                    // re-reserve the headroom the unchecked writes below assume.
+                    if (unlikely(m_cur + bound >= m_end))
+                        expand(bound);
+                    cur = m_cur;
+                }
+                break;
+
+            case 't': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_name_ptx[v->type]);
+                }
+                break;
+
+            case 'B': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_name_ptx_bin2[v->type]);
+                }
+                break;
+
+            case 'b': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_name_ptx_bin[v->type]);
+                }
+                break;
+
+            case 'V': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    if (v->type == (uint32_t) VarType::Bool) {
+                        cur = w_str(cur, "%w0");
+                    } else {
+                        cur = w_str(cur, type_prefix[v->type]);
+                        cur = w_u32(cur, v->reg_index);
                     }
-                    break;
+                }
+                break;
 
-                case 't': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_ptx[v->type]);
-                    }
-                    break;
+            case 'v': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_prefix[v->type]);
+                    cur = w_u32(cur, v->reg_index);
+                }
+                break;
 
-                case 'B': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_ptx_bin2[v->type]);
-                    }
-                    break;
+            case 'l': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    *cur++ = '0';
+                    *cur++ = 'x';
+                    cur = w_x64(cur, v->literal);
+                };
+                break;
 
-                case 'b': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_ptx_bin[v->type]);
-                    }
-                    break;
+            case 'a': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_u32(cur, type_size[v->type]);
+                }
+                break;
 
-                case 'V': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        if (v->type == (uint32_t) VarType::Bool) {
-                            put_unchecked("%w0");
-                        } else {
-                            put_unchecked(type_prefix[v->type]);
-                            put_u32_unchecked(v->reg_index);
-                        }
-                    }
-                    break;
+            case 'o': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_u32(cur, v->param_offset);
+                }
+                break;
 
-                case 'v': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_prefix[v->type]);
-                        put_u32_unchecked(v->reg_index);
-                    }
-                    break;
-
-                case 'l': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur ++= '0';
-                        *m_cur ++= 'x';
-                        put_x64_unchecked(v->literal);
-                    };
-                    break;
-
-                case 'a': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(type_size[v->type]);
-                    }
-                    break;
-
-                case 'o': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(v->param_offset);
-                    }
-                    break;
-
-                default:
-                    fprintf(stderr,
-                            "StringBuffer::fmt_cuda(): encountered unsupported "
-                            "character \"$%c\" in format string!\n", p[-1]);
-                    abort();
-            }
+            default:
+                fprintf(stderr,
+                        "StringBuffer::fmt_cuda(): encountered unsupported "
+                        "character \"$%c\" in format string!\n", p[-1]);
+                abort();
         }
-
-        // Update 'cur' in case one of the put_*() functions overwrote it
-        cur = m_cur;
     }
     va_end(args2);
 
@@ -682,65 +678,60 @@ void StringBuffer::fmt_metal(size_t nargs, size_t fmt_len, const char *fmt, ...)
             continue;
         }
 
-        m_cur = cur;
-        {
-            switch (*p++) {
-                case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
+        switch (*p++) {
+            case 'u': cur = w_u32(cur, va_arg(args2, uint32_t)); break;
 
-                case 's': {
-                        const char *s = va_arg(args2, const char *);
-                        put(s, strlen(s));
-                        // '$s' is the only unbounded directive: 'put()' grew the
-                        // buffer to fit the string, so restore the worst-case
-                        // headroom assumed by the unchecked writes that follow.
-                        if (unlikely(m_cur + bound >= m_end))
-                            expand(bound);
-                    }
-                    break;
+            case 's': {
+                    const char *s = va_arg(args2, const char *);
+                    m_cur = cur;
+                    put(s, strlen(s));
+                    // '$s' is unbounded: put() may have grown the buffer, so
+                    // re-reserve the headroom the unchecked writes below assume.
+                    if (unlikely(m_cur + bound >= m_end))
+                        expand(bound);
+                    cur = m_cur;
+                }
+                break;
 
-                case 't': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_metal[v->type]);
-                    }
-                    break;
+            case 't': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_name_metal[v->type]);
+                }
+                break;
 
-                case 'b': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_metal_bin[v->type]);
-                    }
-                    break;
+            case 'b': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_str(cur, type_name_metal_bin[v->type]);
+                }
+                break;
 
-                case 'v': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur++ = 'r';
-                        put_u32_unchecked(v->reg_index);
-                    }
-                    break;
+            case 'v': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    *cur++ = 'r';
+                    cur = w_u32(cur, v->reg_index);
+                }
+                break;
 
-                case 'l': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur++ = '0';
-                        *m_cur++ = 'x';
-                        put_x64_unchecked(v->literal);
-                    }
-                    break;
+            case 'l': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    *cur++ = '0';
+                    *cur++ = 'x';
+                    cur = w_x64(cur, v->literal);
+                }
+                break;
 
-                case 'o': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(v->param_offset / (uint32_t) sizeof(void *) - 1);
-                    }
-                    break;
+            case 'o': {
+                    const Variable *v = va_arg(args2, const Variable *);
+                    cur = w_u32(cur, v->param_offset / (uint32_t) sizeof(void *) - 1);
+                }
+                break;
 
-                default:
-                    fprintf(stderr,
-                            "StringBuffer::fmt_metal(): encountered unsupported "
-                            "character \"$%c\" in format string!\n", p[-1]);
-                    abort();
-            }
+            default:
+                fprintf(stderr,
+                        "StringBuffer::fmt_metal(): encountered unsupported "
+                        "character \"$%c\" in format string!\n", p[-1]);
+                abort();
         }
-
-        // Update 'cur' in case one of the put_*() functions overwrote it
-        cur = m_cur;
     }
     va_end(args2);
 
