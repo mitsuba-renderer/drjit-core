@@ -336,9 +336,17 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
 
     // Convert the format string
     const char *p = fmt;
+    char *cur = m_cur;
     char c;
     while ((c = *p++) != '\0') {
-        if (c == '$') {
+        // Fast path, plain copy
+        if (likely(c != '$')) {
+            *cur++ = c;
+            continue;
+        }
+
+        m_cur = cur;
+        {
             switch (*p++) {
                 case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
                 case 's': {
@@ -530,12 +538,14 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                             "character \"$%c\" in format string!\n", p[-1]);
                     abort();
             }
-        } else {
-            *m_cur ++= c;
         }
+
+        // Update 'cur' in case one of the put_*() functions overwrote it
+        cur = m_cur;
     }
     va_end(args2);
 
+    m_cur = cur;
     *m_cur = '\0';
 }
 
@@ -551,9 +561,17 @@ void StringBuffer::fmt_cuda(size_t nargs, size_t fmt_len, const char *fmt, ...) 
 
     // Convert the format string
     const char *p = fmt;
+    char *cur = m_cur;
     char c;
     while ((c = *p++) != '\0') {
-        if (c == '$') {
+        // Fast path, plain copy
+        if (likely(c != '$')) {
+            *cur++ = c;
+            continue;
+        }
+
+        m_cur = cur;
+        {
             switch (*p++) {
                 case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
                 case 'Q': put_q64_unchecked(va_arg(args2, uint64_t)); break;
@@ -631,12 +649,14 @@ void StringBuffer::fmt_cuda(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                             "character \"$%c\" in format string!\n", p[-1]);
                     abort();
             }
-        } else {
-            *m_cur ++= c;
         }
+
+        // Update 'cur' in case one of the put_*() functions overwrote it
+        cur = m_cur;
     }
     va_end(args2);
 
+    m_cur = cur;
     *m_cur = '\0';
 }
 #endif
@@ -653,9 +673,17 @@ void StringBuffer::fmt_metal(size_t nargs, size_t fmt_len, const char *fmt, ...)
 
     // Emit the formatted string
     const char *p = fmt;
+    char *cur = m_cur;
     char c;
     while ((c = *p++) != '\0') {
-        if (c == '$') {
+        // Fast path, plain copy
+        if (likely(c != '$')) {
+            *cur++ = c;
+            continue;
+        }
+
+        m_cur = cur;
+        {
             switch (*p++) {
                 case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
 
@@ -709,12 +737,14 @@ void StringBuffer::fmt_metal(size_t nargs, size_t fmt_len, const char *fmt, ...)
                             "character \"$%c\" in format string!\n", p[-1]);
                     abort();
             }
-        } else {
-            *m_cur++ = c;
         }
+
+        // Update 'cur' in case one of the put_*() functions overwrote it
+        cur = m_cur;
     }
     va_end(args2);
 
+    m_cur = cur;
     *m_cur = '\0';
 }
 #endif
