@@ -1162,12 +1162,16 @@ uint32_t jit_var_write(uint32_t index, size_t offset, const void *src) {
 
 void jit_eval() {
     lock_guard guard(state.lock);
+    ThreadLocal &tl = jitc_thread_local();
 #if defined(DRJIT_ENABLE_CUDA)
-    jitc_eval(thread_state_cuda);
+    if (tl.ts_cuda)
+        jitc_eval(tl.ts_cuda);
 #endif
-    jitc_eval(thread_state_llvm);
+    if (tl.ts_llvm)
+        jitc_eval(tl.ts_llvm);
 #if defined(DRJIT_ENABLE_METAL)
-    jitc_eval(thread_state_metal);
+    if (tl.ts_metal)
+        jitc_eval(tl.ts_metal);
 #endif
 }
 

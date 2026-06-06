@@ -266,16 +266,18 @@ void jitc_free(void *ptr) {
     auto [size, backend, shared, device] = alloc_info_decode(info);
     state.alloc_usage[(int) backend] -= size;
 
+    // Look up the thread-local record once and access all fields through it
+    ThreadLocal &tl = jitc_thread_local();
     ThreadState *ts = nullptr;
 
     switch (backend) {
 #if defined(DRJIT_ENABLE_CUDA)
-        case JitBackend::CUDA: ts = thread_state_cuda; break;
+        case JitBackend::CUDA: ts = tl.ts_cuda; break;
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-        case JitBackend::Metal: ts = thread_state_metal; break;
+        case JitBackend::Metal: ts = tl.ts_metal; break;
 #endif
-        case JitBackend::LLVM: ts = thread_state_llvm; break;
+        case JitBackend::LLVM: ts = tl.ts_llvm; break;
         default: break;
     }
 
@@ -310,7 +312,7 @@ void jitc_free(void *ptr) {
         ReleaseRecord *rec2 = (ReleaseRecord *) malloc_check(sizeof(ReleaseRecord));
         *rec2 = rec;
         cuda_check(cuLaunchHostFunc(
-            thread_state_cuda->stream,
+            tl.ts_cuda->stream,
             [](void *p) { release_cb(p); free(p); },
             rec2));
     }

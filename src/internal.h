@@ -19,6 +19,7 @@
 #include "alloc.h"
 #include "io.h"
 #include <string.h>
+#include <new>
 #include <nanothread/nanothread.h>
 
 /// List of operations in Dr.Jit-Core's intermediate representation (see ``Variable::kind``)
@@ -1148,26 +1149,43 @@ struct State {
 
 enum ParamType { Register, Input, Output };
 
-/// State specific to threads
+/// Thread-local Dr.Jit state
+struct ThreadLocal {
+    ThreadState *ts_llvm = nullptr;
+#if defined(DRJIT_ENABLE_CUDA)
+    ThreadState *ts_cuda = nullptr;
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    ThreadState *ts_metal = nullptr;
+#endif
+
+    // Compilation flags
+    uint32_t flags = (uint32_t) JitFlag::Default;
+
+    // Default backend
+    JitBackend def_backend = JitBackend::None;
+};
+
 #if defined(_MSC_VER)
-  extern __declspec(thread) ThreadState* thread_state_llvm;
-#if defined(DRJIT_ENABLE_CUDA)
-  extern __declspec(thread) ThreadState* thread_state_cuda;
-#endif
-#if defined(DRJIT_ENABLE_METAL)
-  extern __declspec(thread) ThreadState* thread_state_metal;
-#endif
-  extern __declspec(thread) JitBackend default_backend;
+  extern __declspec(thread) ThreadLocal tls;
 #else
-  extern __thread ThreadState* thread_state_llvm;
+  extern __thread ThreadLocal tls;
+#endif
+
+// Compatibility aliases that access fields in 'tls' using the previous naming convention
+#define thread_state_llvm (tls.ts_llvm)
 #if defined(DRJIT_ENABLE_CUDA)
-  extern __thread ThreadState* thread_state_cuda;
+#  define thread_state_cuda (tls.ts_cuda)
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-  extern __thread ThreadState* thread_state_metal;
+#  define thread_state_metal (tls.ts_metal)
 #endif
-  extern __thread JitBackend default_backend;
-#endif
+#define jitc_flags_v      (tls.flags)
+#define default_backend   (tls.def_backend)
+
+// Map TLS accesses through std::launder() (optimization boundary) to force the compiler
+// to materialize the lookup once instead of potentially replicating it across branches.
+JIT_INLINE ThreadLocal &jitc_thread_local() { return *std::launder(&tls); }
 
 extern ThreadState *jitc_init_thread_state(JitBackend backend);
 
