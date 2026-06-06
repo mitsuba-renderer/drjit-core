@@ -54,25 +54,9 @@ State state;
 #endif
 
 #if defined(_MSC_VER)
-#if defined(DRJIT_ENABLE_CUDA)
-  __declspec(thread) ThreadState* thread_state_cuda = nullptr;
-#endif
-  __declspec(thread) ThreadState* thread_state_llvm = nullptr;
-#if defined(DRJIT_ENABLE_METAL)
-  __declspec(thread) ThreadState* thread_state_metal = nullptr;
-#endif
-  __declspec(thread) uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
-  __declspec(thread) JitBackend default_backend = JitBackend::None;
+  __declspec(thread) ThreadLocal tls;
 #else
-#if defined(DRJIT_ENABLE_CUDA)
-  __thread ThreadState* thread_state_cuda = nullptr;
-#endif
-  __thread ThreadState* thread_state_llvm = nullptr;
-#if defined(DRJIT_ENABLE_METAL)
-  __thread ThreadState* thread_state_metal = nullptr;
-#endif
-  __thread uint32_t jitc_flags_v = (uint32_t) JitFlag::Default;
-  __thread JitBackend default_backend = JitBackend::None;
+  __thread ThreadLocal tls;
 #endif
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
@@ -308,12 +292,13 @@ void jitc_shutdown(int light) {
         state.tss.clear();
     }
 
-    thread_state_llvm = nullptr;
+    ThreadLocal &tl = jitc_thread_local();
+    tl.ts_llvm = nullptr;
 #if defined(DRJIT_ENABLE_CUDA)
-    thread_state_cuda = nullptr;
+    tl.ts_cuda = nullptr;
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-    thread_state_metal = nullptr;
+    tl.ts_metal = nullptr;
 #endif
 
     if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn &&
@@ -611,19 +596,21 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
 
 /// Wait for all computation on the current stream to finish
 void jitc_sync_thread(bool hold_lock) {
+    ThreadLocal &tl = jitc_thread_local();
 #if defined(DRJIT_ENABLE_CUDA)
-    jitc_sync_thread(thread_state_cuda, hold_lock);
+    jitc_sync_thread(tl.ts_cuda, hold_lock);
 #endif
-    jitc_sync_thread(thread_state_llvm, hold_lock);
+    jitc_sync_thread(tl.ts_llvm, hold_lock);
 #if defined(DRJIT_ENABLE_METAL)
-    jitc_sync_thread(thread_state_metal, hold_lock);
+    jitc_sync_thread(tl.ts_metal, hold_lock);
 #endif
 }
 
 /// Wait for all computation on the current device to finish
 void jitc_sync_device() {
+    ThreadLocal &tl = jitc_thread_local();
 #if defined(DRJIT_ENABLE_CUDA)
-    ThreadState *ts = thread_state_cuda;
+    ThreadState *ts = tl.ts_cuda;
     if (ts) {
         /* Release lock while synchronizing */ {
             unlock_guard guard(state.lock);
@@ -633,7 +620,7 @@ void jitc_sync_device() {
     }
 #endif
 
-    if (thread_state_llvm) {
+    if (tl.ts_llvm) {
         std::vector<ThreadState *> tss = state.tss;
         // Release lock while synchronizing */
         for (ThreadState *ts_2 : tss) {

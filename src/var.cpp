@@ -692,8 +692,13 @@ void jitc_set_source_location(const char *fname, size_t lineno) noexcept {
 /// Append the given variable to the instruction trace and return its ID
 uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     State &st = ::state;
+
+    // Look up the per-thread data structure once
+    ThreadLocal &tl = jitc_thread_local();
+
+    // Use the default backend if the variable doesn't specify one
     if (unlikely(v.backend == (uint32_t) JitBackend::None))
-        v.backend = (uint32_t) default_backend;
+        v.backend = (uint32_t) tl.def_backend;
 
 #if defined(DRJIT_ENABLE_METAL)
     // Metal does not support double precision
@@ -716,8 +721,20 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     }
 #endif
 
-    ThreadState *ts = thread_state(v.backend);
-    uint32_t flags = jitc_flags();
+    ThreadState *ts;
+    switch ((JitBackend) v.backend) {
+#if defined(DRJIT_ENABLE_CUDA)
+        case JitBackend::CUDA:  ts = tl.ts_cuda;  break;
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+        case JitBackend::Metal: ts = tl.ts_metal; break;
+#endif
+        case JitBackend::LLVM:  ts = tl.ts_llvm;  break;
+        default:                ts = nullptr;      break;
+    }
+    if (unlikely(!ts))
+        ts = jitc_init_thread_state((JitBackend) v.backend);
+    uint32_t flags = tl.flags;
 
     bool lvn = !disable_lvn && (VarType) v.type != VarType::Void &&
                !v.is_evaluated() && (flags & (uint32_t) JitFlag::ValueNumbering);
@@ -1426,11 +1443,16 @@ uint32_t jitc_var_eval_force(uint32_t index, Variable &v_, void **ptr_out) {
     if (v.is_undefined()) {
         // Notify the thread_state that this allocation should not be
         // initialized for recording.
-        if (thread_state_llvm)
-            thread_state_llvm->notify_init_undefined(result);
+        ThreadLocal &tl = jitc_thread_local();
+        if (tl.ts_llvm)
+            tl.ts_llvm->notify_init_undefined(result);
 #if defined(DRJIT_ENABLE_CUDA)
-        if (thread_state_cuda)
-            thread_state_cuda->notify_init_undefined(result);
+        if (tl.ts_cuda)
+            tl.ts_cuda->notify_init_undefined(result);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+        if (tl.ts_metal)
+            tl.ts_metal->notify_init_undefined(result);
 #endif
     }
 
