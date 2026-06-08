@@ -655,10 +655,10 @@ void *jitc_cuda_tex_wrap(uintptr_t handle, size_t ndim, int format,
     cuda_check(cuGraphicsUnmapResources(1, &resource, ts->stream));
 
     int tex_format;
-    size_t type_size;
+    size_t comp_size;
     switch (desc.Format) {
-        case CU_AD_FORMAT_FLOAT: tex_format = (int) VarType::Float32; type_size = 4; break;
-        case CU_AD_FORMAT_HALF:  tex_format = (int) VarType::Float16; type_size = 2; break;
+        case CU_AD_FORMAT_FLOAT: tex_format = (int) VarType::Float32; comp_size = 4; break;
+        case CU_AD_FORMAT_HALF:  tex_format = (int) VarType::Float16; comp_size = 2; break;
         default:
             cuda_check(cuGraphicsUnregisterResource(resource));
             jitc_raise("jit_tex_wrap(): unsupported OpenGL texture format; only "
@@ -682,7 +682,7 @@ void *jitc_cuda_tex_wrap(uintptr_t handle, size_t ndim, int format,
     }
 
     CUDATexture *texture =
-        new CUDATexture(type_size, channels, writable != 0);
+        new CUDATexture(comp_size, channels, writable != 0);
     texture->ndim = ndim;
     texture->external = true;
     texture->gl_id = (unsigned int) handle;

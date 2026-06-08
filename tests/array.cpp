@@ -52,7 +52,7 @@ template <typename Value> struct Arr {
     uint32_t m_index;
 };
 
-TEST_BOTH_FLOAT_AGNOSTIC(01_literal_index) {
+TEST_ALL_FLOAT_AGNOSTIC(01_literal_index) {
     Arr<Float> x(10);
 
     for (int i = 0; i < 10; ++i)
@@ -66,7 +66,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(01_literal_index) {
     jit_assert(x.length() == 10);
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(02_opaque_index) {
+TEST_ALL_FLOAT_AGNOSTIC(02_opaque_index) {
     Arr<Float> x(10);
     UInt32 opaque_0 = opaque<UInt32>(0);
 
@@ -85,7 +85,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(02_opaque_index) {
 }
 
 
-TEST_BOTH_FLOAT_AGNOSTIC(03_literal_index_masked) {
+TEST_ALL_FLOAT_AGNOSTIC(03_literal_index_masked) {
     UInt32 opaque_1 = opaque<UInt32>(1);
 
     {
@@ -115,7 +115,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(03_literal_index_masked) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(04_opaque_index_masked) {
+TEST_ALL_FLOAT_AGNOSTIC(04_opaque_index_masked) {
     UInt32 opaque_0 = opaque<UInt32>(0);
     UInt32 opaque_1 = opaque<UInt32>(1);
 
@@ -146,7 +146,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(04_opaque_index_masked) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(05_conflict) {
+TEST_ALL_FLOAT_AGNOSTIC(05_conflict) {
     UInt32 opaque_0 = opaque<UInt32>(0);
     UInt32 opaque_1 = opaque<UInt32>(1);
 
@@ -174,7 +174,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(05_conflict) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(06_eval_array) {
+TEST_ALL_FLOAT_AGNOSTIC(06_eval_array) {
     UInt32 opaque_0 = opaque<UInt32>(0);
     UInt32 opaque_1 = opaque<UInt32>(1);
 
@@ -196,7 +196,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_eval_array) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(07_literal_init) {
+TEST_ALL_FLOAT_AGNOSTIC(07_literal_init) {
     {
         Arr<Float> x(10, 0);
         Float r = 0;
@@ -214,7 +214,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(07_literal_init) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(08_complex_indexing) {
+TEST_ALL_FLOAT_AGNOSTIC(08_complex_indexing) {
     {
         Arr<Float> x(10);
         UInt32 index = arange<UInt32>(3);
@@ -267,7 +267,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(08_complex_indexing) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(09_write_eval_conflict) {
+TEST_ALL_FLOAT_AGNOSTIC(09_write_eval_conflict) {
     Arr<Float> x(2, 1);
     Arr<Float> y(x);
     x.write(0, 2);
@@ -287,7 +287,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(09_write_eval_conflict) {
     );
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(10_mask_simple) {
+TEST_ALL_FLOAT_AGNOSTIC(10_mask_simple) {
     Arr<Mask> x(10, false);
     Arr<Mask> y(10, true);
 
@@ -307,7 +307,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(10_mask_simple) {
                ctr_2.read(0) == 10);
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(11_mask_eval) {
+TEST_ALL_FLOAT_AGNOSTIC(11_mask_eval) {
     Arr<Mask> x(10, false);
     Arr<Mask> y(10, true);
 
@@ -328,7 +328,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(11_mask_eval) {
                ctr_2.read(0) == 10);
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(12_mask_complex_indexing) {
+TEST_ALL_FLOAT_AGNOSTIC(12_mask_complex_indexing) {
     {
         Arr<Mask> x(10, 0);
         UInt32 index = arange<UInt32>(3);
@@ -378,7 +378,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(12_mask_complex_indexing) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(13_mask_conflict) {
+TEST_ALL_FLOAT_AGNOSTIC(13_mask_conflict) {
     Arr<Mask> x(2, 1);
     Arr<Mask> y(x);
     x.write(0, false);
@@ -392,7 +392,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(13_mask_conflict) {
     jit_assert(ctr_1.read(0) == 1 && ctr_2.read(0) == 2);
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(14_tile_simple) {
+TEST_ALL_FLOAT_AGNOSTIC(14_tile_simple) {
     UInt32 x = tile(arange<UInt32>(3), 1);
     jit_assert(strcmp(x.str(), "[0, 1, 2]") == 0);
 
@@ -400,7 +400,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(14_tile_simple) {
     jit_assert(strcmp(x.str(), "[0, 1, 2, 0, 1, 2, 0, 1, 2]") == 0);
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(15_repeat_simple) {
+TEST_ALL_FLOAT_AGNOSTIC(15_repeat_simple) {
     UInt32 x = repeat(arange<UInt32>(3), 1);
     jit_assert(strcmp(x.str(), "[0, 1, 2]") == 0);
 

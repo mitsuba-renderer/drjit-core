@@ -8,7 +8,7 @@
  * In this case, the input at replay is incremented and should result in an
  * incremented output.
  */
-TEST_BOTH(01_basic_replay) {
+TEST_ALL(01_basic_replay) {
 
     auto func = [](UInt32 input) { return input + 1; };
 
@@ -28,7 +28,7 @@ TEST_BOTH(01_basic_replay) {
 /**
  * This tests a single kernel with multiple unique inputs and outputs.
  */
-TEST_BOTH(02_MIMO) {
+TEST_ALL(02_MIMO) {
 
     auto func = [](UInt32 x, UInt32 y) {
         return std::make_tuple(x + y, x * y);
@@ -54,7 +54,7 @@ TEST_BOTH(02_MIMO) {
  * twice in the input. In the final implementation this test-case should never
  * occur, as variables would be deduplicated in beforehand.
  */
-TEST_BOTH(03_deduplicating_input) {
+TEST_ALL(03_deduplicating_input) {
 
     auto func = [](UInt32 x, UInt32 y) { return std::tuple(x + y, x * y); };
 
@@ -77,7 +77,7 @@ TEST_BOTH(03_deduplicating_input) {
  * The input of the second kernel relies on the execution of the first.
  * On LLVM, the correctness of barrier operations is therefore tested.
  */
-TEST_BOTH(04_sequential_kernels) {
+TEST_ALL(04_sequential_kernels) {
 
     auto func = [](UInt32 x) {
         auto y = x + 1;
@@ -105,7 +105,7 @@ TEST_BOTH(04_sequential_kernels) {
  * generated. At replay these can be executed in parallel (LLVM) or sequence
  * (CUDA).
  */
-TEST_BOTH(05_parallel_kernels) {
+TEST_ALL(05_parallel_kernels) {
 
     auto func = [](UInt32 x, UInt32 y) { return std::tuple(x + 1, y + 1); };
 
@@ -128,7 +128,7 @@ TEST_BOTH(05_parallel_kernels) {
  * This tests the recording and replay of a horizontal reduction operation
  * (hsum).
  */
-TEST_BOTH(06_reduce_hsum) {
+TEST_ALL(06_reduce_hsum) {
 
     auto func = [](UInt32 x) { return hsum(x + 1); };
 
@@ -148,7 +148,7 @@ TEST_BOTH(06_reduce_hsum) {
 /**
  * Tests recording of a prefix sum operation with different inputs at replay.
  */
-TEST_BOTH(07_prefix_sum) {
+TEST_ALL(07_prefix_sum) {
 
     auto func = [](UInt32 x) { return block_prefix_sum(x, (uint32_t) x.size()); };
 
@@ -170,7 +170,7 @@ TEST_BOTH(07_prefix_sum) {
  * including directly in a frozen function without any use after free
  * conditions.
  */
-TEST_BOTH(08_input_passthrough) {
+TEST_ALL(08_input_passthrough) {
 
     auto func = [](UInt32 x) {
         auto y = x + 1;
@@ -249,7 +249,7 @@ TEST_LLVM(10_scatter) {
     }
 }
 
-TEST_BOTH(11_opaque_width) {
+TEST_ALL(11_opaque_width) {
     auto func = [](UInt32 x) {
         auto y = block_prefix_sum(x+1, (uint32_t) x.size());
         if (jit_flag(JitFlag::FreezingScope))

@@ -355,7 +355,7 @@ struct alignas(64) Variable {
     ReduceOp reduce_op() const { return (ReduceOp) reduce_op_or_resource_kind; }
     void set_reduce_op(ReduceOp op) { reduce_op_or_resource_kind = (uint32_t) op; }
     ResourceKind resource_kind() const { return (ResourceKind) reduce_op_or_resource_kind; }
-    void set_resource_kind(ResourceKind kind) { reduce_op_or_resource_kind = (uint32_t) kind; }
+    void set_resource_kind(ResourceKind rk) { reduce_op_or_resource_kind = (uint32_t) rk; }
 };
 
 static_assert(sizeof(Variable) == 64);

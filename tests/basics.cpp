@@ -8,7 +8,7 @@
 #include <cstring>
 #include <typeinfo>
 
-TEST_BOTH(01_creation_destruction_cse) {
+TEST_ALL(01_creation_destruction_cse) {
     // Test CSE involving normal and evaluated constant literals
     for (int i = 0; i < 2; ++i) {
         uint32_t value = 1234;
@@ -29,7 +29,7 @@ TEST_BOTH(01_creation_destruction_cse) {
     }
 }
 
-TEST_BOTH(02_load_store) {
+TEST_ALL(02_load_store) {
     /// Test CSE and simple variables loads/stores involving scalar and non-scalars
     for (int k = 0; k < 2; ++k) {
         for (int j = 0; j < 2; ++j) {
@@ -64,7 +64,7 @@ TEST_BOTH(02_load_store) {
     }
 }
 
-TEST_BOTH(03_load_store_mask) {
+TEST_ALL(03_load_store_mask) {
     /// Masks are a bit more tricky, check that those also work
     for (int i = 0; i < 2; ++i) {
         uint32_t ctr = jit_var_counter(Backend, i == 0 ? 1 : 10);
@@ -89,7 +89,7 @@ TEST_BOTH(03_load_store_mask) {
     }
 }
 
-TEST_BOTH(04_load_store_float) {
+TEST_ALL(04_load_store_float) {
     /// Check usage of halfs/floats/doubles (loading, storing, literal constants)
     for (int i = 0; i < 3; ++i) {
         for (int j = 0; j < 2; ++j) {
@@ -101,11 +101,13 @@ TEST_BOTH(04_load_store_float) {
                     v0 = jit_var_literal(Backend, VarType::Float32, &f1, 1 + j, k);
                     v1 = jit_var_literal(Backend, VarType::Float32, &f1234, 1 + j);
                 } else if (i == 1) {
-                    if constexpr (Backend == JitBackend::Metal)
+                    if constexpr (Backend == JitBackend::Metal) {
                         continue; // Metal does not support float64
-                    double d1 = 1, d1234 = 1234;
-                    v0 = jit_var_literal(Backend, VarType::Float64, &d1, 1 + j, k);
-                    v1 = jit_var_literal(Backend, VarType::Float64, &d1234, 1 + j);
+                    } else {
+                        double d1 = 1, d1234 = 1234;
+                        v0 = jit_var_literal(Backend, VarType::Float64, &d1, 1 + j, k);
+                        v1 = jit_var_literal(Backend, VarType::Float64, &d1234, 1 + j);
+                    }
                 } else {
                     half h1 = 1, h1234 = 1234;
                     v0 = jit_var_literal(Backend, VarType::Float16, &h1.value, 1 + j, k);
@@ -496,7 +498,7 @@ template <typename T> bool test_const_prop() {
     return fail;
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(05_const_prop) {
+TEST_ALL_FLOAT_AGNOSTIC(05_const_prop) {
     /* This very large test runs every implemented operation with a variety of
        scalar and memory inputs and compares their output. This is to ensure
        that Dr.Jit's builtin constant propagation pass produces results
@@ -518,7 +520,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(05_const_prop) {
     jit_assert(!fail);
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
+TEST_ALL_FLOAT_AGNOSTIC(06_cast) {
     /* This test tries every possible type conversion, verifying constant
        propagation to the native CUDA/LLVM implementation */
 
@@ -643,7 +645,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_cast) {
     jit_assert(!fail);
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(07_and_or_mixed) {
+TEST_ALL_FLOAT_AGNOSTIC(07_and_or_mixed) {
     // Tests JitOp::And/Or applied to a non-mask type and a mask
 
     for (int i = 0; i < 4; ++i) {

@@ -160,7 +160,7 @@ const char *backend_name(JitBackend backend) {
 }
 
 
-TEST_BOTH(01_recorded_vcall) {
+TEST_ALL(01_recorded_vcall) {
     /// Test a simple virtual function call
     struct Base {
         virtual ~Base() = default;
@@ -231,14 +231,12 @@ TEST_BOTH(01_recorded_vcall) {
 }
 
 
-TEST_BOTH(02_calling_conventions) {
+TEST_ALL_NO_METAL(02_calling_conventions) {
     /* This tests 4 things at once: passing masks, reordering inputs/outputs to
        avoid alignment issues, immediate copying of an input to an output.
        Finally, it runs twice: the second time with optimizations, which
        optimizes away all of the inputs */
-    if constexpr (Backend == JitBackend::Metal)
-        return; // Metal does not support float64
-    using Double = Array<double>;
+    using Double = Array<double>; // Metal does not support float64
 
     struct Base {
         virtual ~Base() = default;
@@ -349,7 +347,7 @@ TEST_BOTH(02_calling_conventions) {
 }
 
 
-TEST_BOTH(03_devirtualize) {
+TEST_ALL(03_devirtualize) {
     /* This test checks that outputs which produce identical values across
        all instances are moved out of the virtual call interface. */
     struct Base {
@@ -470,10 +468,8 @@ TEST_BOTH(03_devirtualize) {
 }
 
 
-TEST_BOTH(04_extra_data) {
-    if constexpr (Backend == JitBackend::Metal)
-        return; // Metal does not support float64
-    using Double = Array<double>;
+TEST_ALL_NO_METAL(04_extra_data) {
+    using Double = Array<double>; // Metal does not support float64
 
     /// Ensure that evaluated scalar fields in instances can be accessed
     struct Base {
@@ -551,7 +547,7 @@ TEST_BOTH(04_extra_data) {
 }
 
 
-TEST_BOTH_FP32(05_side_effects) {
+TEST_ALL_FP32(05_side_effects) {
 
     /*  This tests three things:
        - side effects in virtual functions
@@ -620,7 +616,7 @@ TEST_BOTH_FP32(05_side_effects) {
 }
 
 
-TEST_BOTH_FP32(06_side_effects_only_once) {
+TEST_ALL_FP32(06_side_effects_only_once) {
 
     /* This tests ensures that side effects baked into a function only happen
        once, even when that function is evaluated multiple times. */
@@ -701,7 +697,7 @@ TEST_BOTH_FP32(06_side_effects_only_once) {
 }
 
 
-TEST_BOTH(07_multiple_calls) {
+TEST_ALL(07_multiple_calls) {
     /* This tests ensures that a function can be called several times,
        reusing the generated code (at least in the function-based variant).
        This reuse cannot be verified automatically via assertions, you must
@@ -789,7 +785,7 @@ TEST_BOTH(07_multiple_calls) {
 }
 
 
-TEST_BOTH(08_big) {
+TEST_ALL(08_big) {
     /* This performs two vcalls with different numbers of instances, and
        relatively many of them. This tests the various tables, offset
        calculations, binary search trees, etc. */
@@ -917,9 +913,7 @@ TEST_BOTH(08_big) {
 }
 
 
-TEST_BOTH(09_self) {
-    if constexpr (Backend == JitBackend::Metal)
-        return; // Uses jit_var_mask_default (DefaultMask) which is LLVM-only
+TEST_ALL(09_self) {
     struct Base;
     using BasePtr = Array<Base *>;
 
@@ -971,7 +965,7 @@ TEST_BOTH(09_self) {
 }
 
 
-TEST_BOTH(10_recursion) {
+TEST_ALL(10_recursion) {
 
     struct Base1 {
         virtual ~Base1() = default;
@@ -1077,7 +1071,7 @@ TEST_BOTH(10_recursion) {
 }
 
 
-TEST_BOTH(11_recursion_with_local) {
+TEST_ALL(11_recursion_with_local) {
     struct Base1 {
         virtual ~Base1() = default;
         virtual Float f(const Float &x) = 0;
@@ -1180,7 +1174,7 @@ TEST_BOTH(11_recursion_with_local) {
     jit_registry_remove(&i22);
 }
 
-TEST_BOTH_FP32(12_nested_with_side_effects) {
+TEST_ALL_FP32(12_nested_with_side_effects) {
 
     struct Base {
         virtual ~Base() = default;
@@ -1275,7 +1269,7 @@ TEST_BOTH_FP32(12_nested_with_side_effects) {
 }
 
 
-TEST_BOTH(13_load_bool_data) {
+TEST_ALL(13_load_bool_data) {
 
     struct Base {
         virtual ~Base() = default;
@@ -1353,9 +1347,7 @@ TEST_BOTH(13_load_bool_data) {
  * require registry traversal which requires nanobind for the \c
  * nanobind::intrusive_base class.
  */
-TEST_BOTH(14_frozen_vcall) {
-    if constexpr (Backend == JitBackend::Metal)
-        return; // FrozenFunction recording not yet supported on Metal
+TEST_ALL(14_frozen_vcall) {
     jit_set_flag(JitFlag::VCallOptimize, true);
     jit_set_flag(JitFlag::SymbolicCalls, true);
 

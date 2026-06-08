@@ -87,7 +87,7 @@ using HalfM   = MetalArray<drjit::half>;
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
 
-#define TEST_BOTH(name, ...)                                                   \
+#define TEST_ALL(name, ...)                                                    \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name();                                                         \
@@ -102,7 +102,21 @@ using HalfM   = MetalArray<drjit::half>;
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
 
-#define TEST_BOTH_FP32(name, ...)                                              \
+#define TEST_ALL_NO_METAL(name, ...)                                           \
+    template <JitBackend Backend, typename Float, typename Int32,              \
+              typename UInt32, typename Mask, template <class> class Array>    \
+    void test##name();                                                         \
+    TEST_REGISTER_CUDA(name,    _cuda_fp32,     FloatC)                        \
+    TEST_REGISTER_OPTIX(name,   _optix_fp32,    FloatC)                        \
+    TEST_REGISTER_CUDA(name,    _cuda_fp16,     HalfC)                         \
+    TEST_REGISTER_OPTIX(name,   _optix_fp16,    HalfC)                         \
+    TEST_REGISTER_LLVM(name,    _llvm_fp32,     FloatL)                        \
+    TEST_REGISTER_LLVM(name,    _llvm_fp16,     HalfL)                         \
+    template <JitBackend Backend, typename Float, typename Int32,              \
+              typename UInt32, typename Mask, template <class> class Array>    \
+    void test##name()
+
+#define TEST_ALL_FP32(name, ...)                                               \
     template <JitBackend Backend, typename Float, typename Int32,              \
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name();                                                         \
@@ -124,7 +138,7 @@ using HalfM   = MetalArray<drjit::half>;
               typename UInt32, typename Mask, template <class> class Array>    \
     void test##name()
 
-#define TEST_BOTH_FLOAT_AGNOSTIC(name, ...) TEST_BOTH_FP32(name, ##__VA_ARGS__)
+#define TEST_ALL_FLOAT_AGNOSTIC(name, ...) TEST_ALL_FP32(name, ##__VA_ARGS__)
 
 #define TEST_REDUCE_UNSUPPORTED_SKIP(command)                                  \
     try {                                                                      \
@@ -298,7 +312,8 @@ public:
 
         jit_log(LogLevel::Debug, "record:");
 
-        jit_freeze_start(m_backend, input_vector.data(), input_vector.size());
+        jit_freeze_start(m_backend, input_vector.data(),
+                         (uint32_t) input_vector.size());
 
         // Record the function, including evaluation of all side effects on the
         // inputs and outputs
@@ -327,7 +342,7 @@ public:
         }
 
         m_recording = jit_freeze_stop(m_backend, output_vector.data(),
-                                      output_vector.size());
+                                      (uint32_t) output_vector.size());
         m_outputs   = (uint32_t) output_vector.size();
 
         uint32_t counter = 0;
