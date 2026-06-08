@@ -12,6 +12,9 @@
 #if defined(DRJIT_ENABLE_CUDA)
 #  include "cuda_ts.h"
 #endif
+#if defined(DRJIT_ENABLE_METAL)
+#  include "metal.h"
+#endif
 #include "llvm_ts.h"
 #include "malloc.h"
 #include "internal.h"
@@ -842,10 +845,9 @@ KernelHistoryEntry *KernelHistory::get() {
 #endif
 #if defined(DRJIT_ENABLE_METAL)
         if (k.backend == JitBackend::Metal) {
-            extern float jitc_metal_finalize_kernel_history_entry(void *);
             k.execution_time =
-                jitc_metal_finalize_kernel_history_entry(k.task);
-            k.task = nullptr;
+                jitc_metal_finalize_kernel_history_entry(k.event_start, k.task);
+            k.event_start = k.task = nullptr;
         } else
 #endif
         {
@@ -878,9 +880,8 @@ void KernelHistory::clear() {
         if (k.backend == JitBackend::Metal) {
             // The Metal `task` slot holds an id<MTLCommandBuffer>, not a
             // nanothread Task. Reuse the finalize helper to wait + release.
-            extern float jitc_metal_finalize_kernel_history_entry(void *);
-            jitc_metal_finalize_kernel_history_entry(k.task);
-            k.task = nullptr;
+            jitc_metal_finalize_kernel_history_entry(k.event_start, k.task);
+            k.event_start = k.task = nullptr;
         } else
 #endif
         {

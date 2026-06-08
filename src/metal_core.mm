@@ -481,13 +481,14 @@ void jitc_metal_kernel_free(Kernel &kernel) {
 }
 
 /// Resolve a Metal kernel-history entry's execution_time
-float jitc_metal_finalize_kernel_history_entry(void *task_ptr) {
+float jitc_metal_finalize_kernel_history_entry(void *start_ptr, void *end_ptr) {
     @autoreleasepool {
-        if (!task_ptr)
-            return 0.f;
-        id<MTLCommandBuffer> cb = (__bridge_transfer id<MTLCommandBuffer>) task_ptr;
-        [cb waitUntilCompleted];
-        return (float) ((cb.GPUEndTime - cb.GPUStartTime) * 1000);
+        id<MTLCommandBuffer> cb_end   = (__bridge_transfer id<MTLCommandBuffer>) end_ptr;
+        id<MTLCommandBuffer> cb_start = (__bridge_transfer id<MTLCommandBuffer>) start_ptr;
+        if (!cb_start)
+            cb_start = cb_end;
+        [cb_end waitUntilCompleted];
+        return (float) ((cb_end.GPUEndTime - cb_start.GPUStartTime) * 1000);
     }
 }
 
