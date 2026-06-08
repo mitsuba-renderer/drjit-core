@@ -256,6 +256,9 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Load all texels used for bilinear interpolation (CUDA)
     "tex_fetch_bilerp",
 
+    // Write to a hardware texture / surface (a side effect)
+    "tex_write",
+
     // Memory read starting at different base pointers per lane (CUDA)
     "vector_load",
 
@@ -956,10 +959,11 @@ uint32_t jitc_var_pointer(JitBackend backend, const void *value,
     return result;
 }
 
-uint32_t jitc_var_resource_pointer(uint32_t backing, ResourceKind kind) {
+uint32_t jitc_var_resource_pointer(uint32_t backing, ResourceKind kind,
+                                   int write) {
     const Variable *v = jitc_var(backing);
     uint32_t handle = jitc_var_pointer((JitBackend) v->backend, v->data, backing,
-                                       /*write=*/0);
+                                       write);
     jitc_var(handle)->set_resource_kind(kind);
     return handle;
 }

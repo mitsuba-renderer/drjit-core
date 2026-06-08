@@ -220,10 +220,17 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                     break;
                 }
 
-                // Accel and Texture are memory resources and must be made
-                // resident; a sampler is not.
+                case ResourceKind::Texture: {
+                    bool write = ((MetalTexResource *) owner)->parent->writable;
+                    metal_call_resources.push_back(
+                        { owner, ResourceKind::Texture, write });
+                    void *rid = nullptr;
+                    jitc_metal_resource_id(owner, pk, &rid);
+                    kernel_params[i] = rid;
+                    break;
+                }
+
                 case ResourceKind::Accel:
-                case ResourceKind::Texture:
                     metal_call_resources.push_back({ owner, pk, /*write=*/false });
                     [[fallthrough]];
                 case ResourceKind::Sampler: {
@@ -304,7 +311,9 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                 case ResourceKind::Texture: {
                     id<MTLTexture> t = (__bridge id<MTLTexture>)
                         ((MetalTexResource *) res.ptr)->object;
-                    [enc useResource:t usage:MTLResourceUsageRead];
+                    [enc useResource:t
+                               usage:MTLResourceUsageRead |
+                                     (res.write ? MTLResourceUsageWrite : 0)];
                     break;
                 }
 

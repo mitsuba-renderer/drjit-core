@@ -118,6 +118,9 @@ enum class VarKind : uint32_t {
     // Load all texels used for bilinear interpolation (CUDA)
     TexFetchBilerp,
 
+    // Write to a hardware texture / surface (a side effect)
+    TexWrite,
+
     // Memory read starting at different base pointers per lane (CUDA)
     VectorLoad,
 
@@ -209,13 +212,12 @@ enum class ArrayState : uint32_t {
 };
 
 /// Classifies an opaque GPU resource referenced by a pointer-literal handle.
-/// Currently used only by the Metal backend.
 enum class ResourceKind : uint8_t {
-    Buffer  = 0, ///< Ordinary device buffer pointer (not an opaque resource).
-    Accel   = 1, ///< Acceleration structure.
-    IFT     = 2, ///< Intersection-function table.
-    Texture = 3, ///< Texture object.
-    Sampler = 4  ///< Sampler object.
+    Buffer  = 0, ///< Ordinary device buffer pointer (not an opaque resource)
+    Accel   = 1, ///< Acceleration structure
+    IFT     = 2, ///< Intersection-function table
+    Texture = 3, ///< Texture object
+    Sampler = 4  ///< Sampler object
 };
 
 /// Central variable data structure, which represents an assignment in SSA form

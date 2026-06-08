@@ -12,6 +12,7 @@
 
 #include "metal.h"
 #include "metal_ts.h"
+#include "metal_tex.h"
 #include "internal.h"
 #include "eval.h"
 #include "malloc.h"
@@ -32,6 +33,40 @@
 #include <cstdlib>
 #include <cstdio>
 #include <algorithm>
+
+// ============================================================================
+//  Opaque-resource handle resolution
+// ============================================================================
+
+bool jitc_metal_resource_id(void *owner, ResourceKind kind, void **value_out) {
+    MTLResourceID rid;
+    switch (kind) {
+        case ResourceKind::Accel:
+            rid = ((__bridge id<MTLAccelerationStructure>)
+                       ((MetalScene *) owner)->tlas).gpuResourceID;
+            break;
+
+        case ResourceKind::Texture:
+            rid = ((__bridge id<MTLTexture>)
+                       ((MetalTexResource *) owner)->object).gpuResourceID;
+            break;
+
+        case ResourceKind::Sampler:
+            rid = ((__bridge id<MTLSamplerState>)
+                       ((MetalTexResource *) owner)->object).gpuResourceID;
+            break;
+
+        default:
+            // A buffer is an ordinary pointer; an IFT is PSO-dependent and is
+            // refreshed at launch. Neither resolves to a gpuResourceID here.
+            return false;
+    }
+
+    uint64_t v64;
+    std::memcpy(&v64, &rid, sizeof(v64));
+    *value_out = (void *) (uintptr_t) v64;
+    return true;
+}
 
 // ============================================================================
 // Buffer API
@@ -634,11 +669,6 @@ void jitc_metal_profile_start() {
 
     id<MTLCommandQueue> queue =
         (__bridge id<MTLCommandQueue>) thread_state(JitBackend::Metal)->metal_queue;
-    /// CLAUDE: can this ever happen?
-    if (!queue) {
-        jitc_log(Warn, "jit_profile_start(): no active Metal command queue.");
-        return;
-    }
 
     MTLCaptureManager *mgr = [MTLCaptureManager sharedCaptureManager];
 

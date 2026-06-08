@@ -111,6 +111,7 @@ using CUstream     = struct CUstream_st *;
 using CUevent      = struct CUevent_st *;
 using CUarray      = struct CUarray_st *;
 using CUtexObject  = struct CUtexObject_st *;
+using CUsurfObject = struct CUsurfObject_st *;
 using CUgreenCtx   = struct CUgreenCtx_st *;
 using CUresult     = int;
 using CUdevice     = int;
@@ -319,6 +320,9 @@ DR_CUDA_SYM(CUresult (*cuTexObjectCreate)(CUtexObject *, const CUDA_RESOURCE_DES
 DR_CUDA_SYM(CUresult (*cuTexObjectDestroy)(CUtexObject));
 DR_CUDA_SYM(CUresult (*cuTexObjectGetResourceDesc)(CUDA_RESOURCE_DESC *,
                                                    CUtexObject));
+DR_CUDA_SYM(CUresult (*cuSurfObjectCreate)(CUsurfObject *,
+                                           const CUDA_RESOURCE_DESC *));
+DR_CUDA_SYM(CUresult (*cuSurfObjectDestroy)(CUsurfObject));
 DR_CUDA_SYM(CUresult (*cuMemcpy3DAsync)(const CUDA_MEMCPY3D *, CUstream));
 DR_CUDA_SYM(CUresult (*cuMemcpy2DAsync)(const CUDA_MEMCPY2D *, CUstream));
 DR_CUDA_SYM(CUresult (*cuProfilerStart)());
@@ -334,6 +338,8 @@ using GLenum = unsigned int;
 #define CU_GRAPHICS_REGISTER_FLAGS_WRITE_DISCARD 0x02
 #define CU_GRAPHICS_REGISTER_FLAGS_SURFACE_LDST 0x04
 #define CU_GRAPHICS_REGISTER_FLAGS_TEXTURE_GATHER 0x08
+
+#define CUDA_ARRAY3D_SURFACE_LDST 0x02
 
 DR_CUDA_SYM(CUresult (*cuGraphicsGLRegisterBuffer)(CUgraphicsResource *, GLuint,
                                                    unsigned int));

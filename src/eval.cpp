@@ -266,6 +266,16 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
             }
             break;
 
+        case VarKind::TexWrite:
+            if (v->data) {
+                TexData *td = (TexData *) v->data;
+                for (uint32_t i = 0; i < td->ndim; ++i)
+                    jitc_var_traverse(size, td->indices[i], depth);
+                for (uint32_t i = 0; i < td->n_values; ++i)
+                    jitc_var_traverse(size, td->values[i], depth);
+            }
+            break;
+
         case VarKind::ScatterCAS: {
                 ScatterCASDData *cas_data = (ScatterCASDData *) v->data;
                 jitc_var_traverse(size, cas_data->mask, depth);

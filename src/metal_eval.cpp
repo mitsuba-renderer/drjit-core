@@ -83,52 +83,51 @@ void metal_register_kernel_scene(MetalScene *scene) {
 //  Resource-handle helpers
 // ----------------------------------------------------------------------------
 
-/// MSL type name for an opaque resource of the given kind. For an IFT the
-/// template arguments follow the owning scene's geometry mix (curves vs. not).
-static const char *metal_resource_type_name(ResourceKind kind, MetalScene *scene) {
-    if (kind == ResourceKind::Accel)
-        return "metal::raytracing::instance_acceleration_structure";
-    bool curves = scene && (scene->geometry_types_mask & 0x4u) != 0;
-    return curves
-        ? "metal::raytracing::intersection_function_table<metal::raytracing::triangle_data, metal::raytracing::curve_data, metal::raytracing::instancing>"
-        : "metal::raytracing::intersection_function_table<metal::raytracing::triangle_data, metal::raytracing::instancing>";
-}
-
-/// Emit the in-shader reconstruction of a resource handle as a reference
-/// variable named after ``v``. The consuming ``TraceRay`` node then refers to
-/// it directly. Top level reinterprets the ``constant params.args[]`` slot; a
-/// callable reinterprets its ``device`` call-data section at ``data_offset``.
+/// Emit the in-shader type name of a resource handle
 static void jitc_metal_render_resource_handle(const Variable *v,
                                               ResourceKind kind,
                                               bool in_callable,
                                               uint32_t data_offset) {
-    // Texture / sampler handles need no PSO linking or scene registration; the
-    // reinterpret type follows the consuming node (texture dimensionality from
-    // the owning MetalTexture; samplers carry filter/wrap, never baked here).
-    // Residency is handled at launch from the owner queued by ``aggregate``.
-    if (kind == ResourceKind::Texture ||
-        kind == ResourceKind::Sampler) {
-        const char *tname = "sampler";
-        if (kind == ResourceKind::Texture) {
+    const char *tname;
+    switch (kind) {
+        case ResourceKind::Texture: {
             MetalTexResource *rec = (MetalTexResource *) (uintptr_t) v->literal;
-            tname = (rec->parent->ndim == 3) ? "texture3d<float>"
-                                             : "texture2d<float>";
+            bool w = v->write_ptr;
+            if (rec->parent->ndim == 3)
+                tname = w ? "texture3d<float, access::write>"
+                          : "texture3d<float>";
+            else
+                tname = w ? "texture2d<float, access::write>"
+                          : "texture2d<float>";
+            break;
         }
-        if (in_callable)
-            fmt("device $s& $v = *(device $s*)(data + $u);\n",
-                tname, v, tname, data_offset);
-        else
-            fmt("constant $s& $v = *(constant $s*) &params.args[$o];\n",
-                tname, v, tname, v);
-        return;
+
+        case ResourceKind::Sampler:
+            tname = "sampler";
+            break;
+
+        case ResourceKind::Accel:
+        case ResourceKind::IFT: {
+            MetalScene *scene = (MetalScene *) (uintptr_t) v->literal;
+            metal_register_kernel_scene(scene);
+            fmt_intrinsic("#include <metal_raytracing>\n"
+                          "using namespace raytracing;");
+            if (kind == ResourceKind::Accel) {
+                tname = "metal::raytracing::instance_acceleration_structure";
+            } else {
+                bool curves = scene && (scene->geometry_types_mask & 0x4u) != 0;
+                tname = curves
+                    ? "metal::raytracing::intersection_function_table<metal::raytracing::triangle_data, metal::raytracing::curve_data, metal::raytracing::instancing>"
+                    : "metal::raytracing::intersection_function_table<metal::raytracing::triangle_data, metal::raytracing::instancing>";
+            }
+            break;
+        }
+
+        default:
+            jitc_fail("jitc_metal_render_resource_handle(): unexpected resource "
+                      "kind %u.", (uint32_t) kind);
     }
 
-    MetalScene *scene = (MetalScene *) (uintptr_t) v->literal;
-    metal_register_kernel_scene(scene);
-    fmt_intrinsic(
-        "#include <metal_raytracing>\n"
-        "using namespace raytracing;");
-    const char *tname = metal_resource_type_name(kind, scene);
     if (in_callable)
         fmt("device $s& $v = *(device $s*)(data + $u);\n",
             tname, v, tname, data_offset);
@@ -1110,6 +1109,34 @@ static void jitc_metal_render(Variable *v) {
                 "float $v_out_2 = $v_s.z;\n"
                 "float $v_out_3 = $v_s.w;\n",
                 v, v, v, v, v, v, v, v);
+            break;
+        }
+
+        case VarKind::TexWrite: {
+            Variable *tex_h = jitc_var(v->dep[0]);
+            Variable *mask  = v->dep[1] ? jitc_var(v->dep[1]) : nullptr;
+            TexData *td = (TexData *) v->data;
+            size_t ndim = td->ndim;
+
+            fmt("float4 $v_c = float4(0.f);\n", v);
+            for (uint32_t c = 0; c < td->n_values; ++c)
+                fmt("$v_c[$u] = $v;\n", v, c, jitc_var(td->values[c]));
+
+            if (mask)
+                fmt("if ($v) ", mask);
+
+            if (ndim == 1)
+                // 1D is backed by a height-1 2D texture; write row y = 0.
+                fmt("$v.write($v_c, uint2($v, 0));\n",
+                    tex_h, v, jitc_var(td->indices[0]));
+            else if (ndim == 2)
+                fmt("$v.write($v_c, uint2($v, $v));\n",
+                    tex_h, v, jitc_var(td->indices[0]),
+                    jitc_var(td->indices[1]));
+            else
+                fmt("$v.write($v_c, uint3($v, $v, $v));\n",
+                    tex_h, v, jitc_var(td->indices[0]),
+                    jitc_var(td->indices[1]), jitc_var(td->indices[2]));
             break;
         }
 
