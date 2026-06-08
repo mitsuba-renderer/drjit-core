@@ -221,29 +221,40 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
 
                 put("}\n");
             } else {
-                // Scalar fallback: m*n unrolled FMAs.
+                // Scalar fallback for Metal < 4
 
-                // Initialize output elements with the bias, or zero.
-                if (bias) {
-                    uint32_t b_off = d->b_descr.offset;
-                    for (uint32_t i = 0; i < m; ++i)
-                        fmt("$t $v_$u = ((device const $t*) $v)[$u];\n",
-                            v, v, i, v, bias, b_off + i);
-                } else {
-                    for (uint32_t i = 0; i < m; ++i)
-                        fmt("$t $v_$u = ($t) 0;\n", v, v, i, v);
-                }
+                for (uint32_t i = 0; i < m; ++i)
+                    fmt("$t $v_$u;\n", v, v, i);
 
-                // Accumulate A @ x; transpose swaps the row/col offsets.
-                for (uint32_t i = 0; i < m; ++i) {
-                    for (uint32_t j = 0; j < n; ++j) {
-                        uint32_t addr = a_off + (transpose ? (j * stride + i)
-                                                           : (i * stride + j));
-                        fmt("$v_$u = fma(((device const $t*) $v)[$u], "
-                            "$v_$u, $v_$u);\n",
-                            v, i, v, a0, addr, a1, j, v, i);
-                    }
-                }
+                put("{\n");
+
+                // Gather the input vector into an addressable thread array.
+                fmt("$t _in[$u];\n", a1, n);
+                for (uint32_t j = 0; j < n; ++j)
+                    fmt("_in[$u] = $v_$u;\n", j, a1, j);
+
+                fmt("$t _out[$u];\n", v, m);
+
+                // transpose swaps which loop variable indexes the matrix rows.
+                const char *row = transpose ? "_j" : "_i",
+                           *col = transpose ? "_i" : "_j";
+
+                fmt("for (uint _i = 0; _i < $u; ++_i) {\n", m);
+                if (bias)
+                    fmt("float _acc = (float) ((device const $t*) $v)[$u + _i];\n",
+                        v, bias, d->b_descr.offset);
+                else
+                    put("float _acc = 0.f;\n");
+                fmt("for (uint _j = 0; _j < $u; ++_j)\n"
+                    "    _acc = fma((float) ((device const $t*) $v)[$u + $s * $u + $s], (float) _in[_j], _acc);\n"
+                    "_out[_i] = ($t) _acc;\n"
+                    "}\n",
+                    n, v, a0, a_off, row, stride, col, v);
+
+                for (uint32_t i = 0; i < m; ++i)
+                    fmt("$v_$u = _out[$u];\n", v, i, i);
+
+                put("}\n");
             }
             break;
         }
@@ -299,15 +310,22 @@ void jitc_metal_render_coop_vec_outer_product_accum(const Variable *v,
                 "FP32 operands.");
 
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
-    if (!is_unmasked)
+    if (is_unmasked)
+        put("{\n");
+    else
         fmt("if ($v) {\n", mask);
 
+    fmt("float _a[$u], _b[$u];\n", m, n);
     for (uint32_t i = 0; i < m; ++i)
-        for (uint32_t j = 0; j < n; ++j)
-            fmt("atomic_fetch_add_explicit((device atomic_float*) "
-                "((device float*) $v + $u), $v_$u * $v_$u, memory_order_relaxed);\n",
-                target, d->offset + i * d->stride + j, a, i, b, j);
+        fmt("_a[$u] = $v_$u;\n", i, a, i);
+    for (uint32_t j = 0; j < n; ++j)
+        fmt("_b[$u] = $v_$u;\n", j, b, j);
 
-    if (!is_unmasked)
-        put("}\n");
+    fmt("for (uint _i = 0; _i < $u; ++_i)\n"
+        "    for (uint _j = 0; _j < $u; ++_j)\n"
+        "        atomic_fetch_add_explicit((device atomic_float*) "
+        "((device float*) $v + ($u + _i * $u + _j)), _a[_i] * _b[_j], memory_order_relaxed);\n",
+        m, n, target, d->offset, d->stride);
+
+    put("}\n");
 }
