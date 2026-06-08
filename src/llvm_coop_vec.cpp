@@ -24,10 +24,10 @@ void jitc_llvm_render_coop_vec_accum(const Variable *v, const Variable *target,
                                      const Variable *value, const Variable *mask) {
     put("    ; coop_vec_accum\n");
 
-    fmt("    $v_p = bitcast $<{i8*}$> $v to $<{$t*}$>\n", v, target, value);
+    fmt("    $v_p = bitcast $<ptr$> $v to $<ptr$>\n", v, target);
 
     if (callable_depth == 0) {
-        fmt_intrinsic("declare $t @llvm$e.vector.reduce.fadd.v$w$h($t, $T)",
+        fmt_intrinsic("declare $t @llvm.vector.reduce.fadd.v$w$h($t, $T)",
                       value, value, value, value);
     } else {
         jitc_llvm_append_reduce_op_local((VarType) value->type, ReduceOp::Add, value);
@@ -36,19 +36,18 @@ void jitc_llvm_render_coop_vec_accum(const Variable *v, const Variable *target,
     }
 
     for (uint32_t i = 0; i < value->array_length; ++i) {
-            fmt("    $v_p_$u = getelementptr inbounds $t, $<{$t*}$> $v_p, i32 $u\n",
-                v, i, value, value, v, (uint32_t) v->literal + i);
+            fmt("    $v_p_$u = getelementptr inbounds $t, $<ptr$> $v_p, i32 $u\n",
+                v, i, value, v, (uint32_t) v->literal + i);
 
         if (callable_depth == 0) {
-            fmt("    $v_valid_$u = select $V, $V_$u, $T zeroinitializer\n"
-                "    $v_red_$u = call $t @llvm$e.vector.reduce.fadd.v$w$h($t zeroinitializer, $T $v_valid_$u)\n"
-                "    atomicrmw fadd {$t*} $v_p_$u, $t $v_red_$u monotonic\n",
+            fmt("    $v_valid_$u = select $V, $V_$u, $T $z\n"
+                "    $v_red_$u = call $t @llvm.vector.reduce.fadd.v$w$h($t $z, $T $v_valid_$u)\n"
+                "    atomicrmw fadd ptr $v_p_$u, $t $v_red_$u monotonic\n",
                 v, i, mask, value, i, value,
-                v, i, value, value, value, value, v, i,
-                value, v, i, value, v, i);
+                v, i, value, value, value, value, v, i, v, i, value, v, i);
         } else {
-            fmt("    call fastcc void @reduce_add_$h_atomic_local(<$w x $p> $v_p_$u, $V_$u, i$w $v_mask)\n",
-                value, value, v, i, value, i, v);
+            fmt("    call fastcc void @reduce_add_$h_atomic_local(<$w x ptr> $v_p_$u, $V_$u, i$w $v_mask)\n",
+                value, v, i, value, i, v);
         }
     }
 }
@@ -68,29 +67,29 @@ void jitc_llvm_render_coop_vec_outer_product_accum(const Variable *v, const Vari
     alloca_size  = std::max(alloca_size, (int32_t) (vec_size * (n + m)));
     alloca_align = std::max(alloca_align, (int32_t) (vec_size));
 
-    fmt("    $v_po_0 = getelementptr inbounds i8, $<{i8*}$> $v, i32 $u\n"
-        "    $v_po = bitcast $<{i8*}$> $v_po_0 to $<{[$u x $t]*}$>\n"
-        "    $v_p0 = bitcast {i8*} %buffer to {$T*}\n"
-        "    $v_p1 = getelementptr inbounds $T, {$T*} $v_p0, i32 $u\n"
+    fmt("    $v_po_0 = getelementptr inbounds i8, $<ptr$> $v, i32 $u\n"
+        "    $v_po = bitcast $<ptr$> $v_po_0 to $<ptr$>\n"
+        "    $v_p0 = bitcast ptr %buffer to ptr\n"
+        "    $v_p1 = getelementptr inbounds $T, ptr $v_p0, i32 $u\n"
         "    $v_mask = bitcast $V to i$w\n",
         v, target, d->offset * tsize,
-        v, v, d->stride, v0,
-        v, v0,
-        v, v0, v0, v, m,
+        v, v,
+        v,
+        v, v0, v, m,
         v, mask);
 
     put("\n    ; Prepare inputs\n");
     for (uint32_t i = 0; i < m; ++i) {
-        fmt("    $v_p0_$u = getelementptr inbounds $T, {$T*} $v_p0, i32 $u\n"
-            "    store $V_$u, {$T*} $v_p0_$u, align $A\n",
-            v, i, v0, v0, v, i,
-            v0, i, v0, v, i, v0);
+        fmt("    $v_p0_$u = getelementptr inbounds $T, ptr $v_p0, i32 $u\n"
+            "    store $V_$u, ptr $v_p0_$u, align $A\n",
+            v, i, v0, v, i,
+            v0, i, v, i, v0);
     }
     for (uint32_t i = 0; i < n; ++i) {
-        fmt("    $v_p1_$u = getelementptr inbounds $T, {$T*} $v_p1, i32 $u\n"
-            "    store $V_$u, {$T*} $v_p1_$u, align $A\n",
-            v, i, v1, v1, v, i,
-            v1, i, v1, v, i, v1);
+        fmt("    $v_p1_$u = getelementptr inbounds $T, ptr $v_p1, i32 $u\n"
+            "    store $V_$u, ptr $v_p1_$u, align $A\n",
+            v, i, v1, v, i,
+            v1, i, v, i, v1);
     }
     fmt("    br label %l$u_before\n"
         "\n"
@@ -105,8 +104,8 @@ void jitc_llvm_render_coop_vec_outer_product_accum(const Variable *v, const Vari
         "    br i1 $v_i_cont, label %l$u_load, label %l$u_done\n"
         "\n"
         "l$u_load:\n"
-        "    $v_p0i = getelementptr inbounds $T, {$T*} $v_p0, i32 $v_i\n"
-        "    $v_v0i = load $T, {$T*} $v_p0i, align $A\n"
+        "    $v_p0i = getelementptr inbounds $T, ptr $v_p0, i32 $v_i\n"
+        "    $v_v0i = load $T, ptr $v_p0i, align $A\n"
         "    br label %l$u_inner;\n"
         "\n"
         "l$u_inner:\n"
@@ -128,8 +127,8 @@ void jitc_llvm_render_coop_vec_outer_product_accum(const Variable *v, const Vari
 
         // load:
         v->reg_index,
-        v, v0, v0, v, v,
-        v, v0, v0, v, v0,
+        v, v0, v, v,
+        v, v0, v, v0,
         v->reg_index,
 
         // inner:
@@ -141,29 +140,28 @@ void jitc_llvm_render_coop_vec_outer_product_accum(const Variable *v, const Vari
         v->reg_index
     );
 
-    fmt("    $v_p1j = getelementptr inbounds $T, {$T*} $v_p1, i32 $v_j\n"
-        "    $v_v1j = load $T, {$T*} $v_p1j, align $A\n"
+    fmt("    $v_p1j = getelementptr inbounds $T, ptr $v_p1, i32 $v_j\n"
+        "    $v_v1j = load $T, ptr $v_p1j, align $A\n"
         "    $v_ij = fmul $T $v_v0i, $v_v1j\n",
-        v, v1, v1, v, v,
-        v, v1, v1, v, v1,
+        v, v1, v, v,
+        v, v1, v, v1,
         v, v1, v, v);
 
-    fmt("    $v_po_ij = getelementptr inbounds [$u x $t], $<{[$u x $t]*}$> $v_po, i32 $v_i, i32 $v_j\n",
-        v, d->stride, v0, d->stride, v0, v, v, v);
+    fmt("    $v_po_ij = getelementptr inbounds [$u x $t], $<ptr$> $v_po, i32 $v_i, i32 $v_j\n",
+        v, d->stride, v0, v, v, v);
 
     if (callable_depth == 0) {
-        fmt_intrinsic("declare $t @llvm$e.vector.reduce.fadd.v$w$h($t, $T)",
+        fmt_intrinsic("declare $t @llvm.vector.reduce.fadd.v$w$h($t, $T)",
                       v1, v1, v1, v1);
-        fmt("    $v_valid = select $V, $T $v_ij, $T zeroinitializer\n"
-            "    $v_red = call $t @llvm$e.vector.reduce.fadd.v$w$h($t zeroinitializer, $T $v_valid)\n"
-            "    atomicrmw fadd {$t*} $v_po_ij, $t $v_red monotonic\n",
+        fmt("    $v_valid = select $V, $T $v_ij, $T $z\n"
+            "    $v_red = call $t @llvm.vector.reduce.fadd.v$w$h($t $z, $T $v_valid)\n"
+            "    atomicrmw fadd ptr $v_po_ij, $t $v_red monotonic\n",
             v, mask, v1, v, v1,
-            v, v1, v1, v1, v1, v,
-            v1, v, v1, v);
+            v, v1, v1, v1, v1, v, v, v1, v);
     } else {
         jitc_llvm_append_reduce_op_local((VarType) v1->type, ReduceOp::Add, v1);
-        fmt("    call fastcc void @reduce_add_$h_atomic_local(<$w x $p> $v_po_ij, $T $v_ij, i$w $v_mask)\n",
-            v1, v1, v, v1, v, v);
+        fmt("    call fastcc void @reduce_add_$h_atomic_local(<$w x ptr> $v_po_ij, $T $v_ij, i$w $v_mask)\n",
+            v1, v, v1, v, v);
     }
 
     fmt("    br label %l$u_inner\n"
@@ -216,7 +214,7 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                 if ((JitOp) v->literal == JitOp::Step) {
                     for (uint32_t i =  0; i < v->array_length; ++i) {
                         fmt("    $v_$u_m = $s $V_$u, $v_$u\n", v, i, op, a0, i, a1, i);
-                        fmt("    $v_$u = select <$w x i1> $v_$u_m, $T zeroinitializer, $T $s\n",
+                        fmt("    $v_$u = select <$w x i1> $v_$u_m, $T $z, $T $s\n",
                             v, i, v, i, v, v, jitc_llvm_ones_str[v->type]);
                     }
                 } else {
@@ -293,24 +291,24 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
             break;
 
         case VarKind::CoopVecLoad:
-            fmt("    $v_p = bitcast $<{i8*}$> $v to $<{$t*}$>\n", v, a0, v);
+            fmt("    $v_p = bitcast $<ptr$> $v to $<ptr$>\n", v, a0);
 
             for (uint32_t i = 0; i < v->array_length; ++i) {
-                fmt("    $v_p_$u = getelementptr inbounds $t, $<{$t*}$> $v_p, i32 $u\n",
-                    v, i, v, v, v, (uint32_t) v->literal + i);
+                fmt("    $v_p_$u = getelementptr inbounds $t, $<ptr$> $v_p, i32 $u\n",
+                    v, i, v, v, (uint32_t) v->literal + i);
 
                 if (callable_depth == 0) {
-                    fmt("    $v_$u_0 = load $t, {$t *} $v_p_$u, align $a\n"
+                    fmt("    $v_$u_0 = load $t, ptr $v_p_$u, align $a\n"
                         "    $v_$u_1 = insertelement $T undef, $t $v_$u_0, i32 0\n"
                         "    $v_$u = shufflevector $T $v_$u_1, $T undef, <$w x i32> $z\n",
-                        v, i, v, v, v, i, v,
+                        v, i, v, v, i, v,
                         v, i, v, v, v, i,
                         v, i, v, v, i, v);
                 } else {
-                    fmt_intrinsic("declare $T @llvm.masked.gather.v$w$h(<$w x {$t*}>, i32, <$w x i1>, $T)",
-                                  v, v, v, v);
-                    fmt("    $v_$u = call $T @llvm.masked.gather.v$w$h(<$w x {$t*}> $v_p_$u, i32 $a, $V, $T $z)\n",
-                        v, i, v, v, v, v, i, v, a1, v);
+                    fmt_intrinsic("declare $T @llvm.masked.gather.v$w$h(<$w x ptr>, i32, <$w x i1>, $T)",
+                                  v, v, v);
+                    fmt("    $v_$u = call $T @llvm.masked.gather.v$w$h(<$w x ptr> $v_p_$u, i32 $a, $V, $T $z)\n",
+                        v, i, v, v, v, i, v, a1, v);
                 }
             }
             break;
@@ -329,54 +327,52 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                 alloca_size  = std::max(alloca_size, (int32_t) (vec_size * (n + m)));
                 alloca_align = std::max(alloca_align, (int32_t) (vec_size));
 
-                fmt( "    $v_pi = bitcast {i8*} %buffer to {$T*}\n"
-                     "    $v_po = getelementptr inbounds $T, {$T*} $v_pi, i32 $u\n"
-                     "    $v_pa_0 = bitcast $<{i8*}$> $v to $<{$t*}$>\n"
-                     "    $v_pa{_1|} = getelementptr inbounds $t, $<{$t*}$> $v_pa_0, i32 $u\n"
-                    "{    $v_pa = bitcast $<$t*$> $v_pa_1 to $<[$u x $t]*$>\n|}",
-                    v, v,
-                    v, v, v, v, n,
-                    v, a0, v,
-                    v, v, v, v, d->A_descr.offset,
-                    v, v, v, transpose ? m : n, v);
+                fmt( "    $v_pi = bitcast ptr %buffer to ptr\n"
+                     "    $v_po = getelementptr inbounds $T, ptr $v_pi, i32 $u\n"
+                     "    $v_pa_0 = bitcast $<ptr$> $v to $<ptr$>\n"
+                     "    $v_pa = getelementptr inbounds $t, $<ptr$> $v_pa_0, i32 $u\n",
+                    v,
+                    v, v, v, n,
+                    v, a0,
+                    v, v, v, d->A_descr.offset);
                 if (bias) {
-                    fmt("    $v_pb_0 = bitcast $<{i8*}$> $v to $<{$t*}$>\n"
-                        "    $v_pb = getelementptr inbounds $t, $<{$t*}$> $v_pb_0, i32 $u\n",
-                        v, bias, v,
-                        v, v, v, v, d->b_descr.offset);
+                    fmt("    $v_pb_0 = bitcast $<ptr$> $v to $<ptr$>\n"
+                        "    $v_pb = getelementptr inbounds $t, $<ptr$> $v_pb_0, i32 $u\n",
+                        v, bias,
+                        v, v, v, d->b_descr.offset);
                 }
 
                 put("\n    ; Prepare input\n");
                 for (uint32_t i = 0; i < n; ++i) {
-                    fmt("    $v_pi_$u = getelementptr inbounds $T, {$T*} $v_pi, i32 $u\n"
-                        "    store $V_$u, {$T*} $v_pi_$u, align $A\n",
-                        v, i, v, v, v, i,
-                        a1, i, v, v, i, v);
+                    fmt("    $v_pi_$u = getelementptr inbounds $T, ptr $v_pi, i32 $u\n"
+                        "    store $V_$u, ptr $v_pi_$u, align $A\n",
+                        v, i, v, v, i,
+                        a1, i, v, i, v);
                 }
 
                 put("\n    ; Prepare output\n");
                 for (uint32_t i = 0; i < m; ++i) {
                     if (bias) {
-                        fmt("    $v_b_$u_1 = getelementptr inbounds $t, $<{$t*}$> $v_pb, i32 $u\n",
-                            v, i, v, v, v, i);
+                        fmt("    $v_b_$u_1 = getelementptr inbounds $t, $<ptr$> $v_pb, i32 $u\n",
+                            v, i, v, v, i);
                         if (callable_depth == 0) {
-                            fmt("    $v_b_$u_2 = load $t, {$t *} $v_b_$u_1, align $a\n"
+                            fmt("    $v_b_$u_2 = load $t, ptr $v_b_$u_1, align $a\n"
                                 "    $v_b_$u_3 = insertelement $T undef, $t $v_b_$u_2, i32 0\n"
                                 "    $v_b_$u = shufflevector $T $v_b_$u_3, $T undef, <$w x i32> $z\n",
-                                v, i, v, v, v, i, v,
+                                v, i, v, v, i, v,
                                 v, i, v, v, v, i,
                                 v, i, v, v, i, v);
                         } else {
-                            fmt("    $v_b_$u = call $T @llvm.masked.gather.v$w$h(<$w x {$t*}> $v_b_$u_1, i32 $a, $V, $T $z)\n",
-                                v, i, v, v, v, v, i, v, mask, v);
+                            fmt("    $v_b_$u = call $T @llvm.masked.gather.v$w$h(<$w x ptr> $v_b_$u_1, i32 $a, $V, $T $z)\n",
+                                v, i, v, v, v, i, v, mask, v);
                         }
                     }
 
-                    fmt("    $v_po_$u = getelementptr inbounds $T, {$T*} $v_po, i32 $u\n", v, i, v, v, v, i);
+                    fmt("    $v_po_$u = getelementptr inbounds $T, ptr $v_po, i32 $u\n", v, i, v, v, i);
                     if (bias)
-                        fmt("    store $V_b_$u, {$T*} $v_po_$u, align $A\n", v, i, v, v, i, v);
+                        fmt("    store $V_b_$u, ptr $v_po_$u, align $A\n", v, i, v, i, v);
                     else
-                        fmt("    store $T zeroinitializer, {$T*} $v_po_$u, align $A\n", v, v, v, i, v);
+                        fmt("    store $T $z, ptr $v_po_$u, align $A\n", v, v, i, v);
                 }
 
                 put("\n    ; Matrix multiplication\n");
@@ -392,8 +388,8 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                     "    br i1 $v_j_cont, label %l$u_load, label %l$u_done\n"
                     "\n"
                     "l$u_load:\n"
-                    "    $v_x1 = getelementptr inbounds $T, {$T*} $v_pi, i32 $v_j\n"
-                    "    $v_x = load $T, {$T*} $v_x1, align $A\n"
+                    "    $v_x1 = getelementptr inbounds $T, ptr $v_pi, i32 $v_j\n"
+                    "    $v_x = load $T, ptr $v_x1, align $A\n"
                     "    br label %l$u_inner;\n"
                     "\n"
                     "l$u_inner:\n"
@@ -413,8 +409,8 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                     v, v->reg_index, v->reg_index,
 
                     v->reg_index,
-                    v, v, v, v, v,
-                    v, v, v, v, v,
+                    v, v, v, v,
+                    v, v, v, v,
                     v->reg_index,
 
                     v->reg_index,
@@ -425,25 +421,24 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                     v->reg_index
                 );
 
-                fmt("    $v_a1 = getelementptr inbounds [$u x $t], $<{[$u x $t]*}$> $v_pa, i32 $v_$s, i32 $v_$s\n",
-                    v, transpose ? m : n,
+                fmt("    $v_a1 = getelementptr inbounds [$u x $t], $<ptr$> $v_pa, i32 $v_$s, i32 $v_$s\n",
                     v, transpose ? m : n,
                     v, v,
                     v, transpose ? "j" : "i",
                     v, transpose ? "i" : "j");
 
                 if (callable_depth == 0) {
-                    fmt("    $v_a2 = load $t, {$t *} $v_a1, align $a\n"
+                    fmt("    $v_a2 = load $t, ptr $v_a1, align $a\n"
                         "    $v_a3 = insertelement $T undef, $t $v_a2, i32 0\n"
                         "    $v_a = shufflevector $T $v_a3, $T undef, <$w x i32> $z\n",
-                        v, v, v, v, v,
+                        v, v, v, v,
                         v, v, v, v,
                         v, v, v, v);
                 } else {
-                    fmt_intrinsic("declare $T @llvm.masked.gather.v$w$h(<$w x {$t*}>, i32, <$w x i1>, $T)",
-                                  v, v, v, v);
-                    fmt("    $v_a = call $T @llvm.masked.gather.v$w$h(<$w x {$t*}> $v_a1, i32 $a, $V, $T $z)\n",
-                        v, v, v, v, v, v, mask, v);
+                    fmt_intrinsic("declare $T @llvm.masked.gather.v$w$h(<$w x ptr>, i32, <$w x i1>, $T)",
+                                  v, v, v);
+                    fmt("    $v_a = call $T @llvm.masked.gather.v$w$h(<$w x ptr> $v_a1, i32 $a, $V, $T $z)\n",
+                        v, v, v, v, v, mask, v);
                 }
 
                 bool custom_intrinsic = false;
@@ -458,14 +453,14 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                                   v, v, v, v, v);
 
                 const char *intrinsic_prefix = custom_intrinsic ? "" : "llvm.";
-                fmt("    $v_y1 = getelementptr inbounds $T, {$T*} $v_po, i32 $v_i\n"
-                    "    $v_y = load $T, {$T*} $v_y1, align $A\n"
+                fmt("    $v_y1 = getelementptr inbounds $T, ptr $v_po, i32 $v_i\n"
+                    "    $v_y = load $T, ptr $v_y1, align $A\n"
                     "    $v_r = call $T @$sfma.v$w$h($V_a, $V_x, $V_y)\n"
-                    "    store $V_r, {$T*} $v_y1, align $A\n",
-                    v, v, v, v, v,
-                    v, v, v, v, v,
+                    "    store $V_r, ptr $v_y1, align $A\n",
+                    v, v, v, v,
+                    v, v, v, v,
                     v, v, intrinsic_prefix, v, v, v, v,
-                    v, v, v, v);
+                    v, v, v);
 
                 fmt("    br label %l$u_inner\n"
                     "\n"
@@ -475,7 +470,7 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
 
                 put("    ; Read back results\n");
                 for (uint32_t i = 0; i < m; ++i)
-                    fmt("    $v_$u = load $T, {$T*} $v_po_$u, align $A\n", v, i, v, v, v, i, v);
+                    fmt("    $v_$u = load $T, ptr $v_po_$u, align $A\n", v, i, v, v, i, v);
             }
             break;
 

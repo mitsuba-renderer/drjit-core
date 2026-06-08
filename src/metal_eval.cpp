@@ -8,21 +8,14 @@
  *  Format  Input          Example result    Description
  * --------------------------------------------------------------------------
  *  $u      uint32_t      `1234`             Decimal number (32 bit)
- *  $U      uint64_t      `1234`             Decimal number (64 bit)
- * --------------------------------------------------------------------------
- *  $x      uint32_t      `4d2`              Hexadecimal number (32 bit)
- *  $X      uint64_t      `4d2`              Hexadecimal number (64 bit)
- *  $Q      uint64_t      `00000000000004d2` Hex. number, 0-filled (64 bit)
  * --------------------------------------------------------------------------
  *  $s      const char *  `foo`              Zero-terminated string
- *  $c      char          `f`                A single ASCII character
  * --------------------------------------------------------------------------
  *  $t      Variable      `float`            Variable type
  * --------------------------------------------------------------------------
  *  $b      Variable      `uint`             Variable type, binary format
  * --------------------------------------------------------------------------
  *  $v      Variable      `r1234`            Variable name
- *  $a      Variable      `4`                Variable alignment in bytes
  * --------------------------------------------------------------------------
  *  $l      Variable      `0x1`              Literal value of variable (hex)
  *  $o      Variable      `2`                Index into ``params.args[]``
@@ -362,7 +355,7 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     // would duplicate entries and miss scenes reached only through callables.)
     for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
         MetalScene *si = metal_kernel_scenes[i];
-        fmt("// Scene properties: scene_$u mask=0x$x fns=[",
+        fmt("// Scene properties: scene_$u mask=$u fns=[",
             (uint32_t) i, si ? si->geometry_types_mask : 0u);
         if (si) {
             for (size_t j = 0; j < si->intersection_fns.size(); ++j) {
@@ -1090,7 +1083,7 @@ static void jitc_metal_render(Variable *v) {
             Variable *smp_h = jitc_var(v->dep[1]);
             Variable *mask  = v->dep[2] ? jitc_var(v->dep[2]) : nullptr;
             TexData *td = (TexData *) v->data;
-            char comp = "xyzw"[td->component & 0x3u];
+            char comp[2] = { "xyzw"[td->component & 0x3u], '\0' };
 
             // For a masked fetch, default to zero and guard the gather with the
             // mask, so the compiler can predicate off the fetch for inactive lanes.
@@ -1100,7 +1093,7 @@ static void jitc_metal_render(Variable *v) {
             } else {
                 fmt("float4 $v_s = ", v);
             }
-            fmt("$v.gather($v, float2($v, $v), int2(0), component::$c);\n",
+            fmt("$v.gather($v, float2($v, $v), int2(0), component::$s);\n",
                 tex_h, smp_h, jitc_var(td->indices[0]),
                 jitc_var(td->indices[1]), comp);
 

@@ -227,12 +227,6 @@ bool jitc_llvm_api_init() {
         }
     }
 
-    if (jitc_llvm_version_major < 11) {
-        jitc_log(Warn, "jit_llvm_init(): the detected LLVM version was too "
-                       "old, at least 11.0.0 is needed.");
-        return false;
-    }
-
     return true;
 }
 

@@ -262,14 +262,7 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
         } else {
             c = *p++;
             switch (c) {
-                case '{':
-                case '}': len += 1; break;
-
                 case 'u': len += MAXSIZE_U32; (void) va_arg(args, uint32_t); arg++; break;
-                case 'U': len += MAXSIZE_U64; (void) va_arg(args, uint64_t); arg++; break;
-                case 'x': len += MAXSIZE_X32; (void) va_arg(args, uint32_t); arg++; break;
-                case 'Q':
-                case 'X': len += MAXSIZE_X64; (void) va_arg(args, uint64_t); arg++; break;
 
                 case 's':
                     len += strlen(va_arg(args, const char *));
@@ -286,11 +279,6 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     len += MAXSIZE_TYPE;
                     break;
 
-                case 'p':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_TYPE + 1;
-                    break;
-
                 case 'h':
                 case 'H':
                     (void) va_arg(args, const Variable *); arg++;
@@ -305,10 +293,6 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     len += MAXSIZE_U32 + MAXSIZE_TYPE + 5;
                     break;
 
-                case 'P':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32 + MAXSIZE_TYPE + 6;
-                    break;
 
                 case 'v':
                     (void) va_arg(args, const Variable *); arg++;
@@ -338,10 +322,6 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
 
                 case 'z':
                     len += 15;
-                    break;
-
-                case 'e':
-                    len += 13;
                     break;
 
                 case '<':
@@ -375,20 +355,11 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
         expand(len);
 
     // Phase 2: convert the string
-    size_t offset = 0;
     p = fmt;
     while ((c = *p++) != '\0') {
         if (c == '$') {
             switch (*p++) {
-                case '{': *m_cur++= '{'; break;
-                case '}': *m_cur++= '}'; break;
-
                 case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
-                case 'U': put_u64_unchecked(va_arg(args2, uint64_t)); break;
-                case 'x': put_x32_unchecked(va_arg(args2, uint32_t)); break;
-                case 'X': put_x64_unchecked(va_arg(args2, uint64_t)); break;
-                case 'Q': put_q64_unchecked(va_arg(args2, uint64_t)); break;
-
                 case 's': {
                         const char *s = va_arg(args2, const char *);
                         put(s, strlen(s));
@@ -402,32 +373,6 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                 case 't': {
                         const Variable *v = va_arg(args2, const Variable *);
                         put_unchecked(type_name_llvm[v->type]);
-                    }
-                    break;
-
-                case 'p': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        if (jitc_llvm_opaque_pointers) {
-                            put_unchecked("ptr");
-                        } else {
-                            put_unchecked(type_name_llvm[v->type]);
-                            *m_cur ++= '*';
-                        }
-                    }
-                    break;
-
-                case 'P': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur ++= '<';
-                        put_u32_unchecked(jitc_llvm_vector_width);
-                        *m_cur ++= ' '; *m_cur ++= 'x'; *m_cur ++= ' ';
-                        if (jitc_llvm_opaque_pointers) {
-                            put_unchecked("ptr");
-                        } else {
-                            put_unchecked(type_name_llvm[v->type]);
-                            *m_cur ++= '*';
-                        }
-                        *m_cur ++= '>';
                     }
                     break;
 
@@ -580,11 +525,6 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
                     put_unchecked("zeroinitializer");
                     break;
 
-                case 'e':
-                    if (jitc_llvm_version_major < 12)
-                        put_unchecked(".experimental");
-                    break;
-
                 case '<':
                     if (callable_depth > 0) {
                         *m_cur ++= '<';
@@ -600,23 +540,6 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
 
                 default:
                     break;
-            }
-        } else if (c == '{') {
-            if (jitc_llvm_opaque_pointers)
-                offset = size();
-        } else if (c == '|') {
-            if (offset) {
-                rewind_to(offset);
-                offset = 0;
-            } else {
-                offset = size();
-            }
-        } else if (c == '}') {
-            if (offset) {
-                rewind_to(offset);
-                if (jitc_llvm_opaque_pointers)
-                    put_unchecked("ptr");
-                offset = 0;
             }
         } else {
             *m_cur ++= c;
@@ -646,12 +569,7 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
             c = *p++;
             switch (c) {
                 case 'u': len += MAXSIZE_U32; (void) va_arg(args, uint32_t); arg++; break;
-                case 'U': len += MAXSIZE_U64; (void) va_arg(args, uint64_t); arg++; break;
-                case 'x': len += MAXSIZE_X32; (void) va_arg(args, uint32_t); arg++; break;
-                case 'Q':
-                case 'X': len += MAXSIZE_X64; (void) va_arg(args, uint64_t); arg++; break;
-
-                case 'c': len++; (void) va_arg(args, int); arg++; break;
+                case 'Q': len += MAXSIZE_X64; (void) va_arg(args, uint64_t); arg++; break;
 
                 case 's':
                     len += strlen(va_arg(args, const char *));
@@ -714,12 +632,7 @@ void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
         if (c == '$') {
             switch (*p++) {
                 case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
-                case 'U': put_u64_unchecked(va_arg(args2, uint64_t)); break;
-                case 'x': put_x32_unchecked(va_arg(args2, uint32_t)); break;
-                case 'X': put_x64_unchecked(va_arg(args2, uint64_t)); break;
                 case 'Q': put_q64_unchecked(va_arg(args2, uint64_t)); break;
-
-                case 'c': *m_cur++ = (char) va_arg(args2, int); break;
 
                 case 's': {
                         const char *s = va_arg(args2, const char *);
@@ -815,12 +728,6 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
             c = *p++;
             switch (c) {
                 case 'u': len += MAXSIZE_U32; (void) va_arg(args, uint32_t); arg++; break;
-                case 'U': len += MAXSIZE_U64; (void) va_arg(args, uint64_t); arg++; break;
-                case 'x': len += MAXSIZE_X32; (void) va_arg(args, uint32_t); arg++; break;
-                case 'Q':
-                case 'X': len += MAXSIZE_X64; (void) va_arg(args, uint64_t); arg++; break;
-
-                case 'c': len++; (void) va_arg(args, int); arg++; break;
 
                 case 's':
                     len += strlen(va_arg(args, const char *));
@@ -833,16 +740,10 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
                     len += MAXSIZE_TYPE;
                     break;
 
-                case 'V':
                 case 'v':
                     (void) va_arg(args, const Variable *); arg++;
                     // ``v<reg_index>`` -- one letter + 32-bit number
                     len += 1 + MAXSIZE_U32;
-                    break;
-
-                case 'a':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32;
                     break;
 
                 case 'l':
@@ -884,12 +785,6 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
         if (c == '$') {
             switch (*p++) {
                 case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
-                case 'U': put_u64_unchecked(va_arg(args2, uint64_t)); break;
-                case 'x': put_x32_unchecked(va_arg(args2, uint32_t)); break;
-                case 'X': put_x64_unchecked(va_arg(args2, uint64_t)); break;
-                case 'Q': put_q64_unchecked(va_arg(args2, uint64_t)); break;
-
-                case 'c': *m_cur++ = (char) va_arg(args2, int); break;
 
                 case 's': {
                         const char *s = va_arg(args2, const char *);
@@ -909,7 +804,6 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
                     }
                     break;
 
-                case 'V':
                 case 'v': {
                         const Variable *v = va_arg(args2, const Variable *);
                         *m_cur++ = 'r';
@@ -922,12 +816,6 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
                         *m_cur++ = '0';
                         *m_cur++ = 'x';
                         put_x64_unchecked(v->literal);
-                    }
-                    break;
-
-                case 'a': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(type_size[v->type]);
                     }
                     break;
 
