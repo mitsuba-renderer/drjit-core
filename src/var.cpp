@@ -873,8 +873,8 @@ uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
     jitc_check_size("jit_var_literal", size);
 
     // Metal: promote Float64 literal to Float32 (no hardware FP64).
-    float f32_value;
 #if defined(DRJIT_ENABLE_METAL)
+    float f32_value;
     if (backend == JitBackend::Metal && type == VarType::Float64) {
         jitc_metal_warn_float64_demotion_once();
         double d;

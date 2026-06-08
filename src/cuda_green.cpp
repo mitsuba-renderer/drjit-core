@@ -30,10 +30,12 @@ CUDAGreenContext *jitc_cuda_green_context_make(uint32_t sm_count_requested,
     if (sm_count_requested == 0)
         jitc_raise("jit_cuda_green_context_make(): sm_count must be > 0.");
 
+#if defined(DRJIT_DYNAMIC_CUDA)
     if (!cuCtxGetDevResource || !cuDevSmResourceSplitByCount ||
         !cuDevResourceGenerateDesc || !cuGreenCtxCreate || !cuCtxFromGreenCtx)
         jitc_raise("jit_cuda_green_context_make(): required driver symbols are missing. "
                    "Ensure a recent CUDA driver is installed and that green contexts are supported.");
+#endif
 
     // Step 1: fetch SM resources for this CUDA context
     Device &parent = state.devices[ts->device];
