@@ -134,7 +134,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
 
         if constexpr (bool(Flags & IsGPU)) {
             JitBackend b = (JitBackend) vi->backend;
-            if (unlikely(b != JitBackend::CUDA && b != JitBackend::Metal)) {
+            if (unlikely(!jitc_is_device_backend(b))) {
                 err = "operation is only supported on GPU backends (CUDA/Metal)";
                 goto fail;
             }
@@ -280,7 +280,7 @@ JIT_INLINE uint32_t jitc_eval_literal(const OpInfo &info, Func func,
 // --------------------------------------------------------------------------
 
 bool needs_f32_upcast(OpInfo info, VarKind kind) {
-    if (info.backend == JitBackend::LLVM && info.type == VarType::Float16)
+    if (jitc_is_llvm(info.backend) && info.type == VarType::Float16)
         switch (kind) {
             case VarKind::Fma:
             case VarKind::Min:
@@ -462,7 +462,7 @@ uint32_t jitc_var_sqrt(uint32_t a0) {
 
     if (!result && info.size) {
         bool approx =
-            info.backend == JitBackend::CUDA && info.type == VarType::Float32;
+            jitc_is_cuda(info.backend) && info.type == VarType::Float32;
         result = jitc_var_new_node_1(
             info.backend, approx ? VarKind::SqrtApprox : VarKind::Sqrt,
             info.type, info.size, info.symbolic, a0, v0);
@@ -633,7 +633,7 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
 
     if (!result && info.size) {
         bool approx =
-            info.backend == JitBackend::CUDA && info.type == VarType::Float32;
+            jitc_is_cuda(info.backend) && info.type == VarType::Float32;
         result = jitc_var_new_node_2(
             info.backend, approx ? VarKind::DivApprox : VarKind::Div, info.type,
             info.size, info.symbolic, a0, v0, a1, v1);
@@ -1500,7 +1500,7 @@ uint32_t jitc_var_rcp(uint32_t a0) {
     if (info.simplify && info.literal)
         result = jitc_eval_literal(info, [](auto l0) { return eval_rcp(l0); }, v0);
 
-    if (!result && info.backend == JitBackend::LLVM) {
+    if (!result && jitc_is_llvm(info.backend)) {
         drjit::half h1(1.f); float f1 = 1.f; double d1 = 1.0;
         const void* num_ptr = nullptr;
         switch(info.type) {
@@ -1769,7 +1769,7 @@ static uint32_t jitc_scatter_gather_index(uint32_t source, uint32_t index) {
     VarType target_type = VarType::UInt32;
     // Need 64 bit indices for upper 2G entries (gather indices are signed in LLVM)
     if (v_source->size > 0x7fffffff &&
-        (JitBackend) v_source->backend == JitBackend::LLVM)
+        jitc_is_llvm(v_source->backend))
         target_type = VarType::UInt64;
 
     return jitc_var_cast(index, target_type, 0);
@@ -2167,7 +2167,7 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
     uint32_t max_packet_size = std::min(8u, jitc_llvm_vector_width);
 
     // Packet size 8 is the max. for the LLVM backend. Split larger requests.
-    if (var_info.backend == JitBackend::LLVM && n > 1 &&
+    if (jitc_is_llvm(var_info.backend) && n > 1 &&
         ((n & (n - 1)) != 0 || n > max_packet_size)) {
 
         if (max_packet_size == 0)
@@ -2701,9 +2701,21 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
     if (op == ReduceOp::Mul)
         return false;
 
-    bool is_llvm = backend == JitBackend::LLVM;
-    bool is_cuda = backend == JitBackend::CUDA;
-    bool is_metal = backend == JitBackend::Metal;
+    size_t compute_capability = 0;
+    bool is_llvm = false, is_cuda = false, is_metal = false;
+
+    is_llvm = jitc_is_llvm(backend);
+
+#if defined(DRJIT_ENABLE_CUDA)
+    if (jitc_is_cuda(backend)) {
+        compute_capability = thread_state(backend)->compute_capability;
+        is_cuda = true;
+    }
+#endif
+
+#if defined(DRJIT_ENABLE_METAL)
+    is_metal = jitc_is_metal(backend);
+#endif
 
     // LLVM prior to v15.0.0 lacks minimum/maximum atomic reduction intrinsics
     if (is_llvm && (op == ReduceOp::Min || op == ReduceOp::Max) &&
@@ -2715,9 +2727,6 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
                      vt == VarType::Float64))
         return false;
 
-    size_t compute_capability = (size_t) -1;
-    if (is_cuda)
-        compute_capability = thread_state(backend)->compute_capability;
 
     switch (vt) {
         case VarType::Int8:
@@ -2728,11 +2737,11 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
 
         case VarType::Float16:
             // Half-precision sum reduction require sm_60
-            if (op == ReduceOp::Add && compute_capability < 60)
+            if (is_cuda && op == ReduceOp::Add && compute_capability < 60)
                 return false;
 
             // Half-precision min/max reductions require sm_90
-            if ((op == ReduceOp::Min || op == ReduceOp::Max) &&
+            if (is_cuda && (op == ReduceOp::Min || op == ReduceOp::Max) &&
                 compute_capability < 90)
                 return false;
 
@@ -2789,7 +2798,7 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             jitc_raise("%s(): drjit.ReduceMode.Permute is not a "
                        "valid mode for scatter-reductions.", name);
 
-        if (backend == JitBackend::LLVM) {
+        if (jitc_is_llvm(backend)) {
             uint32_t tsize = jitc_var(target)->size;
             if (mode == ReduceMode::Auto && tsize <= llvm_expand_threshold)
                 mode = ReduceMode::Expand;
@@ -2963,7 +2972,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // after the next kernel launch.
     Ref value_promoted;
     bool needs_narrow = false;
-    if (var_info.backend == JitBackend::Metal &&
+    if (jitc_is_metal(var_info.backend) &&
         vt == VarType::Float16 && op != ReduceOp::Identity) {
         // Perform a FP32 scatter-reduction on a widened shadow of the target
         ptr = steal(jitc_var_shadow_make(target, needs_narrow));
@@ -3158,19 +3167,19 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
                             mode == ReduceMode::Expand ||
                             mode == ReduceMode::Permute ||
                             mode == ReduceMode::NoConflicts;
-        } else if (op == ReduceOp::Add && backend == JitBackend::LLVM) {
+        } else if (op == ReduceOp::Add && jitc_is_llvm(backend)) {
             use_packet_op = (mode == ReduceMode::Expand ||
                              mode == ReduceMode::Permute ||
                              mode == ReduceMode::NoConflicts ||
                              (mode == ReduceMode::Auto &&
                               target_info.size <= llvm_expand_threshold));
-        } else if (backend == JitBackend::CUDA) {
+        } else if (jitc_is_cuda(backend)) {
             use_packet_op = (mode == ReduceMode::Permute ||
                              mode == ReduceMode::NoConflicts ||
                              mode == ReduceMode::Local ||
                              mode == ReduceMode::Direct ||
                              mode == ReduceMode::Auto);
-        } else if (backend == JitBackend::Metal) {
+        } else if (jitc_is_metal(backend)) {
             // Metal lacks packet atomicas. Only use this strategy in local mode
             // where the cost of finding peers can be amortized. This only works
             // for certain types.

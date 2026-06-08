@@ -279,7 +279,7 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
 
                 size = std::max(v2->size, size);
 
-                if (backend == JitBackend::LLVM) {
+                if (jitc_is_llvm(backend)) {
                     new_index = jitc_var_select(active, index, ld->inner_in[i]);
                 } else {
                     new_index = index;

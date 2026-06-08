@@ -12,11 +12,15 @@
 #include "hash.h"
 
 using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, uint32_t thread_id, void **ptr);
+#if defined(DRJIT_ENABLE_CUDA)
 using CUmodule = struct CUmod_st *;
 using CUfunction = struct CUfunc_st *;
+#endif
+#if defined(DRJIT_ENABLE_OPTIX)
 using OptixModule = void*;
 using OptixProgramGroup = void*;
 using OptixPipeline = void*;
+#endif
 enum class JitBackend: uint32_t;
 
 /// Per kernel-parameter-slot metadata, indexed identically to the launch
@@ -41,19 +45,7 @@ struct Kernel {
     KernelParamInfo *param_info;
 
     union {
-        /// 1. CUDA
-        struct {
-            /// Compiled CUmodule
-            CUmodule mod;
-
-            /// Main kernel entry point
-            CUfunction func;
-
-            // Preferred block size to maximize occupancy
-            uint32_t block_size;
-        } cuda;
-
-        /// 2. LLVM
+        /// 1. LLVM
         struct {
             /// Relocation table, the first element is the kernel entry point
             void **reloc;
@@ -66,7 +58,22 @@ struct Kernel {
 #endif
         } llvm;
 
+#if defined(DRJIT_ENABLE_CUDA)
+        /// 2. CUDA
+        struct {
+            /// Compiled CUmodule
+            CUmodule mod;
+
+            /// Main kernel entry point
+            CUfunction func;
+
+            // Preferred block size to maximize occupancy
+            uint32_t block_size;
+        } cuda;
+#endif
+
 #if defined(DRJIT_ENABLE_OPTIX)
+        /// 3. OptiX
         struct {
             OptixModule mod;
             OptixProgramGroup *pg;
@@ -77,6 +84,7 @@ struct Kernel {
 #endif
 
 #if defined(DRJIT_ENABLE_METAL)
+        /// 4. Metal
         struct {
             /// id<MTLComputePipelineState>
             void *pipeline;

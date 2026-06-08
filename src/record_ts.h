@@ -402,14 +402,16 @@ public:
      * kept alive until the RecordThreadState is destroyed.
      */
     RecordThreadState(ThreadState *internal) {
+        this->device             = internal->device;
+#if defined(DRJIT_ENABLE_CUDA)
         this->context            = internal->context;
         this->stream             = internal->stream;
         this->event              = internal->event;
         this->sync_stream_event  = internal->sync_stream_event;
-        this->device             = internal->device;
         this->compute_capability = internal->compute_capability;
         this->ptx_version        = internal->ptx_version;
         this->memory_pool        = internal->memory_pool;
+#endif
 
         this->backend         = internal->backend;
         this->scope           = internal->scope;

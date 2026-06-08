@@ -245,173 +245,6 @@ size_t StringBuffer::vfmt(const char *fmt, va_list args_) {
     } while (true);
 }
 
-void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
-    size_t len = 0;
-
-    va_list args, args2;
-    va_start(args, fmt);
-    va_copy(args2, args);
-
-    // Phase 1: walk through the string and determine its maximal length
-    const char *p = fmt;
-    size_t arg = 0;
-    char c;
-    while ((c = *p++) != '\0') {
-        if (c != '$') {
-            len++;
-        } else {
-            c = *p++;
-            switch (c) {
-                case 'u': len += MAXSIZE_U32; (void) va_arg(args, uint32_t); arg++; break;
-                case 'U': len += MAXSIZE_U64; (void) va_arg(args, uint64_t); arg++; break;
-                case 'x': len += MAXSIZE_X32; (void) va_arg(args, uint32_t); arg++; break;
-                case 'Q':
-                case 'X': len += MAXSIZE_X64; (void) va_arg(args, uint64_t); arg++; break;
-
-                case 'c': len++; (void) va_arg(args, int); arg++; break;
-
-                case 's':
-                    len += strlen(va_arg(args, const char *));
-                    arg++;
-                    break;
-
-                case 'B':
-                case 'b':
-                case 't':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_TYPE;
-                    break;
-
-                case 'v':
-                case 'V':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32 + MAXSIZE_TYPE_PREFIX;
-                    break;
-
-                case 'a':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32;
-                    break;
-
-                case 'l':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_X64 + 2;
-                    break;
-
-                case 'o':
-                    (void) va_arg(args, const Variable *); arg++;
-                    len += MAXSIZE_U32;
-                    break;
-
-                default:
-                    fprintf(stderr,
-                            "StringBuffer::fmt_cuda(): encountered unsupported "
-                            "character \"$%c\" in format string!\n", c);
-                    abort();
-            }
-        }
-    }
-
-    va_end(args);
-
-    if (nargs != arg) {
-        fprintf(stderr,
-                "StringBuffer::fmt_cuda(): given %zu args, format string "
-                "accessed %zu (%s)\n", nargs, arg, fmt);
-        abort();
-    }
-
-    // Enlarge the buffer if necessary
-    if (unlikely(!m_cur || m_cur + len >= m_end))
-        expand(len);
-
-    // Phase 2: convert the string
-    p = fmt;
-    while ((c = *p++) != '\0') {
-        if (c == '$') {
-            switch (*p++) {
-                case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
-                case 'U': put_u64_unchecked(va_arg(args2, uint64_t)); break;
-                case 'x': put_x32_unchecked(va_arg(args2, uint32_t)); break;
-                case 'X': put_x64_unchecked(va_arg(args2, uint64_t)); break;
-                case 'Q': put_q64_unchecked(va_arg(args2, uint64_t)); break;
-
-                case 'c': *m_cur++ = (char) va_arg(args2, int); break;
-
-                case 's': {
-                        const char *s = va_arg(args2, const char *);
-                        put(s, strlen(s));
-                    }
-                    break;
-
-                case 't': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_ptx[v->type]);
-                    }
-                    break;
-
-                case 'B': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_ptx_bin2[v->type]);
-                    }
-                    break;
-
-                case 'b': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_name_ptx_bin[v->type]);
-                    }
-                    break;
-
-                case 'V': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        if (v->type == (uint32_t) VarType::Bool) {
-                            put_unchecked("%w0");
-                        } else {
-                            put_unchecked(type_prefix[v->type]);
-                            put_u32_unchecked(v->reg_index);
-                        }
-                    }
-                    break;
-
-                case 'v': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_unchecked(type_prefix[v->type]);
-                        put_u32_unchecked(v->reg_index);
-                    }
-                    break;
-
-                case 'l': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        *m_cur ++= '0';
-                        *m_cur ++= 'x';
-                        put_x64_unchecked(v->literal);
-                    };
-                    break;
-
-                case 'a': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(type_size[v->type]);
-                    }
-                    break;
-
-                case 'o': {
-                        const Variable *v = va_arg(args2, const Variable *);
-                        put_u32_unchecked(v->param_offset);
-                    }
-                    break;
-
-                default:
-                    break;
-            }
-        } else {
-            *m_cur ++= c;
-        }
-    }
-    va_end(args2);
-
-    *m_cur = '\0';
-}
-
 void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
     size_t len = 0;
 
@@ -794,25 +627,176 @@ void StringBuffer::fmt_llvm(size_t nargs, const char *fmt, ...) {
     *m_cur = '\0';
 }
 
-/**
- * Metal Shading Language formatting routine. Mirrors fmt_cuda but emits
- * MSL-friendly syntax. Supported placeholders:
- *
- *  $u  uint32_t            decimal number (32 bit)
- *  $U  uint64_t            decimal number (64 bit)
- *  $x  uint32_t            hex number (32 bit)
- *  $X  uint64_t            hex number (64 bit)
- *  $Q  uint64_t            zero-padded 64 bit hex (16 digits)
- *  $s  const char*         literal string
- *  $c  char                single character
- *  $t  Variable            MSL type name (``float``, ``int``, ...)
- *  $b  Variable            MSL binary type (``uint``, ``ushort``, ...)
- *  $v  Variable            variable name ``v<reg_index>``
- *  $V  Variable            same as ``$v`` (provided for parity with PTX)
- *  $a  Variable            type size in bytes
- *  $l  Variable            literal value as ``0x...ull``
- *  $o  Variable            offset in the params buffer
- */
+#if defined(DRJIT_ENABLE_CUDA)
+void StringBuffer::fmt_cuda(size_t nargs, const char *fmt, ...) {
+    size_t len = 0;
+
+    va_list args, args2;
+    va_start(args, fmt);
+    va_copy(args2, args);
+
+    // Phase 1: walk through the string and determine its maximal length
+    const char *p = fmt;
+    size_t arg = 0;
+    char c;
+    while ((c = *p++) != '\0') {
+        if (c != '$') {
+            len++;
+        } else {
+            c = *p++;
+            switch (c) {
+                case 'u': len += MAXSIZE_U32; (void) va_arg(args, uint32_t); arg++; break;
+                case 'U': len += MAXSIZE_U64; (void) va_arg(args, uint64_t); arg++; break;
+                case 'x': len += MAXSIZE_X32; (void) va_arg(args, uint32_t); arg++; break;
+                case 'Q':
+                case 'X': len += MAXSIZE_X64; (void) va_arg(args, uint64_t); arg++; break;
+
+                case 'c': len++; (void) va_arg(args, int); arg++; break;
+
+                case 's':
+                    len += strlen(va_arg(args, const char *));
+                    arg++;
+                    break;
+
+                case 'B':
+                case 'b':
+                case 't':
+                    (void) va_arg(args, const Variable *); arg++;
+                    len += MAXSIZE_TYPE;
+                    break;
+
+                case 'v':
+                case 'V':
+                    (void) va_arg(args, const Variable *); arg++;
+                    len += MAXSIZE_U32 + MAXSIZE_TYPE_PREFIX;
+                    break;
+
+                case 'a':
+                    (void) va_arg(args, const Variable *); arg++;
+                    len += MAXSIZE_U32;
+                    break;
+
+                case 'l':
+                    (void) va_arg(args, const Variable *); arg++;
+                    len += MAXSIZE_X64 + 2;
+                    break;
+
+                case 'o':
+                    (void) va_arg(args, const Variable *); arg++;
+                    len += MAXSIZE_U32;
+                    break;
+
+                default:
+                    fprintf(stderr,
+                            "StringBuffer::fmt_cuda(): encountered unsupported "
+                            "character \"$%c\" in format string!\n", c);
+                    abort();
+            }
+        }
+    }
+
+    va_end(args);
+
+    if (nargs != arg) {
+        fprintf(stderr,
+                "StringBuffer::fmt_cuda(): given %zu args, format string "
+                "accessed %zu (%s)\n", nargs, arg, fmt);
+        abort();
+    }
+
+    // Enlarge the buffer if necessary
+    if (unlikely(!m_cur || m_cur + len >= m_end))
+        expand(len);
+
+    // Phase 2: convert the string
+    p = fmt;
+    while ((c = *p++) != '\0') {
+        if (c == '$') {
+            switch (*p++) {
+                case 'u': put_u32_unchecked(va_arg(args2, uint32_t)); break;
+                case 'U': put_u64_unchecked(va_arg(args2, uint64_t)); break;
+                case 'x': put_x32_unchecked(va_arg(args2, uint32_t)); break;
+                case 'X': put_x64_unchecked(va_arg(args2, uint64_t)); break;
+                case 'Q': put_q64_unchecked(va_arg(args2, uint64_t)); break;
+
+                case 'c': *m_cur++ = (char) va_arg(args2, int); break;
+
+                case 's': {
+                        const char *s = va_arg(args2, const char *);
+                        put(s, strlen(s));
+                    }
+                    break;
+
+                case 't': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_unchecked(type_name_ptx[v->type]);
+                    }
+                    break;
+
+                case 'B': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_unchecked(type_name_ptx_bin2[v->type]);
+                    }
+                    break;
+
+                case 'b': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_unchecked(type_name_ptx_bin[v->type]);
+                    }
+                    break;
+
+                case 'V': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        if (v->type == (uint32_t) VarType::Bool) {
+                            put_unchecked("%w0");
+                        } else {
+                            put_unchecked(type_prefix[v->type]);
+                            put_u32_unchecked(v->reg_index);
+                        }
+                    }
+                    break;
+
+                case 'v': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_unchecked(type_prefix[v->type]);
+                        put_u32_unchecked(v->reg_index);
+                    }
+                    break;
+
+                case 'l': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        *m_cur ++= '0';
+                        *m_cur ++= 'x';
+                        put_x64_unchecked(v->literal);
+                    };
+                    break;
+
+                case 'a': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_u32_unchecked(type_size[v->type]);
+                    }
+                    break;
+
+                case 'o': {
+                        const Variable *v = va_arg(args2, const Variable *);
+                        put_u32_unchecked(v->param_offset);
+                    }
+                    break;
+
+                default:
+                    break;
+            }
+        } else {
+            *m_cur ++= c;
+        }
+    }
+    va_end(args2);
+
+    *m_cur = '\0';
+}
+#endif
+
+#if defined(DRJIT_ENABLE_METAL)
 void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
     size_t len = 0;
 
@@ -964,3 +948,4 @@ void StringBuffer::fmt_metal(size_t nargs, const char *fmt, ...) {
 
     *m_cur = '\0';
 }
+#endif

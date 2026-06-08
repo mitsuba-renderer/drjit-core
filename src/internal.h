@@ -12,7 +12,9 @@
 #include "common.h"
 #include <inttypes.h>
 #include "malloc.h"
-#include "cuda.h"
+#if defined(DRJIT_ENABLE_CUDA)
+#  include "cuda.h"
+#endif
 #include "llvm.h"
 #include "alloc.h"
 #include "io.h"
@@ -435,8 +437,9 @@ static_assert(
     sizeof(VariableKey) == 9 * sizeof(uint32_t),
     "VariableKey: incorrect size, likely an issue with padding/packing!");
 
+#if defined(DRJIT_ENABLE_CUDA)
 /// Caches basic information about a CUDA device
-struct Device {
+struct CUDADevice {
     // CUDA device context
     CUcontext context;
 
@@ -552,6 +555,7 @@ struct Device {
             *threads_out = warps_per_block * warp_size;
     }
 };
+#endif
 
 /// A few forward declarations for OptiX
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -600,6 +604,7 @@ struct WeakRef {
 
 struct KernelKey;
 
+#if defined(DRJIT_ENABLE_METAL)
 /// Enumeration of the precompiled utility kernels in metal_kernels.metal. The
 /// order must match ``metal_kernel_names`` in metal_core.mm.
 enum class MetalKernel : uint32_t {
@@ -656,6 +661,7 @@ struct MetalDevice {
     /// Cached human-readable device name (owned, freed at shutdown)
     char *name;
 };
+#endif
 
 /// Represents a single stream of a parallel communication
 struct ThreadStateBase {
@@ -706,8 +712,20 @@ struct ThreadStateBase {
     /// functions.
     KernelRecordingMode recording_mode = KernelRecordingMode::Inactive;
 
+    /**
+     * \brief DrJit device ID associated with this device
+     *
+     * This value may differ from the CUDA device ID if the machine contains
+     * CUDA devices that are incompatible with DrJit. For CUDA it indexes
+     * \ref state.devices, for Metal \ref state.metal_devices.
+     *
+     * Equals -1 for LLVM ThreadState instances.
+     */
+    int device = 0;
+
     /// ---------------------------- CUDA-specific ----------------------------
 
+#if defined(DRJIT_ENABLE_CUDA)
     /// Redundant copy of the device context
     CUcontext context = nullptr;
 
@@ -720,16 +738,6 @@ struct ThreadStateBase {
     /// A CUDA event for synchronization with external streams
     CUevent sync_stream_event = nullptr;
 
-    /**
-     * \brief DrJit device ID associated with this device
-     *
-     * This value may differ from the CUDA device ID if the machine contains
-     * CUDA devices that are incompatible with DrJit.
-     *
-     * Equals -1 for LLVM ThreadState instances.
-     */
-    int device = 0;
-
     /// Device compute capability (major * 10 + minor)
     uint32_t compute_capability = 0;
 
@@ -738,6 +746,7 @@ struct ThreadStateBase {
 
     // Support for stream-ordered memory allocations (async alloc/free)
     bool memory_pool = false;
+#endif
 
 #if defined(DRJIT_ENABLE_OPTIX)
     /// OptiX pipeline associated with the next kernel launch
@@ -1011,8 +1020,10 @@ struct State {
     /// Bit-mask of successfully initialized backends
     uint32_t backends = 0;
 
+#if defined(DRJIT_ENABLE_CUDA)
     /// Available devices and their CUDA IDs
-    std::vector<Device> devices;
+    std::vector<CUDADevice> devices;
+#endif
 
 #if defined(DRJIT_ENABLE_METAL)
     /// Available Metal devices (Apple Silicon only)
@@ -1170,9 +1181,31 @@ extern void jitc_sync_device();
 /// Wait for all computation on *all devices* to finish
 extern void jitc_sync_all_devices();
 
+/// Backend predicates that fold to a compile-time ``false`` when the backend
+/// is not built, allowing the compiler to remove dead branches.
+template <typename T> inline bool jitc_is_cuda(T b) {
+#if defined(DRJIT_ENABLE_CUDA)
+    return (JitBackend) b == JitBackend::CUDA;
+#else
+    (void) b; return false;
+#endif
+}
+
+template <typename T> inline bool jitc_is_metal(T b) {
+#if defined(DRJIT_ENABLE_METAL)
+    return (JitBackend) b == JitBackend::Metal;
+#else
+    (void) b; return false;
+#endif
+}
+
+template <typename T> inline bool jitc_is_llvm(T b) {
+    return (JitBackend) b == JitBackend::LLVM;
+}
+
 /// Returns true if the given backend uses GPU device memory (CUDA or Metal)
-inline bool jitc_is_device_backend(JitBackend b) {
-    return b == JitBackend::CUDA || b == JitBackend::Metal;
+template <typename T> inline bool jitc_is_device_backend(T b) {
+    return jitc_is_cuda(b) || jitc_is_metal(b);
 }
 
 /// Search for a shared library and dlopen it if possible
@@ -1332,7 +1365,9 @@ struct EventData {
     bool enable_timing;
     ThreadState* ts;
     union {
+#if defined(DRJIT_ENABLE_CUDA)
         CUevent cuda_event;
+#endif
         Task* llvm_task;
 #if defined(DRJIT_ENABLE_METAL)
         // For Metal we store a (id<MTLSharedEvent>, value) pair encoded into
@@ -1348,15 +1383,18 @@ struct EventData {
 
     EventData(JitBackend backend, bool enable_timing)
         : backend(backend), enable_timing(enable_timing), ts(nullptr) {
-        if (backend == JitBackend::CUDA)
+#if defined(DRJIT_ENABLE_CUDA)
+        if (jitc_is_cuda(backend))
             cuda_event = nullptr;
+        else
+#endif
 #if defined(DRJIT_ENABLE_METAL)
-        else if (backend == JitBackend::Metal) {
+        if (jitc_is_metal(backend)) {
             metal_event = nullptr;
             metal_value = 0;
         }
-#endif
         else
+#endif
             llvm_task = nullptr;
     }
 

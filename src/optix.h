@@ -9,7 +9,9 @@
 
 #pragma once
 
-#include "cuda.h"
+#if defined(DRJIT_ENABLE_CUDA)
+#  include "cuda.h"
+#endif
 
 using OptixDeviceContext = void *;
 using OptixProgramGroup = void*;
@@ -24,8 +26,8 @@ struct OptixPipelineData;
 extern OptixDeviceContext jitc_optix_context();
 
 /// Destroy an OptiX device context
-struct Device;
-extern void jitc_optix_context_destroy(Device &d);
+struct CUDADevice;
+extern void jitc_optix_context_destroy(CUDADevice &d);
 
 /// Look up an OptiX function by name
 extern void *jitc_optix_lookup(const char *name);

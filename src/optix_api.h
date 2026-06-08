@@ -17,6 +17,8 @@ extern void jitc_optix_api_shutdown();
 
 // ---------------------------------------------------------------------
 
+#if defined(DRJIT_ENABLE_OPTIX)
+
 #if !defined(DR_OPTIX_SYM)
 #  define DR_OPTIX_SYM(x) extern x;
 #endif
@@ -203,3 +205,5 @@ DR_OPTIX_SYM(OptixResult (*optixCoopVecMatrixConvert)(
 DR_OPTIX_SYM(OptixResult (*optixCoopVecMatrixComputeSize)(
     OptixDeviceContext, unsigned int, unsigned int, OptixCoopVecElemType,
     OptixCoopVecMatrixLayout, size_t, size_t *));
+
+#endif // defined(DRJIT_ENABLE_OPTIX)

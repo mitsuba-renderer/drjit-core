@@ -8,7 +8,7 @@ struct CUDAGreenContext {
     uint32_t sm_count = 0;
     CUgreenCtx green_1 = nullptr;
     CUgreenCtx green_2 = nullptr;
-    Device device = {};
+    CUDADevice device = {};
 };
 
 // Snapshot of the CUDA thread-local state before entering a green context
@@ -38,7 +38,7 @@ CUDAGreenContext *jitc_cuda_green_context_make(uint32_t sm_count_requested,
 #endif
 
     // Step 1: fetch SM resources for this CUDA context
-    Device &parent = state.devices[ts->device];
+    CUDADevice &parent = state.devices[ts->device];
     CUdevResource sm_resource = {};
     CUresult rc = cuCtxGetDevResource(parent.context, &sm_resource, CU_DEV_RESOURCE_TYPE_SM);
     cuda_check(rc);
@@ -110,7 +110,7 @@ CUDAGreenContext *jitc_cuda_green_context_make(uint32_t sm_count_requested,
     ctx->device.event = nullptr;
     ctx->device.sync_stream_event = nullptr;
     {
-        Device &d = ctx->device;
+        CUDADevice &d = ctx->device;
         scoped_set_context guard(d.context);
         cuda_check(cuStreamCreate(&d.stream, CU_STREAM_DEFAULT));
         cuda_check(cuEventCreate(&d.event, CU_EVENT_DISABLE_TIMING));
@@ -145,7 +145,7 @@ void jitc_cuda_green_context_release(CUDAGreenContext *ctx) {
 
     // Destroy stream/events under the green context's CUcontext
     {
-        const Device &d = ctx->device;
+        const CUDADevice &d = ctx->device;
         scoped_set_context guard(d.context);
         cuda_check(cuStreamDestroy(d.stream));
         cuda_check(cuEventDestroy(d.event));

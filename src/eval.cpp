@@ -332,7 +332,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     kernel_history_entry = { };
 
 #if defined(DRJIT_ENABLE_OPTIX)
-    uses_optix = ts->backend == JitBackend::CUDA &&
+    uses_optix = jitc_is_cuda(ts->backend) &&
                  jit_flag(JitFlag::ForceOptiX);
 #endif
 
@@ -350,13 +350,13 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_param_info.push_back({ write, kind });
     };
 
-    if (backend == JitBackend::CUDA || backend == JitBackend::Metal) {
+    if (jitc_is_device_backend(backend)) {
         add_param((void *) (uintptr_t) group.size);
 
         // CUDA reserves r0..r3 for the thread-index computation (ctaid/ntid/tid)
         // and compound-op temporaries. Metal receives the thread index directly
         // via [[thread_position_in_grid]] (r0), so locals can start at r1.
-        n_regs = (backend == JitBackend::Metal) ? 1 : 4;
+        n_regs = jitc_is_metal(backend) ? 1 : 4;
     } else {
         // First 3 parameters reserved for: kernel ptr, size, ITT identifier
         for (int i = 0; i < 3; ++i)
@@ -428,14 +428,14 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             size_t isize = (size_t) type_size[v->type],
                    dsize = (size_t) group.size;
 
-            if (backend == JitBackend::LLVM)
+            if (jitc_is_llvm(backend))
                 dsize = (dsize + width - 1) / width * width;
             if (v->is_array())
                 dsize *= v->array_length;
             dsize *= isize;
 
             // Padding to support out-of-bounds accesses in LLVM gather operations
-            if (backend == JitBackend::LLVM && isize == 1)
+            if (jitc_is_llvm(backend) && isize == 1)
                 dsize += 4 - isize;
 
             sv.data = jitc_malloc(backend, dsize); // Note: unsafe to access 'v' after jitc_malloc().
@@ -466,7 +466,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     // for its visible function table. The slot is not an IR variable, so it stays
     // out of ``kernel_param_ids``.
     metal_vft_arg_index = -1;
-    if (backend == JitBackend::Metal) {
+    if (jitc_is_metal(backend)) {
         for (uint32_t gi = group.start; gi != group.end; ++gi) {
             if ((VarKind) jitc_var(schedule[gi].index)->kind == VarKind::Call) {
                 metal_vft_arg_index = (int) kernel_params.size() - 1;
@@ -526,12 +526,12 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     buffer.clear();
 #if defined(DRJIT_ENABLE_CUDA)
-    if (backend == JitBackend::CUDA)
+    if (jitc_is_cuda(backend))
         jitc_cuda_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
     else
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-    if (backend == JitBackend::Metal)
+    if (jitc_is_metal(backend))
         jitc_metal_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
     else
 #endif
@@ -544,8 +544,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     kernel_hash = hash_kernel(buffer.get());
 
     const char *needle =
-        (uses_optix && backend == JitBackend::CUDA) ? "__raygen__^"
-                                                    : "drjit_^";
+        (uses_optix && jitc_is_cuda(backend)) ? "__raygen__^"
+                                              : "drjit_^";
     const char *marker = strstr(buffer.get(), needle);
     if (!marker)
         jitc_fail("jitc_eval(): could not locate kernel-name placeholder "
@@ -553,7 +553,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     size_t hash_offset = (marker - buffer.get()) + (strlen(needle) - 1),
            end_offset = buffer.size(),
-           prefix_len = (uses_optix && backend == JitBackend::CUDA) ? 10 : 6;
+           prefix_len = (uses_optix && jitc_is_cuda(backend)) ? 10 : 6;
 
     buffer.rewind_to(hash_offset);
     buffer.put_q64_unchecked(kernel_hash.high64);
@@ -563,6 +563,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     memcpy(kernel_name, buffer.get() + hash_offset - prefix_len,
            prefix_len + 32);
 
+#if defined(DRJIT_ENABLE_OPTIX)
     if (uses_optix && indirect_callable_count > 0) {
         // Work around a bug in OptiX with driver version 570. When a two
         // pipelines share the same set of direct callables, the driver shares the
@@ -580,6 +581,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             kernel_hash.high64
         );
     }
+#endif
 
     // PrintIR / high log levels dump the generated IR to the console.
     // In the case of Metal, properly indent the generated MSL so that it is
@@ -587,7 +589,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     if (unlikely(trace || (jitc_flags() & (uint32_t) JitFlag::PrintIR))) {
         const char *ir = buffer.get();
 #if defined(DRJIT_ENABLE_METAL)
-        if (backend == JitBackend::Metal)
+        if (jitc_is_metal(backend))
             ir = jitc_metal_format();
 #endif
         if (state.log_callback)
@@ -623,7 +625,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         const char *ir = buffer.get();
         size_t ir_size = buffer.size();
 #if defined(DRJIT_ENABLE_METAL)
-        if (backend == JitBackend::Metal) {
+        if (jitc_is_metal(backend)) {
             ir = jitc_metal_format();
             ir_size = strlen(ir);
         }
@@ -667,7 +669,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         bool cache_hit = false;
 
 #if defined(DRJIT_ENABLE_CUDA)
-        if (ts->backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(ts->backend)) {
             ProfilerPhase profiler(profiler_region_backend_compile);
             if (!uses_optix) {
                 kernel.size = 1; // dummy size value to distinguish between OptiX and CUDA kernels
@@ -682,7 +684,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         } else
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-        if (ts->backend == JitBackend::Metal) {
+        if (jitc_is_metal(ts->backend)) {
             ProfilerPhase profiler(profiler_region_backend_compile);
             cache_hit = jitc_metal_kernel_compile(buffer.get(), buffer.size(),
                                                   kernel_name, kernel);
@@ -709,7 +711,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                     np * sizeof(KernelParamInfo));
 
 #if defined(DRJIT_ENABLE_CUDA)
-        if (ts->backend == JitBackend::CUDA && !uses_optix) {
+        if (jitc_is_cuda(ts->backend) && !uses_optix) {
             // Locate the kernel entry point
             size_t offset = buffer.size();
             buffer.fmt_cuda(2, "drjit_$Q$Q", kernel_hash.high64,
@@ -1014,7 +1016,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
             return a.scope < b.scope;
         });
 
-    uint32_t n_regs = call->backend == JitBackend::CUDA ? 4 : 1;
+    uint32_t n_regs = jitc_is_cuda(call->backend) ? 4 : 1;
     for (ScheduledVariable &sv : schedule) {
         Variable *v = jitc_var(sv.index);
         v->reg_index = n_regs++;

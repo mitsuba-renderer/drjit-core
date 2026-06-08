@@ -8,7 +8,7 @@ void jitc_reorder(uint32_t key, uint32_t num_bits, uint32_t n_values,
                         uint32_t *values, uint32_t *out) {
     Variable *v_key  = jitc_var(key);
 
-    if ((JitBackend) v_key->backend != JitBackend::CUDA) {
+    if (!jitc_is_cuda(v_key->backend)) {
         for (uint32_t i = 0; i < n_values; ++i) {
             jitc_var_inc_ref(values[i]);
             out[i] = values[i];

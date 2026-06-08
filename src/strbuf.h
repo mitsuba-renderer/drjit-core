@@ -153,22 +153,26 @@ public:
     /* ================================================================== */
 
     /**
-     * \brief CUDA-specific formatting routine. Its syntax is described at the
-     * top of eval_cuda.cpp
-     */
-    void fmt_cuda(size_t nargs, const char *fmt, ...);
-
-    /**
      * \brief LLVM-specific formatting routine. Its syntax is described at the
      * top of eval_llvm.cpp
      */
     void fmt_llvm(size_t nargs, const char *fmt, ...);
 
+#if defined(DRJIT_ENABLE_CUDA)
+    /**
+     * \brief CUDA-specific formatting routine. Its syntax is described at the
+     * top of eval_cuda.cpp
+     */
+    void fmt_cuda(size_t nargs, const char *fmt, ...);
+#endif
+
+#if defined(DRJIT_ENABLE_METAL)
     /**
      * \brief Metal-specific formatting routine. Its syntax is described at
      * the top of metal_eval.cpp.
      */
     void fmt_metal(size_t nargs, const char *fmt, ...);
+#endif
 
     /**
      * \brief Append a formatted (printf-style) string to the buffer

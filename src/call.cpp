@@ -499,7 +499,7 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
         call_perm.emplace_back(type_size[jitc_var(call->inner_out[i])->type], i);
     std::sort(call_perm.begin(), call_perm.end());
 
-    if (call->backend == JitBackend::LLVM) {
+    if (jitc_is_llvm(call->backend)) {
         // In LLVM mode, the same buffer is used for inputs *and* outputs
         out_size = in_size;
         out_align = in_align;
@@ -550,11 +550,11 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
     alloca_size = alloca_size_backup;
     alloca_align = alloca_align_backup;
 
-    if (call->backend == JitBackend::LLVM)
+    if (jitc_is_llvm(call->backend))
         jitc_var_call_assemble_llvm(call, call_reg, self_reg, mask_reg,
                                     offset_reg, data_reg, out_size, out_align);
 #if defined(DRJIT_ENABLE_METAL)
-    else if (call->backend == JitBackend::Metal)
+    else if (jitc_is_metal(call->backend))
         jitc_var_call_assemble_metal(call, call_reg, self_reg, mask_reg,
                                      offset_reg, data_reg, in_size, in_align,
                                      out_size, out_align);
@@ -584,7 +584,7 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
     }
 
     // Undo previous change (for more sensible debug out put about buffer sizes)
-    if (call->backend == JitBackend::LLVM)
+    if (jitc_is_llvm(call->backend))
         out_size -= in_size;
 
     jitc_log(InfoSym,
@@ -770,7 +770,7 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
     size_t perm_size    = (size_t) size * (size_t) sizeof(uint32_t),
            offsets_size = (size_t(bucket_count) * 4 + 1) * sizeof(uint32_t);
 
-    if (backend == JitBackend::LLVM)
+    if (jitc_is_llvm(backend))
         perm_size += jitc_llvm_vector_width * sizeof(uint32_t);
 
     uint8_t *offsets = (uint8_t *) jitc_malloc(backend, offsets_size,

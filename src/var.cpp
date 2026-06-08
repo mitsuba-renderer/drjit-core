@@ -697,7 +697,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
 
 #if defined(DRJIT_ENABLE_METAL)
     // Metal does not support double precision
-    if (v.backend == (uint32_t) JitBackend::Metal &&
+    if (jitc_is_metal(v.backend) &&
         v.type == (uint32_t) VarType::Float64) {
         jitc_metal_warn_float64_demotion_once();
         if (v.is_literal()) {
@@ -875,7 +875,7 @@ uint32_t jitc_var_literal(JitBackend backend, VarType type, const void *value,
     // Metal: promote Float64 literal to Float32 (no hardware FP64).
 #if defined(DRJIT_ENABLE_METAL)
     float f32_value;
-    if (backend == JitBackend::Metal && type == VarType::Float64) {
+    if (jitc_is_metal(backend) && type == VarType::Float64) {
         jitc_metal_warn_float64_demotion_once();
         double d;
         memcpy(&d, value, sizeof(double));
@@ -1660,7 +1660,7 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
     // GPUs lack hardware FP64). Delegate to jitc_var_mem_copy, which converts
     // the host doubles to Float32.
 #if defined(DRJIT_ENABLE_METAL)
-    if (backend == JitBackend::Metal && type == VarType::Float64) {
+    if (jitc_is_metal(backend) && type == VarType::Float64) {
         return jitc_var_mem_copy(backend, VarType::Float64, ptr, size,
                                  /*from_host=*/true);
     }
@@ -1674,7 +1674,7 @@ uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
     v.size = (uint32_t) size;
     v.retain_data = free == 0;
 
-    if (backend == JitBackend::LLVM) {
+    if (jitc_is_llvm(backend)) {
         uintptr_t align =
             std::min(64u, jitc_llvm_vector_width * type_size[(int) type]);
         v.unaligned = uintptr_t(ptr) % align != 0;
@@ -1694,7 +1694,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, VarType vtype, const void *ptr,
     std::unique_ptr<float[]> f32_buf;
 #if defined(DRJIT_ENABLE_METAL)
     // Metal does not support double precision
-    if (backend == JitBackend::Metal && vtype == VarType::Float64 && from_host) {
+    if (jitc_is_metal(backend) && vtype == VarType::Float64 && from_host) {
         jitc_metal_warn_float64_demotion_once();
         const double *src = (const double *) ptr;
         f32_buf.reset(new float[size]);
@@ -1709,7 +1709,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, VarType vtype, const void *ptr,
     void *target_ptr;
 
     if (from_host) {
-        if (backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(backend)) {
             // Stage through a pinned host buffer, then async copy to device.
             target_ptr = jitc_malloc(backend, total_size);
             void *host_ptr =
@@ -1720,7 +1720,7 @@ uint32_t jitc_var_mem_copy(JitBackend backend, VarType vtype, const void *ptr,
                 jitc_memcpy_async(backend, target_ptr, host_ptr, total_size);
             }
             jitc_free(host_ptr);
-        } else if (backend == JitBackend::Metal) {
+        } else if (jitc_is_metal(backend)) {
             // Metal has unified memory; copy directly into a device buffer.
             target_ptr = jitc_malloc(backend, total_size);
             unlock_guard guard(state.lock);
@@ -1948,7 +1948,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, JitBackend dst_backend) {
         /* Cannot resolve pointer to allocation, it was likely
            created by another framework */
 #if defined(DRJIT_ENABLE_CUDA)
-        if ((JitBackend) v->backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(v->backend)) {
             int type;
             ThreadState *ts = thread_state(v->backend);
             scoped_set_context guard(ts->context);
@@ -1961,7 +1961,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, JitBackend dst_backend) {
             }
         } else
 #endif
-        if ((JitBackend) v->backend == JitBackend::Metal) {
+        if (jitc_is_metal(v->backend)) {
             src_backend = JitBackend::Metal;
         } else {
             src_backend = JitBackend::None;
@@ -2007,7 +2007,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, JitBackend dst_backend) {
 uint32_t jitc_var_mask_default(JitBackend backend, size_t size) {
     jitc_check_size("jit_var_mask_default", size);
 
-    if (backend == JitBackend::CUDA || backend == JitBackend::Metal) {
+    if (jitc_is_device_backend(backend)) {
         bool value = true;
         return jitc_var_literal(backend, VarType::Bool, &value, size, 0);
     } else {
@@ -2077,7 +2077,7 @@ uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size) {
             mask = borrow(index_2);
     }
 
-    if (backend == JitBackend::LLVM) {
+    if (jitc_is_llvm(backend)) {
         Ref default_mask = steal(jitc_var_mask_default(backend, size));
         if (!mask) {
             mask = borrow(default_mask);
@@ -2114,7 +2114,7 @@ void jitc_var_mask_pop(JitBackend backend) {
 
 /// Return an implicit mask for operations within a virtual function call
 uint32_t jitc_var_call_mask(JitBackend backend) {
-    if (backend == JitBackend::LLVM) {
+    if (jitc_is_llvm(backend)) {
         return jitc_var_new_node_0(backend, VarKind::CallMask, VarType::Bool, 1, 1);
     } else {
         bool value = true;
@@ -2504,7 +2504,7 @@ uint32_t jitc_var_reduce(JitBackend backend, VarType vt, ReduceOp op,
 
 #if defined(DRJIT_ENABLE_METAL)
     // Metal does not support double precision
-    if (backend == JitBackend::Metal && vt == VarType::Float64)
+    if (jitc_is_metal(backend) && vt == VarType::Float64)
         vt = VarType::Float32;
 #endif
 
@@ -2706,7 +2706,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
     // index stride is ``replication_per_worker * size`` and only every
     // ``replication_per_worker``-th slot is actually written.
     uint32_t replication_per_worker = 1, workers = 1;
-    if (backend == JitBackend::LLVM) {
+    if (jitc_is_llvm(backend)) {
         std::tie(workers, replication_per_worker) =
             jitc_llvm_expand_replication_factor(size, tsize);
     } else {
@@ -2774,7 +2774,7 @@ void jitc_var_reduce_expanded(uint32_t index) {
     // both functions must agree, and the factor is not stored on the
     // Variable.
     uint32_t exp = 1;
-    if (backend == JitBackend::LLVM) {
+    if (jitc_is_llvm(backend)) {
         auto [workers, replication_per_worker] =
             jitc_llvm_expand_replication_factor(size, tsize);
         exp = replication_per_worker * workers;
@@ -2917,7 +2917,7 @@ const char *jitc_var_whos() {
                 auto [size, bk, sh, device] = alloc_info_decode(it->second);
                 (void) size;
 
-                if ((bk == JitBackend::CUDA || bk == JitBackend::Metal) && !sh)
+                if (jitc_is_device_backend(bk) && !sh)
                     var_buffer.fmt("device %-4i", (int) device);
                 else if (sh)
                     var_buffer.fmt("%s shared ", jitc_backend_name(bk));

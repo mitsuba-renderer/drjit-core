@@ -212,7 +212,7 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
     if (success) {
         jitc_log(Trace, "jit_kernel_load(\"%s\")", filename);
         kernel.size = header.kernel_size;
-        if (backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(backend)) {
             kernel.data = malloc_check(header.kernel_size);
             memcpy(kernel.data, uncompressed_data + source_size, header.kernel_size);
         } else {
@@ -368,7 +368,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     header.kernel_size = kernel.size;
     header.reloc_size = 0;
 
-    if (backend == JitBackend::LLVM)
+    if (jitc_is_llvm(backend))
         header.reloc_size = kernel.llvm.n_reloc * sizeof(void *);
 
     uint32_t padding_size = compute_padding(header);
@@ -383,7 +383,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     memcpy(temp_in + source_size, kernel.data, header.kernel_size);
     memset(temp_in + header.source_size + header.kernel_size, 0, padding_size);
 
-    if (backend == JitBackend::LLVM) {
+    if (jitc_is_llvm(backend)) {
         uintptr_t *reloc_out = (uintptr_t *) (temp_in + header.source_size +
                                               header.kernel_size + padding_size);
         for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
@@ -484,7 +484,7 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
         }
 #endif
 #if defined(DRJIT_ENABLE_CUDA)
-        const Device &device = state.devices.at(device_id);
+        const CUDADevice &device = state.devices.at(device_id);
         scoped_set_context guard(device.context);
         if (kernel.size) {
             cuda_check(cuModuleUnload(kernel.cuda.mod));

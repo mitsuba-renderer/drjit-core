@@ -20,7 +20,7 @@
 static Ref jitc_coop_vec_metal_target(uint32_t target, bool &needs_narrow) {
     needs_narrow = false;
     const Variable *tv = jitc_var(target);
-    if ((JitBackend) tv->backend != JitBackend::Metal ||
+    if (!jitc_is_metal(tv->backend) ||
         (VarType) tv->type != VarType::Float16)
         return Ref();
     return steal(jitc_var_shadow_make(target, needs_narrow));
@@ -41,7 +41,7 @@ static uint32_t unwrap(uint32_t index) {
 
 bool jitc_coop_vec_supported(JitBackend backend) {
 #if defined(DRJIT_ENABLE_CUDA)
-    if (backend == JitBackend::CUDA)
+    if (jitc_is_cuda(backend))
         return (jitc_cuda_version_major == 12 &&
                 jitc_cuda_version_minor >= 8) ||
                jitc_cuda_version_major > 12;
@@ -75,7 +75,7 @@ uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
     v.backend = arg_v->backend;
     v.array_length = (uint16_t) n;
     v.coop_vec = true;
-    v.optix = v.backend == (uint32_t) JitBackend::CUDA;
+    v.optix = jitc_is_cuda(v.backend);
 
     drjit::unique_ptr<CoopVecPackData> cvid = new CoopVecPackData();
     bool is_literal = true;
@@ -156,7 +156,7 @@ uint32_t jitc_coop_vec_literal(JitBackend backend,
     v.backend = (uint32_t) backend;
     v.array_length = (uint16_t) length;
     v.coop_vec = true;
-    v.optix = v.backend == (uint32_t) JitBackend::CUDA;
+    v.optix = jitc_is_cuda(v.backend);
 
     return jitc_var_new(v);
 }
@@ -185,7 +185,7 @@ uint32_t jitc_coop_vec_load(uint32_t buffer, uint32_t offset, uint32_t length) {
     v.array_length = (uint16_t) length;
     v.literal = offset;
     v.coop_vec = true;
-    v.optix = backend == JitBackend::CUDA;
+    v.optix = jitc_is_cuda(backend);
     v.dep[0] = buf_ptr;
     v.dep[1] = mask;
     jitc_var_inc_ref(buf_ptr);
@@ -223,7 +223,7 @@ uint32_t jitc_coop_vec_cast(uint32_t index, VarType vt) {
     }
 
     /// The OptiX conversion intrinsic is currently too limited
-    if ((JitBackend) prev_v->backend == JitBackend::CUDA) {
+    if (jitc_is_cuda(prev_v->backend)) {
         uint32_t n = prev_v->array_length;
         if (n == 0) // just here to silence a GCC warning..
             return 0;
@@ -387,7 +387,7 @@ MatrixDescr jitc_coop_vec_compute_layout(uint32_t index,
 
     uint32_t tsize = type_size[(uint32_t) vt];
 
-    if (backend == JitBackend::CUDA) {
+    if (jitc_is_cuda(backend)) {
         uint32_t offset_in_bytes = in.offset * tsize;
         if (offset_in_bytes % 64 != 0)
             jitc_raise(
@@ -412,7 +412,7 @@ MatrixDescr jitc_coop_vec_compute_layout(uint32_t index,
     r.size = (r.rows - 1) * r.stride + r.cols;
 
 #if defined(DRJIT_ENABLE_OPTIX)
-    if (backend == JitBackend::CUDA && r.layout != MatrixLayout::RowMajor) {
+    if (jitc_is_cuda(backend) && r.layout != MatrixLayout::RowMajor) {
         OptixDeviceContext ctx = jitc_optix_context();
         uint32_t type_id = jitc_optix_coop_vec_type_id(vt),
                  layout_id = jitc_optix_coop_vec_layout_id(layout);
@@ -504,7 +504,7 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
         a_ptr = steal(jitc_var_pointer(backend, p, tmp, 0));
         cvmvd->A_descr = *A_descr;
 
-        if (backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(backend)) {
             uint32_t tsize = type_size[(int) a_vt],
                      offset_in_bytes = A_descr->offset * tsize,
                      stride_in_bytes = A_descr->stride * tsize;
@@ -541,8 +541,8 @@ uint32_t jitc_coop_vec_matvec(uint32_t A_index,
     cvmvd->transpose = transpose;
 
     bool supported = false,
-         is_llvm  = backend == JitBackend::LLVM,
-         is_metal = backend == JitBackend::Metal;
+         is_llvm  = jitc_is_llvm(backend),
+         is_metal = jitc_is_metal(backend);
     supported |= a_vt == VarType::Float16 && x_vt == VarType::Float16 &&
                  (b_vt == VarType::Void || b_vt == VarType::Float16);
     supported |= (is_llvm || is_metal) &&
@@ -588,7 +588,7 @@ uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
         vt = (VarType) v->type;
         size = v->size;
 
-        if (backend == JitBackend::CUDA &&
+        if (jitc_is_cuda(backend) &&
             !(vt == VarType::Float16 || vt == VarType::Float32))
             jitc_raise(
                 "jit_coop_vec_accum(): this operation is restricted to "
@@ -680,7 +680,7 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
         vt = (VarType) v_a->type;
         size = std::max(v_a->size, v_b->size);
 
-        if (backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(backend)) {
             if (vt != VarType::Float16)
                 jitc_raise(
                     "jit_coop_vec_outer_product_accum(): this operation is "
