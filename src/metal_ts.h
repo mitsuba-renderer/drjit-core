@@ -164,6 +164,10 @@ public:
 
     /// The most recently committed command buffer
     void *metal_last_cb = nullptr;
+
+    /// When an MPSGraph op splits its work across command buffers, the first
+    /// (committed) buffer is stashed here so kernel-history timing can span it.
+    void *metal_history_split_cb = nullptr;
 };
 
 #endif // defined(DRJIT_ENABLE_METAL)

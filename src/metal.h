@@ -44,6 +44,9 @@ extern void jitc_metal_profile_stop();
 /// Wait for all Metal work submitted on the current thread to complete.
 extern void jitc_metal_sync(ThreadState *ts);
 
+/// Resolve a Metal kernel-history entry's execution_time
+extern float jitc_metal_finalize_kernel_history_entry(void *start, void *end);
+
 // ---------------------------------------------------------------------
 
 /// Allocate a new ``MTLBuffer`` of ``size`` bytes (shared or private storage).

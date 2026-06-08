@@ -157,6 +157,12 @@ struct MetalHistoryScope {
         entry.output_count = 1;
 
         id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) ts->metal_cb;
+
+        // MPSGraph operations may launch into multiple command buffers. Keep
+        // track of the first buffer;
+        entry.event_start = ts->metal_history_split_cb;
+        ts->metal_history_split_cb = nullptr;
+
         entry.task = (__bridge_retained void *) cb;
         state.kernel_history.append(entry);
     }
@@ -595,7 +601,12 @@ static void metal_run_graph(MetalThreadState *ts, const MetalGraph &g,
     // MPSGraph _may_ commit the command buffer, in which case we continue using the new one
     id<MTLCommandBuffer> root = mcb.rootCommandBuffer;
     if ((__bridge void *) root != ts->metal_cb) {
-        (void) (__bridge_transfer id<MTLCommandBuffer>) ts->metal_cb;
+        // MPSGraph committed the command buffer. When recording the kernel history,
+        // keep track of it so that we can correclty time the entire operation.
+        if (ts->metal_history_depth > 0 && !ts->metal_history_split_cb)
+            ts->metal_history_split_cb = ts->metal_cb;
+        else
+            (void) (__bridge_transfer id<MTLCommandBuffer>) ts->metal_cb;
         ts->metal_cb = (__bridge_retained void *) root;
     }
 }
