@@ -52,9 +52,6 @@ extern uint32_t jitc_llvm_vector_width;
 /// Maximum alignment needed for vector loads
 extern uint32_t jitc_llvm_max_align;
 
-/// Should the LLVM IR use typed (e.g., "i8*") or untyped ("ptr") pointers?
-extern bool jitc_llvm_opaque_pointers;
-
 /// LLVM version (parts can equal -1, which means: not sure)
 extern int jitc_llvm_version_major;
 extern int jitc_llvm_version_minor;

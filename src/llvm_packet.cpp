@@ -99,12 +99,10 @@ void gather_packet_recursive(uint32_t l, uint32_t i, uint32_t n, const Variable 
             uint32_t k = i*n+j,
                      align = type_size[v->type]*n;
 
-            fmt( "    %p$u = extractelement <$w x {$m*}> %p, i32 $u\n"
-                "{    %p$u_0 = bitcast $m* %p$u to <$u x $m>*\n|}"
-                 "    %v$u_$u_$u = load <$u x $m>, {<$u x $m>*} %p$u{_0|}, align $u, !alias.scope !2\n",
-                k, v, k,
-                k, v, k, n, v,
-                l, i, j, n, v, n, v, k, align);
+            fmt( "    %p$u = extractelement <$w x ptr> %p, i32 $u\n"
+                 "    %v$u_$u_$u = load <$u x $m>, ptr %p$u, align $u, !alias.scope !2\n",
+                k, k,
+                l, i, j, n, v, k, align);
         }
     } else {
         uint32_t hs = s / 2;
@@ -129,8 +127,8 @@ void jitc_llvm_render_gather_packet(const Variable *v, const Variable *ptr,
 
     fmt_intrinsic("@zero_$m_$u = private constant [$u x $m] $z, align $A", v, n, n, v, v);
 
-    fmt("define internal fastcc [$u x <$w x $m>] @gather_$ux$H(<$w x {$m*}> %p) local_unnamed_addr #0 ${\n",
-        n, v, n, v, v);
+    fmt("define internal fastcc [$u x <$w x $m>] @gather_$ux$H(<$w x ptr> %p) local_unnamed_addr #0 {\n",
+        n, v, n, v);
 
     gather_packet_recursive(0, 0, n, v);
 
@@ -145,7 +143,7 @@ void jitc_llvm_render_gather_packet(const Variable *v, const Variable *ptr,
             i, n, v, i - 1, v, i, i);
 
     fmt("    ret [$u x <$w x $m>] %q$u\n"
-        "$}",
+        "}",
         n, v, n - 1);
 
     jitc_register_global(buffer.get() + offset);
@@ -155,22 +153,18 @@ void jitc_llvm_render_gather_packet(const Variable *v, const Variable *ptr,
     if (v->type == (uint32_t) VarType::Bool)
         ext = "_e";
 
-    fmt("{    $v_0 = bitcast $<i8*$> $v to $<[$u x $m]*$>\n"
-         "    $v_2 = getelementptr [$u x $m], $<{[$u x $m]*}$> {$v_0|$v}, $T $v\n"
-         "    $v_3 = getelementptr [$u x $m], [$u x $m]* @zero_$m_$u, $T $z\n"
-         "    $v_4 = select $V, <$w x {[$u x $m]*}> $v_2, <$w x {[$u x $m]*}> $v_3\n"
-        "{    $v_5 = bitcast <$w x [$u x $m]*> $v_4 to <$w x $m*>\n|}"
-         "    $v_6 = call fastcc [$u x <$w x $m>] @gather_$ux$H(<$w x {$m*}> $v_{5|4})\n",
-        v, ptr, n, v,
-        v, n, v, n, v, v, ptr, index, index,
-        v, n, v, n, v, v, n, index,
-        v, mask, n, v, v, n, v, v,
-        v, n, v, v,  v,
-        v, n, v, n, v, v, v
+    fmt("    $v_2 = getelementptr [$u x $m], $<ptr$> $v, $T $v\n"
+        "    $v_3 = getelementptr [$u x $m], ptr @zero_$m_$u, $T $z\n"
+        "    $v_4 = select $V, <$w x ptr> $v_2, <$w x ptr> $v_3\n"
+        "    $v_5 = call fastcc [$u x <$w x $m>] @gather_$ux$H(<$w x ptr> $v_4)\n",
+        v, n, v, ptr, index, index,
+        v, n, v, v, n, index,
+        v, mask, v, v,
+        v, n, v, n, v, v
     );
 
     for (uint32_t i = 0; i < n; ++i)
-        fmt("    $v_out_$u$s = extractvalue [$u x <$w x $m>] $v_6, $u\n",
+        fmt("    $v_out_$u$s = extractvalue [$u x <$w x $m>] $v_5, $u\n",
             v, i, ext, n, v, v, i);
 
     if (v->type == (uint32_t) VarType::Bool) {
@@ -187,10 +181,8 @@ void scatter_packet_recursive(ReduceOp op, uint32_t l, uint32_t i, uint32_t n, c
         for (uint32_t j = 0; j < n; ++j) {
             uint32_t k = i*n+j, align = type_size[v->type]*n;
 
-            fmt( "    %p$u = extractelement <$w x {$m*}> %p, i32 $u\n"
-                "{    %p$u_0 = bitcast $m* %p$u to <$u x $m>*\n|}",
-                k, v, k,
-                k, v, k, n, v);
+            fmt( "    %p$u = extractelement <$w x ptr> %p, i32 $u\n",
+                k, k);
 
             if (false) {
                 /* Compile via Masked loads/store */
@@ -198,15 +190,15 @@ void scatter_packet_recursive(ReduceOp op, uint32_t l, uint32_t i, uint32_t n, c
                 for (uint32_t m = 0; m < n; ++m)
                     fmt("i32 $u$s", k, m + 1 < n ? ", " : ">\n");
                 if (op == ReduceOp::Identity) {
-                    fmt("    call void @llvm.masked.store.v$u$H.p0{v$u$H|}(<$u x $m> %v$u_$u_$u, {<$u x $m> *} %p$u{_0|}, i32 $u, <$u x i1> %m$u)\n",
-                        n, v, n, v, n, v, l, i, j, n, v, k, align, n, k);
+                    fmt("    call void @llvm.masked.store.v$u$H.p0(<$u x $m> %v$u_$u_$u, ptr %p$u, i32 $u, <$u x i1> %m$u)\n",
+                        n, v, n, v, l, i, j, k, align, n, k);
                 } else if (op == ReduceOp::Add) {
-                    fmt("    %v$u_0 = call <$u x $m> @llvm.masked.load.v$u$H.p0{v$u$H|}({<$u x $m> *} %p$u{_0|}, i32 $u, <$u x i1> %m$u, <$u x $m> undef)\n"
+                    fmt("    %v$u_0 = call <$u x $m> @llvm.masked.load.v$u$H.p0(ptr %p$u, i32 $u, <$u x i1> %m$u, <$u x $m> undef)\n"
                         "    %v$u_1 = $s <$u x $m> %v$u_0, %v$u_$u_$u\n"
-                        "    call void @llvm.masked.store.v$u$H.p0{v$u$H|}(<$u x $m> %v$u_1, {<$u x $m> *} %p$u{_0|}, i32 $u, <$u x i1> %m$u)\n",
-                        k, n, v, n, v, n, v, n, v, k, align, n, k, n, v,
+                        "    call void @llvm.masked.store.v$u$H.p0(<$u x $m> %v$u_1, ptr %p$u, i32 $u, <$u x i1> %m$u)\n",
+                        k, n, v, n, v, k, align, n, k, n, v,
                         k, jitc_is_float(v) ? "fadd" : "add", n, v, k, l, i, j,
-                        n, v, n, v, n, v, k, n, v, k, align, n, k);
+                        n, v, n, v, k, k, align, n, k);
                 }
             } else {
                 fmt("    br label %l$u_pre\n\n"
@@ -217,16 +209,16 @@ void scatter_packet_recursive(ReduceOp op, uint32_t l, uint32_t i, uint32_t n, c
                     k, k, k, k, k, k, k, k);
 
                 if (op == ReduceOp::Identity) {
-                    fmt("    store <$u x $m> %v$u_$u_$u, {<$u x $m>*} "
-                        "%p$u{_0|}, align $u, !noalias !2\n",
-                        n, v, l, i, j, n, v, k, align);
+                    fmt("    store <$u x $m> %v$u_$u_$u, ptr "
+                        "%p$u, align $u, !noalias !2\n",
+                        n, v, l, i, j, k, align);
                 } else if (op == ReduceOp::Add) {
-                    fmt("    %v$u_0 = load <$u x $m>, {<$u x $m>*} %p$u{_0|}, align $u\n"
+                    fmt("    %v$u_0 = load <$u x $m>, ptr %p$u, align $u\n"
                         "    %v$u_1 = $s <$u x $m> %v$u_0, %v$u_$u_$u\n"
-                        "    store <$u x $m> %v$u_1, {<$u x $m>*} %p$u{_0|}, align $u, !noalias !2\n",
-                        k, n, v, n, v, k, align,
+                        "    store <$u x $m> %v$u_1, ptr %p$u, align $u, !noalias !2\n",
+                        k, n, v, k, align,
                         k, jitc_is_float(v) ? "fadd" : "add", n, v, k, l, i, j,
-                        n, v, k, n, v, k, align);
+                        n, v, k, k, align);
                 }
 
                 fmt("    br label %l$u_post\n\n"
@@ -258,14 +250,14 @@ void jitc_llvm_scatter_packet_render_function(const Variable *v0, uint32_t n,
     const char *op_name = "";
     if (op == ReduceOp::Add) {
         op_name = "add_";
-        fmt_intrinsic("declare <$u x $m> @llvm.masked.load.v$u$H.p0{v$u$H|}({<$u x $m> *}, i32, <$u x i1>, <$u x $m>)",
-                      n, v0, n, v0, n, v0, n, v0, n, n, v0);
+        fmt_intrinsic("declare <$u x $m> @llvm.masked.load.v$u$H.p0(ptr, i32, <$u x i1>, <$u x $m>)",
+                      n, v0, n, v0, n, n, v0);
     }
-    fmt_intrinsic("declare void @llvm.masked.store.v$u$H.p0{v$u$H|}(<$u x $m>, {<$u x $m> *}, i32, <$u x i1>)",
-                  n, v0, n, v0, n, v0, n, v0, n);
+    fmt_intrinsic("declare void @llvm.masked.store.v$u$H.p0(<$u x $m>, ptr, i32, <$u x i1>)",
+                  n, v0, n, v0, n);
 
-    fmt("define internal fastcc void @scatter_$s$ux$H(<$w x {$m*}> %p, <$w x i1> %m, [$u x <$w x $m>] %v) local_unnamed_addr #0 ${\n",
-        op_name, n, v0, v0, n, v0);
+    fmt("define internal fastcc void @scatter_$s$ux$H(<$w x ptr> %p, <$w x i1> %m, [$u x <$w x $m>] %v) local_unnamed_addr #0 {\n",
+        op_name, n, v0, n, v0);
 
     for (uint32_t i = 0; i < n; ++i)
         fmt("    %v$u = extractvalue [$u x <$w x $m>] %v, $u\n",
@@ -279,7 +271,7 @@ void jitc_llvm_scatter_packet_render_function(const Variable *v0, uint32_t n,
     scatter_packet_recursive(op, 0, 0, n, v0);
 
     fmt("    ret void\n"
-        "$}");
+        "}");
 
     jitc_register_global(buffer.get() + offset);
     buffer.rewind_to(offset);
@@ -328,14 +320,12 @@ void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
         }
 
         // First offset the base pointer by the packet offset.
-        fmt("{    $v_$u_p0 = bitcast $<i8*$> $v to $<$m*$>\n|}"
-            "    $v_$u_p1 = getelementptr $m, $<$m*$> {$v_$u_p0|$v}, i32 $u\n"
-            "    $v_$u_p2 = getelementptr $m, $<$m*$> $v_$u_p1, $V\n",
-            v, offset, ptr, v0,
-            v, offset, v0, v0, v, offset, ptr, offset,
-            v, offset, v0, v0, v, offset, index);
+        fmt("    $v_$u_p1 = getelementptr $m, $<ptr$> $v, i32 $u\n"
+            "    $v_$u_p2 = getelementptr $m, $<ptr$> $v_$u_p1, $V\n",
+            v, offset, v0, ptr, offset,
+            v, offset, v0, v, offset, index);
 
-        fmt("    call fastcc void @scatter_$s$ux$H(<$w x {$m*}> $v_$u_p2, $V, [$u x <$w x $m>] $v_$u)\n",
-            op_name, packet_size, v0, v0, v, offset, mask, packet_size, v0, v, offset + packet_size-1);
+        fmt("    call fastcc void @scatter_$s$ux$H(<$w x ptr> $v_$u_p2, $V, [$u x <$w x $m>] $v_$u)\n",
+            op_name, packet_size, v0, v, offset, mask, packet_size, v0, v, offset + packet_size-1);
     }
 }

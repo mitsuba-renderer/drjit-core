@@ -10,17 +10,11 @@
  *  Format  Input          Example result    Description
  * --------------------------------------------------------------------------
  *  $u      uint32_t      `1234`             Decimal number (32 bit)
- *  $U      uint64_t      `1234`             Decimal number (64 bit)
- * --------------------------------------------------------------------------
- *  $x      uint32_t      `4d2`              Hexadecimal number (32 bit)
- *  $X      uint64_t      `4d2`              Hexadecimal number (64 bit)
  * --------------------------------------------------------------------------
  *  $s      const char *  `foo`              Zero-terminated string
  * --------------------------------------------------------------------------
  *  $t      Variable      `float`            Scalar variable type
  *  $T      Variable      `<8 x float>`      Vector variable type
- *  $p      Variable      `float*`           Pointer type
- *  $P      Variable      `<8 x float*>`     Vector variable type
  *  $h      Variable      `f32`              Type abbreviation for intrinsics
  * --------------------------------------------------------------------------
  *  $b      Variable      `i32`              Scalar variable type (as int)
@@ -49,14 +43,7 @@
  * --------------------------------------------------------------------------
  *  $w      (none)        `16`               Vector width of LLVM backend
  *  $z      (none)        `zeroinitializer`  Zero initializer string
- *  $e      (none)        `.experimental`    Ignored on newer LLVM versions
  * --------------------------------------------------------------------------
- *
- * Pointers should be wrapped in braces, as in `{i8*}` or `{$t*}`. This will
- * allow them to be replaced by the opaque `ptr` type on newer versions of LLVM
- * that use this convention. An extended form of this syntax `{a|b}` causes `a`
- * and `b` to be generated for LLVM with non-opaque and opaque pointers,
- * respectively.
  *
  * Another syntax pattern used in a few places is `$<foo$>`. It expands to
  * `foo` at the top level and `<16 x foo>` when the generated code is part
@@ -92,7 +79,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
     fmt("define void @drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 "
-        "%end, i32 %thread_id, {i8**} noalias %params) #0 ${\n"
+        "%end, i32 %thread_id, ptr noalias %params) #0 {\n"
         "entry:\n");
 
     for (uint32_t gi = group.start; gi != group.end; ++gi) {
@@ -129,8 +116,8 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         /// Determine source/destination address of input/output parameters
         if (ptype == ParamType::Input && size == 1 && vt == VarType::Pointer) {
             // Case 1: load a pointer address from the parameter array
-            fmt("    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
-                "    $v = load {i8*}, {i8**} $v_p1, align 8, !alias.scope !2\n",
+            fmt("    $v_p1 = getelementptr inbounds ptr, ptr %params, i32 $o\n"
+                "    $v = load ptr, ptr $v_p1, align 8, !alias.scope !2\n",
                 v, v, v, v);
         } else if (v->is_array()) {
             if (ptype == ParamType::Input)
@@ -138,16 +125,14 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         } else if (ptype != ParamType::Register) {
             // Case 3: read a regular input/output parameter
 
-            fmt( "    $v_p1 = getelementptr inbounds {i8*}, {i8**} %params, i32 $o\n"
-                 "    $v_p{2|3} = load {i8*}, {i8**} $v_p1, align 8, !alias.scope !2\n"
-                "{    $v_p3 = bitcast i8* $v_p2 to $m*\n|}",
-                v, v, v, v, v, v, v);
+            fmt("    $v_p1 = getelementptr inbounds ptr, ptr %params, i32 $o\n"
+                "    $v_p2 = load ptr, ptr $v_p1, align 8, !alias.scope !2\n",
+                v, v, v, v);
 
             // For output parameters and non-scalar inputs
             if (ptype != ParamType::Input || size != 1)
-                fmt( "    $v_p{4|5} = getelementptr inbounds $m, {$m*} $v_p3, i64 %index\n"
-                    "{    $v_p5 = bitcast $m* $v_p4 to $M*\n|}",
-                    v, v, v, v, v, v, v, v);
+                fmt("    $v_p3 = getelementptr inbounds $m, ptr $v_p2, i64 %index\n",
+                    v, v, v);
         }
 
         if (likely(ptype == ParamType::Input)) {
@@ -161,14 +146,14 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
                 const char *nontemporal =
                     vt == VarType::Float16 ? "" : ", !nontemporal !3";
 
-                fmt("    $v$s = load $M, {$M*} $v_p5, align $A, !alias.scope !2$s\n",
-                    v, vt == VarType::Bool ? "_0" : "", v, v, v, v, nontemporal);
+                fmt("    $v$s = load $M, ptr $v_p3, align $A, !alias.scope !2$s\n",
+                    v, vt == VarType::Bool ? "_0" : "", v, v, v, nontemporal);
                 if (vt == VarType::Bool)
                     fmt("    $v = trunc $M $v_0 to $T\n", v, v, v, v);
             } else {
                 // Load a scalar value and broadcast it
-                fmt("    $v_0 = load $m, {$m*} $v_p3, align $a, !alias.scope !2\n",
-                    v, v, v, v, v);
+                fmt("    $v_0 = load $m, ptr $v_p2, align $a, !alias.scope !2\n",
+                    v, v, v, v);
 
                 if (vt == VarType::Bool)
                     fmt("    $v_1 = trunc i8 $v_0 to i1\n", v, v);
@@ -202,8 +187,8 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
                     fmt("    $v_e = zext $V to $M\n", v, v, v);
                     ext = "_e";
                 }
-                fmt("    store $M $v$s, {$M*} $v_p5, align $A, !noalias !2, !nontemporal !3\n",
-                    v, v, ext, v, v, v);
+                fmt("    store $M $v$s, ptr $v_p3, align $A, !noalias !2, !nontemporal !3\n",
+                    v, v, ext, v, v);
             } else {
                 jitc_llvm_render_array_memcpy_out(v);
             }
@@ -227,7 +212,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
                suffix_target = (char *) strchr(buffer.get(), ':') - buffer.get() + 2;
 
         if (indirect_callable_count > 0)
-            fmt("    %callables = load {i8**}, {i8***} @callables, align 8\n");
+            fmt("    %callables = load ptr, ptr @callables, align 8\n");
 
         if (alloca_size >= 0)
             fmt("    %buffer = alloca i8, i32 $u, align $u\n",
@@ -253,7 +238,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         "!3 = !{i32 1}\n"
         "!4 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
 
-    fmt("attributes #0 = ${ norecurse nounwind \"frame-pointer\"=\"none\" "
+    fmt("attributes #0 = { norecurse nounwind \"frame-pointer\"=\"none\" "
         "\"no-builtins\" \"no-stack-arg-probe\" \"target-cpu\"=\"$s\"", jitc_llvm_target_cpu);
 
     const char *target_features = jitc_llvm_target_features;
@@ -310,16 +295,16 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     if (call->use_thread_id)
         put(", i32 %thread_id");
 
-    fmt(", {i8*} noalias %params");
+    fmt(", ptr noalias %params");
 
     if (!call->data_map.empty()) {
         if (callable_depth == 1)
-            fmt(", {i8*} noalias %data, <$w x i32> %offsets");
+            fmt(", ptr noalias %data, <$w x i32> %offsets");
         else
-            fmt(", <$w x {i8*}> %data, <$w x i32> %offsets");
+            fmt(", <$w x ptr> %data, <$w x i32> %offsets");
     }
 
-    fmt(") #0 ${\n"
+    fmt(") #0 {\n"
         "entry:\n"
         "    ; Call: $s\n", call->name.c_str());
 
@@ -356,41 +341,37 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                     "between the recording step and code generation (which is "
                     "happening now). This is not allowed.", sv.index);
 
-            fmt_intrinsic("declare $M @llvm.masked.gather.v$w$h(<$w x {$m*}>, i32, <$w x i1>, $M)",
-                          v, v, v, v);
+            fmt_intrinsic("declare $M @llvm.masked.gather.v$w$h(<$w x ptr>, i32, <$w x i1>, $M)",
+                          v, v, v);
 
             uint32_t offset = it->second - call->data_offset[inst];
             bool is_pointer_or_bool =
                 (vt == VarType::Pointer) || (vt == VarType::Bool);
             // Expand $<..$> only when we are compiling a recursive function call
             callable_depth--;
-            fmt( "    $v_p1 = getelementptr inbounds i8, $<{i8*}$> %data, i32 $u\n"
-                 "    $v_p2 = getelementptr inbounds i8, $<{i8*}$> $v_p1, <$w x i32> %offsets\n"
-                "{    $v_p3 = bitcast <$w x i8*> $v_p2 to <$w x $m*>\n|}"
-                 "    $v$s = call $M @llvm.masked.gather.v$w$h(<$w x {$m*}> $v_p{3|2}, i32 $a, <$w x i1> %mask, $M $z)\n",
+            fmt("    $v_p1 = getelementptr inbounds i8, $<ptr$> %data, i32 $u\n"
+                "    $v_p2 = getelementptr inbounds i8, $<ptr$> $v_p1, <$w x i32> %offsets\n"
+                "    $v$s = call $M @llvm.masked.gather.v$w$h(<$w x ptr> $v_p2, i32 $a, <$w x i1> %mask, $M $z)\n",
                 v, offset,
                 v, v,
-                v, v, v,
-                v, is_pointer_or_bool ? "_p4" : "", v, v, v, v, v, v);
+                v, is_pointer_or_bool ? "_p3" : "", v, v, v, v, v);
             callable_depth++;
 
             if (vt == VarType::Pointer)
-                fmt("    $v = inttoptr <$w x i64> $v_p4 to <$w x {i8*}>\n",
+                fmt("    $v = inttoptr <$w x i64> $v_p3 to <$w x ptr>\n",
                     v, v);
             else if (vt == VarType::Bool)
-                fmt("    $v = trunc <$w x i8> $v_p4 to <$w x i1>\n",
+                fmt("    $v = trunc <$w x i8> $v_p3 to <$w x i1>\n",
                     v, v);
             continue;
         }
 
         switch (kind) {
             case VarKind::CallInput:
-                fmt( "    $v_i{0|1} = getelementptr inbounds i8, {i8*} %params, i64 $u\n"
-                    "{    $v_i1 = bitcast i8* $v_i0 to $M*\n|}"
-                     "    $v$s = load $M, {$M*} $v_i1, align $A\n",
+                fmt("    $v_i1 = getelementptr inbounds i8, ptr %params, i64 $u\n"
+                    "    $v$s = load $M, ptr $v_i1, align $A\n",
                     v, jitc_var(v->dep[0])->param_offset * width,
-                    v, v, v,
-                    v, vt == VarType::Bool ? "_i2" : "", v, v, v, v);
+                    v, vt == VarType::Bool ? "_i2" : "", v, v, v);
 
                 if (vt == VarType::Bool)
                     fmt("    $v = trunc $M $v_i2 to $T\n",
@@ -418,12 +399,10 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
         uint32_t vti = v->type;
         const VarType vt = (VarType) vti;
 
-        fmt( "    %out_$u_{0|1} = getelementptr inbounds i8, {i8*} %params, i64 $u\n"
-            "{    %out_$u_1 = bitcast i8* %out_$u_0 to $M*\n|}"
-             "    %out_$u_2 = load $M, {$M*} %out_$u_1, align $A\n",
+        fmt("    %out_$u_1 = getelementptr inbounds i8, ptr %params, i64 $u\n"
+            "    %out_$u_2 = load $M, ptr %out_$u_1, align $A\n",
             i, offset * width,
-            i, i, v,
-            i, v, v, i, v);
+            i, v, i, v);
 
         if (vt == VarType::Bool)
             fmt("    %out_$u_zext = zext $V to $M\n"
@@ -434,8 +413,8 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
             fmt("    %out_$u_3 = select <$w x i1> %mask, $V, $T %out_$u_2\n",
                 i, v, v, i);
 
-        fmt("    store $M %out_$u_3, {$M*} %out_$u_1, align $A\n",
-            v, i, v, i, v);
+        fmt("    store $M %out_$u_3, ptr %out_$u_1, align $A\n",
+            v, i, i, v);
     }
 
     /* The function requires extra memory or uses callables. Insert
@@ -446,7 +425,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                    (char *) strrchr(buffer.get(), '{') - buffer.get() + 9;
 
         if (callables_local != indirect_callable_count)
-            fmt("    %callables = load {i8**}, {i8***} @callables, align 8\n");
+            fmt("    %callables = load ptr, ptr @callables, align 8\n");
 
         if (alloca_size >= 0)
             fmt("    %buffer = alloca i8, i32 $u, align $u\n",
@@ -686,39 +665,25 @@ static void jitc_llvm_render(Variable *v) {
             break;
 
         case VarKind::Min:
-            if (jitc_llvm_version_major >= 12 || jitc_is_float(v)) {
-                if (jitc_is_float(v))
-                    stmt = "minnum";
-                else if (jitc_is_uint(v))
-                    stmt = "umin";
-                else
-                    stmt = "smin";
-                fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
-                fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
-            } else {
-                fmt("    $v_0 = icmp $s $V, $v\n"
-                    "    $v = select <$w x i1> $v_0, $V, $V\n",
-                    v, jitc_is_uint(v) ? "ult" : "slt", a0, a1,
-                    v, v, a0, a1);
-            }
+            if (jitc_is_float(v))
+                stmt = "minnum";
+            else if (jitc_is_uint(v))
+                stmt = "umin";
+            else
+                stmt = "smin";
+            fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
+            fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
             break;
 
         case VarKind::Max:
-            if (jitc_llvm_version_major >= 12 || jitc_is_float(v)) {
-                if (jitc_is_float(v))
-                    stmt = "maxnum";
-                else if (jitc_is_uint(v))
-                    stmt = "umax";
-                else
-                    stmt = "smax";
-                fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
-                fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
-            } else {
-                fmt("    $v_0 = icmp $s $V, $v\n"
-                    "    $v = select <$w x i1> $v_0, $V, $V\n",
-                    v, jitc_is_uint(v) ? "ugt" : "sgt", a0, a1,
-                    v, v, a0, a1);
-            }
+            if (jitc_is_float(v))
+                stmt = "maxnum";
+            else if (jitc_is_uint(v))
+                stmt = "umax";
+            else
+                stmt = "smax";
+            fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
+            fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
             break;
 
         case VarKind::Ceil:
@@ -923,15 +888,13 @@ static void jitc_llvm_render(Variable *v) {
                     v->type = (uint32_t) VarType::UInt8;
 
                 fmt_intrinsic(
-                    "declare $T @llvm.masked.gather.v$w$h($P, i32, $T, $T)",
-                    v, v, v, a2, v);
+                    "declare $T @llvm.masked.gather.v$w$h(<$w x ptr>, i32, $T, $T)",
+                    v, v, a2, v);
 
-                fmt("{    $v_0 = bitcast $<i8*$> $v to $<$t*$>\n|}"
-                     "    $v_1 = getelementptr inbounds $t, $<$p$> {$v_0|$v}, $V\n"
-                     "    $v$s = call $T @llvm.masked.gather.v$w$h($P $v_1, i32 $a, $V, $T $z)\n",
-                     v, a0, v,
-                     v, v, v, v, a0, a1,
-                     v, is_bool ? "_2" : "", v, v, v, v, v, a2, v);
+                fmt("    $v_1 = getelementptr inbounds $t, $<ptr$> $v, $V\n"
+                     "    $v$s = call $T @llvm.masked.gather.v$w$h(<$w x ptr> $v_1, i32 $a, $V, $T $z)\n",
+                     v, v, a0, a1,
+                     v, is_bool ? "_2" : "", v, v, v, v, a2, v);
 
                 if (is_bool) { // Restore
                     v->type = (uint32_t) VarType::Bool;
@@ -972,14 +935,14 @@ static void jitc_llvm_render(Variable *v) {
             break;
 
         case VarKind::BoundsCheck:
-            fmt_intrinsic("declare i1 @llvm$e.vector.reduce.or.v$wi1(<$w x i1>)");
-            fmt_intrinsic("declare void @llvm.masked.scatter.v$wi32(<$w x i32>, <$w x {i32*}>, i32, <$w x i1>)");
+            fmt_intrinsic("declare i1 @llvm.vector.reduce.or.v$wi1(<$w x i1>)");
+            fmt_intrinsic("declare void @llvm.masked.scatter.v$wi32(<$w x i32>, <$w x ptr>, i32, <$w x i1>)");
 
             fmt("    $v_0 = insertelement <$w x i32> undef, i32 $u, i32 0\n"
                 "    $v_1 = shufflevector <$w x i32> $v_0, <$w x i32> undef, <$w x i32> $z\n"
                 "    $v_2 = icmp uge $V, $v_1\n"
                 "    $v_3 = and $V, $v_2\n"
-                "    $v_4 = call i1 @llvm$e.vector.reduce.or.v$wi1(<$w x i1> $v_3)\n"
+                "    $v_4 = call i1 @llvm.vector.reduce.or.v$wi1(<$w x i1> $v_3)\n"
                 "    br i1 $v_4, label %l_$u_err, label %l_$u_cont\n\n"
                 "l_$u_err:\n",
                 v, (uint32_t) v->literal,
@@ -991,14 +954,12 @@ static void jitc_llvm_render(Variable *v) {
                 v->reg_index);
 
             if (callable_depth == 0)
-                fmt("{    $v_5 = bitcast i8* $v to i32 *\n|}"
-                     "    $v_6 = getelementptr inbounds i32, {i32*} {$v_5|$v}, <$w x i32> $z\n"
-                     "    call void @llvm.masked.scatter.v$wi32($V, <$w x {i32*}> $v_6, i32 4, <$w x i1> $v_3)\n",
+                fmt("    $v_5 = getelementptr inbounds i32, ptr $v, <$w x i32> $z\n"
+                     "    call void @llvm.masked.scatter.v$wi32($V, <$w x ptr> $v_5, i32 4, <$w x i1> $v_3)\n",
                      v, a2,
-                     v, v, a2,
                      a0, v, v);
             else
-                fmt("    call void @llvm.masked.scatter.v$wi32($V, <$w x {i32*}> $v, i32 4, <$w x i1> $v_3)\n",
+                fmt("    call void @llvm.masked.scatter.v$wi32($V, <$w x ptr> $v, i32 4, <$w x i1> $v_3)\n",
                     a0, a2, v);
 
             fmt("    br label %l_$u_cont\n\n"
@@ -1083,8 +1044,8 @@ static void jitc_llvm_render(Variable *v) {
             break;
 
         case VarKind::LoopCond:
-            fmt_intrinsic("declare i1 @llvm$e.vector.reduce.or.v$wi1($T)", a1);
-            fmt("    $v_red = call i1 @llvm$e.vector.reduce.or.v$wi1($V)\n"
+            fmt_intrinsic("declare i1 @llvm.vector.reduce.or.v$wi1($T)", a1);
+            fmt("    $v_red = call i1 @llvm.vector.reduce.or.v$wi1($V)\n"
                 "    br i1 $v_red, label %l_$u_body, label %l_$u_done\n\n"
                 "l_$u_body:\n",
                 a1, a1,
@@ -1128,14 +1089,14 @@ static void jitc_llvm_render(Variable *v) {
 
         case VarKind::CondStart: {
                 const CondData *cd = (CondData *) v->data;
-                fmt_intrinsic("declare i1 @llvm$e.vector.reduce.or.v$wi1($T)", a0);
+                fmt_intrinsic("declare i1 @llvm.vector.reduce.or.v$wi1($T)", a0);
                 fmt("    br label %l_$u_start\n\n"
                     "l_$u_start:\n",
                     v->reg_index,
                     v->reg_index);
                 if (cd->name != "unnamed")
                     fmt("    ; Symbolic conditional: $s\n", cd->name.c_str());
-                fmt("    $v_t = call i1 @llvm$e.vector.reduce.or.v$wi1($V)\n"
+                fmt("    $v_t = call i1 @llvm.vector.reduce.or.v$wi1($V)\n"
                     "    br i1 $v_t, label %l_$u_t, label %l_$u_next\n\n"
                     "l_$u_t:\n",
                     v, a0,
@@ -1164,7 +1125,7 @@ static void jitc_llvm_render(Variable *v) {
                         a0, (uint32_t) i, vt, vt, loop_reg, loop_reg);
                 }
 
-                fmt("    $v_f = call i1 @llvm$e.vector.reduce.or.v$wi1($V)\n"
+                fmt("    $v_f = call i1 @llvm.vector.reduce.or.v$wi1($V)\n"
                     "    br i1 $v_f, label %l_$u_f, label %l_$u_end\n\n"
                     "l_$u_f:\n",
                     a0, jitc_var(a0->dep[1]),
@@ -1370,43 +1331,38 @@ static void jitc_llvm_render_trace(const Variable *v,
             continue; // valid flag not needed for 1-lane versions
 
         const Variable *v2 = jitc_var(indices[i + 1]);
-        fmt( "    $v_in_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
-            "{    $v_in_$u_1 = bitcast i8* $v_in_$u_0 to $T*\n|}"
-             "    store $V, {$T*} $v_in_$u_1, align $A\n",
-             v, i, offset,
-             v, i, v, i, v2,
-             v2, v2, v, i, v2);
+        fmt("    $v_in_$u_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
+            "    store $V, ptr $v_in_$u_1, align $A\n",
+            v, i, offset,
+            v2, v, i, v2);
 
         offset += type_size[v2->type] * width;
     }
 
     // Reset geomID field to ones as required
     if (!shadow_ray) {
-        fmt( "    $v_in_geomid_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
-            "{    $v_in_geomid_1 = bitcast i8* $v_in_geomid_0 to <$w x i32> *\n|}"
-             "    store <$w x i32> $s, {<$w x i32>*} $v_in_geomid_1, align $u\n",
+        fmt("    $v_in_geomid_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
+            "    store <$w x i32> $s, ptr $v_in_geomid_1, align $u\n",
             v, (14 * float_size + 5 * 4) * width,
-            v, v,
             jitc_llvm_ones_bit_str[(int) VarType::Int32], v, float_size * width);
     }
 
     // Determine whether to mark the rays as coherent or incoherent
     const Variable *coherent = jitc_var(indices[0]);
 
-    fmt( "    $v_in_ctx_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
-        "{    $v_in_ctx_1 = bitcast i8* $v_in_ctx_0 to <6 x i32>*\n|}",
-        v, alloca_size_rt, v, v);
+    fmt("    $v_in_ctx_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n",
+        v, alloca_size_rt);
 
     if (coherent->is_literal()) {
-        fmt("    store <6 x i32> <i32 $u, i32 0, i32 0, i32 0, i32 -1, i32 0>, {<6 x i32>*} $v_in_ctx_1, align 4\n",
+        fmt("    store <6 x i32> <i32 $u, i32 0, i32 0, i32 0, i32 -1, i32 0>, ptr $v_in_ctx_1, align 4\n",
             (uint32_t) coherent->literal, v);
     } else {
-        fmt_intrinsic("declare i1 @llvm$e.vector.reduce.and.v$wi1(<$w x i1>)");
+        fmt_intrinsic("declare i1 @llvm.vector.reduce.and.v$wi1(<$w x i1>)");
 
-        fmt("    $v_coherent_0 = call i1 @llvm$e.vector.reduce.and.v$wi1($V)\n"
+        fmt("    $v_coherent_0 = call i1 @llvm.vector.reduce.and.v$wi1($V)\n"
             "    $v_coherent_1 = zext i1 $v_coherent_0 to i32\n"
             "    $v_ctx = insertelement <6 x i32> <i32 0, i32 0, i32 0, i32 0, i32 -1, i32 0>, i32 $v_coherent_1, i32 0\n"
-            "    store <6 x i32> $v_ctx, {<6 x i32>*} $v_in_ctx_1, align 4\n",
+            "    store <6 x i32> $v_ctx, ptr $v_in_ctx_1, align 4\n",
             v, coherent, v, v, v, v, v, v);
     }
 
@@ -1416,21 +1372,14 @@ static void jitc_llvm_render_trace(const Variable *v,
        which is implemented by the following loop. */
     if (callable_depth == 0) {
         if (jitc_llvm_vector_width > 1) {
-            fmt("{    $v_func = bitcast i8* $v to void (i8*, i8*, i8*, i8*)*\n|}"
-                 "    call void {$v_func|$v}({i8*} $v_in_0_{0|1}, {i8*} $v, {i8*} $v_in_ctx_{0|1}, {i8*} $v_in_1_{0|1})\n",
-                v, func,
-                v, func, v, scene, v, v
+            fmt("    call void $v(ptr $v_in_0_1, ptr $v, ptr $v_in_ctx_1, ptr $v_in_1_1)\n", func, v, scene, v, v
             );
         } else {
-            fmt(
-                "{    $v_func = bitcast i8* $v to void (i8*, i8*, i8*)*\n|}"
-                "     call void {$v_func|$v}({i8*} $v, {i8*} $v_in_ctx_{0|1}, {i8*} $v_in_1_{0|1})\n",
-                v, func,
-                v, func, scene, v, v
+            fmt("     call void $v(ptr $v, ptr $v_in_ctx_1, ptr $v_in_1_1)\n", func, scene, v, v
             );
         }
     } else {
-        fmt_intrinsic("declare i64 @llvm$e.vector.reduce.umax.v$wi64(<$w x i64>)");
+        fmt_intrinsic("declare i64 @llvm.vector.reduce.umax.v$wi64(<$w x i64>)");
 
         // =====================================================
         // 1. Prepare the loop for the ray tracing calls
@@ -1439,27 +1388,25 @@ static void jitc_llvm_render_trace(const Variable *v,
         uint32_t offset_tfar = (8 * float_size + 4) * width;
         const char *tname_tfar = type_name_llvm[(int) float_type];
 
-        fmt( "    br label %l$u_start\n"
-             "\nl$u_start:\n"
-             "    ; Ray tracing\n"
-             "    $v_func_i64 = call i64 @llvm$e.vector.reduce.umax.v$wi64(<$w x i64> %rd$u_p4)\n"
-             "    $v_func_ptr = inttoptr i64 $v_func_i64 to {i8*}\n"
-             "    $v_tfar_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
-            "{    $v_tfar_1 = bitcast i8* $v_tfar_0 to <$w x $s> *\n|}",
+        fmt("    br label %l$u_start\n"
+            "\nl$u_start:\n"
+            "    ; Ray tracing\n"
+            "    $v_func_i64 = call i64 @llvm.vector.reduce.umax.v$wi64(<$w x i64> %rd$u_p3)\n"
+            "    $v_func_ptr = inttoptr i64 $v_func_i64 to ptr\n"
+            "    $v_tfar_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n",
             v->reg_index,
             v->reg_index,
             v, func->reg_index,
             v, v,
-            v, offset_tfar,
-            v, v, tname_tfar);
+            v, offset_tfar);
 
         if (jitc_llvm_vector_width > 1)
-            fmt("    $v_func = bitcast {i8*} $v_func_ptr to {void (i8*, i8*, i8*, i8*)*}\n", v, v);
+            fmt("    $v_func = bitcast ptr $v_func_ptr to ptr\n", v, v);
         else
-            fmt("    $v_func = bitcast {i8*} $v_func_ptr to {void (i8*, i8*, i8*)*}\n", v, v);
+            fmt("    $v_func = bitcast ptr $v_func_ptr to ptr\n", v, v);
 
         // Get original mask, to be overwritten at every iteration
-        fmt("    $v_mask_value = load <$w x i32>, {<$w x i32>*} $v_in_0_1, align 64\n"
+        fmt("    $v_mask_value = load <$w x i32>, ptr $v_in_0_1, align 64\n"
             "    br label %l$u_check\n",
             v, v, v->reg_index);
 
@@ -1468,11 +1415,11 @@ static void jitc_llvm_render_trace(const Variable *v,
         // =====================================================
 
         fmt("\nl$u_check:\n"
-            "    $v_scene = phi <$w x {i8*}> [ %rd$u, %l$u_start ], [ $v_scene_next, %l$u_call ]\n"
-            "    $v_scene_i64 = ptrtoint <$w x {i8*}> $v_scene to <$w x i64>\n"
-            "    $v_next_i64 = call i64 @llvm$e.vector.reduce.umax.v$wi64(<$w x i64> $v_scene_i64)\n"
-            "    $v_next = inttoptr i64 $v_next_i64 to {i8*}\n"
-            "    $v_valid = icmp ne {i8*} $v_next, null\n"
+            "    $v_scene = phi <$w x ptr> [ %rd$u, %l$u_start ], [ $v_scene_next, %l$u_call ]\n"
+            "    $v_scene_i64 = ptrtoint <$w x ptr> $v_scene to <$w x i64>\n"
+            "    $v_next_i64 = call i64 @llvm.vector.reduce.umax.v$wi64(<$w x i64> $v_scene_i64)\n"
+            "    $v_next = inttoptr i64 $v_next_i64 to ptr\n"
+            "    $v_valid = icmp ne ptr $v_next, null\n"
             "    br i1 $v_valid, label %l$u_call, label %l$u_end\n",
             v->reg_index,
             v, scene->reg_index, v->reg_index, v, v->reg_index,
@@ -1487,15 +1434,15 @@ static void jitc_llvm_render_trace(const Variable *v,
         // =====================================================
 
         fmt("\nl$u_call:\n"
-            "    $v_tfar_prev = load <$w x $s>, {<$w x $s>*} $v_tfar_1, align $u\n"
+            "    $v_tfar_prev = load <$w x $s>, ptr $v_tfar_1, align $u\n"
             "    $v_bcast_0 = insertelement <$w x i64> undef, i64 $v_next_i64, i32 0\n"
             "    $v_bcast_1 = shufflevector <$w x i64> $v_bcast_0, <$w x i64> undef, <$w x i32> $z\n"
-            "    $v_bcast_2 = inttoptr <$w x i64> $v_bcast_1 to <$w x {i8*}>\n"
-            "    $v_active = icmp eq <$w x {i8*}> $v_scene, $v_bcast_2\n"
+            "    $v_bcast_2 = inttoptr <$w x i64> $v_bcast_1 to <$w x ptr>\n"
+            "    $v_active = icmp eq <$w x ptr> $v_scene, $v_bcast_2\n"
             "    $v_active_2 = select <$w x i1> $v_active, <$w x i32> $v_mask_value, <$w x i32> $z\n"
-            "    store <$w x i32> $v_active_2, {<$w x i32>*} $v_in_0_1, align 64\n",
+            "    store <$w x i32> $v_active_2, ptr $v_in_0_1, align 64\n",
             v->reg_index,
-            v, tname_tfar, tname_tfar, v, float_size * width,
+            v, tname_tfar, v, float_size * width,
             v, v,
             v, v,
             v, v,
@@ -1504,21 +1451,21 @@ static void jitc_llvm_render_trace(const Variable *v,
             v, v);
 
         if (jitc_llvm_vector_width > 1)
-            fmt("    call void $v_func({i8*} $v_in_0_{0|1}, {i8*} $v_next, {i8*} $v_in_ctx_{0|1}, {i8*} $v_in_1_{0|1})\n",
+            fmt("    call void $v_func(ptr $v_in_0_1, ptr $v_next, ptr $v_in_ctx_1, ptr $v_in_1_1)\n",
                 v, v, v, v, v);
         else
-            fmt("    call void $v_func({i8*} $v_next, {i8*} $v_in_ctx_{0|1}, {i8*} $v_in_1_{0|1})\n",
+            fmt("    call void $v_func(ptr $v_next, ptr $v_in_ctx_1, ptr $v_in_1_1)\n",
                 v, v, v, v);
 
-        fmt("    $v_tfar_new = load <$w x $s>, {<$w x $s>*} $v_tfar_1, align $u\n"
+        fmt("    $v_tfar_new = load <$w x $s>, ptr $v_tfar_1, align $u\n"
             "    $v_tfar_masked = select <$w x i1> $v_active, <$w x $s> $v_tfar_new, <$w x $s> $v_tfar_prev\n"
-            "    store <$w x $s> $v_tfar_masked, {<$w x $s>*} $v_tfar_1, align $u\n"
-            "    $v_scene_next = select <$w x i1> $v_active, <$w x {i8*}> $z, <$w x {i8*}> $v_scene\n"
+            "    store <$w x $s> $v_tfar_masked, ptr $v_tfar_1, align $u\n"
+            "    $v_scene_next = select <$w x i1> $v_active, <$w x ptr> $z, <$w x ptr> $v_scene\n"
             "    br label %l$u_check\n"
             "\nl$u_end:\n",
-            v, tname_tfar, tname_tfar, v, float_size * width,
+            v, tname_tfar, v, float_size * width,
             v, v, tname_tfar, v, tname_tfar, v,
-            tname_tfar, v, tname_tfar, v, float_size * width,
+            tname_tfar, v, v, float_size * width,
             v, v, v,
             v->reg_index, v->reg_index);
     }
@@ -1530,12 +1477,10 @@ static void jitc_llvm_render_trace(const Variable *v,
         const char *tname = type_name_llvm[(int) vt];
         uint32_t tsize = type_size[(int) vt];
 
-        fmt( "    $v_out_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
-            "{    $v_out_$u_1 = bitcast i8* $v_out_$u_0 to <$w x $s> *\n|}"
-             "    $v_out_$u = load <$w x $s>, {<$w x $s>*} $v_out_$u_1, align $u\n",
+        fmt("    $v_out_$u_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
+            "    $v_out_$u = load <$w x $s>, ptr $v_out_$u_1, align $u\n",
             v, i, offset,
-            v, i, v, i, tname,
-            v, i, tname, tname, v, i, float_size * width);
+            v, i, tname, v, i, float_size * width);
 
         if (i == 0)
             offset += (4 * float_size + 3 * 4) * width;
@@ -1561,17 +1506,17 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
     // =====================================================
 
     if (call->n_inst != 1) {
-        fmt_intrinsic("@callables = dso_local local_unnamed_addr global {i8**} null, align 8");
+        fmt_intrinsic("@callables = dso_local local_unnamed_addr global ptr null, align 8");
 
         /* How to prevent @callables from being optimized away as a constant, while
            at the same time not turning it an external variable that would require a
            global offset table (GOT)? Let's make a dummy function that writes to it.. */
-        fmt_intrinsic("define void @set_callables({i8**} %ptr) local_unnamed_addr #0 ${\n"
-                      "    store {i8**} %ptr, {i8***} @callables\n"
+        fmt_intrinsic("define void @set_callables(ptr %ptr) local_unnamed_addr #0 {\n"
+                      "    store ptr %ptr, ptr @callables\n"
                       "    ret void\n"
-                      "$}");
+                      "}");
 
-        fmt_intrinsic("declare i32 @llvm$e.vector.reduce.umax.v$wi32(<$w x i32>)");
+        fmt_intrinsic("declare i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32>)");
     }
 
     fmt("\n    ; Call: $s\n", call->name.c_str());
@@ -1584,13 +1529,11 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
 
     if (call->n_inst != 1 || data_reg) {
         fmt_intrinsic("declare <$w x i64> @llvm.masked.gather.v$wi64(<$w x "
-                      "{i64*}>, i32, <$w x i1>, <$w x i64>)");
+                      "ptr>, i32, <$w x i1>, <$w x i64>)");
 
-        fmt("{    %u$u_self_ptr_0 = bitcast $<i8*$> %rd$u to $<i64*$>\n|}"
-             "    %u$u_self_ptr = getelementptr i64, $<{i64*}$> {%u$u_self_ptr_0|%rd$u}, <$w x i32> %r$u\n"
-             "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x {i64*}> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z)\n",
-            call_reg, offset_reg,
-            call_reg, call_reg, offset_reg, self_reg,
+        fmt("    %u$u_self_ptr = getelementptr i64, $<ptr$> %rd$u, <$w x i32> %r$u\n"
+             "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x ptr> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z)\n",
+            call_reg, offset_reg, self_reg,
             call_reg, call_reg, mask_reg);
     }
 
@@ -1625,20 +1568,17 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         if (unused)
             continue;
 
-        fmt( "    %u$u_in_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i32 $u\n"
-            "{    %u$u_in_$u_1 = bitcast i8* %u$u_in_$u_0 to $M*\n|}",
-            call_reg, i, v->param_offset * width,
-            call_reg, i, call_reg, i, v
-        );
+        fmt("    %u$u_in_$u_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n",
+            call_reg, i, v->param_offset * width);
 
         if ((VarType) v->type != VarType::Bool) {
-            fmt("    store $V, {$T*} %u$u_in_$u_1, align $A\n",
-                v, v, call_reg, i, v);
+            fmt("    store $V, ptr %u$u_in_$u_1, align $A\n",
+                v, call_reg, i, v);
         } else {
             fmt("    %u$u_$u_zext = zext $V to $M\n"
-                "    store $M %u$u_$u_zext, {$M*} %u$u_in_$u_1, align $A\n",
+                "    store $M %u$u_$u_zext, ptr %u$u_in_$u_1, align $A\n",
                 call_reg, i, v, v,
-                v, call_reg, i, v, call_reg, i, v);
+                v, call_reg, i, call_reg, i, v);
         }
     }
 
@@ -1649,12 +1589,10 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
 
         const Variable *v = jitc_var(call->inner_out[i]);
 
-        fmt( "    %u$u_tmp_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i64 $u\n"
-            "{    %u$u_tmp_$u_1 = bitcast i8* %u$u_tmp_$u_0 to $M*\n|}"
-             "    store $M $z, {$M*} %u$u_tmp_$u_1, align $A\n",
+        fmt("    %u$u_tmp_$u_1 = getelementptr inbounds i8, ptr %buffer, i64 $u\n"
+            "    store $M $z, ptr %u$u_tmp_$u_1, align $A\n",
             call_reg, i, offset * width,
-            call_reg, i, call_reg, i, v,
-            v, v, call_reg, i, v);
+            v, call_reg, i, v);
     }
 
     // =====================================================
@@ -1678,10 +1616,10 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         if (call->use_thread_id)
             fmt(", i32 %thread_id");
 
-        fmt(", {i8*} %buffer");
+        fmt(", ptr %buffer");
 
         if (data_reg)
-            fmt(", $<{i8*}$> %rd$u, <$w x i32> %u$u_offset", data_reg, call_reg);
+            fmt(", $<ptr$> %rd$u, <$w x i32> %u$u_offset", data_reg, call_reg);
 
         fmt(")\n");
     } else {
@@ -1692,7 +1630,7 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         call_reg,
         call_reg, call_reg, call_reg, call_reg, call_reg);
 
-    fmt("    %u$u_next = call i32 @llvm$e.vector.reduce.umax.v$wi32(<$w x i32> %u$u_self)\n"
+    fmt("    %u$u_next = call i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32> %u$u_self)\n"
         "    %u$u_valid = icmp ne i32 %u$u_next, 0\n"
         "    br i1 %u$u_valid, label %l$u_call, label %l$u_end\n",
         call_reg, call_reg,
@@ -1703,8 +1641,8 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         "    %u$u_bcast_0 = insertelement <$w x i32> undef, i32 %u$u_next, i32 0\n"
         "    %u$u_bcast = shufflevector <$w x i32> %u$u_bcast_0, <$w x i32> undef, <$w x i32> $z\n"
         "    %u$u_active = icmp eq <$w x i32> %u$u_self, %u$u_bcast\n"
-        "    %u$u_func_0 = getelementptr inbounds {i8*}, {i8**} %callables, i32 %u$u_next\n"
-        "    %u$u_func{_1|} = load {i8*}, {i8**} %u$u_func_0\n",
+        "    %u$u_func_0 = getelementptr inbounds ptr, ptr %callables, i32 %u$u_next\n"
+        "    %u$u_func = load ptr, ptr %u$u_func_0\n",
         call_reg,
         call_reg, call_reg, // bcast_0
         call_reg, call_reg, // bcast
@@ -1712,27 +1650,6 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         call_reg, call_reg, // func_0
         call_reg, call_reg // func_1
     );
-
-    // Cast into correctly typed function pointer
-    if (!jitc_llvm_opaque_pointers) {
-        fmt("    %u$u_func = bitcast i8* %u$u_func_1 to void (<$w x i1>",
-                 call_reg, call_reg);
-
-        if (call->use_self)
-            fmt(", <$w x i32>");
-
-        if (call->use_index)
-            fmt(", i64");
-
-        if (call->use_thread_id)
-            fmt(", i32");
-
-        fmt(", i8*");
-        if (data_reg)
-            fmt(", $<i8*$>, <$w x i32>");
-
-        fmt(")*\n");
-    }
 
     // Perform the actual function call
     fmt("    call fastcc void %u$u_func(<$w x i1> %u$u_active",
@@ -1747,10 +1664,10 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
     if (call->use_thread_id)
         fmt(", i32 %thread_id");
 
-    fmt(", {i8*} %buffer");
+    fmt(", ptr %buffer");
 
     if (data_reg)
-        fmt(", $<{i8*}$> %rd$u, <$w x i32> %u$u_offset", data_reg, call_reg);
+        fmt(", $<ptr$> %rd$u, <$w x i32> %u$u_offset", data_reg, call_reg);
 
     fmt(")\n"
         "    %u$u_self_next = select <$w x i1> %u$u_active, <$w x i32> $z, <$w x i32> %u$u_self\n"
@@ -1771,12 +1688,10 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
 
         bool is_bool = (VarType) v->type == VarType::Bool;
 
-        fmt( "    %u$u_out_$u_{0|1} = getelementptr inbounds i8, {i8*} %buffer, i64 $u\n"
-            "{    %u$u_out_$u_1 = bitcast i8* %u$u_out_$u_0 to $M*\n|}"
-             "    $v$s = load $M, {$M*} %u$u_out_$u_1, align $A\n",
+        fmt("    %u$u_out_$u_1 = getelementptr inbounds i8, ptr %buffer, i64 $u\n"
+            "    $v$s = load $M, ptr %u$u_out_$u_1, align $A\n",
             call_reg, i, call->out_offset[i] * width,
-            call_reg, i, call_reg, i, v,
-            v, is_bool ? "_0" : "", v, v, call_reg, i, v);
+            v, is_bool ? "_0" : "", v, call_reg, i, v);
 
             if (is_bool)
                 fmt("    $v = trunc $M $v_0 to $T\n", v, v, v, v);

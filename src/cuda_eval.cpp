@@ -10,14 +10,10 @@
  *  Format  Input          Example result    Description
  * --------------------------------------------------------------------------
  *  $u      uint32_t      `1234`             Decimal number (32 bit)
- *  $U      uint64_t      `1234`             Decimal number (64 bit)
  * --------------------------------------------------------------------------
- *  $x      uint32_t      `4d2`              Hexadecimal number (32 bit)
- *  $X      uint64_t      `4d2`              Hexadecimal number (64 bit)
  *  $Q      uint64_t      `00000000000004d2` Hex. number, 0-filled (64 bit)
  * --------------------------------------------------------------------------
  *  $s      const char *  `foo`              Zero-terminated string
- *  $c      char          `f`                A single ASCII character
  * --------------------------------------------------------------------------
  *  $t      Variable      `f32`              Variable type
  * --------------------------------------------------------------------------
@@ -1092,8 +1088,9 @@ static void jitc_cuda_render(Variable *v) {
             } else {
                 put("    ");
             }
-            fmt("tld4.$c.2d.v4.f32.f32 {%f$u_out_0, %f$u_out_1, %f$u_out_2, %f$u_out_3}, [$v, {$v, $v}];\n",
-                "rgba"[v->literal], v->reg_index, v->reg_index, v->reg_index, v->reg_index, a0, a2, a3);
+            char comp[2] = { "rgba"[v->literal], '\0' };
+            fmt("tld4.$s.2d.v4.f32.f32 {%f$u_out_0, %f$u_out_1, %f$u_out_2, %f$u_out_3}, [$v, {$v, $v}];\n",
+                comp, v->reg_index, v->reg_index, v->reg_index, v->reg_index, a0, a2, a3);
             if (jitc_is_half(v)) {
                 fmt("    .reg.f16 %h$u_out_<4>;\n"
                     "    cvt.rn.f16.f32 %h$u_out_0, %f$u_out_0;\n"

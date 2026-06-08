@@ -43,9 +43,6 @@ char *jitc_llvm_target_features = nullptr;
 uint32_t jitc_llvm_vector_width = 0;
 uint32_t jitc_llvm_max_align = 0;
 
-/// Should the LLVM IR use typed (e.g., "i8*") or untyped ("ptr") pointers?
-bool jitc_llvm_opaque_pointers = false;
-
 // Strings related to the vector width, used by template engine
 
 /// The literal one, for different variable types
@@ -183,7 +180,15 @@ bool jitc_llvm_init() {
         return false;
     }
 
-    jitc_llvm_opaque_pointers = jitc_llvm_version_major >= 15;
+    if (jitc_llvm_version_major < 15) {
+        jitc_log(Warn,
+                 "jit_llvm_init(): the located LLVM version (%i) is too old. The "
+                 "Dr.Jit LLVM backend requires LLVM 15 or newer for opaque pointer "
+                 "support, shutting down LLVM backend..",
+                 jitc_llvm_version_major);
+        jitc_llvm_shutdown();
+        return false;
+    }
 
     jitc_llvm_update_strings();
 
@@ -197,11 +202,10 @@ bool jitc_llvm_init() {
         snprintf(patch_str, sizeof(patch_str), "%i", jitc_llvm_version_patch);
 
     jitc_log(Info,
-             "jit_llvm_init(): found LLVM %s.%s.%s (%s), target=%s, cpu=%s, %s pointers, width=%u.",
+             "jit_llvm_init(): found LLVM %s.%s.%s (%s), target=%s, cpu=%s, width=%u.",
              major_str, minor_str, patch_str,
              jitc_llvm_use_orcv2 ? "ORCv2" : "MCJIT",
              jitc_llvm_target_triple, jitc_llvm_target_cpu,
-             jitc_llvm_opaque_pointers ? "opaque" : "typed",
              jitc_llvm_vector_width);
 
     return jitc_llvm_init_success;
