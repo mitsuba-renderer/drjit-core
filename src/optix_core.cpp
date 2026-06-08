@@ -141,7 +141,7 @@ OptixDeviceContext jitc_optix_context() {
     return ctx;
 }
 
-void jitc_optix_context_destroy(Device &d) {
+void jitc_optix_context_destroy(CUDADevice &d) {
     if (d.optix_context) {
         jitc_optix_check(optixDeviceContextDestroy(d.optix_context));
         d.optix_context = nullptr;

@@ -370,7 +370,7 @@ bool jitc_cuda_init() {
             }
         }
 
-        Device device;
+        CUDADevice device;
         device.id = i;
         device.compute_capability = cc_major * 10 + cc_minor;
         device.shared_memory_bytes = (uint32_t) shared_memory_bytes;
@@ -418,8 +418,8 @@ bool jitc_cuda_init() {
     }
 
     // Enable P2P communication if possible
-    for (const Device &a : state.devices) {
-        for (const Device &b : state.devices) {
+    for (const CUDADevice &a : state.devices) {
+        for (const CUDADevice &b : state.devices) {
             if (a.id == b.id)
                 continue;
 

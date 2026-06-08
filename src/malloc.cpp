@@ -108,7 +108,7 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
         shared = false;
 
     bool host_alloc = (backend == JitBackend::None) ||
-                      (backend == JitBackend::LLVM);
+                      (jitc_is_llvm(backend));
 
     if (!host_alloc || jitc_llvm_vector_width < 16) {
         // Round up to the next multiple of 64 bytes
@@ -126,14 +126,14 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
     ThreadState *ts = nullptr;
     int device = 0;
 #if defined(DRJIT_ENABLE_CUDA)
-    if (backend == JitBackend::CUDA) {
+    if (jitc_is_cuda(backend)) {
         ts = thread_state(backend);
         device = ts->device;
     }
 #endif
 
 #if defined(DRJIT_ENABLE_METAL)
-    if (backend == JitBackend::Metal) {
+    if (jitc_is_metal(backend)) {
         ts = thread_state(backend);
         device = ts->device;
     }
@@ -169,13 +169,13 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
                     ptr = aligned_malloc(size);
 
 #if defined(DRJIT_ENABLE_METAL)
-                } else if (backend == JitBackend::Metal) {
+                } else if (jitc_is_metal(backend)) {
                     metal_buf =
                         metal_buffer_new(ts->metal_device, size, shared, &ptr);
 #endif
 
 #if defined(DRJIT_ENABLE_CUDA)
-                } else if (backend == JitBackend::CUDA) {
+                } else if (jitc_is_cuda(backend)) {
                     scoped_set_context guard_2(ts->context);
                     CUresult ret;
 
@@ -292,7 +292,7 @@ void jitc_free(void *ptr) {
     // detect by enqueueing a callback.
     if (!shared || backend == JitBackend::None) {
         release_cb(&rec);
-    } else if (backend == JitBackend::LLVM) {
+    } else if (jitc_is_llvm(backend)) {
         if (jitc_task) {
             Task *new_task = task_submit_dep(
                 nullptr, &jitc_task, 1, /*size=*/1,
@@ -306,7 +306,7 @@ void jitc_free(void *ptr) {
     }
 
 #if defined(DRJIT_ENABLE_CUDA)
-    else if (backend == JitBackend::CUDA) {
+    else if (jitc_is_cuda(backend)) {
         ReleaseRecord *rec2 = (ReleaseRecord *) malloc_check(sizeof(ReleaseRecord));
         *rec2 = rec;
         cuda_check(cuLaunchHostFunc(
@@ -317,7 +317,7 @@ void jitc_free(void *ptr) {
 #endif
 
 #if defined(DRJIT_ENABLE_METAL)
-    else if (backend == JitBackend::Metal) {
+    else if (jitc_is_metal(backend)) {
         if (ts->metal_cb)
             jitc_metal_cmdbuf_free_on_complete(ts->metal_cb,
                                                rec.info, rec.ptr);
@@ -338,7 +338,7 @@ void jitc_malloc_clear_statistics() {
 
 /// Identifies CUDA and Metal
 static bool is_gpu(JitBackend backend) {
-    return backend == JitBackend::CUDA || backend == JitBackend::Metal;
+    return jitc_is_device_backend(backend);
 }
 
 void* jitc_malloc_migrate(void *ptr, JitBackend dst_backend, int move) {
@@ -374,16 +374,16 @@ void* jitc_malloc_migrate(void *ptr, JitBackend dst_backend, int move) {
         bool shared = false;
 
         // Prefer LLVM-backend output buffer to use async copies if the source is from there
-        if (src_backend == JitBackend::LLVM)
+        if (jitc_is_llvm(src_backend))
             dst_backend = JitBackend::LLVM;
 
         // Synchronous memcpy in case the source is a CPU buffer (might be freed after this operation)
         if (src_backend == JitBackend::None &&
-            dst_backend == JitBackend::LLVM)
+            jitc_is_llvm(dst_backend))
             shared = true;
 
         void *ptr_new = jitc_malloc(dst_backend, size, shared);
-        if (dst_backend == JitBackend::LLVM && !shared)
+        if (jitc_is_llvm(dst_backend) && !shared)
             jitc_memcpy_async(dst_backend, ptr_new, ptr, size);
         else
             memcpy(ptr_new, ptr, size);
@@ -422,11 +422,11 @@ void* jitc_malloc_migrate(void *ptr, JitBackend dst_backend, int move) {
                jitc_backend_name(dst_backend));
 
 #if defined(DRJIT_ENABLE_METAL)
-    if (gpu_backend == JitBackend::Metal)
+    if (jitc_is_metal(gpu_backend))
         jitc_memcpy_async(JitBackend::Metal, ptr_new, ptr, size);
 #endif
 #if defined(DRJIT_ENABLE_CUDA)
-    if (gpu_backend == JitBackend::CUDA) {
+    if (jitc_is_cuda(gpu_backend)) {
         scoped_set_context guard(ts->context);
         if (src_backend == JitBackend::None) {
             // Host → device: cuMemcpyAsync from pageable host memory is slow;
@@ -498,16 +498,16 @@ void jitc_flush_malloc_cache(bool warn) {
             trim_count[(int) backend] += entries.size();
             trim_size [(int) backend] += size * entries.size();
 
-            if (backend == JitBackend::None || backend == JitBackend::LLVM) {
+            if (backend == JitBackend::None || jitc_is_llvm(backend)) {
                 for (void *ptr : entries)
                     aligned_free(ptr, size);
                 continue;
             }
 
 #if defined(DRJIT_ENABLE_CUDA)
-            if (backend == JitBackend::CUDA &&
+            if (jitc_is_cuda(backend) &&
                 (state.backends & (1u << (uint32_t) JitBackend::CUDA))) {
-                const Device &dev = state.devices[device];
+                const CUDADevice &dev = state.devices[device];
                 scoped_set_context guard2(dev.context);
                 if (shared) {
                     for (void *ptr : entries)
@@ -524,7 +524,7 @@ void jitc_flush_malloc_cache(bool warn) {
 #endif
 
 #if defined(DRJIT_ENABLE_METAL)
-            if (backend == JitBackend::Metal &&
+            if (jitc_is_metal(backend) &&
                 (state.backends & (1u << (uint32_t) JitBackend::Metal))) {
                 std::vector<void *> bufs(entries.size());
                 {
@@ -569,7 +569,7 @@ int jitc_malloc_device(void *ptr) {
     auto [size, backend, shared, device] = alloc_info_decode(it->second);
     (void) size; (void) shared;
 
-    if (backend == JitBackend::None || backend == JitBackend::LLVM)
+    if (backend == JitBackend::None || jitc_is_llvm(backend))
         return -1;
     else
         return device;

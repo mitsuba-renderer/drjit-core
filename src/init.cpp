@@ -190,13 +190,13 @@ void jitc_shutdown(int light) {
     // Synchronize with everything
     for (ThreadState *ts : state.tss) {
 #if defined(DRJIT_ENABLE_CUDA)
-        if (ts->backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(ts->backend)) {
             scoped_set_context guard(ts->context);
             cuda_check(cuStreamSynchronize(ts->stream));
         }
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-        if (ts->backend == JitBackend::Metal) {
+        if (jitc_is_metal(ts->backend)) {
             jitc_metal_sync(ts);
         }
 #endif
@@ -240,7 +240,7 @@ void jitc_shutdown(int light) {
             auto [size, backend, shared, device] = alloc_info_decode(it->first);
             (void) device;
 
-            if (backend != JitBackend::CUDA || shared)
+            if (!jitc_is_cuda(backend) || shared)
                 continue;
 
             std::vector<void *> entries;
@@ -270,7 +270,7 @@ void jitc_shutdown(int light) {
                 jitc_var_dec_ref(index);
 
 #if defined(DRJIT_ENABLE_CUDA)
-            if (ts->backend == JitBackend::CUDA && ts->stream) {
+            if (jitc_is_cuda(ts->backend) && ts->stream) {
                 scoped_set_context guard(ts->context);
                 cuda_check(cuStreamSynchronize(ts->stream));
             }
@@ -389,10 +389,10 @@ void jitc_shutdown(int light) {
 
 
 ThreadState *jitc_init_thread_state(JitBackend backend) {
-    ThreadState *ts;
+    ThreadState *ts = nullptr;
 
 #if defined(DRJIT_ENABLE_METAL)
-    if (backend == JitBackend::Metal) {
+    if (jitc_is_metal(backend)) {
         ts = new MetalThreadState();
         if ((state.backends & (1u << (uint32_t) JitBackend::Metal)) == 0) {
             delete ts;
@@ -424,7 +424,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
     }
 #endif
 
-    if (backend == JitBackend::CUDA) {
+    if (jitc_is_cuda(backend)) {
 #if defined(DRJIT_ENABLE_CUDA)
         ts = new CUDAThreadState();
         if ((state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0) {
@@ -474,7 +474,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
                        "system.");
         }
 
-        Device &device = state.devices[0];
+        CUDADevice &device = state.devices[0];
         ts->device = 0;
         ts->context = device.context;
         ts->compute_capability = device.compute_capability;
@@ -484,11 +484,8 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         ts->event = device.event;
         ts->sync_stream_event = device.sync_stream_event;
         thread_state_cuda = ts;
-#else
-        jitc_raise("jit_init_thread_state(): the CUDA backend is unavailable "
-                   "because Dr.Jit was compiled without CUDA support.");
 #endif
-    } else {
+    } else if (jitc_is_llvm(backend)) {
         ts = new LLVMThreadState();
         if ((state.backends & (1u << (uint32_t) JitBackend::LLVM)) == 0) {
             delete ts;
@@ -508,6 +505,10 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         }
         thread_state_llvm = ts;
         ts->device = -1;
+    } else {
+        jitc_raise("jit_init_thread_state(): the %s backend is unavailable "
+                   "because Dr.Jit was compiled without support for it.",
+                   jitc_backend_name(backend));
     }
 
     ts->backend = backend;
@@ -528,7 +529,7 @@ void jitc_cuda_set_device(int device_id) {
 
     jitc_log(Info, "jit_cuda_set_device(%i)", device_id);
 
-    Device &device = state.devices[device_id];
+    CUDADevice &device = state.devices[device_id];
 
     if (ts->stream) {
         scoped_set_context guard(ts->context);
@@ -557,7 +558,7 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
                    "synchronization was explicitly forbidden!");
 
 #if defined(DRJIT_ENABLE_CUDA)
-    if (ts->backend == JitBackend::CUDA) {
+    if (jitc_is_cuda(ts->backend)) {
         scoped_set_context guard(ts->context);
         CUstream stream = ts->stream;
         if (hold_lock) {
@@ -570,7 +571,7 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
     }
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-    if (ts->backend == JitBackend::Metal) {
+    if (jitc_is_metal(ts->backend)) {
         if (hold_lock) {
             jitc_metal_sync(ts);
         } else {
@@ -635,7 +636,7 @@ void jitc_sync_device() {
         std::vector<ThreadState *> tss = state.tss;
         // Release lock while synchronizing */
         for (ThreadState *ts_2 : tss) {
-            if (ts_2->backend == JitBackend::LLVM)
+            if (jitc_is_llvm(ts_2->backend))
                 jitc_sync_thread(ts_2);
         }
     }
@@ -834,7 +835,7 @@ KernelHistoryEntry *KernelHistory::get() {
     for (size_t i = 0; i < m_size; i++) {
         KernelHistoryEntry &k = data[i];
 #if defined(DRJIT_ENABLE_CUDA)
-        if (k.backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(k.backend)) {
             cuEventElapsedTime(&k.execution_time,
                                (CUevent) k.event_start,
                                (CUevent) k.event_end);
@@ -844,7 +845,7 @@ KernelHistoryEntry *KernelHistory::get() {
         } else
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-        if (k.backend == JitBackend::Metal) {
+        if (jitc_is_metal(k.backend)) {
             k.execution_time =
                 jitc_metal_finalize_kernel_history_entry(k.event_start, k.task);
             k.event_start = k.task = nullptr;
@@ -871,13 +872,13 @@ void KernelHistory::clear() {
     for (size_t i = 0; i < m_size; i++) {
         KernelHistoryEntry &k = m_data[i];
 #if defined(DRJIT_ENABLE_CUDA)
-        if (k.backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(k.backend)) {
             cuEventDestroy((CUevent) k.event_start);
             cuEventDestroy((CUevent) k.event_end);
         } else
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-        if (k.backend == JitBackend::Metal) {
+        if (jitc_is_metal(k.backend)) {
             // The Metal `task` slot holds an id<MTLCommandBuffer>, not a
             // nanothread Task. Reuse the finalize helper to wait + release.
             jitc_metal_finalize_kernel_history_entry(k.event_start, k.task);

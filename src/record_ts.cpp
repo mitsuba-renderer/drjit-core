@@ -696,7 +696,7 @@ void RecordThreadState::record_launch(
     std::vector<void *> &params,
     const std::vector<uint32_t> &kernel_param_ids) {
     uint32_t kernel_param_offset =
-        (backend == JitBackend::CUDA || backend == JitBackend::Metal) ? 1 : 3;
+        jitc_is_device_backend(backend) ? 1 : 3;
 
     // The size of the largest variable used by the kernel directly.
     size_t input_size = 0;
@@ -904,7 +904,7 @@ int Recording::replay_launch(Operation &op) {
     // when replaying.
     kernel_params.clear();
 
-    if (backend == JitBackend::CUDA || backend == JitBackend::Metal) {
+    if (jitc_is_device_backend(backend)) {
         // First parameter contains kernel size. Assigned later.
         kernel_params.push_back(nullptr);
     } else {
@@ -1012,7 +1012,7 @@ int Recording::replay_launch(Operation &op) {
     }
 
     // Change kernel size in `kernel_params`
-    if (backend == JitBackend::CUDA || backend == JitBackend::Metal)
+    if (jitc_is_device_backend(backend))
         kernel_params[0] = (void *) (uintptr_t) launch_size;
 
     if (!dry_run) {
@@ -2616,14 +2616,16 @@ struct DisabledThreadState : ThreadState {
     DisabledThreadState(ThreadState *internal,
                         JitBackend recording_backend)
         : m_internal(internal), m_recording_backend(recording_backend) {
+        this->device             = internal->device;
+#if defined(DRJIT_ENABLE_CUDA)
         this->context            = internal->context;
         this->stream             = internal->stream;
         this->event              = internal->event;
         this->sync_stream_event  = internal->sync_stream_event;
-        this->device             = internal->device;
         this->compute_capability = internal->compute_capability;
         this->ptx_version        = internal->ptx_version;
         this->memory_pool        = internal->memory_pool;
+#endif
 
         this->backend         = internal->backend;
         this->scope           = internal->scope;
@@ -2781,7 +2783,7 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
     RecordThreadState *record_ts = new RecordThreadState(ts_);
 
 #if defined(DRJIT_ENABLE_CUDA)
-    if (backend == JitBackend::CUDA) {
+    if (jitc_is_cuda(backend)) {
         thread_state_cuda = record_ts;
         set_disabled_thread_state(&thread_state_llvm, backend);
 #if defined(DRJIT_ENABLE_METAL)
@@ -2790,7 +2792,7 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
     } else
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-    if (backend == JitBackend::Metal) {
+    if (jitc_is_metal(backend)) {
         thread_state_metal = record_ts;
 #if defined(DRJIT_ENABLE_CUDA)
         set_disabled_thread_state(&thread_state_cuda, backend);
@@ -2840,7 +2842,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         }
 
 #if defined(DRJIT_ENABLE_CUDA)
-        if (backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(backend)) {
             thread_state_cuda = internal;
             unset_disabled_thread_state(&thread_state_llvm);
 #if defined(DRJIT_ENABLE_METAL)
@@ -2849,7 +2851,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         } else
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-        if (backend == JitBackend::Metal) {
+        if (jitc_is_metal(backend)) {
             thread_state_metal = internal;
 #if defined(DRJIT_ENABLE_CUDA)
             unset_disabled_thread_state(&thread_state_cuda);
@@ -2899,7 +2901,7 @@ void jitc_freeze_abort(JitBackend backend) {
         internal->scope = rts->scope;
 
 #if defined(DRJIT_ENABLE_CUDA)
-        if (backend == JitBackend::CUDA) {
+        if (jitc_is_cuda(backend)) {
             thread_state_cuda = internal;
             unset_disabled_thread_state(&thread_state_llvm);
 #if defined(DRJIT_ENABLE_METAL)
@@ -2908,7 +2910,7 @@ void jitc_freeze_abort(JitBackend backend) {
         } else
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-        if (backend == JitBackend::Metal) {
+        if (jitc_is_metal(backend)) {
             thread_state_metal = internal;
 #if defined(DRJIT_ENABLE_CUDA)
             unset_disabled_thread_state(&thread_state_cuda);

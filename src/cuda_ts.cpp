@@ -96,7 +96,7 @@ CUDAThreadState::launch(Kernel kernel, KernelKey & /*key*/,
         };
 
         uint32_t block_count, thread_count;
-        const Device &device_ = state.devices[this->device];
+        const CUDADevice &device_ = state.devices[this->device];
         device_.get_launch_config(&block_count, &thread_count, size,
                                  (uint32_t) kernel.cuda.block_size);
 
@@ -169,7 +169,7 @@ void CUDAThreadState::memset_async(void *ptr, uint32_t size_, uint32_t isize,
             break;
 
         case 8: {
-                const Device &dev = state.devices[device];
+                const CUDADevice &dev = state.devices[device];
                 uint32_t block_count, thread_count;
                 dev.get_launch_config(&block_count, &thread_count, size_);
                 void *args[] = { &ptr, &size_, (void *) src };
@@ -302,7 +302,7 @@ void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
              chunks_per_block, vector_width, grid_dim_x, grid_dim_y,
              thread_count, smem_bytes);
 
-    const Device &dev = state.devices[device];
+    const CUDADevice &dev = state.devices[device];
 
     CUfunction func = nullptr;
     if (vector_width != 1) {
@@ -355,7 +355,7 @@ void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
 
 void CUDAThreadState::reduce_dot(VarType vt, const void *ptr_1,
                                  const void *ptr_2, uint32_t size, void *out) {
-    const Device &dev = state.devices[device];
+    const CUDADevice &dev = state.devices[device];
 
     CUfunction red_dot = jitc_cuda_reduce_dot[(int) vt][dev.id];
 
@@ -437,7 +437,7 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
     uint32_t a_inner = At ? M : K,
              b_inner = Bt ? K : N;
 
-    const Device &dev = state.devices[device];
+    const CUDADevice &dev = state.devices[device];
 
     // Tile selection. Iterate BM from smallest to largest and overwrite
     // the pick whenever a larger tile clears the wave gate; the
@@ -631,7 +631,7 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
              block_count, chunk_size, chunks_per_block, grid_dim_x, grid_dim_y,
              thread_count, smem_bytes);
 
-    const Device &dev = state.devices[device];
+    const CUDADevice &dev = state.devices[device];
 
     CUfunction func = nullptr;
     int kernel_id = log2i_ceil(chunk_size) - 1;
@@ -689,7 +689,7 @@ uint32_t CUDAThreadState::compress(const uint8_t *in, uint32_t size,
     if (size == 0)
         return 0;
 
-    const Device &dev = state.devices[device];
+    const CUDADevice &dev = state.devices[device];
     scoped_set_context guard(context);
 
     uint32_t *count_out = (uint32_t *) jitc_malloc(
@@ -770,7 +770,7 @@ static void cuda_transpose(ThreadState *ts, const uint32_t *in, uint32_t *out,
                            uint32_t rows, uint32_t cols,
                            uint32_t num_batches = 1,
                            uint32_t batch_stride = 0) {
-    const Device &device = state.devices[ts->device];
+    const CUDADevice &device = state.devices[ts->device];
 
     uint16_t blocks_x = (uint16_t) ((cols + 15u) / 16u),
              blocks_y = (uint16_t) ((rows + 15u) / 16u);
@@ -799,7 +799,7 @@ uint32_t CUDAThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
         jitc_fail("jit_block_mkperm(): bucket_count cannot be zero!");
 
     scoped_set_context guard(context);
-    const Device &dev = state.devices[device];
+    const CUDADevice &dev = state.devices[device];
 
     const uint32_t warp_size = 32;
 
@@ -1003,7 +1003,7 @@ void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
     }
 
     scoped_set_context guard(context);
-    const Device &dev = state.devices[device];
+    const CUDADevice &dev = state.devices[device];
     CUfunction func = jitc_cuda_poke[(int) type][dev.id];
     void *args[] = { &dst, (void *) src };
     submit_gpu(KernelType::Poke, this->recording_mode, func, 1, 1, 0, stream,
@@ -1013,7 +1013,7 @@ void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
 void CUDAThreadState::aggregate(void *dst_, AggregationEntry *agg,
                                 uint32_t size) {
     scoped_set_context guard(context);
-    const Device &dev = state.devices[device];
+    const CUDADevice &dev = state.devices[device];
     CUfunction func = jitc_cuda_aggregate[dev.id];
     void *args[] = { &dst_, &agg, &size };
 
