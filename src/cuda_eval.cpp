@@ -43,6 +43,7 @@
 #include "internal.h"
 #include "var.h"
 #include "log.h"
+#include "tex.h"
 #include "call.h"
 #include "cond.h"
 #include "loop.h"
@@ -1104,6 +1105,57 @@ static void jitc_cuda_render(Variable *v) {
                     v->reg_index, v->reg_index, v->reg_index, v->reg_index);
             }
             break;
+
+        case VarKind::TexWrite: {
+            TexData *td = (TexData *) v->data;
+            uint32_t nc = td->n_values, ri = v->reg_index;
+            uint32_t stride = nc * td->comp_bytes;
+            bool is_f16 = td->comp_bytes == 2;
+            const char *ct = is_f16 ? "b16" : "b32";
+            Variable *mask = v->dep[1] ? jitc_var(v->dep[1]) : nullptr;
+
+            fmt("    .reg.u32 %tw$u_x;\n"
+                "    mul.lo.u32 %tw$u_x, $v, $u;\n",
+                ri, ri, jitc_var(td->indices[0]), stride);
+
+            for (uint32_t c = 0; c < nc; ++c) {
+                Variable *val = jitc_var(td->values[c]);
+                if (is_f16)
+                    fmt("    .reg.b16 %tw$u_$u;\n"
+                        "    cvt.rn.f16.f32 %tw$u_$u, $v;\n",
+                        ri, c, ri, c, val);
+                else
+                    fmt("    .reg.b32 %tw$u_$u;\n"
+                        "    mov.b32 %tw$u_$u, $v;\n",
+                        ri, c, ri, c, val);
+            }
+
+            put("    ");
+            if (mask)
+                fmt("@$v ", mask);
+
+            const char *geom = td->ndim == 3 ? "3d" : (td->ndim == 2 ? "2d" : "1d");
+            const char *vec  = nc == 4 ? ".v4" : (nc == 2 ? ".v2" : "");
+
+            fmt("sust.b.$s$s.$s.zero [$v, {%tw$u_x", geom, vec, ct,
+                jitc_var(v->dep[0]), ri);
+            if (td->ndim >= 2)
+                fmt(", $v", jitc_var(td->indices[1]));
+            if (td->ndim == 3)
+                fmt(", $v", jitc_var(td->indices[2]));
+            put("}, ");
+
+            if (nc == 1) {
+                fmt("%tw$u_0", ri);
+            } else {
+                put("{");
+                for (uint32_t c = 0; c < nc; ++c)
+                    fmt(c ? ", %tw$u_$u" : "%tw$u_$u", ri, c);
+                put("}");
+            }
+            put(";\n");
+            break;
+        }
 
         case VarKind::VectorLoad:
             fmt("    mov.$b $v, 0;\n"

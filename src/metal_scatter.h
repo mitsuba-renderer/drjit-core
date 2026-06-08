@@ -14,6 +14,13 @@
 #if defined(DRJIT_ENABLE_METAL)
 
 struct Variable;
+enum class ReduceOp : uint32_t;
+
+/// SIMD-local scatter-reduction over \c n packet channels (shared with the
+/// scalar scatter path). \c values are variable indices.
+extern void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
+                                         const Variable *ptr, const Variable *index,
+                                         ReduceOp op, bool aggregate);
 
 /// Emit MSL code for a scatter or scatter-reduce operation.
 extern void jitc_metal_render_scatter(Variable *v);

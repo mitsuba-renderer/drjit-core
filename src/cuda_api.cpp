@@ -133,6 +133,8 @@ bool jitc_cuda_api_init() {
         LOAD(cuTexObjectCreate);
         LOAD(cuTexObjectGetResourceDesc);
         LOAD(cuTexObjectDestroy);
+        LOAD(cuSurfObjectCreate);
+        LOAD(cuSurfObjectDestroy);
         LOAD(cuMemcpy2DAsync, "v2");
         LOAD(cuMemcpy3DAsync, "v2");
 
@@ -208,7 +210,8 @@ void jitc_cuda_api_shutdown() {
     Z(cuStreamSynchronize); Z(cuStreamWaitEvent); Z(cuStreamWaitEvent_ptsz); Z(cuPointerGetAttribute);
     Z(cuArrayCreate); Z(cuArray3DCreate); Z(cuArray3DGetDescriptor);
     Z(cuArrayDestroy); Z(cuTexObjectCreate); Z(cuTexObjectGetResourceDesc);
-    Z(cuTexObjectDestroy); Z(cuMemcpy2DAsync); Z(cuMemcpy3DAsync);
+    Z(cuTexObjectDestroy); Z(cuSurfObjectCreate); Z(cuSurfObjectDestroy);
+    Z(cuMemcpy2DAsync); Z(cuMemcpy3DAsync);
     Z(cuProfilerStart); Z(cuProfilerStop);
 
     // CUDA / OpenGL interop

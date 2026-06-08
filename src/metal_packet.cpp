@@ -8,6 +8,7 @@
 */
 
 #include "metal_packet.h"
+#include "metal_scatter.h"
 #include "internal.h"
 #include "var.h"
 #include "op.h"
@@ -88,13 +89,6 @@ void jitc_metal_render_gather_packet(const Variable *v, const Variable *ptr,
             fmt("$t $v_out_$u = $v_dec_$u[$u];\n", v, v, i, v, c, l);
     }
 }
-
-// CLAUDE: should this go to a header file? (metal_*.h?)
-// SIMD-local scatter-reduction over n packet channels (defined in
-// metal_scatter.cpp; shared with the scalar path). ``values`` are variable indices.
-extern void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
-                                         const Variable *ptr, const Variable *index,
-                                         ReduceOp op, bool aggregate);
 
 /// Render the MSL to scatter-reduce a variable packet
 static void jitc_metal_render_scatter_reduce_packet(const Variable *ptr,
