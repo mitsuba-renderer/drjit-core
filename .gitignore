@@ -36,7 +36,7 @@ tests/test_mem
 tests/test_array
 tests/test_half
 tests/test_record
-tests/cuda_triangle
+tests/optix_triangle
 tests/metal_triangle
 tests/microbenchmark
 /resources/pack

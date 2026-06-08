@@ -39,7 +39,7 @@ struct alignas(16) AggregationEntry {
 };
 
 
-KERNEL void aggregate(void *out, const aggregationEntry *in, uint32_t size) {
+KERNEL void aggregate(void *out, const AggregationEntry *in, uint32_t size) {
     uint32_t idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= size)
         return;

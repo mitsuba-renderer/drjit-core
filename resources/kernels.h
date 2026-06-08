@@ -18,8 +18,8 @@ static const size_t kernels_dict_size_uncompressed = 65536;
 static const size_t kernels_dict_size_compressed = 19638;
 
 extern const char kernels_75[];
-static const size_t kernels_75_size_uncompressed = 5375439;
-static const size_t kernels_75_size_compressed = 1042371;
+static const size_t kernels_75_size_uncompressed = 4585682;
+static const size_t kernels_75_size_compressed = 840268;
 
 static const char *kernels_list =
     "compress_small,"
@@ -667,19 +667,7 @@ static const char *kernels_list =
     "gemm_f64_32_tn,"
     "gemm_f64_64_nn,"
     "gemm_f64_64_nt,"
-    "gemm_f64_64_tn,"
-    "gemm_u32_8_nn,"
-    "gemm_u32_8_nt,"
-    "gemm_u32_8_tn,"
-    "gemm_u32_16_nn,"
-    "gemm_u32_16_nt,"
-    "gemm_u32_16_tn,"
-    "gemm_u32_32_nn,"
-    "gemm_u32_32_nt,"
-    "gemm_u32_32_tn,"
-    "gemm_u32_64_nn,"
-    "gemm_u32_64_nt,"
-    "gemm_u32_64_tn,";
+    "gemm_f64_64_tn,";
 
 #ifdef __cplusplus
 }

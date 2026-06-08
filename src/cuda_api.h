@@ -28,6 +28,18 @@ extern void jitc_cuda_sync_stream(uintptr_t stream);
 #  include <cudaProfiler.h>
 // Internal function that is not in <cuda.h>, but gets loaded by the driver.
 extern CUresult (*cuStreamWaitEvent_ptsz)(CUstream, CUevent, unsigned int);
+
+// CUDA / OpenGL interop. Declare the GL-specific registration functions
+// ourselves to avoid pulling in <cudaGL.h> (and thus <GL/gl.h>).
+using GLuint = unsigned int;
+using GLenum = unsigned int;
+extern "C" {
+    CUresult cuGraphicsGLRegisterBuffer(CUgraphicsResource *pCudaResource,
+                                        GLuint buffer, unsigned int Flags);
+    CUresult cuGraphicsGLRegisterImage(CUgraphicsResource *pCudaResource,
+                                       GLuint image, GLenum target,
+                                       unsigned int Flags);
+}
 #else
 #  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR 75
 #  define CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR 76
@@ -118,6 +130,7 @@ using CUdevice     = int;
 using CUdeviceptr  = void *;
 using CUjit_option = int;
 using CUarray_format = int;
+using CUaddress_mode = int;
 using CUdevResourceType = unsigned int;
 
 #define CU_DEV_RESOURCE_TYPE_INVALID 0
