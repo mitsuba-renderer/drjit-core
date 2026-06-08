@@ -73,6 +73,7 @@ static uint32_t compute_padding(const CacheFileHeader &header) {
 }
 
 /// Lowercase backend identifier used as a cache file name suffix
+#if !defined(_WIN32)
 static const char *jitc_cache_suffix(JitBackend backend) {
     switch (backend) {
         case JitBackend::CUDA:  return "cuda";
@@ -80,8 +81,7 @@ static const char *jitc_cache_suffix(JitBackend backend) {
         default:                return "llvm";
     }
 }
-
-#if defined(_WIN32)
+#else
 static const wchar_t *jitc_cache_suffix_w(JitBackend backend) {
     switch (backend) {
         case JitBackend::CUDA:  return L"cuda";

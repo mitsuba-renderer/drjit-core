@@ -75,7 +75,7 @@ const uint32_t red_sizes[] {
     1024, 16384, 16388*10, 9973*17, 98973*17*3
 };
 
-TEST_BOTH_FLOAT_AGNOSTIC(01_all_any) {
+TEST_ALL_FLOAT_AGNOSTIC(01_all_any) {
     using Bool = Array<bool>;
 
     for (uint32_t i = 0; i < 100; ++i) {
@@ -106,7 +106,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(01_all_any) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(02_block_reduce_u32_const) {
+TEST_ALL_FLOAT_AGNOSTIC(02_block_reduce_u32_const) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -122,7 +122,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(02_block_reduce_u32_const) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(02_block_reduce_u32) {
+TEST_ALL_FLOAT_AGNOSTIC(02_block_reduce_u32) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -135,7 +135,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(02_block_reduce_u32) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(03_block_reduce_u64) {
+TEST_ALL_FLOAT_AGNOSTIC(03_block_reduce_u64) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -150,7 +150,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(03_block_reduce_u64) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(04_block_prefix_reduce_u32_inc_fwd) {
+TEST_ALL_FLOAT_AGNOSTIC(04_block_prefix_reduce_u32_inc_fwd) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -164,7 +164,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(04_block_prefix_reduce_u32_inc_fwd) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(05_block_prefix_reduce_u32_exc_fwd) {
+TEST_ALL_FLOAT_AGNOSTIC(05_block_prefix_reduce_u32_exc_fwd) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -178,7 +178,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(05_block_prefix_reduce_u32_exc_fwd) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(06_block_prefix_reduce_u32_inc_bwd) {
+TEST_ALL_FLOAT_AGNOSTIC(06_block_prefix_reduce_u32_inc_bwd) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -192,7 +192,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_block_prefix_reduce_u32_inc_bwd) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(07_block_prefix_reduce_u32_exc_bwd) {
+TEST_ALL_FLOAT_AGNOSTIC(07_block_prefix_reduce_u32_exc_bwd) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -206,7 +206,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(07_block_prefix_reduce_u32_exc_bwd) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(08_block_prefix_reduce_u64_inc_fwd) {
+TEST_ALL_FLOAT_AGNOSTIC(08_block_prefix_reduce_u64_inc_fwd) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -221,7 +221,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(08_block_prefix_reduce_u64_inc_fwd) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(09_block_prefix_reduce_u64_exc_fwd) {
+TEST_ALL_FLOAT_AGNOSTIC(09_block_prefix_reduce_u64_exc_fwd) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -236,7 +236,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(09_block_prefix_reduce_u64_exc_fwd) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(10_block_prefix_reduce_u64_inc_bwd) {
+TEST_ALL_FLOAT_AGNOSTIC(10_block_prefix_reduce_u64_inc_bwd) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -251,7 +251,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(10_block_prefix_reduce_u64_inc_bwd) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(11_block_prefix_reduce_u64_exc_bwd) {
+TEST_ALL_FLOAT_AGNOSTIC(11_block_prefix_reduce_u64_exc_bwd) {
     for (uint32_t size : red_sizes) {
         for (uint32_t block_size : red_sizes) {
             if (block_size > size)
@@ -266,7 +266,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(11_block_prefix_reduce_u64_exc_bwd) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(12_compress) {
+TEST_ALL_FLOAT_AGNOSTIC(12_compress) {
     for (uint32_t i = 0; i < 30; ++i) {
         uint32_t size = 23*i*i*i + 1;
         for (uint32_t j = 0; j <= i; ++j) {
@@ -312,7 +312,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(12_compress) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(13_mkperm) {
+TEST_ALL_FLOAT_AGNOSTIC(13_mkperm) {
     srand(0);
     for (uint32_t i = 0; i < 30; ++i) {
         uint32_t size = 23*i*i*i + 1;
@@ -406,7 +406,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(13_mkperm) {
 }
 
 #if 0
-TEST_BOTH(14_block_ops) {
+TEST_ALL(14_block_ops) {
     Float a(0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f);
 
     jit_log(Info, "block_sum:  %s\n", block_sum(a, 3).str());

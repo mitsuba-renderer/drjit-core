@@ -79,7 +79,7 @@ inline Ref borrow(uint32_t index) {
     return r;
 }
 
-TEST_BOTH(01_symbolic_loop) {
+TEST_ALL(01_symbolic_loop) {
     // Tests a simple loop
     for (uint32_t i = 0; i < 2; ++i) {
         jit_set_flag(JitFlag::OptimizeLoops, i == 1);
@@ -145,7 +145,7 @@ TEST_BOTH(01_symbolic_loop) {
 }
 
 
-TEST_BOTH_FP32(02_side_effect) {
+TEST_ALL_FP32(02_side_effect) {
     // Tests that side effects happen (and only once, even if the loop is re-evaluated)
     for (uint32_t i = 0; i < 2; ++i) {
         jit_set_flag(JitFlag::OptimizeLoops, i == 1);
@@ -207,7 +207,7 @@ TEST_BOTH_FP32(02_side_effect) {
 }
 
 
-TEST_BOTH_FP32(03_side_effect_2) {
+TEST_ALL_FP32(03_side_effect_2) {
     // Tests that side effects work even if they don't reference any loop variables
     for (uint32_t i = 0; i < 2; ++i) {
         jit_set_flag(JitFlag::OptimizeLoops, i == 1);
@@ -269,7 +269,7 @@ TEST_BOTH_FP32(03_side_effect_2) {
 }
 
 
-TEST_BOTH(04_optimize_invariant) {
+TEST_ALL(04_optimize_invariant) {
     /* Test to check that variables which stay unchanged or constant and
        equal-valued are optimized out of the loop */
     for (uint32_t i = 0; i < 2; ++i) {
@@ -383,7 +383,7 @@ TEST_BOTH(04_optimize_invariant) {
 }
 
 
-TEST_BOTH(05_collatz) {
+TEST_ALL(05_collatz) {
     // A more interesting nested loop
     auto collatz = [](const char *name, UInt32 value, bool symbolic) -> UInt32 {
         UInt32 counter = 0;
@@ -483,7 +483,7 @@ TEST_BOTH(05_collatz) {
 }
 
 
-TEST_BOTH(06_nested_write) {
+TEST_ALL(06_nested_write) {
     // Nested loop where both loops write to the same loop variable
     auto inner_loop = [](UInt32 k) -> UInt32 {
         uint32_t var_indices[1] = { k.index() };
@@ -568,7 +568,7 @@ TEST_BOTH(06_nested_write) {
 
 
 
-TEST_BOTH(07_optim_cond) {
+TEST_ALL(07_optim_cond) {
     // Loop condition depends on variables that are optimized away (loop-invariants)
 
     for (uint32_t i = 0; i < 2; ++i) {
@@ -633,7 +633,7 @@ TEST_BOTH(07_optim_cond) {
 }
 
 
-TEST_BOTH(08_eval_side_effect_in_loop) {
+TEST_ALL(08_eval_side_effect_in_loop) {
     // Loop depends needs to access a dirty variable
     for (uint32_t i = 0; i < 2; ++i) {
         jit_set_flag(JitFlag::LoopOptimize, i == 0);
@@ -687,7 +687,7 @@ TEST_BOTH(08_eval_side_effect_in_loop) {
     }
 }
 
-TEST_BOTH(09_test_multiple_scatter_loop) {
+TEST_ALL(09_test_multiple_scatter_loop) {
     // Tests that we can scatter multiple times in loop body
 
     jit_set_flag(JitFlag::KernelHistory, true);

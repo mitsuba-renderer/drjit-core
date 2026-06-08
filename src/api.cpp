@@ -2210,7 +2210,6 @@ JitEvent jit_event_create(JitBackend backend, int enable_timing) {
             return jitc_llvm_event_create(enable_timing);
         default:
             jitc_raise("jit_event_create(): invalid backend");
-            return nullptr;
     }
 }
 
@@ -2272,7 +2271,6 @@ int jit_event_query(JitEvent event) {
             return jitc_llvm_event_query(event);
         default:
             jitc_raise("jit_event_query(): invalid backend");
-            return 0;
     }
 }
 
@@ -2317,7 +2315,6 @@ float jit_event_elapsed_time(JitEvent start, JitEvent end) {
             return jitc_llvm_event_elapsed_time(start, end);
         default:
             jitc_raise("jit_event_elapsed_time(): invalid backend");
-            return 0.0f;
     }
 }
 
@@ -2337,6 +2334,5 @@ void* jit_event_handle(JitEvent event) {
             return (void*)e->llvm_task;
         default:
             jitc_raise("jit_event_handle(): invalid backend");
-            return nullptr;
     }
 }

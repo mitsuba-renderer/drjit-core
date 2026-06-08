@@ -2,7 +2,7 @@
 #include <cstring>
 #include <algorithm>
 
-TEST_BOTH_FLOAT_AGNOSTIC(01_gather) {
+TEST_ALL_FLOAT_AGNOSTIC(01_gather) {
     Int32 r = arange<Int32>(100) + 100;
     r.eval();
     UInt32 index = UInt32(34, 62, 75, 2);
@@ -11,7 +11,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(01_gather) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(02_gather_mask) {
+TEST_ALL_FLOAT_AGNOSTIC(02_gather_mask) {
     Mask r = eq(arange<Int32>(100) & Int32(1), 1);
     r.eval();
     UInt32 index = UInt32(33, 62, 75, 2);
@@ -20,7 +20,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(02_gather_mask) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(03_gather_masked) {
+TEST_ALL_FLOAT_AGNOSTIC(03_gather_masked) {
     Int32 r = arange<Int32>(100) + 100;
     r.eval();
     UInt32 index = UInt32(34, 62, 75, 2);
@@ -30,7 +30,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(03_gather_masked) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(04_gather_mask_masked) {
+TEST_ALL_FLOAT_AGNOSTIC(04_gather_mask_masked) {
     Mask r = eq(arange<Int32>(100) & Int32(1), 1);
     r.eval();
     UInt32 index = UInt32(33, 62, 75, 2);
@@ -40,7 +40,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(04_gather_mask_masked) {
     jit_assert(all(eq(ref, value)));
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(05_gather_scalar) {
+TEST_ALL_FLOAT_AGNOSTIC(05_gather_scalar) {
     /* unmasked, doesn't launch any kernels */ {
         Int32 r = 124;
         Array<uint64_t> index = Array<uint64_t>(34, 62, 75, 2);
@@ -58,7 +58,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(05_gather_scalar) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(06_gather_scalar_mask) {
+TEST_ALL_FLOAT_AGNOSTIC(06_gather_scalar_mask) {
     /* unmasked, doesn't launch any kernels */ {
         Mask r = true;
         Array<uint64_t> index = Array<uint64_t>(34, 62, 75, 2);
@@ -76,7 +76,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(06_gather_scalar_mask) {
     }
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(07_scatter) {
+TEST_ALL_FLOAT_AGNOSTIC(07_scatter) {
     UInt32 r = arange<UInt32>(10);
     UInt32 index = UInt32(1, 7, 5);
     UInt32 value = UInt32(8, 2, 3);
@@ -85,7 +85,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(07_scatter) {
     jit_assert(all(eq(ref, r)));
 }
 
-TEST_BOTH_FLOAT_AGNOSTIC(08_scatter_mask) {
+TEST_ALL_FLOAT_AGNOSTIC(08_scatter_mask) {
     UInt32 r = arange<UInt32>(10);
     UInt32 index = UInt32(1, 7, 5);
     UInt32 value = UInt32(8, 2, 3);
@@ -95,7 +95,7 @@ TEST_BOTH_FLOAT_AGNOSTIC(08_scatter_mask) {
     jit_assert(all(eq(ref, r)));
 }
 
-TEST_BOTH(09_safety) {
+TEST_ALL(09_safety) {
     /* Collapse adjacent scatters */ {
         Float a = arange<Float>(5);
         a.eval();
@@ -134,7 +134,7 @@ TEST_BOTH(09_safety) {
     }
 }
 
-TEST_BOTH(10_scatter_atomic_rmw) {
+TEST_ALL(10_scatter_atomic_rmw) {
     /* scatter 16 values */ {
         Float target = zeros<Float>(16);
         UInt32 index(0, 1, 2, 0, 4, 5, 6, 7, 8, 9, 10, 2, 3, 0, 0);
@@ -189,7 +189,7 @@ TEST_CUDA(11_reindex) {
     jit_assert(i3.index() == i4.index());
 }
 
-TEST_BOTH_FP32(12_scatter_add_kahan) {
+TEST_ALL_FP32(12_scatter_add_kahan) {
     Float buf_1 = zeros<Float>(1),
           buf_2 = zeros<Float>(1);
 
@@ -206,7 +206,7 @@ TEST_BOTH_FP32(12_scatter_add_kahan) {
     jit_assert(all(eq(buf_2, Float(2))));
 }
 
-TEST_BOTH(13_gather_scalar_opaque) {
+TEST_ALL(13_gather_scalar_opaque) {
     Float buf_1 = opaque<Float>(1),
           buf_2 = gather<Float>(buf_1, arange<UInt32>(10));
     jit_assert(strcmp(buf_2.str(), "[1, 1, 1, 1, 1, 1, 1, 1, 1, 1]") == 0);
@@ -219,7 +219,7 @@ TEST_LLVM(14_gather_symbolic_llvm_mask) {
     jit_assert(strcmp(buf_3.str(), "[5, 6, 7, 8]") == 0);
 }
 
-TEST_BOTH(15_gather_symbolic_multiple_mask) {
+TEST_ALL(15_gather_symbolic_multiple_mask) {
     /* A gather expression that is reindexed/rewritten should properly apply its
      * mask to any previous gather operations it depends on */
     Float buf_0 = Float(1, 2, 3, 4, 5, 6, 7, 8);
@@ -237,7 +237,7 @@ TEST_BOTH(15_gather_symbolic_multiple_mask) {
     jit_assert(strcmp(buf_2.str(), "[0, 3, 0, 0]") == 0);
 }
 
-TEST_BOTH(16_scatter_inc) {
+TEST_ALL(16_scatter_inc) {
     constexpr size_t n = 10000;
     uint32_t out_cpu[n];
     UInt32 counter(0);
@@ -267,7 +267,7 @@ TEST_BOTH(16_scatter_inc) {
     }
 }
 
-TEST_BOTH(17_scatter_inc_2) {
+TEST_ALL(17_scatter_inc_2) {
     constexpr size_t n = 10000;
     uint32_t out_cpu[n];
     UInt32 counter(0);
@@ -292,7 +292,7 @@ TEST_BOTH(17_scatter_inc_2) {
     }
 }
 
-TEST_BOTH(18_scatter_inc_mask) {
+TEST_ALL(18_scatter_inc_mask) {
     constexpr size_t n = 100000;
     uint32_t out_cpu[n];
     UInt32 counter(0);
