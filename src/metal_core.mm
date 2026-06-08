@@ -168,12 +168,6 @@ void *jitc_metal_unregister_buffer(void *ptr) {
 
 // ============================================================================
 //  Utility kernel library
-//
-//  resources/metal_kernels.metal is compiled to a .metallib at build time (see
-//  resources/embed_metal_kernels.cmake) and embedded as a byte array. At init time
-//  each device instantiates the library from those bytes and eagerly creates a
-//  compute pipeline state for every utility kernel, stored in MetalDevice and
-//  indexed directly by MetalKernel (see state.metal_devices[...].pipelines).
 // ============================================================================
 
 /// Kernel function names, indexed by MetalKernel. The order must match the
@@ -362,9 +356,20 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
         }
 
         id<MTLFunction> func = [lib newFunctionWithName:@(kernel_name)];
-        if (!func)
-            jitc_fail("jitc_metal_kernel_compile(): kernel function \"%s\" not found in "
-                      "the compiled library.", kernel_name);
+        if (!func) {
+            // Metal sometimes returns a (non-null) library that omits the
+            // entry point when the source has diagnostics. Generate useful errors
+            // also in this case.
+            NSMutableString *names = [NSMutableString string];
+            for (NSString *fn in lib.functionNames)
+                [names appendFormat:@"%s%@", names.length ? ", " : "", fn];
+            jitc_fail("jitc_metal_kernel_compile(): kernel function \"%s\" not "
+                      "found in the compiled library.\nCompiler diagnostics: %s\n"
+                      "Functions in library: [%s]\n\n--- Source code ---\n%s",
+                      kernel_name,
+                      err ? err.localizedDescription.UTF8String : "<none>",
+                      names.UTF8String, source);
+        }
 
         // ---- Pipeline creation ---------------------------------------------
         // Link the union of custom intersection functions across every scene
