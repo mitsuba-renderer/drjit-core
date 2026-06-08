@@ -46,8 +46,7 @@ static bool jitc_metal_can_reduce_local(VarType vt, ReduceOp op) {
 /// helps reduce cost for atomics targeting incoherent addresses.
 static void jitc_metal_emit_peer_mask_helper() {
     fmt_intrinsic(
-        "inline uint drjit_peer_mask(uint key) {\n"
-        "    uint peers   = (uint) ((simd_vote::vote_t) simd_active_threads_mask());\n"
+        "inline uint drjit_peer_mask(uint key, uint peers) {\n"
         "    uint varying = simd_or(key ^ simd_broadcast_first(key));\n"
         "    while (varying) {\n"
         "        if (simd_all(popcount(peers) <= 1u)) break;\n"
@@ -60,22 +59,24 @@ static void jitc_metal_emit_peer_mask_helper() {
         "}");
 }
 
-/// Emit the shared SIMD peer-detection prologue
+/// Emit the shared SIMD peer-detection prologue, declaring ``lane``, the active
+/// lane mask ``active``, and the per-lane peer group ``peers``.
 static void jitc_metal_emit_warp_match(const char *t, const Variable *ptr,
                                        const Variable *index, uint32_t shiftamt) {
     const char *tid = callable_depth > 0 ? "index" : "r0";
     jitc_metal_emit_peer_mask_helper();
     fmt("uint lane = ($s) & 31u;\n"
+        "uint active = (uint) ((simd_vote::vote_t) simd_active_threads_mask());\n"
         "uint key = (uint) (((ulong) ((device $s*) $v + $v)) >> $u);\n"
-        "uint peers = drjit_peer_mask(key);\n",
+        "uint peers = drjit_peer_mask(key, active);\n",
         tid, t, ptr, index, shiftamt);
 }
 
-/// Emit a scatter-reduction that sparately reduces ``n``variables of type
-/// ``vt`` within the threadgroup, then within the warp, then atomically
-/// scatters the per-group result to memory. If ``aggregate`` is set, lanes
-/// sharing the base address pre-reduce through a SIMD butterfly so the group
-/// leader issues a single device atomic per channe
+/// Emit a scatter-reduction that separately reduces ``n``variables of type
+/// ``vt`` within the simdgroup, then atomically scatters the per-group result
+/// to memory. If ``aggregate`` is set, lanes sharing the base address
+/// pre-reduce through a SIMD butterfly so the group leader issues a single
+/// device atomic per channel.
 void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
                                   const Variable *ptr, const Variable *index,
                                   ReduceOp op, bool aggregate) {
@@ -116,12 +117,24 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
         fmt("$s wval$u = $v;\n", t, i, jitc_var(values[i]));
 
     if (aggregate) {
+        const char *simd_fn = op == ReduceOp::Add ? "simd_sum"
+                            : op == ReduceOp::Min ? "simd_min"
+                            : op == ReduceOp::Max ? "simd_max"
+                            : op == ReduceOp::And ? "simd_and"
+                                                  : "simd_or";
+
+        // Fully-coherent fast path: when every active lane shares the address,
+        // a single hardware reduction replaces the peer-group butterfly.
+        put("if (peers == active) {\n");
+        for (uint32_t i = 0; i < n; ++i)
+            fmt("    wval$u = $s(wval$u);\n", i, simd_fn, i);
+        put("} else {\n");
         // Precompute the peer group structure once and then reuse across the packet
         put("uint rank = popcount(peers & ((1u << lane) - 1u));\n"
             "uint remaining = peers;\n"
             "while (simd_any(popcount(remaining) > 1u)) {\n"
             "    bool in_group  = ((remaining >> lane) & 1u) != 0u;\n"
-            "    uint upper     = remaining & ((lane >= 31u) ? 0u : (~0u << (lane + 1u)));\n"
+            "    uint upper     = remaining & ((~0u << lane) << 1);\n"
             "    uint next_lane = upper ? ctz(upper) : lane;\n"
             "    bool recv      = in_group && (rank & 1u) == 0u && upper != 0u;\n");
         for (uint32_t i = 0; i < n; ++i)
@@ -133,6 +146,7 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
             "    uint drop = (uint) ((simd_vote::vote_t) simd_ballot(in_group && (rank & 1u) != 0u));\n"
             "    remaining &= ~drop;\n"
             "    if (in_group) rank >>= 1;\n"
+            "}\n"
             "}\n"
             "if (lane == ctz(peers)) {\n");
     }
