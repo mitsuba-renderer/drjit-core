@@ -763,14 +763,17 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
                 "jit_var_new(): selected entry of variable r%u "
                 "is already used.", index);
 
-    // Snapshot the LVN key before overwriting the slot
+    // Snapshot the LVN key before overwriting the slot. Hash it here rather
+    // than inside the table's insert so that the hash dependency chain
+    // overlaps the slot write below.
     VariableKey key(v);
+    size_t key_hash = lvn ? VariableKeyHasher()(key) : 0;
     v.counter = vo->counter;
     *vo = v;
 
     bool cse_hit = false;
     if (lvn) {
-        auto [it, inserted] = st.lvn_map.try_emplace(key, index);
+        auto [it, inserted] = st.lvn_map.try_emplace_hash(key_hash, key, index);
 
         if (unlikely(!inserted)) {
             // CSE hit: undo the speculative allocation and reuse the existing
