@@ -353,17 +353,39 @@ extern const char *type_name      [(int) VarType::Count];
 extern const char *type_name_short[(int) VarType::Count];
 extern const uint32_t type_size   [(int) VarType::Count];
 
+/// Fixed-width, length-tagged storage for the per-VarType name tables that the
+/// IR formatters consult on the hot codegen path. Entries must be shorter than
+/// 6 characters or they will be truncated.
+template <size_t N> struct NameTable {
+    char data[N][8];
+    constexpr NameTable(const char *const (&src)[N]) : data{} {
+        for (size_t i = 0; i < N; ++i) {
+            size_t j = 0;
+            for (; j < 8 && src[i][j] != '\0'; ++j) // j < 8: never write OOB
+                data[i][j] = src[i][j];
+
+#if !defined(NDEBUG)
+            if (j > 6)
+                throw "NameTable entry exceeds 6 characters";
+#endif
+
+            data[i][7] = (char) j; // length tag in byte 7
+        }
+    }
+    constexpr const char *operator[](size_t i) const { return data[i]; }
+};
+
 /// Type names and register names for CUDA and LLVM
-extern const char *type_name_llvm       [(int) VarType::Count];
-extern const char *type_name_llvm_bin   [(int) VarType::Count];
-extern const char *type_name_llvm_abbrev[(int) VarType::Count];
-extern const char *type_name_llvm_big   [(int) VarType::Count];
-extern const char *type_name_ptx        [(int) VarType::Count];
-extern const char *type_name_ptx_bin    [(int) VarType::Count];
-extern const char *type_name_ptx_bin2   [(int) VarType::Count];
-extern const char *type_name_metal      [(int) VarType::Count];
-extern const char *type_name_metal_bin  [(int) VarType::Count];
-extern const char *type_prefix          [(int) VarType::Count];
+extern const NameTable<(size_t) VarType::Count> type_name_llvm;
+extern const NameTable<(size_t) VarType::Count> type_name_llvm_bin;
+extern const NameTable<(size_t) VarType::Count> type_name_llvm_abbrev;
+extern const NameTable<(size_t) VarType::Count> type_name_llvm_big;
+extern const NameTable<(size_t) VarType::Count> type_name_ptx;
+extern const NameTable<(size_t) VarType::Count> type_name_ptx_bin;
+extern const NameTable<(size_t) VarType::Count> type_name_ptx_bin2;
+extern const NameTable<(size_t) VarType::Count> type_name_metal;
+extern const NameTable<(size_t) VarType::Count> type_name_metal_bin;
+extern const NameTable<(size_t) VarType::Count> type_prefix;
 extern const char *type_size_str        [(int) VarType::Count];
 
 void jitc_var_set_data(Variable &v, void *data);
