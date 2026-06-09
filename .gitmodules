@@ -1,6 +1,6 @@
 [submodule "ext/robin_map"]
     path = ext/robin_map
-    url = https://github.com/Tessil/robin-map
+    url = https://github.com/mitsuba-renderer/robin-map
 
 [submodule "ext/nanothread"]
     path = ext/nanothread
