@@ -196,6 +196,19 @@ static inline char *w_strn(char *d, const char *str, size_t n) {
     return d + n;
 }
 
+// Append a type-name table row (see NameTable in var.h). The row is 8 bytes:
+// up to 6 characters + NUL in bytes 0..6 and the length in byte 7. Emit it with
+// one unconditional 8-byte load+store and advance the cursor by the length; the
+// 1-2 padding bytes written past the string are overwritten by the next
+// directive (the fmt_bound reservation guarantees the store stays in bounds),
+// exactly like the trailing-byte spill in w_u32.
+static inline char *w_type(char *d, const char *row) {
+    uint64_t w;
+    memcpy(&w, row, 8);
+    memcpy(d, &w, 8);
+    return d + (uint8_t) row[7];
+}
+
 // Copy plain characters from 'p' up to the next '$' (or 'end'),
 // advancing 8 bytes at a time using a SWAR test when possible.
 static inline char *w_run(char *d, const char *&p, const char *end) {
@@ -206,7 +219,7 @@ static inline char *w_run(char *d, const char *&p, const char *end) {
         uint64_t x = w ^ dollar;
         uint64_t m = (x - 0x0101010101010101ull) & ~x & 0x8080808080808080ull;
         if (m) {
-            unsigned n = (unsigned) (__builtin_ctzll(m) >> 3);
+            unsigned n = (unsigned) (tzcnt_u64(m) >> 3);
             p += n;
             return d + n;
         }
@@ -465,33 +478,34 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
 
             case 't': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_name_llvm[v->type]);
+                    cur = w_type(cur, type_name_llvm[v->type]);
                 }
                 break;
 
             case 'b': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_name_llvm_bin[v->type]);
+                    cur = w_type(cur, type_name_llvm_bin[v->type]);
                 }
                 break;
 
             case 'd': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_name_llvm_big[v->type]);
+                    cur = w_type(cur, type_name_llvm_big[v->type]);
                 }
                 break;
 
             case 'H': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, v->type == (uint32_t) VarType::Bool
-                                         ? "i8"
-                                         : type_name_llvm_abbrev[v->type]);
+                    if (v->type == (uint32_t) VarType::Bool)
+                        cur = w_strn(cur, "i8", 2);
+                    else
+                        cur = w_type(cur, type_name_llvm_abbrev[v->type]);
                 }
                 break;
 
             case 'h': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_name_llvm_abbrev[v->type]);
+                    cur = w_type(cur, type_name_llvm_abbrev[v->type]);
                 }
                 break;
 
@@ -500,7 +514,7 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                     uint32_t type = v->type == (uint32_t) VarType::Bool
                                         ? (uint32_t) VarType::UInt8
                                         : v->type;
-                    cur = w_str(cur, type_name_llvm[type]);
+                    cur = w_type(cur, type_name_llvm[type]);
                 }
                 break;
 
@@ -509,7 +523,7 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                     *cur++ = '<';
                     cur = w_u32(cur, jitc_llvm_vector_width);
                     *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
-                    cur = w_str(cur, type_name_llvm[v->type]);
+                    cur = w_type(cur, type_name_llvm[v->type]);
                     *cur++ = '>';
                 }
                 break;
@@ -519,7 +533,7 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                     *cur++ = '<';
                     cur = w_u32(cur, jitc_llvm_vector_width);
                     *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
-                    cur = w_str(cur, type_name_llvm_bin[v->type]);
+                    cur = w_type(cur, type_name_llvm_bin[v->type]);
                     *cur++ = '>';
                 }
                 break;
@@ -529,7 +543,7 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                     *cur++ = '<';
                     cur = w_u32(cur, jitc_llvm_vector_width);
                     *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
-                    cur = w_str(cur, type_name_llvm_big[v->type]);
+                    cur = w_type(cur, type_name_llvm_big[v->type]);
                     *cur++ = '>';
                 }
                 break;
@@ -542,14 +556,14 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                     *cur++ = '<';
                     cur = w_u32(cur, jitc_llvm_vector_width);
                     *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
-                    cur = w_str(cur, type_name_llvm[type]);
+                    cur = w_type(cur, type_name_llvm[type]);
                     *cur++ = '>';
                 }
                 break;
 
             case 'v': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_prefix[v->type]);
+                    cur = w_type(cur, type_prefix[v->type]);
                     cur = w_u32(cur, v->reg_index);
                 }
                 break;
@@ -559,10 +573,10 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                     *cur++ = '<';
                     cur = w_u32(cur, jitc_llvm_vector_width);
                     *cur++ = ' '; *cur++ = 'x'; *cur++ = ' ';
-                    cur = w_str(cur, type_name_llvm[v->type]);
+                    cur = w_type(cur, type_name_llvm[v->type]);
                     *cur++ = '>';
                     *cur++ = ' ';
-                    cur = w_str(cur, type_prefix[v->type]);
+                    cur = w_type(cur, type_prefix[v->type]);
                     cur = w_u32(cur, v->reg_index);
                 }
                 break;
@@ -615,7 +629,7 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                 break;
 
             case 'z':
-                cur = w_str(cur, "zeroinitializer");
+                cur = w_strn(cur, "zeroinitializer", 15);
                 --arg;
                 break;
 
@@ -695,28 +709,28 @@ void StringBuffer::fmt_cuda(size_t nargs, size_t fmt_len, const char *fmt, ...) 
 
             case 't': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_name_ptx[v->type]);
+                    cur = w_type(cur, type_name_ptx[v->type]);
                 }
                 break;
 
             case 'B': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_name_ptx_bin2[v->type]);
+                    cur = w_type(cur, type_name_ptx_bin2[v->type]);
                 }
                 break;
 
             case 'b': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_name_ptx_bin[v->type]);
+                    cur = w_type(cur, type_name_ptx_bin[v->type]);
                 }
                 break;
 
             case 'V': {
                     const Variable *v = va_arg(args2, const Variable *);
                     if (v->type == (uint32_t) VarType::Bool) {
-                        cur = w_str(cur, "%w0");
+                        cur = w_strn(cur, "%w0", 3);
                     } else {
-                        cur = w_str(cur, type_prefix[v->type]);
+                        cur = w_type(cur, type_prefix[v->type]);
                         cur = w_u32(cur, v->reg_index);
                     }
                 }
@@ -724,7 +738,7 @@ void StringBuffer::fmt_cuda(size_t nargs, size_t fmt_len, const char *fmt, ...) 
 
             case 'v': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_prefix[v->type]);
+                    cur = w_type(cur, type_prefix[v->type]);
                     cur = w_u32(cur, v->reg_index);
                 }
                 break;
@@ -809,13 +823,13 @@ void StringBuffer::fmt_metal(size_t nargs, size_t fmt_len, const char *fmt, ...)
 
             case 't': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_name_metal[v->type]);
+                    cur = w_type(cur, type_name_metal[v->type]);
                 }
                 break;
 
             case 'b': {
                     const Variable *v = va_arg(args2, const Variable *);
-                    cur = w_str(cur, type_name_metal_bin[v->type]);
+                    cur = w_type(cur, type_name_metal_bin[v->type]);
                 }
                 break;
 

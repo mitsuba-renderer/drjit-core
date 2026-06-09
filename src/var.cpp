@@ -47,70 +47,70 @@ const char *type_name_short[(int) VarType::Count] {
     "u32", "i64", "u64", "ptr", "???", "f16", "f32", "f64"
 };
 
+// ------- NameTable tables for the StringFormatter -------
+// Note: entries must be shorter than 6 characters (or they
+// will be truncated.)
+
 /// CUDA PTX type names
-const char *type_name_ptx[(int) VarType::Count] {
+const NameTable<(size_t) VarType::Count> type_name_ptx({
     "???", "pred", "???", "s8",  "u8",  "s16", "u16", "s32",
     "u32", "s64",  "u64", "u64", "???", "f16", "f32", "f64"
-};
+});
 
 /// CUDA PTX type names (binary view, even for masks)
-const char *type_name_ptx_bin2[(int) VarType::Count] {
+const NameTable<(size_t) VarType::Count> type_name_ptx_bin2({
     "???", "b8", "???", "b8",  "b8",  "b16", "b16", "b32",
     "b32", "b64",  "b64", "b64", "???", "b16", "b32", "b64"
-};
+});
 
 /// CUDA PTX type names (binary view)
-const char *type_name_ptx_bin[(int) VarType::Count] {
+const NameTable<(size_t) VarType::Count> type_name_ptx_bin({
     "???", "pred", "???", "b8",  "b8",  "b16", "b16", "b32",
     "b32", "b64",  "b64", "b64", "???", "b16", "b32", "b64"
-};
+});
 
 /// LLVM IR type names (does not distinguish signed vs unsigned)
-const char *type_name_llvm[(int) VarType::Count] {
+const NameTable<(size_t) VarType::Count> type_name_llvm({
     "???", "i1",  "???", "i8",  "i8",   "i16",   "i16",   "i32",
     "i32", "i64", "i64", "i64", "???", "half", "float", "double"
-};
+});
 
-/// Metal Shading Language type names. Apple GPUs have no hardware FP64, so
-/// Float64 is promoted to Float32 in jitc_var_new() and never reaches codegen;
-/// its slot maps to `float` defensively. Pointer is folded to ulong, matching
-/// how PTX uses u64.
-const char *type_name_metal[(int) VarType::Count] {
+/// Metal Shading Language type names (with Float64->Float32 promotion)
+const NameTable<(size_t) VarType::Count> type_name_metal({
     "void",  "bool",  "???",   "char",  "uchar", "short", "ushort", "int",
     "uint",  "long",  "ulong", "ulong", "???",   "half",  "float",  "float"
-};
+});
 
 /// Metal Shading Language binary view (used for bitcasts and bit-wise ops).
-/// Bool is 1 byte but we treat it as ``uchar`` for binary access. The Float64
-/// slot is unused (promoted to Float32) but kept consistent at 32 bits.
-const char *type_name_metal_bin[(int) VarType::Count] {
+/// Bool is 1 byte but we treat it as ``uchar`` for binary access.
+const NameTable<(size_t) VarType::Count> type_name_metal_bin({
     "???",   "uchar", "???",   "uchar", "uchar", "ushort", "ushort", "uint",
     "uint",  "ulong", "ulong", "ulong", "???",   "ushort", "uint",   "uint"
-};
+});
 
 /// Double size integer arrays for mul_hi()
-const char *type_name_llvm_big[(int) VarType::Count] {
+const NameTable<(size_t) VarType::Count> type_name_llvm_big({
     "???", "???",  "???", "i16",  "i16", "i32", "i32", "i64",
     "i64", "i128", "i128", "???", "???", "???", "???", "???"
-};
+});
 
 /// Abbreviated LLVM IR type names
-const char *type_name_llvm_abbrev[(int) VarType::Count] {
+const NameTable<(size_t) VarType::Count> type_name_llvm_abbrev({
     "???", "i1",  "???", "i8",  "i8",  "i16", "i16", "i32",
     "i32", "i64", "i64", "i64", "???", "f16", "f32", "f64"
-};
+});
 
 /// LLVM IR type names (binary view)
-const char *type_name_llvm_bin[(int) VarType::Count] {
+const NameTable<(size_t) VarType::Count> type_name_llvm_bin({
     "???", "i1",  "???", "i8",  "i8",  "i16", "i16", "i32",
     "i32", "i64", "i64", "i64", "???", "i16", "i32", "i64"
-};
+});
 
 /// LLVM/CUDA register name prefixes
-const char *type_prefix[(int) VarType::Count] {
+const NameTable<(size_t) VarType::Count> type_prefix({
     "%u", "%p", "???", "%b", "%b", "%w", "%w", "%r",
     "%r", "%rd", "%rd", "%rd", "???", "%h", "%f", "%d"
-};
+});
 
 /// Maps types to byte sizes
 const uint32_t type_size[(int) VarType::Count] {
