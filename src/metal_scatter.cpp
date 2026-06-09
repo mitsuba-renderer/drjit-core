@@ -64,12 +64,13 @@ static void jitc_metal_emit_peer_mask_helper() {
 static void jitc_metal_emit_warp_match(const char *t, const Variable *ptr,
                                        const Variable *index, uint32_t shiftamt) {
     const char *tid = callable_depth > 0 ? "index" : "r0";
+    uint32_t simd_width = thread_state_metal->metal_simd_width;
     jitc_metal_emit_peer_mask_helper();
-    fmt("uint lane = ($s) & 31u;\n"
+    fmt("uint lane = ($s) & $uu;\n"
         "uint active = (uint) ((simd_vote::vote_t) simd_active_threads_mask());\n"
         "uint key = (uint) (((ulong) ((device $s*) $v + $v)) >> $u);\n"
         "uint peers = drjit_peer_mask(key, active);\n",
-        tid, t, ptr, index, shiftamt);
+        tid, simd_width - 1, t, ptr, index, shiftamt);
 }
 
 /// Emit a scatter-reduction that separately reduces ``n``variables of type
