@@ -110,7 +110,7 @@ public:
     /// Append a string with the specified length
     void put(const char *str, size_t size) {
         if (unlikely(!m_cur || m_cur + size >= m_end))
-            expand(size);
+            m_cur = expand(m_cur, size);
 
         std::memcpy(m_cur, str, size);
         m_cur += size;
@@ -120,7 +120,7 @@ public:
     /// Append a single character to the buffer
     void put(char c) {
         if (unlikely(!m_cur || m_cur + 1 >= m_end))
-            expand(1);
+            m_cur = expand(m_cur, 1);
         *m_cur++ = c;
         *m_cur = '\0';
     }
@@ -128,7 +128,7 @@ public:
     /// Append multiple copies of a single character to the buffer
     void put(char c, size_t count) {
         if (unlikely(!m_cur || m_cur + count >= m_end))
-            expand(count);
+            m_cur = expand(m_cur, count);
 
         for (size_t i = 0; i < count; ++i)
             *m_cur++ = c;
@@ -210,15 +210,18 @@ public:
     // Append a zero-filled 64 bit hex number. The caller must check that there is space
     void put_q64_unchecked(uint64_t value);
 
-    /// Append a string with the specified length
+    /// Append a zero-terminated string. The caller must check that there is space
     void put_unchecked(const char *str);
 
 private:
     /**
-     * \brief Potentially expand the size of the StringBuffer so that there is
-     * space for at least \c nbytes new bytes, plus a trailing zero.
+     * \brief Potentially expand the StringBuffer so that there is space for at
+     * least \c nbytes new bytes, plus a trailing zero.
+     *
+     * Callers keep the write position in a local cursor: this publishes \c cur
+     * to \c m_cur, expands, and returns the (possibly relocated) cursor.
      */
-    void expand(size_t nbytes);
+    char *expand(char *cur, size_t nbytes);
 
 private:
     char *m_start, *m_cur, *m_end;
