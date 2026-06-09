@@ -1142,8 +1142,11 @@ static void jitc_cuda_render(Variable *v) {
             if (td->ndim >= 2)
                 fmt(", $v", jitc_var(td->indices[1]));
             if (td->ndim == 3)
-                fmt(", $v", jitc_var(td->indices[2]));
-            put("}, ");
+                // 'sust.b.3d' expects a '.v4' address vector; pad with a dummy
+                // for the unused component (repeat 'z', as 'tex.3d' does above).
+                fmt(", $v, $v", jitc_var(td->indices[2]),
+                    jitc_var(td->indices[2]));
+            put("}], ");
 
             if (nc == 1) {
                 fmt("%tw$u_0", ri);

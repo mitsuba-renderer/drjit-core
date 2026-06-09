@@ -258,8 +258,7 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
 
         case VarKind::TexLookup:
         case VarKind::TexFetchBilerp:
-            // Traverse TexData payload if present (only on the Metal backend)
-            if (v->data) {
+            if ((JitBackend) v->backend == JitBackend::Metal && v->data) {
                 TexData *td = (TexData *) v->data;
                 for (uint32_t i = 0; i < td->ndim; ++i)
                     jitc_var_traverse(size, td->indices[i], depth);
