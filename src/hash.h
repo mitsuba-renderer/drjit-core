@@ -15,6 +15,7 @@
 #endif
 
 #include <tsl/robin_map.h>
+#include <drjit-core/jit.h>
 #include <drjit-core/hash.h>
 #include <xxh3.h>
 
@@ -74,13 +75,17 @@ inline size_t hash_str(const char *str) {
     return hash(str, strlen(str));
 }
 
-inline XXH128_hash_t hash_kernel(const char *str) {
-    const char *offset = strstr(str, "body:");
-    if (unlikely(!offset)) {
-        offset = strchr(str, '{');
-        if (unlikely(!offset))
-            jitc_fail("hash_kernel(): invalid input!");
-    }
+/// Hash the IR of a just-generated kernel, starting at its body. CUDA and LLVM
+/// unconditionally emit a "body:" label; Metal has no such label, and hashing
+/// starts at the first '{' (of its ``struct Params`` declaration) instead.
+inline XXH128_hash_t hash_kernel(const char *str, size_t size,
+                                 JitBackend backend) {
+    const char *offset = backend == JitBackend::Metal
+                             ? strchr(str, '{')
+                             : strstr(str, "body:");
 
-    return XXH128(offset, strlen(offset), 0);
+    if (unlikely(!offset))
+        jitc_fail("hash_kernel(): could not locate the start of the kernel body!");
+
+    return XXH128(offset, size - (size_t) (offset - str), 0);
 }

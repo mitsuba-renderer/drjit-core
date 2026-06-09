@@ -552,7 +552,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     // Search for the kernel-name marker rather than the first '^', because
     // injected preamble code may contain '^' in comments that must not be
     // overwritten.
-    kernel_hash = hash_kernel(buffer.get());
+    kernel_hash = hash_kernel(buffer.get(), buffer.size(), backend);
 
     const char *needle =
         (uses_optix && jitc_is_cuda(backend)) ? "__raygen__^"
