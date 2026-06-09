@@ -443,11 +443,17 @@ struct VariableKeyHasher {
         uint64_t w[4];
         memcpy(w, &k, sizeof(w));
 
-        // Three independent 128-bit multiplies, then fold + finalize.
+        // Three independent 128-bit multiplies, XOR-combined. Each 'mix'
+        // already avalanches its inputs (every output bit depends on the whole
+        // 128-bit product via the high/low fold), so the XOR of three of them
+        // is well-distributed in every bit position -- including the low bits
+        // that select the hash table bucket. A separate finalizer would only
+        // add a serial multiply on this hot path without improving the
+        // distribution, so we return the combined value directly.
         uint64_t a = mix(w[0] ^ PRIME64_1, w[1] ^ PRIME64_2);
         uint64_t b = mix(w[2] ^ PRIME64_3, w[3] ^ PRIME64_4);
         uint64_t c = mix((uint64_t) k.packed ^ PRIME64_5, PRIME64_1);
-        return (size_t) mix(a ^ b ^ c, PRIME64_2);
+        return (size_t) (a ^ b ^ c);
     }
 };
 
