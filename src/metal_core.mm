@@ -34,6 +34,11 @@
 #include <cstdio>
 #include <algorithm>
 
+// Metal 4 symbols (MTLGPUFamilyMetal4, MTLLanguageVersion4_0) only exist in the macOS 26 SDK
+#if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && defined(__MAC_26_0) && __MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_26_0
+#  define DRJIT_SUPPORTS_METAL4 1
+#endif
+
 // ============================================================================
 //  Opaque-resource handle resolution
 // ============================================================================
@@ -246,7 +251,11 @@ bool jitc_metal_init() {
             md.threadgroup_memory_bytes =
                 (uint32_t) [dev maxThreadgroupMemoryLength];
             md.supports_ray_tracing = [dev supportsRaytracing];
+#if defined(DRJIT_SUPPORTS_METAL4)
             md.supports_metal4 = [dev supportsFamily:MTLGPUFamilyMetal4];
+#else
+            md.supports_metal4 = false;
+#endif
             const char *name = dev.name.UTF8String;
             size_t len = std::strlen(name);
             md.name = (char *) std::malloc(len + 1);
@@ -335,8 +344,12 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
 
         MTLCompileOptions *opts = [MTLCompileOptions new];
 
+#if defined(DRJIT_SUPPORTS_METAL4)
         opts.languageVersion = uses_metal4 ? MTLLanguageVersion4_0
                                            : MTLLanguageVersion3_2;
+#else
+        opts.languageVersion = MTLLanguageVersion3_2;
+#endif
 
         // The relaxed/fast math modes are a little aggressive and break the Dr.Jit
         // test suite. We opt in on a per instruction basis by calling math functions
