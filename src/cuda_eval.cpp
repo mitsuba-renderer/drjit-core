@@ -1077,7 +1077,7 @@ static void jitc_cuda_render(Variable *v) {
                     v, v, v, v, v, a0, a1);
             break;
 
-        case VarKind::TexFetchBilerp:
+        case VarKind::TexFetchBilerp: {
             fmt("    .reg.f32 %f$u_out_<4>;\n",
                 v->reg_index);
             if (!(a1->is_literal() && a1->literal == 1)) {
@@ -1102,6 +1102,7 @@ static void jitc_cuda_render(Variable *v) {
                     v->reg_index, v->reg_index, v->reg_index, v->reg_index);
             }
             break;
+        }
 
         case VarKind::TexWrite: {
             TexData *td = (TexData *) v->data;
