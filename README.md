@@ -28,11 +28,12 @@ possible. When the traced computation is finally evaluated, the system fuses
 all operations into an efficient kernel containing queued computation that is
 asynchronously evaluated on a desired device. On the CPU, this involves
 compilation of vectorized [LLVM IR](https://llvm.org/docs/LangRef.html) and
-parallel execution using a thread pool, while GPU compilation involves [NVIDIA
-PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html), and
-either [CUDA](https://docs.nvidia.com/cuda) or
+parallel execution using a thread pool. On NVIDIA GPUs, compilation involves
+[NVIDIA PTX](https://docs.nvidia.com/cuda/parallel-thread-execution/index.html),
+and either [CUDA](https://docs.nvidia.com/cuda) or
 [OptiX](https://developer.nvidia.com/optix) depending on whether or not ray
-tracing operations are used.
+tracing operations are used. On Apple Silicon GPUs, compilation targets the
+[Metal Shading Language](https://developer.apple.com/metal/).
 
 This project can be used independently or as part of the larger
 [Dr.Jit](https://github.com/mitsuba-renderer/drjit) project, which furthermore
@@ -53,9 +54,11 @@ Dr.Jit has the following features:
 
 - Targets
 
-    1. NVIDIA GPUs via CUDA (compute capability 5.0 or newer), and
+    1. NVIDIA GPUs via CUDA (compute capability 5.0 or newer),
 
-    2. CPUs via LLVM leveraging available vector instruction set extensions
+    2. Apple Silicon GPUs (M1 or newer) via Metal, and
+
+    3. CPUs via LLVM leveraging available vector instruction set extensions
        (e.g. Neon or AVX/AVX2/AVX512).
 
 - Captures and compiles pure arithmetic, side effects, and higher-level

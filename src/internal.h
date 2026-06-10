@@ -428,13 +428,7 @@ static_assert(
 /// Helper class to hash VariableKey instances
 struct VariableKeyHasher {
     size_t operator()(const VariableKey &k) const {
-        // The VariableKey hasher is performance-critical and uses a custom
-        // implementation.
-        //
-        // 'mix' is based on wyhash: a full 64x64->128 bit multiply with the
-        // halves folded together. XOR-ing each input with a constant first
-        // avoids the degenerate all-zero multiply. We reuse xxHash's five
-        // 64-bit primes.
+        // 'mix' is based on wyhash: a 64x64->128 bit multiply with folded halves
         auto mix = [](uint64_t a, uint64_t b) -> uint64_t {
             XXH128_hash_t r = XXH_mult64to128(a, b);
             return r.low64 ^ r.high64;
@@ -443,13 +437,10 @@ struct VariableKeyHasher {
         uint64_t w[4];
         memcpy(w, &k, sizeof(w));
 
-        // Three independent 128-bit multiplies, XOR-combined. Each 'mix'
-        // already avalanches its inputs (every output bit depends on the whole
-        // 128-bit product via the high/low fold), so the XOR of three of them
-        // is well-distributed in every bit position -- including the low bits
-        // that select the hash table bucket. A separate finalizer would only
-        // add a serial multiply on this hot path without improving the
-        // distribution, so we return the combined value directly.
+        // Perform three independent 128-bit multiplies. This is one of the most
+        // costly steps of tracing, and the computation is arranged this way to
+        // permit overlapping their latency. XOR-ing each input with a constant
+        // avoids degenerate all-zero multiplies. We reuse xxHash's 64-bit primes.
         uint64_t a = mix(w[0] ^ PRIME64_1, w[1] ^ PRIME64_2);
         uint64_t b = mix(w[2] ^ PRIME64_3, w[3] ^ PRIME64_4);
         uint64_t c = mix((uint64_t) k.packed ^ PRIME64_5, PRIME64_1);
