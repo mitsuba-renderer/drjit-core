@@ -231,11 +231,10 @@ const char *jitc_metal_format() {
 void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
                          uint32_t /*n_regs*/, uint32_t n_params) {
 
-    put("#include <metal_stdlib>\n"
-        "#include <metal_atomic>\n");
-
-    put("using namespace metal;\n");
-    put("\n");
+    put("#pragma clang diagnostic ignored \"-Wunused-variable\"\n"
+        "#include <metal_stdlib>\n"
+        "using namespace metal;\n"
+        "\n");
 
     // ``args`` covers every real kernel parameter, plus a trailing slot for the
     // visible function table (appended at launch) when the kernel has calls.
@@ -684,6 +683,7 @@ static void jitc_metal_render(Variable *v) {
             Variable *mask   = jitc_var(v->dep[1]);
             Variable *buf    = jitc_var(v->dep[2]);
             uint32_t size    = (uint32_t) v->literal;
+            fmt_intrinsic("#include <metal_atomic>");
             fmt("bool $v = $v && ($v < (uint) $uu);\n"
                 "if ($v && !$v)\n"
                 "    atomic_store_explicit((device atomic_uint*) $v, $v, memory_order_relaxed);\n",
