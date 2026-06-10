@@ -165,11 +165,14 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                      stride = d->A_descr.stride,
                      a_off  = d->A_descr.offset;
 
-            bool supports_metal4 =
+            // mpp::matmul2d requires the contraction dimension to be a
+            // multiple of 16; fall back to the scalar loop otherwise.
+            bool use_metal4 =
                 state.metal_devices[thread_state(JitBackend::Metal)->device]
-                    .supports_metal4;
+                    .supports_metal4 &&
+                (n % 16) == 0;
 
-            if (supports_metal4) {
+            if (use_metal4) {
                 // Single mpp::tensor_ops::matmul2d call per thread.
 
                 // The packed (2-arg) tensor constructor implies a dense layout
