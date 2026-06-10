@@ -324,18 +324,8 @@ endif()
 
 if (DRJIT_ENABLE_METAL)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_METAL=1)
-  set(METAL_KERNELS_SRC "${CMAKE_CURRENT_SOURCE_DIR}/resources/metal_kernels.metal")
-  set(METAL_KERNELS_OUT "${CMAKE_CURRENT_BINARY_DIR}/resources/metal_kernels.c")
-  add_custom_command(
-    OUTPUT  "${METAL_KERNELS_OUT}"
-    COMMAND ${CMAKE_COMMAND}
-      -DINPUT="${METAL_KERNELS_SRC}"
-      -DOUTPUT="${METAL_KERNELS_OUT}"
-      -P "${CMAKE_CURRENT_SOURCE_DIR}/resources/embed_metal_kernels.cmake"
-    DEPENDS "${METAL_KERNELS_SRC}"
-            "${CMAKE_CURRENT_SOURCE_DIR}/resources/embed_metal_kernels.cmake"
-    COMMENT "Compiling metal_kernels.metal to a .metallib and embedding it")
-  target_sources(drjit-core PRIVATE "${METAL_KERNELS_OUT}")
+  # The precompiled metallib is embedded by resources/CMakeLists.txt.
+  target_sources(drjit-core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/resources/metal_kernels.c")
   target_link_libraries(drjit-core PRIVATE
     "-framework Foundation"
     "-framework Metal"

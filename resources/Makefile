@@ -23,5 +23,15 @@ pack: pack.c
 kernels_75.lz4: pack kernels_75.ptx
 	./pack
 
+# Precompiled Metal kernels shipped with Dr.Jit-core (macOS only). Requires the
+# full Metal toolchain (xcrun metal), unlike the build itself, which only embeds
+# the committed metallib.
+metal: metal_kernels.metallib
+
+metal_kernels.metallib: metal_kernels.metal
+	xcrun -sdk macosx metal -std=metal3.0 -fno-fast-math -c metal_kernels.metal -o metal_kernels.air
+	xcrun -sdk macosx metallib metal_kernels.air -o metal_kernels.metallib
+	rm -f metal_kernels.air
+
 clean:
-	rm -f kernels_75.ptx kernels.bin
+	rm -f kernels_75.ptx kernels.bin metal_kernels.air
