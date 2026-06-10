@@ -1,6 +1,31 @@
 #pragma once
 
 #include <atomic>
+#include <cstdint>
+
+#if defined(_MSC_VER)
+#  include <intrin.h>
+#endif
+
+// Annotations so that TSAN handles the lock below like a system lock
+#if defined(__SANITIZE_THREAD__)
+#  define DRJIT_TSAN 1
+#elif defined(__has_feature)
+#  if __has_feature(thread_sanitizer)
+#    define DRJIT_TSAN 1
+#  endif
+#endif
+
+#if defined(DRJIT_TSAN)
+#  include <sanitizer/tsan_interface.h>
+#else
+#  define __tsan_mutex_create(...)      ((void) 0)
+#  define __tsan_mutex_destroy(...)     ((void) 0)
+#  define __tsan_mutex_pre_lock(...)    ((void) 0)
+#  define __tsan_mutex_post_lock(...)   ((void) 0)
+#  define __tsan_mutex_pre_unlock(...)  ((void) 0)
+#  define __tsan_mutex_post_unlock(...) ((void) 0)
+#endif
 
 /*
  * The recursive locks below have a fast path that skips the atomic transaction
@@ -15,111 +40,162 @@
  * needs no atomic: it is only touched by the owning thread under the lock.
  */
 
-#if defined(__linux__) && !defined(DRJIT_USE_STD_MUTEX)
-#include <pthread.h>
+// Fast unique (non-zero) token identifying the current thread.
+// pthread_self()/std::this_thread::get_id() are relatively costly function
+// calls; the variants below compile to one or two machine instructions.
+// They are based on mimalloc's _mi_prim_thread_id(), see
+// https://github.com/microsoft/mimalloc/blob/master/include/mimalloc/prim.h
+#if defined(__linux__)
 
-// Opaque per-thread token used to detect recursive lock acquisition.
-// Prefer __builtin_thread_pointer() over the slower pthread_self() if available.
-#if defined(__has_builtin) && __has_builtin(__builtin_thread_pointer)
-using lock_thread_id_t = void *; // __builtin_thread_pointer() returns void *
-inline lock_thread_id_t lock_thread_id() { return __builtin_thread_pointer(); }
+inline uintptr_t thread_id() { return (uintptr_t) __builtin_thread_pointer(); }
+
+#elif defined(__APPLE__)
+
+// macOS/Darwin doesn't expose an official API to read the thread identifier. See
+// https://github.com/apple/darwin-xnu/blob/main/libsyscall/os/tsd.h
+inline uintptr_t thread_id() {
+    #if defined(__aarch64__)
+        uintptr_t tsd;
+        __asm__("mrs %0, tpidrro_el0\nbic %0, %0, #7" : "=r" (tsd));
+        return tsd;
+    #else
+        void *self;
+        __asm__("movq %%gs:0, %0" : "=r" (self));
+        return (uintptr_t) self;
+    #endif
+}
+
+#elif defined(_M_X64) || defined(_M_ARM64)
+
+// TEB pointer; mimalloc calls NtCurrentTeb(), which is expanded here to
+// avoid a windows.h dependency. See
+//
+//  - https://github.com/mingw-w64/mingw-w64/blob/master/mingw-w64-headers/include/winnt.h
+//  - https://learn.microsoft.com/en-us/cpp/build/arm64-windows-abi-conventions
+//
+// For the ARM64 and Intel-compatible implementations of the functions.
+inline uintptr_t thread_id() {
+    #if defined(_M_ARM64)
+        return (uintptr_t) __getReg(18);
+    #else
+        return (uintptr_t) __readgsqword(0x30);
+    #endif
+}
+
 #else
-using lock_thread_id_t = pthread_t;
-inline lock_thread_id_t lock_thread_id() { return pthread_self(); }
+
+// Unknown OS/processor: the address of a thread-local variable is unique per thread
+inline uintptr_t thread_id() {
+    static thread_local char id;
+    return (uintptr_t) &id;
+}
+
 #endif
 
+/// CPU hint that the current thread is in a spin-wait loop
+inline void lock_pause() {
+    #if defined(_MSC_VER)
+        #if defined(_M_ARM64)
+            __yield();
+        #else
+            _mm_pause();
+        #endif
+    #elif defined(__aarch64__)
+        __asm__ __volatile__("yield");
+    #else
+        __builtin_ia32_pause();
+    #endif
+}
+
+#if !defined(DRJIT_USE_STD_MUTEX)
+
+// The drjit-core locks are held for an extremely short amount of time and are
+// normally uncontended, so a fully inlined spin lock beats the system
+// primitives, which cost a cross-library call on both acquire and release
+// (pthread_spin_lock on Linux, os_unfair_lock on macOS, SRWLOCK on Windows).
 struct Lock {
-    pthread_spinlock_t lock;
-    std::atomic<lock_thread_id_t> owner;
+    std::atomic<uint32_t> lock;
+    std::atomic<uintptr_t> owner;
     size_t recursion_count;
 };
 
-// The drjit-core locks are held for an extremely short amount of
-// time and normally uncontended. Switching to a spin lock cuts tracing time 8-10%
 inline void lock_init(Lock &lock) {
-    pthread_spin_init(&lock.lock, PTHREAD_PROCESS_PRIVATE);
+    lock.lock.store(0, std::memory_order_relaxed);
     lock.owner.store(0, std::memory_order_relaxed);
     lock.recursion_count = 0;
+    __tsan_mutex_create(&lock, 0);
 }
-inline void lock_destroy(Lock &lock) { pthread_spin_destroy(&lock.lock); }
+
+inline void lock_destroy(Lock &lock) {
+    __tsan_mutex_destroy(&lock, 0);
+    (void) lock;
+}
+
+// Only the outermost acquire/release is annotated: recursive acquisitions are
+// pure bookkeeping in this wrapper, so TSAN sees a plain non-recursive mutex.
 inline void lock_acquire(Lock &lock) {
-    lock_thread_id_t self = lock_thread_id();
+    uintptr_t self = thread_id();
     if (lock.owner.load(std::memory_order_relaxed) == self) {
         lock.recursion_count++;
         return;
     }
 
-    pthread_spin_lock(&lock.lock);
+    __tsan_mutex_pre_lock(&lock, 0);
+
+    // Mirrors glibc's pthread_spin_lock (sysdeps/nptl/pthread_spin_lock.c):
+    // spin on plain loads and retry with a CAS.
+    if (lock.lock.exchange(1, std::memory_order_acquire) != 0) {
+        uint32_t expected;
+        do {
+            while (lock.lock.load(std::memory_order_relaxed) != 0)
+                lock_pause();
+            expected = 0;
+        } while (!lock.lock.compare_exchange_weak(expected, 1,
+                                                  std::memory_order_acquire,
+                                                  std::memory_order_relaxed));
+    }
+
     lock.owner.store(self, std::memory_order_relaxed);
     lock.recursion_count = 1;
+    __tsan_mutex_post_lock(&lock, 0, 0);
 }
+
 inline void lock_release(Lock &lock) {
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
+        __tsan_mutex_pre_unlock(&lock, 0);
         lock.owner.store(0, std::memory_order_relaxed);
-        pthread_spin_unlock(&lock.lock);
+        lock.lock.store(0, std::memory_order_release);
+        __tsan_mutex_post_unlock(&lock, 0);
     }
 }
-#elif defined(__APPLE__) && !defined(DRJIT_USE_STD_MUTEX)
-#include <os/lock.h>
-#include <pthread.h>
 
-struct Lock {
-    os_unfair_lock_s lock;
-    std::atomic<pthread_t> owner;
-    size_t recursion_count;
-};
-
-inline void lock_init(Lock &lock) {
-    lock.lock = OS_UNFAIR_LOCK_INIT;
-    lock.owner.store((pthread_t) -1, std::memory_order_relaxed);
-    lock.recursion_count = 0;
-}
-inline void lock_destroy(Lock &) {}
-inline void lock_acquire(Lock &lock) {
-    pthread_t self = pthread_self();
-    if (pthread_equal(lock.owner.load(std::memory_order_relaxed), self)) {
-        lock.recursion_count++;
-        return;
-    }
-
-    os_unfair_lock_lock(&lock.lock);
-    lock.owner.store(self, std::memory_order_relaxed);
-    lock.recursion_count = 1;
-}
-inline void lock_release(Lock &lock) {
-    lock.recursion_count--;
-    if (lock.recursion_count == 0) {
-        lock.owner.store((pthread_t) -1, std::memory_order_relaxed);
-        os_unfair_lock_unlock(&lock.lock);
-    }
-}
 #else
-#include <thread>
+
 #if defined(_WIN32)
 #include <shared_mutex>
 struct Lock {
     std::shared_mutex lock; // Based on the faster Win7 SRWLOCK
-    std::atomic<std::thread::id> owner;
+    std::atomic<uintptr_t> owner;
     size_t recursion_count;
 };
 #else
 #include <mutex>
 struct Lock {
     std::mutex lock;
-    std::atomic<std::thread::id> owner;
+    std::atomic<uintptr_t> owner;
     size_t recursion_count;
 };
 #endif
 
 inline void lock_init(Lock &lock) {
-    lock.owner.store(std::thread::id(), std::memory_order_relaxed);
+    lock.owner.store(0, std::memory_order_relaxed);
     lock.recursion_count = 0;
 }
 
 inline void lock_destroy(Lock &) {}
 inline void lock_acquire(Lock &lock) {
-    std::thread::id self = std::this_thread::get_id();
+    uintptr_t self = thread_id();
     if (lock.owner.load(std::memory_order_relaxed) == self) {
         lock.recursion_count++;
         return;
@@ -132,10 +208,11 @@ inline void lock_acquire(Lock &lock) {
 inline void lock_release(Lock &lock) {
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
-        lock.owner.store(std::thread::id(), std::memory_order_relaxed);
+        lock.owner.store(0, std::memory_order_relaxed);
         lock.lock.unlock();
     }
 }
+
 #endif
 
 extern void jitc_sanitation_checkpoint();
