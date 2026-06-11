@@ -209,6 +209,7 @@ void jitc_shutdown(int light) {
         }
 
         state.kernel_cache.clear();
+        state.kernel_cache_generation++;
     }
 
     state.kernel_history.clear();

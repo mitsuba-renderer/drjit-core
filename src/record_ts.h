@@ -310,6 +310,11 @@ struct Recording {
     /// Dr.Jit will then not add it to the recording cache.
     bool discarded = false;
 
+    /// Value of \ref State::kernel_cache_generation when \ref
+    /// check_kernel_cache() last succeeded. As long as the kernel cache is not
+    /// cleared, repeating the check can be skipped.
+    uint32_t kernel_cache_generation = (uint32_t) -1;
+
 #ifndef NDEBUG
     /// Counter, counting the number of kernels for debugging.
     uint32_t n_kernels = 0;

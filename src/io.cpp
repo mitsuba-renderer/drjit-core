@@ -512,4 +512,5 @@ void jitc_flush_kernel_cache() {
     }
 
     state.kernel_cache.clear();
+    state.kernel_cache_generation++;
 }

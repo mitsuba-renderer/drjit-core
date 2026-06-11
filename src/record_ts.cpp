@@ -811,7 +811,7 @@ void RecordThreadState::record_launch(
     op.kernel.hash            = hash;
     op.kernel.key->device     = key.device;
     op.kernel.key->flags      = key.flags;
-    op.kernel.key->high64     = key.high64;
+    op.kernel.key->hash       = key.hash;
 
     op.size = size;
 
@@ -2332,6 +2332,12 @@ void Recording::validate(uint32_t scope) {
 }
 
 bool Recording::check_kernel_cache() {
+    // Kernels are only ever removed when the whole cache is cleared, so a
+    // successful check remains valid as long as the generation counter does
+    // not change. Otherwise check the presence of kernels individually.
+    if (kernel_cache_generation == state.kernel_cache_generation)
+        return true;
+
     for (uint32_t i = 0; i < operations.size(); i++) {
         Operation &op = operations[i];
         if (op.type == OpType::KernelLaunch) {
@@ -2341,6 +2347,8 @@ bool Recording::check_kernel_cache() {
                 return false;
         }
     }
+
+    kernel_cache_generation = state.kernel_cache_generation;
     return true;
 }
 

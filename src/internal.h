@@ -976,21 +976,23 @@ struct KernelKey {
     char *str = nullptr;
     int device = 0;
     uint64_t flags = 0;
-    // upper 64 bit of the hashed kernel source code
-    uint64_t high64 = 0;
+    /// 128-bit source code hash; Dr.Jit treats these hashes as collision-free
+    /// kernel identifiers, hence key equality compares hashes, not source code.
+    XXH128_hash_t hash{ 0, 0 };
 
-    KernelKey(char *str, uint64_t high64, int device, uint64_t flags)
-        : str(str), device(device), flags(flags), high64(high64) {}
+    KernelKey(char *str, XXH128_hash_t hash, int device, uint64_t flags)
+        : str(str), device(device), flags(flags), hash(hash) {}
 
     bool operator==(const KernelKey &k) const {
-        return strcmp(k.str, str) == 0 && device == k.device && flags == k.flags;
+        return hash.low64 == k.hash.low64 && hash.high64 == k.hash.high64 &&
+               device == k.device && flags == k.flags;
     }
 };
 
 /// Helper class to hash KernelKey instances
 struct KernelHash {
     size_t operator()(const KernelKey &k) const {
-        size_t hash = k.high64;
+        size_t hash = k.hash.high64;
         hash_combine(hash, (size_t) k.flags + size_t(k.device + 1));
         return hash;
     }
@@ -1128,6 +1130,9 @@ struct State {
 
     /// Cache of previously compiled kernels
     KernelCache kernel_cache;
+
+    /// Generation counter, incremented whenever the kernel cache is cleared.
+    uint32_t kernel_cache_generation = 0;
 
     /// Kernel launch history
     KernelHistory kernel_history = KernelHistory();
