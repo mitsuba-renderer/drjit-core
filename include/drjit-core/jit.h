@@ -59,6 +59,13 @@ enum class JitBackend : uint32_t {
     /// Sentinel value (not a real backend; equals the number of backends)
     Count = 4
 };
+
+/// Compile-time name of a JIT backend (e.g., to identify registry domains)
+template <JitBackend Backend>
+constexpr const char *jit_backend_name_v =
+    Backend == JitBackend::CUDA  ? "cuda"  :
+    Backend == JitBackend::LLVM  ? "llvm"  :
+    Backend == JitBackend::Metal ? "metal" : "none";
 #else
 enum JitBackend {
     JitBackendNone = 0,

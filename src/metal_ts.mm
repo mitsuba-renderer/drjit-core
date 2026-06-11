@@ -1629,12 +1629,17 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
         // for residency. Shares jitc_metal_resource_id() with the launch path.
         for (uint32_t i = 0; i < size; ++i) {
             AggregationEntry &e = agg[i];
-            ResourceKind kind = (ResourceKind) e.resource_kind;
-            void *owner = (void *) e.src;
             void *id;
-            if (e.size == 8 && jitc_metal_resource_id(owner, kind, &id)) {
-                e.src = id;
-                metal_call_resources.push_back({ owner, kind, /*write=*/false });
+            if (e.size == 8) {
+                ResourceKind kind = (ResourceKind) e.resource_kind;
+                void *owner = (void *) e.src;
+                if (jitc_metal_resource_id(owner, kind, &id)) {
+                    e.src = id;
+                    metal_call_resources.push_back({ owner, kind, /*write=*/false });
+                } else if (kind == ResourceKind::Buffer && owner) {
+                    metal_call_resources.push_back(
+                        { owner, ResourceKind::Buffer, /*write=*/true });
+                }
             }
         }
 
