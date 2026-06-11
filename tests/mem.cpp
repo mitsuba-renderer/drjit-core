@@ -325,3 +325,91 @@ TEST_ALL(18_scatter_inc_mask) {
     UInt32 arbitrary = scatter_inc(counter, idx, all_false);
     jit_assert(jit_var_size(arbitrary.index()) == 7);
 }
+
+TEST_ALL(19_eval_exception_rollback) {
+    /* An exception raised during jit_eval() (here: a kernel that depends on
+       an already-consumed scatter_inc() result) must not leak variable
+       references or output buffers, and must not leave side effect targets
+       in a permanently dirty state. */
+    constexpr uint32_t n = 1024;
+
+    // Produce a consumed variable: 'offset' is computed and consumed by the
+    // kernel that evaluates 'y' and cannot be recomputed afterwards
+    UInt32 counter(0);
+    UInt32 offset = scatter_inc(counter, UInt32(0), full<Mask>(true, n));
+    UInt32 y = offset + 1;
+    UInt32 z = offset + 2; // not scheduled below; 'offset' expires under it
+    y.eval();
+    jit_assert(all(eq(counter, n)));
+
+    // Queue a side effect; it is later discarded by the failed evaluation
+    UInt32 idx = arange<UInt32>(n);
+    UInt32 target = zeros<UInt32>(n);
+    scatter(target, idx, idx);
+    jit_assert(jit_var_state(target.index()) == VarState::Dirty);
+
+    for (int i = 0; i < 2; ++i) {
+        try {
+            z.eval();
+            jit_fail("19_eval_exception_rollback(): Exception not raised!");
+        } catch (const std::exception &e) {
+            jit_assert(strstr(e.what(), "consumed") != nullptr);
+        }
+
+        // References taken during the failed evaluation were released again
+        jit_assert(jit_var_ref(z.index()) == 1);
+        jit_assert(jit_var_ref(offset.index()) == 2); // user ref + 'z'
+
+        // The discarded side effect no longer marks 'target' as dirty
+        jit_assert(jit_var_state(target.index()) == VarState::Evaluated);
+    }
+
+    // 'target' remains usable, with its pre-scatter contents
+    jit_assert(all(eq(target, zeros<UInt32>(n))));
+
+    // Unrelated computation evaluates fine afterwards
+    UInt32 w = idx * 3;
+    w.eval();
+    jit_assert(all(eq(w, arange<UInt32>(n) * 3)));
+}
+
+TEST_ALL(20_eval_exception_rollback_partial) {
+    /* Variant of the above where the exception strikes while a kernel is
+       being assembled: a kernel of the same jit_eval() call that was already
+       launched must be rolled back as well (in particular, its not-yet-
+       attached output buffer). The error is triggered via an inconsistent
+       scope nesting, which jitc_assemble() detects. */
+    constexpr uint32_t n = 1024;
+
+    // This (larger) variable forms a separate kernel that is launched first
+    UInt32 big = arange<UInt32>(2 * n);
+    UInt32 a = big + 5;
+
+    // Construct a variable whose dependency has a *higher* scope ID
+    UInt32 x = arange<UInt32>(n) + 1;
+    uint32_t lo = jit_scope(Backend);
+    jit_new_scope(Backend);
+    UInt32 xh = x + 3;
+    jit_set_scope(Backend, lo);
+    UInt32 y = xh + 7; // y's scope precedes that of its dependency 'xh'
+    jit_new_scope(Backend);
+
+    jit_var_schedule(a.index());
+    jit_var_schedule(y.index());
+
+    try {
+        jit_eval();
+        jit_fail("20_eval_exception_rollback_partial(): Exception not raised!");
+    } catch (const std::exception &e) {
+        jit_assert(strstr(e.what(), "scope") != nullptr);
+    }
+
+    // References taken during the failed evaluation were released again
+    jit_assert(jit_var_ref(a.index()) == 1);
+    jit_assert(jit_var_ref(y.index()) == 1);
+
+    // 'a' was rolled back rather than committed, and can be evaluated again
+    jit_assert(jit_var_state(a.index()) == VarState::Unevaluated);
+    a.eval();
+    jit_assert(all(eq(a, arange<UInt32>(2 * n) + 5)));
+}

@@ -782,8 +782,14 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     if(unlikely(jit_flag(JitFlag::KernelHistory)))
         e = &kernel_history_entry;
 
-    return ts->launch(kernel, kernel_key, kernel_hash, group.size,
-                      kernel_params, kernel_param_ids, e);
+    Task *task = ts->launch(kernel, kernel_key, kernel_hash, group.size,
+                            kernel_params, kernel_param_ids, e);
+
+    // The kernel history now owns the entry's 'ir' string (if enabled);
+    // jitc_eval_rollback() frees this pointer when it is still non-null
+    kernel_history_entry.ir = nullptr;
+
+    return task;
 }
 
 static ProfilerRegion profiler_region_eval("jit_eval");
@@ -857,6 +863,44 @@ static void jitc_schedule_sort() {
     schedule.swap(schedule_scratch);
 }
 
+/* Called when an exception interrupts jitc_eval_impl() partway through.
+   (E.g. when running out of memory or when a code generation routine throws).
+   Release references and memory. */
+static void jitc_eval_rollback(size_t callbacks_baseline) {
+    for (ScheduledVariable &sv : schedule) {
+        Variable *v = jitc_var(sv.index);
+        v->reg_index = 0;
+        v->output_flag = false;
+        if (sv.data)
+            jitc_free(sv.data);
+        jitc_var_dec_ref(sv.index, v);
+    }
+    schedule.clear();
+
+    // Temporary references taken during root collection
+    for (uint32_t index : eval_roots)
+        jitc_var_dec_ref(index);
+    eval_roots.clear();
+
+    // References owned by the dequeued side effects.
+    for (const EvalTask &t : eval_tasks) {
+        if (t.side_effect)
+            jitc_var_dec_ref(t.index);
+    }
+    eval_tasks.clear();
+    visit_later.clear();
+
+    // Callbacks enqueued on behalf of kernels that never ran
+    while (eval_callbacks.size() > callbacks_baseline) {
+        jitc_var_dec_ref(eval_callbacks.back());
+        eval_callbacks.pop_back();
+    }
+
+    // IR string of a kernel history entry that no launch consumed
+    free(kernel_history_entry.ir);
+    kernel_history_entry.ir = nullptr;
+}
+
 /// Evaluate all computation that is queued on the given ThreadState
 void jitc_eval(ThreadState *ts) {
     if (!ts || (ts->scheduled.empty() && ts->side_effects.empty()))
@@ -876,7 +920,14 @@ void jitc_eval(ThreadState *ts) {
         lock_release(state.lock);
         lock_guard guard(state.eval_lock);
         lock_acquire(state.lock);
-        jitc_eval_impl(ts);
+
+        size_t callbacks_baseline = eval_callbacks.size();
+        try {
+            jitc_eval_impl(ts);
+        } catch (...) {
+            jitc_eval_rollback(callbacks_baseline);
+            throw;
+        }
     }
 
     if (unlikely(!eval_callbacks.empty())) {
@@ -979,6 +1030,7 @@ void jitc_eval_impl(ThreadState *ts) {
     // Release the temporary references taken during root collection.
     for (uint32_t index: eval_roots)
         jitc_var_dec_ref(index);
+    eval_roots.clear();
 
     if (schedule.empty())
         return;
@@ -1088,7 +1140,12 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
     jitc_visit_new_gen();
     visit_later.clear();
     schedule.clear();
-    callable_depth++;
+
+    // Track callable depth using an RAII guard (assembly may raise)
+    struct ScopedCallableDepth {
+        ScopedCallableDepth() { callable_depth++; }
+        ~ScopedCallableDepth() { callable_depth--; }
+    } scoped_callable_depth;
 
     const std::vector<uint32_t> &check = call->checkpoints;
 
@@ -1152,7 +1209,6 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         default:
             jitc_fail("jitc_assemble_func(): unsupported backend!");
     }
-    callable_depth--;
 
     size_t kernel_length = buffer.size() - kernel_offset;
 
@@ -1199,6 +1255,10 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         v->output_flag = false;
         jitc_var_dec_ref(sv.index, v);
     }
+
+    // The references owned by the schedule entries are now consumed (the
+    // unwind path of jitc_var_call_assemble() releases any still present)
+    schedule.clear();
 
     return kernel_hash;
 }
