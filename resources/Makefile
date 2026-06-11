@@ -29,7 +29,7 @@ kernels_75.lz4: pack kernels_75.ptx
 metal: metal_kernels.metallib
 
 metal_kernels.metallib: metal_kernels.metal
-	xcrun -sdk macosx metal -std=metal3.0 -fno-fast-math -c metal_kernels.metal -o metal_kernels.air
+	xcrun -sdk macosx metal -mmacosx-version-min=13.0 -std=metal3.0 -fno-fast-math -c metal_kernels.metal -o metal_kernels.air
 	xcrun -sdk macosx metallib metal_kernels.air -o metal_kernels.metallib
 	rm -f metal_kernels.air
 
