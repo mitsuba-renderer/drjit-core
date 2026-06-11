@@ -452,6 +452,30 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
                                           v->reg_index, v->param_offset });
     }
 
+    /// Restore changes to 'schedule' when the function returns or throw
+    struct RestoreGuard {
+        std::vector<JitBackupRecord> &backup;
+
+        ~RestoreGuard() {
+            for (ScheduledVariable &sv : schedule) {
+                Variable *v = jitc_var(sv.index);
+                v->reg_index = 0;
+                v->output_flag = false;
+                jitc_var_dec_ref(sv.index, v);
+            }
+
+            schedule.clear();
+            for (const JitBackupRecord &b : backup) {
+                Variable *v = jitc_var(b.sv.index);
+                v->param_type = b.param_type;
+                v->output_flag = b.output_flag;
+                v->reg_index = b.reg_index;
+                v->param_offset = b.param_offset;
+                schedule.push_back(b.sv);
+            }
+        }
+    } restore_guard { backup };
+
     // =========================================================
     // 2. Determine size and alignment of parameter and return
     //    value buffers. Unreferenced return values present an
@@ -575,15 +599,7 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
     // 4. Restore previously backed-up JIT state
     // =====================================================
 
-    schedule.clear();
-    for (const JitBackupRecord &b : backup) {
-        Variable *v = jitc_var(b.sv.index);
-        v->param_type = b.param_type;
-        v->output_flag = b.output_flag;
-        v->reg_index = b.reg_index;
-        v->param_offset = b.param_offset;
-        schedule.push_back(b.sv);
-    }
+    // Main cleanup happens when 'restore_guard' leaves the scope
 
     // Undo previous change (for more sensible debug out put about buffer sizes)
     if (jitc_is_llvm(call->backend))
