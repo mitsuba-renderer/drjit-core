@@ -627,13 +627,28 @@ struct WeakRef {
 struct KernelKey;
 
 #if defined(DRJIT_ENABLE_METAL)
+/// Identifies one of the block (prefix) reduction kernel families in
+/// metal_kernels.metal; used to look up lazily created pipelines.
+enum class MetalReduceKind : uint32_t {
+    Small,     // block_reduce_small_*: one thread serially reduces one block
+    Chunk,     // block_reduce_*: one threadgroup reduces one chunk of a block
+    WideChunk, // block_reduce_wide_*: as above, but writing the accumulator
+               // type (f16 input -> f32 chunk totals, for prefix reductions)
+    Scan,      // block_prefix_reduce_*: one threadgroup prefix-reduces one chunk
+    Dot,       // reduce_dot_*: fused dot-product chunk reduction (op ignored)
+    Count
+};
+
+/// Kind of the command encoder currently open on a Metal thread state
+enum class MetalEncoderKind : uint32_t {
+    None = 0,
+    Compute,
+    Blit
+};
+
 /// Enumeration of the precompiled utility kernels in metal_kernels.metal. The
 /// order must match ``metal_kernel_names`` in metal_core.mm.
 enum class MetalKernel : uint32_t {
-    ReduceAllInit,
-    ReduceAnyInit,
-    ReduceAll,
-    ReduceAny,
     CompressScatter,
     MkpermPhase1,
     MkpermPhase3,
@@ -665,6 +680,13 @@ struct MetalDevice {
 
     /// Precompiled compute pipeline states (owned +1), indexed by MetalKernel
     void *pipelines[(uint32_t) MetalKernel::Count];
+
+    /// Lazily created block (prefix) reduction pipelines (owned +1), indexed
+    /// by [MetalReduceKind][reduction][type]. See
+    /// jitc_metal_block_reduce_pipeline().
+    void *reduce_pipelines[(uint32_t) MetalReduceKind::Count]
+                          [(uint32_t) ReduceOp::Count]
+                          [(uint32_t) VarType::Count];
 
     /// Maximum number of threads per threadgroup
     uint32_t max_threads_per_threadgroup;
@@ -788,9 +810,9 @@ struct ThreadStateBase {
     /// A id<MTLCommandBuffer> with pending work
     void *metal_cb = nullptr;
 
-    /// Current Metal command encoder and its kind (a ``MetalEncoderKind``).
+    /// Current Metal command encoder and its kind
     void *metal_encoder = nullptr;
-    uint32_t metal_encoder_kind = 0;
+    MetalEncoderKind metal_encoder_kind = MetalEncoderKind::None;
 
     /// SIMD execution width (typically 32)
     uint32_t metal_simd_width = 32;

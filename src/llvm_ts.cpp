@@ -505,8 +505,8 @@ static inline GemmReduce gemm_reduce_slice(const GemmBatch &be,
 }
 
 void LLVMThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
-                             uint32_t N, uint32_t K, const GemmBatch *batch,
-                             const void *A, const void *B, void *C) {
+                                   uint32_t N, uint32_t K, const GemmBatch *batch,
+                                   const void *A, const void *B, void *C) {
     // The kernels below do not handle ``At == Bt == true``; the Python
     // caller reduces that case to a single-transpose call via
     // ``A^T @ B^T = (B @ A)^T`` before reaching this point.

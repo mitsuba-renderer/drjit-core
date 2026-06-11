@@ -835,8 +835,8 @@ KernelHistoryEntry *KernelHistory::get() {
 #if defined(DRJIT_ENABLE_METAL)
         if (jitc_is_metal(k.backend)) {
             k.execution_time =
-                jitc_metal_finalize_kernel_history_entry(k.event_start, k.task);
-            k.event_start = k.task = nullptr;
+                jitc_metal_finalize_kernel_history_entry(k.task);
+            k.task = nullptr;
         } else
 #endif
         {
@@ -869,8 +869,8 @@ void KernelHistory::clear() {
         if (jitc_is_metal(k.backend)) {
             // The Metal `task` slot holds an id<MTLCommandBuffer>, not a
             // nanothread Task. Reuse the finalize helper to wait + release.
-            jitc_metal_finalize_kernel_history_entry(k.event_start, k.task);
-            k.event_start = k.task = nullptr;
+            jitc_metal_finalize_kernel_history_entry(k.task);
+            k.task = nullptr;
         } else
 #endif
         {

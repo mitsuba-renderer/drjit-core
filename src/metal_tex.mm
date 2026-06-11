@@ -24,6 +24,8 @@
 #define __THREADS__
 #import <Metal/Metal.h>
 
+#include "metal_launch.h"
+
 #include <mutex>
 #include <algorithm>
 #include <cstring>
@@ -329,43 +331,31 @@ static size_t metal_tex_n_texels(size_t ndim, const size_t *shape) {
     return n;
 }
 
+/// Host-side mirror of ``channel_pack_params`` in resources/metal_kernels.metal
+struct ChannelPackParams {
+    uint64_t src, dst;
+    uint32_t n_channels, ci, tex_base, c_valid;
+};
+
 /// Launch a kernel to (de) interleave texture memory
 static void metal_channel_pack(MetalThreadState *mts, MetalKernel kern,
                                const void *src, void *dst, uint32_t n_channels,
                                uint32_t ci, uint32_t tex_base, uint32_t c_valid,
                                uint32_t n_threads) {
-    id<MTLComputePipelineState> pso = (__bridge id<MTLComputePipelineState>)
-        state.metal_devices[mts->device].pipelines[(uint32_t) kern];
-
-    size_t src_off = 0, dst_off = 0;
-    id<MTLBuffer> src_buf =
-        (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) src, &src_off);
-    id<MTLBuffer> dst_buf =
-        (__bridge id<MTLBuffer>) jitc_metal_find_buffer(dst, &dst_off);
+    ChannelPackParams params;
+    id<MTLBuffer> src_buf = metal_resolve(src, &params.src);
+    id<MTLBuffer> dst_buf = metal_resolve(dst, &params.dst);
     if (!src_buf || !dst_buf)
         jitc_raise("metal_channel_pack(): buffer lookup failed.");
-
-    struct {
-        uint64_t src, dst;
-        uint32_t n_channels, ci, tex_base, c_valid;
-    } params;
-    params.src = (uint64_t) [src_buf gpuAddress] + src_off;
-    params.dst = (uint64_t) [dst_buf gpuAddress] + dst_off;
     params.n_channels = n_channels;
     params.ci = ci;
     params.tex_base = tex_base;
     params.c_valid = c_valid;
 
-    id<MTLComputeCommandEncoder> enc =
-        (__bridge id<MTLComputeCommandEncoder>) mts->ensure_compute_encoder();
-    [enc setComputePipelineState:pso];
-    [enc setBytes:&params length:sizeof(params) atIndex:0];
-    [enc useResource:src_buf usage:MTLResourceUsageRead];
-    [enc useResource:dst_buf usage:MTLResourceUsageWrite];
-    uint32_t tg = std::min<uint32_t>(
-        (uint32_t) pso.maxTotalThreadsPerThreadgroup, n_threads);
-    [enc dispatchThreads:MTLSizeMake(n_threads, 1, 1)
-        threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+    metal_dispatch_threads(mts, metal_pipeline(mts, kern), params,
+                           {{ src_buf, MTLResourceUsageRead },
+                            { dst_buf, MTLResourceUsageWrite }},
+                           n_threads);
 }
 
 void jitc_metal_tex_memcpy_d2t(const void *src_ptr, void *dst_handle) {

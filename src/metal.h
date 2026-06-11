@@ -28,6 +28,11 @@ extern "C" const size_t metal_kernels_metallib_size;
 /// Initialize the Metal backend
 extern bool jitc_metal_init();
 
+/// Lazily create/look up a block (prefix) reduction compute pipeline.
+/// Returns nullptr if the (op, type) combination is unsupported.
+extern void *jitc_metal_block_reduce_pipeline(int device, MetalReduceKind kind,
+                                              ReduceOp op, VarType vt);
+
 /// Release all resources held by the Metal backend.
 extern void jitc_metal_shutdown();
 
@@ -44,8 +49,9 @@ extern void jitc_metal_profile_stop();
 /// Wait for all Metal work submitted on the current thread to complete.
 extern void jitc_metal_sync(ThreadState *ts);
 
-/// Resolve a Metal kernel-history entry's execution_time
-extern float jitc_metal_finalize_kernel_history_entry(void *start, void *end);
+/// Resolve a Metal kernel-history entry's execution_time. The entry's task
+/// slot holds an owned id<MTLCommandBuffer>: wait for it and release it.
+extern float jitc_metal_finalize_kernel_history_entry(void *task);
 
 // ---------------------------------------------------------------------
 

@@ -15,33 +15,18 @@
 #define __THREADS__
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
-#import <MetalPerformanceShadersGraph/MetalPerformanceShadersGraph.h>
+
+#include "metal_launch.h"
 
 MetalThreadState::~MetalThreadState() {
     // Wait for any queued computation to finish
     flush(/* wait = */ true);
-
-    // Release the MPSGraph objects
-    @autoreleasepool {
-        for (const auto &kv : metal_graph_cache) {
-            const MetalGraph &g = kv.second;
-            if (g.graph) (void) (__bridge_transfer id) g.graph;
-            for (void *p : g.in)  if (p) (void) (__bridge_transfer id) p;
-            for (void *p : g.out) if (p) (void) (__bridge_transfer id) p;
-        }
-    }
 }
 
 // ============================================================================
 //  Command buffer / encoder lifecycle
 //  ``ensure_*/close_encoder`` must be called from within an @autoreleasepool.
 // ============================================================================
-
-enum class MetalEncoderKind : uint32_t {
-    None = 0,
-    Compute,
-    Blit
-};
 
 void *MetalThreadState::ensure_cmdbuf() {
     if (!metal_cb) {
@@ -58,28 +43,28 @@ void MetalThreadState::close_encoder() {
         (__bridge_transfer id<MTLCommandEncoder>) metal_encoder;
     [enc endEncoding];
     metal_encoder = nullptr;
-    metal_encoder_kind = (uint32_t) MetalEncoderKind::None;
+    metal_encoder_kind = MetalEncoderKind::None;
 }
 
 void *MetalThreadState::ensure_compute_encoder() {
-    if ((MetalEncoderKind) metal_encoder_kind == MetalEncoderKind::Compute)
+    if (metal_encoder_kind == MetalEncoderKind::Compute)
         return metal_encoder;
     close_encoder();
     id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) ensure_cmdbuf();
     id<MTLComputeCommandEncoder> enc = [cb computeCommandEncoder];
     metal_encoder = (__bridge_retained void *) enc;
-    metal_encoder_kind = (uint32_t) MetalEncoderKind::Compute;
+    metal_encoder_kind = MetalEncoderKind::Compute;
     return metal_encoder;
 }
 
 void *MetalThreadState::ensure_blit_encoder() {
-    if ((MetalEncoderKind) metal_encoder_kind == MetalEncoderKind::Blit)
+    if (metal_encoder_kind == MetalEncoderKind::Blit)
         return metal_encoder;
     close_encoder();
     id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) ensure_cmdbuf();
     id<MTLBlitCommandEncoder> enc = [cb blitCommandEncoder];
     metal_encoder = (__bridge_retained void *) enc;
-    metal_encoder_kind = (uint32_t) MetalEncoderKind::Blit;
+    metal_encoder_kind = MetalEncoderKind::Blit;
     return metal_encoder;
 }
 
@@ -157,12 +142,6 @@ struct MetalHistoryScope {
         entry.output_count = 1;
 
         id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) ts->metal_cb;
-
-        // MPSGraph operations may launch into multiple command buffers. Keep
-        // track of the first buffer;
-        entry.event_start = ts->metal_history_split_cb;
-        ts->metal_history_split_cb = nullptr;
-
         entry.task = (__bridge_retained void *) cb;
         state.kernel_history.append(entry);
     }
@@ -176,6 +155,120 @@ struct MetalHistoryScope {
             ts->flush(/* wait = */ false);
         }
     }
+};
+
+// ============================================================================
+//  Shared launch helpers for the precompiled utility kernels
+// ============================================================================
+
+static const char *metal_op_name(ReduceOp op) {
+    switch (op) {
+        case ReduceOp::Add: return "add";
+        case ReduceOp::Mul: return "mul";
+        case ReduceOp::Min: return "min";
+        case ReduceOp::Max: return "max";
+        case ReduceOp::Or:  return "or";
+        case ReduceOp::And: return "and";
+        default: return "<unsupported>";
+    }
+}
+
+static VarType make_int_type_unsigned(VarType type) {
+    switch (type) {
+        case VarType::Int8:  return VarType::UInt8;
+        case VarType::Int16: return VarType::UInt16;
+        case VarType::Int32: return VarType::UInt32;
+        case VarType::Int64: return VarType::UInt64;
+        default: return type;
+    }
+}
+
+/// Resolve a result pointer that a kernel writes to: device allocations
+/// resolve directly; host memory is staged through a fresh Shared allocation
+/// (returned via ``*staging_out``) that the caller must copy back after
+/// synchronizing and then release.
+static id<MTLBuffer> metal_resolve_or_stage(void *ptr, size_t bytes,
+                                            uint64_t *addr_out,
+                                            void **staging_out) {
+    size_t off = 0;
+    id<MTLBuffer> buf =
+        (__bridge id<MTLBuffer>) jitc_metal_find_buffer(ptr, &off);
+    if (buf) {
+        *addr_out = (uint64_t) [buf gpuAddress] + off;
+        return buf;
+    }
+    *staging_out = jitc_malloc(JitBackend::Metal, bytes, /*shared=*/true);
+    return metal_resolve(*staging_out, addr_out);
+}
+
+/// Lazily created block (prefix) reduction pipeline, or nil if the
+/// (kind, op, type) combination is unsupported
+static id<MTLComputePipelineState>
+metal_reduce_pipeline(int device, MetalReduceKind kind, ReduceOp op,
+                      VarType vt) {
+    return (__bridge id<MTLComputePipelineState>)
+        jitc_metal_block_reduce_pipeline(device, kind, op, vt);
+}
+
+/// Contiguous elements each thread of a chunked (prefix) reduction kernel
+/// processes per loop iteration
+static constexpr uint32_t MetalGrain = 4;
+
+/// Elements covered by one full threadgroup (1024 threads at MetalGrain);
+/// reduction blocks larger than this are split into chunks of this size
+static constexpr uint32_t MetalChunkSize = 4096;
+
+/// Threadgroup width that covers ``chunk_size`` elements at MetalGrain,
+/// rounded up to a whole simdgroup (32) and clamped to the pipeline limit
+static uint32_t metal_chunk_tg_width(id<MTLComputePipelineState> pso,
+                                     uint32_t chunk_size) {
+    return std::min(ceil_div(chunk_size, MetalGrain * 32u) * 32u,
+                    (uint32_t) pso.maxTotalThreadsPerThreadgroup);
+}
+
+// Host-side mirrors of the kernel parameter structs in
+// resources/metal_kernels.metal — the layouts must match exactly.
+
+struct BlockReduceParams {
+    uint64_t in, out;
+    uint32_t size, block_size, chunk_size, chunks_per_block;
+};
+
+struct BlockPrefixReduceParams {
+    uint64_t in, out, prefixes;
+    uint32_t size, block_size, chunk_size, chunks_per_block;
+    uint32_t exclusive, reverse;
+};
+
+struct ReduceDotParams {
+    uint64_t in1, in2, out;
+    uint32_t size, chunk_size;
+};
+
+struct CompressScatterParams {
+    uint64_t in, prefix, out;
+};
+
+struct MkpermParams {
+    uint64_t values, buckets, perm;
+};
+
+struct MkpermOffsetsParams {
+    uint64_t buckets, offsets, counter;
+    uint32_t bucket_count, perm_size, row_stride;
+};
+
+struct MkpermTinyParams {
+    uint64_t values, buckets, perm;
+    uint32_t size, size_per_block, bucket_count, block_size, rows_per_group;
+};
+
+struct MemsetParams {
+    uint64_t dst, value;
+};
+
+struct ConvertParams {
+    uint64_t src, dst;
 };
 
 // ============================================================================
@@ -217,6 +310,9 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                 }
 
                 case ResourceKind::IFT: {
+                    // The residency pass below resolves the table again via
+                    // the scene's per-PSO cache (a cheap hit). It cannot move
+                    // here: scenes queued by aggregate() reach only that pass.
                     id<MTLIntersectionFunctionTable> ift =
                         (__bridge id<MTLIntersectionFunctionTable>)
                             jitc_metal_get_or_create_ift_for_scene(
@@ -390,26 +486,13 @@ void MetalThreadState::memset_async(void *ptr, uint32_t size, uint32_t isize,
             MetalKernel kernel = isize == 2 ? MetalKernel::MemsetU16
                                : isize == 4 ? MetalKernel::MemsetU32
                                             : MetalKernel::MemsetU64;
-            id<MTLComputePipelineState> pso =
-                (__bridge id<MTLComputePipelineState>)
-                    state.metal_devices[this->device].pipelines[(uint32_t) kernel];
 
-            struct {
-                uint64_t dst, value;
-            } params {};
+            MemsetParams params {};
             std::memcpy(&params.value, src, isize); // low ``isize`` bytes
             params.dst = (uint64_t) [buf gpuAddress] + offset;
 
-            id<MTLComputeCommandEncoder> enc =
-                (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
-            [enc setComputePipelineState:pso];
-            [enc setBytes:&params length:sizeof(params) atIndex:0];
-            [enc useResource:buf usage:MTLResourceUsageWrite];
-
-            uint32_t tg = std::min((uint32_t) pso.maxTotalThreadsPerThreadgroup,
-                                   round_pow2(size));
-            [enc dispatchThreads:MTLSizeMake(size, 1, 1)
-                threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+            metal_dispatch_threads(this, metal_pipeline(this, kernel), params,
+                                   {{ buf, MTLResourceUsageWrite }}, size);
         }
     }
 }
@@ -424,61 +507,53 @@ void MetalThreadState::memcpy_async(void *dst, const void *src, size_t size) {
     @autoreleasepool {
         MetalHistoryScope hist(this, KernelType::Memcpy, (uint32_t) size);
 
-        size_t src_offset = 0, dst_offset = 0;
-        id<MTLBuffer> src_buf =
-            (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) src, &src_offset);
-        id<MTLBuffer> dst_buf =
-            (__bridge id<MTLBuffer>) jitc_metal_find_buffer(dst, &dst_offset);
+        size_t src_off = 0, dst_off = 0;
+        id<MTLBuffer> src_buf = (__bridge id<MTLBuffer>)
+            jitc_metal_find_buffer((void *) src, &src_off);
+        id<MTLBuffer> dst_buf = (__bridge id<MTLBuffer>)
+            jitc_metal_find_buffer(dst, &dst_off);
 
-        if (src_buf && dst_buf) {
-            // GPU -> GPU blit
-            id<MTLBlitCommandEncoder> enc =
-                (__bridge id<MTLBlitCommandEncoder>)
-                    ensure_blit_encoder();
-            [enc copyFromBuffer:src_buf
-                   sourceOffset:src_offset
-                       toBuffer:dst_buf
-              destinationOffset:dst_offset
-                           size:size];
-        } else if (!src_buf && dst_buf) {
-            // CPU -> GPU upload via staging buffer
-            void *staging = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
+        if (!src_buf && !dst_buf) {
+            std::memcpy(dst, src, size);
+            return;
+        }
+
+        // Host-side endpoints are routed through a Shared staging buffer:
+        // uploads fill it now, readbacks copy from it in a completion handler.
+        void *staging = nullptr;
+        bool readback = false;
+        if (!src_buf) {
+            // CPU -> GPU upload
+            staging = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
             std::memcpy(staging, src, size);
-            size_t staging_off = 0;
-            id<MTLBuffer> staging_buf = (__bridge id<MTLBuffer>)
-                jitc_metal_find_buffer(staging, &staging_off);
-            id<MTLBlitCommandEncoder> enc =
-                (__bridge id<MTLBlitCommandEncoder>)
-                    ensure_blit_encoder();
-            [enc copyFromBuffer:staging_buf
-                   sourceOffset:staging_off
-                       toBuffer:dst_buf
-              destinationOffset:dst_offset
-                           size:size];
-            jitc_free(staging);
-        } else if (src_buf && !dst_buf) {
-            // GPU → CPU readback: a completion handler copies staging → dst
-            void *staging = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
-            size_t staging_off = 0;
-            id<MTLBuffer> staging_buf = (__bridge id<MTLBuffer>)
-                jitc_metal_find_buffer(staging, &staging_off);
-            id<MTLBlitCommandEncoder> enc =
-                (__bridge id<MTLBlitCommandEncoder>)
-                    ensure_blit_encoder();
-            [enc copyFromBuffer:src_buf
-                   sourceOffset:src_offset
-                       toBuffer:staging_buf
-              destinationOffset:staging_off
-                           size:size];
-            id<MTLCommandBuffer> cb =
-                (__bridge id<MTLCommandBuffer>) metal_cb;
+            src_buf = (__bridge id<MTLBuffer>)
+                jitc_metal_find_buffer(staging, &src_off);
+        } else if (!dst_buf) {
+            // GPU -> CPU readback
+            readback = true;
+            staging = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
+            dst_buf = (__bridge id<MTLBuffer>)
+                jitc_metal_find_buffer(staging, &dst_off);
+        }
+
+        id<MTLBlitCommandEncoder> enc =
+            (__bridge id<MTLBlitCommandEncoder>) ensure_blit_encoder();
+        [enc copyFromBuffer:src_buf
+               sourceOffset:src_off
+                   toBuffer:dst_buf
+          destinationOffset:dst_off
+                       size:size];
+
+        if (readback) {
+            id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) metal_cb;
             [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
                 std::memcpy(dst, staging, size);
             }];
-            jitc_free(staging);
-        } else {
-            std::memcpy(dst, src, size);
         }
+
+        // Deferred: the allocation stays live until the command buffer retires
+        if (staging)
+            jitc_free(staging);
     }
 }
 
@@ -494,144 +569,11 @@ void MetalThreadState::poke(void *dst, const void *src, uint32_t size) {
 //  Reductions / scans / compaction
 // ============================================================================
 
-static const char *metal_op_name(ReduceOp op) {
-    switch (op) {
-        case ReduceOp::Add: return "add";
-        case ReduceOp::Mul: return "mul";
-        case ReduceOp::Min: return "min";
-        case ReduceOp::Max: return "max";
-        case ReduceOp::Or:  return "or";
-        case ReduceOp::And: return "and";
-        default: return nullptr;
-    }
-}
-
-/// Resolve a Dr.Jit Metal pointer and return both its id<MTLBuffer> pointer
-/// and the associated GPU memory address
-static id<MTLBuffer> metal_resolve(const void *ptr, uint64_t *addr_out) {
-    size_t off = 0;
-    id<MTLBuffer> buf =
-        (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) ptr, &off);
-    *addr_out = (uint64_t) [buf gpuAddress] + off;
-    return buf;
-}
-
-// ============================================================================
-//  MPSGraph infrastructure
-//
-//  The operations block_reduce, block_prefix_reduce, reduce_dot, and compress
-//  are all expressed as MPSGraphs. Building (and compiling) a graph has a
-//  nontrivial cost, so we cache and reuse them.
-// ============================================================================
-
-namespace {
-    enum class MetalGraphKind : uint32_t { Scan, Reduce, Dot, Compress };
-
-    /// One input or output binding for metal_run_graph: a graph tensor paired
-    /// with the Dr.Jit device buffer that feeds or receives it.
-    struct MetalBind {
-        void *tensor;                  // MPSGraphTensor*
-        void *ptr;                     // Dr.Jit device pointer
-        NSArray<NSNumber *> *shape;    // logical shape of the buffer view
-        MPSDataType dt;
-        size_t bytes;                  // byte size of the view (for staging)
-    };
-}
-
-/// Map a Dr.Jit type to the MPSDataType used for reductions
-static bool metal_mps_dtype(VarType vt, MPSDataType &dt) {
-    switch (vt) {
-        case VarType::Float16: dt = MPSDataTypeFloat16; return true;
-        case VarType::Float32: dt = MPSDataTypeFloat32; return true;
-        case VarType::Int32:   dt = MPSDataTypeInt32;   return true;
-        case VarType::UInt32:  dt = MPSDataTypeUInt32;  return true;
-        case VarType::Int64:   dt = MPSDataTypeInt64;   return true;
-        case VarType::UInt64:  dt = MPSDataTypeUInt64;  return true;
-        default: return false;
-    }
-}
-
-/// Look up a cached graph by key, or build and cache it via ``build``
-template <typename Build>
-static MetalGraph metal_graph_cached(MetalThreadState *ts, uint64_t key,
-                                     Build &&build) {
-    auto &cache = ts->metal_graph_cache;
-    auto it = cache.find(key);
-    if (it != cache.end())
-        return it->second;
-    MetalGraph g = build();
-    cache[key] = g;
-    return g;
-}
-
-/// Execute a previously recorded metal graph with the given buffer bindings
-static void metal_run_graph(MetalThreadState *ts, const MetalGraph &g,
-                            std::initializer_list<MetalBind> inputs,
-                            std::initializer_list<MetalBind> outputs) {
-    NSMutableDictionary<MPSGraphTensor *, MPSGraphTensorData *> *feeds =
-        [NSMutableDictionary dictionary];
-    NSMutableDictionary<MPSGraphTensor *, MPSGraphTensorData *> *results =
-        [NSMutableDictionary dictionary];
-
-    auto bind = [&](const MetalBind &b,
-                    NSMutableDictionary<MPSGraphTensor *, MPSGraphTensorData *> *dict) {
-        size_t off = 0;
-        id<MTLBuffer> buf = (__bridge id<MTLBuffer>) jitc_metal_find_buffer(b.ptr, &off);
-        if (unlikely(off != 0))
-            jitc_fail("metal_run_graph(): operand at non-zero buffer offset; "
-                      "MPSGraph reductions assume base-aligned operands.");
-        MPSGraphTensorData *data = [[MPSGraphTensorData alloc]
-            initWithMTLBuffer:buf shape:b.shape dataType:b.dt];
-        [dict setObject:data forKeyedSubscript:(__bridge MPSGraphTensor *) b.tensor];
-    };
-
-    for (const MetalBind &b : inputs)  bind(b, feeds);
-    for (const MetalBind &b : outputs) bind(b, results);
-
-    ts->close_encoder();
-    id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) ts->ensure_cmdbuf();
-    MPSCommandBuffer *mcb = [MPSCommandBuffer commandBufferWithCommandBuffer:cb];
-
-    [(__bridge MPSGraph *) g.graph encodeToCommandBuffer:mcb
-                                                   feeds:feeds
-                                        targetOperations:nil
-                                       resultsDictionary:results
-                                     executionDescriptor:nil];
-
-    // MPSGraph _may_ commit the command buffer, in which case we continue using the new one
-    id<MTLCommandBuffer> root = mcb.rootCommandBuffer;
-    if ((__bridge void *) root != ts->metal_cb) {
-        // MPSGraph committed the command buffer. When recording the kernel history,
-        // keep track of it so that we can correclty time the entire operation.
-        if (ts->metal_history_depth > 0 && !ts->metal_history_split_cb)
-            ts->metal_history_split_cb = ts->metal_cb;
-        else
-            (void) (__bridge_transfer id<MTLCommandBuffer>) ts->metal_cb;
-        ts->metal_cb = (__bridge_retained void *) root;
-    }
-}
-
-/// Pad a buffer to exactly ``block_count * block_size`` elements for a scan/reduce
-static const void *metal_pad_input(MetalThreadState *ts, ReduceOp op, VarType vt,
-                                   uint32_t size, uint32_t padded,
-                                   const void *in, void **scratch) {
-    if (padded == size) {
-        *scratch = nullptr;
-        return in;
-    }
-    uint32_t tsize = type_size[(int) vt];
-    void *p = jitc_malloc(JitBackend::Metal, (size_t) padded * tsize);
-    ts->memcpy_async(p, in, (size_t) size * tsize);
-    uint64_t ident = jitc_reduce_identity(vt, op);
-    ts->memset_async((uint8_t *) p + (size_t) size * tsize,
-                     padded - size, tsize, &ident);
-    *scratch = p;
-    return p;
-}
-
 void MetalThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
                                     uint32_t block_size, const void *in,
                                     void *out) {
+    // See the documentation of the associated kernels in
+    // 'resources/metal_kernels.metal' for the overall strategy.
     @autoreleasepool {
         if (size == 0)
             return;
@@ -645,66 +587,79 @@ void MetalThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
             return;
         }
 
+        // Signed sum/product/bitwise reductions can use the unsigned kernels
+        if (op == ReduceOp::Add || op == ReduceOp::Mul ||
+            op == ReduceOp::Or || op == ReduceOp::And)
+            vt = make_int_type_unsigned(vt);
+
         MetalHistoryScope hist(this, KernelType::BlockReduce, size);
 
-        uint32_t block_count = (size + block_size - 1) / block_size;
+        uint32_t block_count = ceil_div(size, block_size);
 
-        // Bitwise Or/And block reductions are unsupported on Metal. (Boolean
-        // any()/all() is handled separately by block_reduce_bool().)
-        if (op == ReduceOp::Or || op == ReduceOp::And)
-            jitc_raise("jit_block_reduce(): 'Or'/'And' reductions are not "
-                       "supported on the Metal backend.");
+        // Below this block size, one thread serially reduces an entire block;
+        // larger blocks are split into chunks that map to one threadgroup each
+        constexpr uint32_t SmallThreshold = 256;
+        bool small = block_size < SmallThreshold;
 
-        // Sum/product/minimum/maximum go through MPSGraph.
-        MPSDataType dt;
-        if (metal_mps_dtype(vt, dt)) {
-            uint32_t padded = block_count * block_size;
-            void *scratch = nullptr;
-            const void *in_use =
-                metal_pad_input(this, op, vt, size, padded, in, &scratch);
+        id<MTLComputePipelineState> pso = metal_reduce_pipeline(
+            device, small ? MetalReduceKind::Small : MetalReduceKind::Chunk,
+            op, vt);
+        if (!pso)
+            jitc_raise("jit_block_reduce(): unsupported type '%s' for op '%s' "
+                       "on the Metal backend.",
+                       type_name[(int) vt], metal_op_name(op));
 
-            uint64_t key = ((uint64_t) MetalGraphKind::Reduce << 56) |
-                           ((uint64_t) (uint32_t) device << 40) |
-                           ((uint64_t) (int) op << 16) |
-                           ((uint64_t) (int) vt << 4);
-
-            MetalGraph g = metal_graph_cached(this, key, [&]() -> MetalGraph {
-                MPSGraph *graph = [MPSGraph new];
-                MPSGraphTensor *in = [graph placeholderWithShape:@[ @(-1), @(-1) ] dataType:dt name:nil];
-                MPSGraphTensor *r = nil;
-                switch (op) {
-                    case ReduceOp::Add: r = [graph reductionSumWithTensor:in     axes:@[ @1 ] name:nil]; break;
-                    case ReduceOp::Mul: r = [graph reductionProductWithTensor:in axes:@[ @1 ] name:nil]; break;
-                    case ReduceOp::Min: r = [graph reductionMinimumWithTensor:in axes:@[ @1 ] name:nil]; break;
-                    case ReduceOp::Max: r = [graph reductionMaximumWithTensor:in axes:@[ @1 ] name:nil]; break;
-                    default: return MetalGraph{};
-                }
-                r = [graph reshapeTensor:r withShape:@[ @(-1) ] name:nil];
-                return MetalGraph{ (__bridge_retained void *) graph,
-                                 { (__bridge_retained void *) in, nullptr },
-                                 { (__bridge_retained void *) r, nullptr } };
-            });
-            metal_run_graph(this, g,
-                { { g.in[0], (void *) in_use, @[ @(block_count), @(block_size) ],
-                    dt, (size_t) padded * tsize } },
-                { { g.out[0], out, @[ @(block_count) ],
-                    dt, (size_t) block_count * tsize } });
-
-            if (scratch)
-                jitc_free(scratch);
-
-            jitc_log(Debug,
-                     "jit_block_reduce(type=%s, op=%s, size=%u, "
-                     "block_size=%u) -> MPSGraph",
-                     type_name[(int) vt], metal_op_name(op), size, block_size);
-            return;
+        uint32_t chunk_size = 0, chunks_per_block = 1,
+                 chunk_count = block_count, tg_width = 0;
+        if (!small) {
+            chunk_size = std::min(block_size, MetalChunkSize);
+            chunks_per_block = ceil_div(block_size, chunk_size);
+            chunk_count = block_count * chunks_per_block;
+            tg_width = metal_chunk_tg_width(pso, chunk_size);
         }
 
-        // The MPSGraph path handles every supported (type, op) combination and
-        // returns above; reaching here means the element type is not reducible
-        // on Metal (e.g. a 64-bit integer sum, which MPSGraph does not provide).
-        jitc_raise("jit_block_reduce(): unsupported type '%s' for op '%s' on "
-                   "the Metal backend.", type_name[(int) vt], metal_op_name(op));
+        // Multi-chunk blocks produce per-chunk partial results that a
+        // recursive invocation reduces to the final output
+        void *dst = out;
+        if (chunks_per_block > 1)
+            dst = jitc_malloc(JitBackend::Metal, (size_t) chunk_count * tsize);
+
+        BlockReduceParams params;
+        id<MTLBuffer> in_buf = metal_resolve(in, &params.in);
+        id<MTLBuffer> out_buf = metal_resolve(dst, &params.out);
+        params.size = size;
+        params.block_size = block_size;
+        params.chunk_size = chunk_size;
+        params.chunks_per_block = chunks_per_block;
+
+        jitc_log(Debug,
+                 "jit_block_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+                 ", type=%s, op=%s, size=%u, block_size=%u, block_count=%u, "
+                 "chunk_size=%u, chunks_per_block=%u, tg_width=%u)",
+                 (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
+                 metal_op_name(op), size, block_size, block_count, chunk_size,
+                 chunks_per_block, tg_width);
+
+        if (small) {
+            // One thread per block; the grid is sized to the data
+            metal_dispatch_threads(this, pso, params,
+                                   {{ in_buf, MTLResourceUsageRead },
+                                    { out_buf, MTLResourceUsageWrite }},
+                                   block_count);
+        } else {
+            // One threadgroup per (chunk, block) grid cell
+            metal_dispatch_groups(this, pso, params,
+                                  {{ in_buf, MTLResourceUsageRead },
+                                   { out_buf, MTLResourceUsageWrite }},
+                                  MTLSizeMake(chunks_per_block, block_count, 1),
+                                  tg_width);
+        }
+
+        if (chunks_per_block > 1) {
+            // Reduce the per-chunk partial results (recursion depth <= 2)
+            block_reduce(vt, op, chunk_count, chunks_per_block, dst, out);
+            jitc_free(dst);
+        }
     }
 }
 
@@ -714,93 +669,134 @@ void MetalThreadState::narrow_f32_to_f16(void *dst, const void *src,
         if (size == 0)
             return;
 
+        // No MetalHistoryScope here: this is an internal helper of the
+        // float16 scatter-reduction path (it has no public entry point or
+        // KernelType); its runtime is attributed to the enclosing operation.
         jitc_log(Debug, "jit_narrow_f32_to_f16(size=%u)", size);
 
-        id<MTLComputePipelineState> pso =
-            (__bridge id<MTLComputePipelineState>)
-                state.metal_devices[this->device]
-                    .pipelines[(uint32_t) MetalKernel::ConvertF32F16];
-
-        size_t src_off = 0, dst_off = 0;
-        id<MTLBuffer> src_buf =
-            (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) src, &src_off);
-        id<MTLBuffer> dst_buf =
-            (__bridge id<MTLBuffer>) jitc_metal_find_buffer(dst, &dst_off);
+        ConvertParams params;
+        id<MTLBuffer> src_buf = metal_resolve(src, &params.src);
+        id<MTLBuffer> dst_buf = metal_resolve(dst, &params.dst);
         if (!src_buf || !dst_buf)
             jitc_raise("jit_narrow_f32_to_f16(): buffer lookup failed.");
 
-        struct { uint64_t src, dst; } params;
-        params.src = (uint64_t) [src_buf gpuAddress] + src_off;
-        params.dst = (uint64_t) [dst_buf gpuAddress] + dst_off;
-
-        id<MTLComputeCommandEncoder> enc =
-            (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
-        [enc setComputePipelineState:pso];
-        [enc setBytes:&params length:sizeof(params) atIndex:0];
-        [enc useResource:src_buf usage:MTLResourceUsageRead];
-        [enc useResource:dst_buf usage:MTLResourceUsageWrite];
-
-        uint32_t tg = std::min((uint32_t) pso.maxTotalThreadsPerThreadgroup,
-                               round_pow2(size));
-        [enc dispatchThreads:MTLSizeMake(size, 1, 1)
-            threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+        metal_dispatch_threads(this,
+                               metal_pipeline(this, MetalKernel::ConvertF32F16),
+                               params,
+                               {{ src_buf, MTLResourceUsageRead },
+                                { dst_buf, MTLResourceUsageWrite }},
+                               size);
     }
 }
 
-void MetalThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
-                                         uint8_t *out, ReduceOp op) {
-    @autoreleasepool {
-        bool is_all = (op == ReduceOp::And);
-        if (!is_all && op != ReduceOp::Or)
-            jitc_raise("jit_block_reduce_bool(): expected 'Or' or 'And'.");
+/// Shared implementation of the *reduce-then-scan* prefix-reduction
+/// decomposition, used by ``block_prefix_reduce()`` and ``compress()``.
+/// ``vt`` is the storage type (already mapped to the unsigned kernel set
+/// where applicable) and ``vta`` the accumulator/chunk-prefix type, which
+/// may be wider: f16 sums/products carry f32 chunk prefixes (matching the
+/// CUDA backend's intermediate precision), and compress() widens its u8
+/// mask scan to u32 counts.
+static void metal_block_prefix_reduce(MetalThreadState *ts, VarType vt,
+                                      VarType vta, ReduceOp op, uint32_t size,
+                                      uint32_t block_size, bool exclusive,
+                                      bool reverse, const void *in,
+                                      void *out) {
+    id<MTLComputePipelineState> scan_pso =
+        metal_reduce_pipeline(ts->device, MetalReduceKind::Scan, op, vt);
+    if (!scan_pso)
+        jitc_raise("jit_block_prefix_reduce(): unsupported type '%s' for "
+                   "op '%s' on the Metal backend.",
+                   type_name[(int) vt], metal_op_name(op));
 
-        jitc_log(Debug, "jit_%s(" DRJIT_PTR ", size=%u)",
-                 is_all ? "all" : "any", (uintptr_t) values, size);
+    // Unlike the chunked reduction kernel, the scan kernel does not loop:
+    // each thread covers exactly MetalGrain slots, so a chunk must fit
+    // within a single threadgroup of the scan pipeline.
+    uint32_t block_count = ceil_div(size, block_size),
+             chunk_size = std::min(
+                 { block_size, MetalChunkSize,
+                   (uint32_t) scan_pso.maxTotalThreadsPerThreadgroup *
+                       MetalGrain }),
+             chunks_per_block = ceil_div(block_size, chunk_size),
+             chunk_count = block_count * chunks_per_block;
 
-        MetalHistoryScope hist(this, KernelType::BlockReduce, size);
+    uint32_t tg_width = metal_chunk_tg_width(scan_pso, chunk_size);
 
-        MetalKernel init_kernel = is_all ? MetalKernel::ReduceAllInit
-                                         : MetalKernel::ReduceAnyInit;
-        MetalKernel kernel      = is_all ? MetalKernel::ReduceAll
-                                         : MetalKernel::ReduceAny;
-        id<MTLComputePipelineState> init_pso =
-            (__bridge id<MTLComputePipelineState>)
-                state.metal_devices[this->device].pipelines[(uint32_t) init_kernel];
-        id<MTLComputePipelineState> pso =
-            (__bridge id<MTLComputePipelineState>)
-                state.metal_devices[this->device].pipelines[(uint32_t) kernel];
+    jitc_log(Debug,
+             "jit_block_prefix_reduce(" DRJIT_PTR " -> " DRJIT_PTR
+             ", type=%s, op=%s, size=%u, block_size=%u, exclusive=%i, "
+             "reverse=%i, block_count=%u, chunk_size=%u, "
+             "chunks_per_block=%u, tg_width=%u)",
+             (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
+             metal_op_name(op), size, block_size, (int) exclusive,
+             (int) reverse, block_count, chunk_size, chunks_per_block,
+             tg_width);
 
-        size_t out_off = 0;
-        id<MTLBuffer> out_buf =
-            (__bridge id<MTLBuffer>) jitc_metal_find_buffer(out, &out_off);
+    // Blocks spanning multiple chunks need each chunk's exclusive prefix:
+    // compute per-chunk totals with the block-reduction kernel (using the
+    // identical chunk decomposition), then prefix-reduce them in place via a
+    // recursive invocation. The totals/prefixes are kept in the accumulator
+    // type ``vta``.
+    void *temp = nullptr;
+    if (chunks_per_block > 1) {
+        id<MTLComputePipelineState> red_pso = metal_reduce_pipeline(
+            ts->device,
+            vta != vt ? MetalReduceKind::WideChunk : MetalReduceKind::Chunk,
+            op, vt);
+        if (!red_pso)
+            jitc_raise("jit_block_prefix_reduce(): unsupported type '%s' "
+                       "for op '%s' on the Metal backend.",
+                       type_name[(int) vt], metal_op_name(op));
 
-        struct { uint64_t in, out; uint32_t size; } params;
-        id<MTLBuffer> in_buf = metal_resolve(values, &params.in);
-        metal_resolve(out, &params.out);
-        params.size = size;
+        temp = jitc_malloc(JitBackend::Metal,
+                           (size_t) chunk_count * type_size[(int) vta]);
 
-        id<MTLComputeCommandEncoder> enc =
-            (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
-        [enc setBytes:&params length:sizeof(params) atIndex:0];
-        if (in_buf)  [enc useResource:in_buf  usage:MTLResourceUsageRead];
-        if (out_buf) [enc useResource:out_buf usage:MTLResourceUsageRead |
-                                                    MTLResourceUsageWrite];
+        BlockReduceParams rparams;
+        id<MTLBuffer> in_buf = metal_resolve(in, &rparams.in);
+        id<MTLBuffer> temp_buf = metal_resolve(temp, &rparams.out);
+        rparams.size = size;
+        rparams.block_size = block_size;
+        rparams.chunk_size = chunk_size;
+        rparams.chunks_per_block = chunks_per_block;
 
-        // 1. Seed the result with the reduction identity (one thread).
-        [enc setComputePipelineState:init_pso];
-        [enc dispatchThreads:MTLSizeMake(1, 1, 1)
-            threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+        // The reduction kernel loops as needed, so any threadgroup width
+        // within its pipeline limit works
+        metal_dispatch_groups(
+            ts, red_pso, rparams,
+            {{ in_buf, MTLResourceUsageRead },
+             { temp_buf, MTLResourceUsageWrite }},
+            MTLSizeMake(chunks_per_block, block_count, 1),
+            metal_chunk_tg_width(red_pso, chunk_size));
 
-        // 2. Reduce: one thread per coalesced 16-byte packet (thread 0 also
-        // handles the < 16 tail bytes). The grid is sized to the data and the
-        // hardware schedules occupancy; no grid-size heuristic is needed.
-        uint32_t tg = (uint32_t) pso.maxTotalThreadsPerThreadgroup;
-        uint32_t grid = std::max(size >> 4, 1u);
-
-        [enc setComputePipelineState:pso];
-        [enc dispatchThreads:MTLSizeMake(grid, 1, 1)
-            threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+        // In-place exclusive prefix reduction over the chunk totals; the
+        // 'reverse' flag carries over so that each chunk receives the
+        // combined total of its predecessors in scan order.
+        ts->block_prefix_reduce(vta, op, chunk_count, chunks_per_block,
+                                /* exclusive = */ true, reverse, temp, temp);
     }
+
+    BlockPrefixReduceParams params;
+    id<MTLBuffer> in_buf = metal_resolve(in, &params.in);
+    id<MTLBuffer> out_buf = metal_resolve(out, &params.out);
+    id<MTLBuffer> temp_buf = nil;
+    params.prefixes = 0;
+    if (temp)
+        temp_buf = metal_resolve(temp, &params.prefixes);
+    params.size = size;
+    params.block_size = block_size;
+    params.chunk_size = chunk_size;
+    params.chunks_per_block = chunks_per_block;
+    params.exclusive = exclusive ? 1u : 0u;
+    params.reverse = reverse ? 1u : 0u;
+
+    metal_dispatch_groups(ts, scan_pso, params,
+                          {{ in_buf, MTLResourceUsageRead },
+                           { out_buf, MTLResourceUsageWrite },
+                           { temp_buf, MTLResourceUsageRead }},
+                          MTLSizeMake(chunks_per_block, block_count, 1),
+                          tg_width);
+
+    if (temp)
+        jitc_free(temp);
 }
 
 void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
@@ -808,13 +804,13 @@ void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
                                            bool exclusive, bool reverse,
                                            const void *in, void *out) {
     @autoreleasepool {
-        uint32_t tsize = type_size[(int) vt];
-
-        if (size == 0) return;
+        if (size == 0)
+            return;
         if (block_size == 0 || block_size > size)
             jitc_raise("jit_block_prefix_reduce(): invalid "
                        "block_size=%u for size=%u.", block_size, size);
 
+        uint32_t tsize = type_size[(int) vt];
         if (block_size == 1) {
             if (exclusive) {
                 uint64_t ident = jitc_reduce_identity(vt, op);
@@ -825,73 +821,21 @@ void MetalThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
             return;
         }
 
-        if (op == ReduceOp::Or || op == ReduceOp::And)
-            jitc_raise(
-                "jit_block_prefix_reduce(): 'Or' and 'And' "
-                "prefix reductions are not supported by Metal's MPSGraph API.");
-
-        MPSDataType dt;
-        if (!metal_mps_dtype(vt, dt))
-            jitc_raise("jit_block_prefix_reduce(): unsupported "
-                       "type '%s'.", type_name[(int) vt]);
+        // Signed sum/product/bitwise reductions can use the unsigned kernels
+        if (op == ReduceOp::Add || op == ReduceOp::Mul ||
+            op == ReduceOp::Or || op == ReduceOp::And)
+            vt = make_int_type_unsigned(vt);
 
         MetalHistoryScope hist(this, KernelType::BlockPrefixReduce, size);
 
-        // Cumulative scan along axis 1 of a [block_count, block_size] tensor.
-        uint64_t key = ((uint64_t) MetalGraphKind::Scan << 56) |
-                       ((uint64_t) (uint32_t) device << 40) |
-                       ((uint64_t) (int) op << 16) | ((uint64_t) (int) vt << 4) |
-                       (exclusive ? 2u : 0u) | (reverse ? 1u : 0u);
-        MetalGraph g = metal_graph_cached(this, key, [&]() -> MetalGraph {
-            MPSGraph *graph = [MPSGraph new];
-            MPSGraphTensor *in = [graph placeholderWithShape:@[ @(-1), @(-1) ] dataType:dt name:nil];
-            MPSGraphTensor *r = nil;
-            switch (op) {
-                case ReduceOp::Add: r = [graph cumulativeSumWithTensor:in     axis:1 exclusive:exclusive reverse:reverse name:nil]; break;
-                case ReduceOp::Mul: r = [graph cumulativeProductWithTensor:in axis:1 exclusive:exclusive reverse:reverse name:nil]; break;
-                case ReduceOp::Min: r = [graph cumulativeMinimumWithTensor:in axis:1 exclusive:exclusive reverse:reverse name:nil]; break;
-                case ReduceOp::Max: r = [graph cumulativeMaximumWithTensor:in axis:1 exclusive:exclusive reverse:reverse name:nil]; break;
-                default: return MetalGraph{};
-            }
-            return MetalGraph{ (__bridge_retained void *) graph,
-                               { (__bridge_retained void *) in, nullptr },
-                               { (__bridge_retained void *) r, nullptr } };
-        });
+        // f16 sums/products accumulate in f32
+        VarType vta = vt;
+        if (vt == VarType::Float16 &&
+            (op == ReduceOp::Add || op == ReduceOp::Mul))
+            vta = VarType::Float32;
 
-        uint32_t block_count = (size + block_size - 1) / block_size;
-        uint32_t padded = block_count * block_size;
-        size_t padded_bytes = (size_t) padded * tsize;
-
-        // Pad a ragged final block with the reduction identity.
-        void *scratch_in = nullptr;
-        const void *in_use =
-            metal_pad_input(this, op, vt, size, padded, in, &scratch_in);
-
-        // MPSGraph must not alias input and output: a padded run already targets
-        // a fresh buffer; otherwise stage when the caller passed in == out.
-        void *scratch_out = nullptr, *out_use = out;
-        if (padded != size || in == out) {
-            scratch_out = jitc_malloc(JitBackend::Metal, padded_bytes);
-            out_use = scratch_out;
-        }
-
-        MPSShape *shape = @[ @(block_count), @(block_size) ];
-        metal_run_graph(this, g,
-            { { g.in[0],  (void *) in_use, shape, dt, padded_bytes } },
-            { { g.out[0], out_use,         shape, dt, padded_bytes } });
-
-        // Copy the logical-size result out of any scratch output.
-        if (out_use != out)
-            memcpy_async(out, out_use, (size_t) size * tsize);
-
-        if (scratch_in)  jitc_free(scratch_in);
-        if (scratch_out) jitc_free(scratch_out);
-
-        jitc_log(Debug,
-                 "jit_block_prefix_reduce(type=%s, op=%s, size=%u, "
-                 "block_size=%u, exclusive=%d, reverse=%d) -> MPSGraph",
-                 type_name[(int) vt], metal_op_name(op), size, block_size,
-                 (int) exclusive, (int) reverse);
+        metal_block_prefix_reduce(this, vt, vta, op, size, block_size,
+                                  exclusive, reverse, in, out);
     }
 }
 
@@ -901,37 +845,47 @@ void MetalThreadState::reduce_dot(VarType vt, const void *ptr_1,
     @autoreleasepool {
         if (size == 0) return;
 
-        MPSDataType dt;
-        if (!metal_mps_dtype(vt, dt))
+        id<MTLComputePipelineState> pso = metal_reduce_pipeline(
+            device, MetalReduceKind::Dot, ReduceOp::Add, vt);
+        if (!pso)
             jitc_raise("jit_reduce_dot(): unsupported type %s.",
                        type_name[(int) vt]);
 
         MetalHistoryScope hist(this, KernelType::Dot, size);
 
+        // One threadgroup produces a partial dot product per chunk; a regular
+        // sum block reduction then combines the partial results.
+        uint32_t chunk_size = std::min(size, MetalChunkSize),
+                 chunk_count = ceil_div(size, chunk_size);
+
         jitc_log(Debug, "jit_reduce_dot(" DRJIT_PTR ", " DRJIT_PTR
-                 ", type=%s, size=%u)", (uintptr_t) ptr_1, (uintptr_t) ptr_2,
-                 type_name[(int) vt], size);
+                 ", type=%s, size=%u, chunk_count=%u)",
+                 (uintptr_t) ptr_1, (uintptr_t) ptr_2,
+                 type_name[(int) vt], size, chunk_count);
 
-        uint32_t tsize = type_size[(int) vt];
+        void *dst = out;
+        if (chunk_count > 1)
+            dst = jitc_malloc(JitBackend::Metal,
+                              (size_t) chunk_count * type_size[(int) vt]);
 
-        // Dot product: out[0] = sum(a * b) over two [size] tensors.
-        uint64_t key = ((uint64_t) MetalGraphKind::Dot << 56) |
-                       ((uint64_t) (uint32_t) device << 40) |
-                       ((uint64_t) (int) vt << 4);
-        MetalGraph g = metal_graph_cached(this, key, [&]() -> MetalGraph {
-            MPSGraph *graph = [MPSGraph new];
-            MPSGraphTensor *a = [graph placeholderWithShape:@[ @(-1) ] dataType:dt name:nil];
-            MPSGraphTensor *b = [graph placeholderWithShape:@[ @(-1) ] dataType:dt name:nil];
-            MPSGraphTensor *p = [graph multiplicationWithPrimaryTensor:a secondaryTensor:b name:nil];
-            MPSGraphTensor *r = [graph reductionSumWithTensor:p axes:@[ @0 ] name:nil];
-            return MetalGraph{ (__bridge_retained void *) graph,
-                               { (__bridge_retained void *) a, (__bridge_retained void *) b },
-                               { (__bridge_retained void *) r, nullptr } };
-        });
-        metal_run_graph(this, g,
-            { { g.in[0], (void *) ptr_1, @[ @(size) ], dt, (size_t) size * tsize },
-              { g.in[1], (void *) ptr_2, @[ @(size) ], dt, (size_t) size * tsize } },
-            { { g.out[0], out, @[ @1 ], dt, tsize } });
+        ReduceDotParams params;
+        id<MTLBuffer> in1_buf = metal_resolve(ptr_1, &params.in1);
+        id<MTLBuffer> in2_buf = metal_resolve(ptr_2, &params.in2);
+        id<MTLBuffer> out_buf = metal_resolve(dst, &params.out);
+        params.size = size;
+        params.chunk_size = chunk_size;
+
+        metal_dispatch_groups(this, pso, params,
+                              {{ in1_buf, MTLResourceUsageRead },
+                               { in2_buf, MTLResourceUsageRead },
+                               { out_buf, MTLResourceUsageWrite }},
+                              MTLSizeMake(chunk_count, 1, 1),
+                              metal_chunk_tg_width(pso, chunk_size));
+
+        if (chunk_count > 1) {
+            block_reduce(vt, ReduceOp::Add, chunk_count, chunk_count, dst, out);
+            jitc_free(dst);
+        }
     }
 }
 
@@ -1111,61 +1065,37 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
         jitc_log(Debug, "jit_compress(" DRJIT_PTR " -> " DRJIT_PTR ", size=%u)",
                  (uintptr_t) in, (uintptr_t) out, size);
 
-        // One MPSGraph produces the inclusive uint32 prefix sum of the
-        // (cast-to-bool) mask plus the total count; a trivial scatter kernel then
-        // writes the compacted indices: out[prefix[i] - 1] = i where mask[i] != 0.
-        // ``count`` is a Shared allocation so the host can read the total back.
-        void *prefix = jitc_malloc(JitBackend::Metal, (size_t) size * sizeof(uint32_t));
-        void *count  = jitc_malloc(JitBackend::Metal, sizeof(uint32_t), /*shared=*/true);
+        // Step 1: inclusive uint32 prefix sum of the 0/1 mask bytes over a
+        // single block spanning the entire array, using the widened u8 -> u32
+        // kernel variants. A trivial scatter kernel then writes the compacted
+        // indices: out[prefix[i] - 1] = i where mask[i] != 0, and the last
+        // prefix entry is the total count.
+        void *prefix = jitc_malloc(JitBackend::Metal,
+                                   (size_t) size * sizeof(uint32_t));
+        void *count = jitc_malloc(JitBackend::Metal, sizeof(uint32_t),
+                                  /*shared=*/true);
 
-        // From a uint8 mask, produce the inclusive uint32 prefix sum of its
-        // non-zero indicator (out[0]) and the total count (out[1]).
-        uint64_t key = ((uint64_t) MetalGraphKind::Compress << 56) |
-                       ((uint64_t) (uint32_t) device << 40);
-        MetalGraph g = metal_graph_cached(this, key, [&]() -> MetalGraph {
-            MPSGraph *graph = [MPSGraph new];
-            MPSGraphTensor *mask = [graph placeholderWithShape:@[ @(-1) ] dataType:MPSDataTypeUInt8 name:nil];
-            MPSGraphTensor *bits = [graph castTensor:mask toType:MPSDataTypeBool  name:nil];
-            MPSGraphTensor *ind  = [graph castTensor:bits toType:MPSDataTypeInt32 name:nil];
-            MPSGraphTensor *pre  = [graph cumulativeSumWithTensor:ind axis:0 exclusive:NO reverse:NO name:nil];
-            MPSGraphTensor *tot  = [graph reductionSumWithTensor:ind axes:@[ @0 ] name:nil];
-            return MetalGraph{ (__bridge_retained void *) graph,
-                               { (__bridge_retained void *) mask, nullptr },
-                               { (__bridge_retained void *) pre, (__bridge_retained void *) tot } };
-        });
-        metal_run_graph(this, g,
-            { { g.in[0], (void *) in, @[ @(size) ], MPSDataTypeUInt8, (size_t) size } },
-            { { g.out[0], prefix, @[ @(size) ], MPSDataTypeInt32,
-                (size_t) size * sizeof(uint32_t) },
-              { g.out[1], count, @[ @1 ], MPSDataTypeInt32, sizeof(uint32_t) } });
+        metal_block_prefix_reduce(this, VarType::UInt8, VarType::UInt32,
+                                  ReduceOp::Add, size, /* block_size = */ size,
+                                  /* exclusive = */ false,
+                                  /* reverse = */ false, in, prefix);
 
-        id<MTLComputePipelineState> pso =
-            (__bridge id<MTLComputePipelineState>)
-                state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::CompressScatter];
+        // Step 2: scatter the compacted indices
+        CompressScatterParams params;
+        id<MTLBuffer> in_buf = metal_resolve(in, &params.in);
+        id<MTLBuffer> pre_buf = metal_resolve(prefix, &params.prefix);
+        id<MTLBuffer> out_buf = metal_resolve(out, &params.out);
 
-        struct { uint64_t in, prefix, out; uint32_t size; } params;
-        params.in     = (uint64_t)(uintptr_t) in;
-        params.prefix = (uint64_t)(uintptr_t) prefix;
-        params.out    = (uint64_t)(uintptr_t) out;
-        params.size   = size;
+        metal_dispatch_threads(
+            this, metal_pipeline(this, MetalKernel::CompressScatter), params,
+            {{ in_buf, MTLResourceUsageRead },
+             { pre_buf, MTLResourceUsageRead },
+             { out_buf, MTLResourceUsageWrite }},
+            size);
 
-        size_t off = 0;
-        id<MTLBuffer> in_buf  = (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) in, &off);
-        id<MTLBuffer> pre_buf = (__bridge id<MTLBuffer>) jitc_metal_find_buffer(prefix, &off);
-        id<MTLBuffer> out_buf = (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) out, &off);
-
-        id<MTLComputeCommandEncoder> enc =
-            (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
-        [enc setComputePipelineState:pso];
-        [enc setBytes:&params length:sizeof(params) atIndex:0];
-        if (in_buf)  [enc useResource:in_buf  usage:MTLResourceUsageRead];
-        if (pre_buf) [enc useResource:pre_buf usage:MTLResourceUsageRead];
-        if (out_buf) [enc useResource:out_buf usage:MTLResourceUsageWrite];
-
-        uint32_t tg = std::min((uint32_t) pso.maxTotalThreadsPerThreadgroup,
-                               round_pow2(size));
-        [enc dispatchThreads:MTLSizeMake(size, 1, 1)
-            threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
+        // The total count is the last entry of the inclusive prefix sum;
+        // stage it in the shared 'count' allocation for host readback
+        memcpy_async(count, (uint8_t *) prefix + (size_t) (size - 1) * 4, 4);
 
         hist.record(); // capture timing before the synchronizing flush below
         flush(/* wait = */ true);
@@ -1176,6 +1106,73 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
     }
 }
 
+/// mkperm phase 2.5 (optional): scan the prefix-summed histogram for
+/// non-empty buckets, appending (bucket, offset, count) records to
+/// ``offsets`` and counting them in a fresh Shared allocation (returned via
+/// ``*counter_out`` for post-flush readback). ``row_stride`` is the distance
+/// between consecutive bucket base entries; ``offsets`` may live in host
+/// memory, in which case a staging buffer is returned via ``*staging_out``.
+static void metal_mkperm_detect_offsets(MetalThreadState *ts, void *buckets,
+                                        uint32_t bucket_count, uint32_t size,
+                                        uint32_t row_stride, uint32_t *offsets,
+                                        void **counter_out,
+                                        void **staging_out) {
+    void *counter = jitc_malloc(JitBackend::Metal, sizeof(uint32_t),
+                                /*shared=*/true);
+    *(uint32_t *) counter = 0;
+    *counter_out = counter;
+
+    MkpermOffsetsParams params;
+    id<MTLBuffer> buckets_buf = metal_resolve(buckets, &params.buckets);
+    id<MTLBuffer> counter_buf = metal_resolve(counter, &params.counter);
+    id<MTLBuffer> offsets_buf = metal_resolve_or_stage(
+        offsets, (size_t) bucket_count * 4u * sizeof(uint32_t),
+        &params.offsets, staging_out);
+    params.bucket_count = bucket_count;
+    params.perm_size = size;
+    params.row_stride = row_stride;
+
+    metal_dispatch_threads(
+        ts, metal_pipeline(ts, MetalKernel::MkpermDetectOffsets), params,
+        {{ buckets_buf, MTLResourceUsageRead },
+         { offsets_buf, MTLResourceUsageWrite },
+         { counter_buf, MTLResourceUsageRead | MTLResourceUsageWrite }},
+        bucket_count);
+}
+
+/// Shared mkperm epilogue: release the histogram, record kernel history,
+/// flush (waiting only when results must be read back on the host), and copy
+/// out the optional offsets/permutation stagings. Returns the number of
+/// non-empty buckets (0 if ``offsets`` was not requested).
+static uint32_t metal_mkperm_finish(MetalThreadState *ts,
+                                    MetalHistoryScope &hist, void *buckets,
+                                    uint32_t size, uint32_t bucket_count,
+                                    uint32_t *perm, void *perm_staging,
+                                    uint32_t *offsets, void *counter,
+                                    void *offsets_staging) {
+    // 'buckets' frees on completion of the command buffer just encoded
+    // (its last reader), so block only when results go back to the host.
+    jitc_free(buckets);
+    hist.record();
+    ts->flush(/* wait = */ offsets || perm_staging);
+
+    uint32_t unique_count = 0;
+    if (offsets) {
+        unique_count = *(uint32_t *) counter;
+        if (offsets_staging)
+            std::memcpy(offsets, offsets_staging,
+                        (size_t) unique_count * 4u * sizeof(uint32_t));
+        offsets[4 * bucket_count] = unique_count;
+    }
+    if (perm_staging)
+        std::memcpy(perm, perm_staging, (size_t) size * sizeof(uint32_t));
+
+    jitc_free(counter);
+    jitc_free(offsets_staging);
+    jitc_free(perm_staging);
+    return unique_count;
+}
+
 uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
                                         uint32_t block_size,
                                         uint32_t bucket_count, uint32_t *perm,
@@ -1184,18 +1181,14 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
         if (size == 0) return 0;
         if (bucket_count == 0)
             jitc_fail("jit_block_mkperm(): bucket_count cannot be zero!");
-        MetalDevice &md = state.metal_devices[this->device];
         const uint32_t warp = metal_simd_width;
 
         // ---- Stable "tiny" path: per-SIMD-group threadgroup histograms ------
         // As many warps as fit (per-warp histograms cost warp_count *
         // bucket_count * 4 bytes), else fall back to the global-atomic path.
+        MetalDevice &md = state.metal_devices[this->device];
         id<MTLComputePipelineState> p1_tiny =
-            (__bridge id<MTLComputePipelineState>)
-                md.pipelines[(uint32_t) MetalKernel::MkpermPhase1Tiny];
-        id<MTLComputePipelineState> p4_tiny =
-            (__bridge id<MTLComputePipelineState>)
-                md.pipelines[(uint32_t) MetalKernel::MkpermPhase4Tiny];
+            metal_pipeline(this, MetalKernel::MkpermPhase1Tiny);
 
         uint32_t max_warps_pso =
             std::max(1u, (uint32_t) p1_tiny.maxTotalThreadsPerThreadgroup / warp);
@@ -1247,13 +1240,9 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             void *buckets =
                 jitc_malloc(JitBackend::Metal, (size_t) total_cells * 4u);
 
-            struct {
-                uint64_t values, buckets, perm;
-                uint32_t size, size_per_block, bucket_count, block_size,
-                         rows_per_group;
-            } tp;
-            tp.values         = (uint64_t)(uintptr_t) values;
-            tp.buckets        = (uint64_t)(uintptr_t) buckets;
+            MkpermTinyParams tp;
+            id<MTLBuffer> values_buf = metal_resolve(values, &tp.values);
+            id<MTLBuffer> buckets_buf = metal_resolve(buckets, &tp.buckets);
             tp.perm           = 0; // patched before phase 4
             tp.size           = size;
             tp.size_per_block = size_per_block;
@@ -1262,26 +1251,13 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             tp.rows_per_group = rows_per_group;
 
             MTLSize grid = MTLSizeMake(gpu_blocks_per_group, n_blocks, 1);
-            MTLSize tgsz = MTLSizeMake(thread_count, 1, 1);
 
             // Phase 1: per-SIMD-group histograms -> bucket-major global layout
-            {
-                id<MTLComputeCommandEncoder> enc =
-                    (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
-                [enc setComputePipelineState:p1_tiny];
-                [enc setBytes:&tp length:sizeof(tp) atIndex:0];
-                [enc setThreadgroupMemoryLength:shared_bytes atIndex:0];
-
-                size_t off = 0;
-                id<MTLBuffer> vb = (__bridge id<MTLBuffer>)
-                    jitc_metal_find_buffer((void *) values, &off);
-                id<MTLBuffer> bb = (__bridge id<MTLBuffer>)
-                    jitc_metal_find_buffer(buckets, &off);
-                if (vb) [enc useResource:vb usage:MTLResourceUsageRead];
-                if (bb) [enc useResource:bb usage:MTLResourceUsageRead |
-                                                  MTLResourceUsageWrite];
-                [enc dispatchThreadgroups:grid threadsPerThreadgroup:tgsz];
-            }
+            metal_dispatch_groups(
+                this, p1_tiny, tp,
+                {{ values_buf, MTLResourceUsageRead },
+                 { buckets_buf, MTLResourceUsageRead | MTLResourceUsageWrite }},
+                grid, thread_count, shared_bytes);
 
             // Phase 2: per-group exclusive prefix sum (segment length = seg)
             block_prefix_reduce(VarType::UInt32, ReduceOp::Add, total_cells, seg,
@@ -1291,116 +1267,28 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             // Phase 2.5 (optional, single block): detect non-empty buckets.
             // The bucket-major layout puts bucket b's base at buckets[b*rows],
             // so the detector strides by rows_per_group.
-            id<MTLBuffer> counter_buf = nil, offsets_staging = nil;
-            if (offsets) {
-                id<MTLComputePipelineState> detect_pso =
-                    (__bridge id<MTLComputePipelineState>)
-                        md.pipelines[(uint32_t) MetalKernel::MkpermDetectOffsets];
-                id<MTLDevice> dev_mtl = (__bridge id<MTLDevice>) metal_device;
-                counter_buf =
-                    [dev_mtl newBufferWithLength:sizeof(uint32_t)
-                                         options:MTLResourceStorageModeShared];
-                *(uint32_t *) [counter_buf contents] = 0;
-
-                size_t off_off = 0;
-                id<MTLBuffer> ob_buf = (__bridge id<MTLBuffer>)
-                    jitc_metal_find_buffer((void *) offsets, &off_off);
-                uint64_t offsets_gpu_addr;
-                if (ob_buf) {
-                    offsets_gpu_addr = [ob_buf gpuAddress] + off_off;
-                } else {
-                    offsets_staging = [dev_mtl
-                        newBufferWithLength:(size_t) bucket_count * 4u * sizeof(uint32_t)
-                                    options:MTLResourceStorageModeShared];
-                    offsets_gpu_addr = [offsets_staging gpuAddress];
-                }
-
-                struct {
-                    uint64_t buckets, offsets, counter;
-                    uint32_t bucket_count, perm_size, row_stride;
-                } op;
-                op.buckets      = (uint64_t)(uintptr_t) buckets;
-                op.offsets      = offsets_gpu_addr;
-                op.counter      = (uint64_t) [counter_buf gpuAddress];
-                op.bucket_count = bucket_count;
-                op.perm_size    = size;
-                op.row_stride   = rows_per_group;
-
-                id<MTLComputeCommandEncoder> enc =
-                    (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
-                [enc setComputePipelineState:detect_pso];
-                [enc setBytes:&op length:sizeof(op) atIndex:0];
-
-                size_t off = 0;
-                id<MTLBuffer> bb = (__bridge id<MTLBuffer>)
-                    jitc_metal_find_buffer(buckets, &off);
-                if (bb) [enc useResource:bb usage:MTLResourceUsageRead];
-                if (ob_buf) [enc useResource:ob_buf usage:MTLResourceUsageWrite];
-                if (offsets_staging)
-                    [enc useResource:offsets_staging usage:MTLResourceUsageWrite];
-                [enc useResource:counter_buf usage:MTLResourceUsageRead |
-                                                   MTLResourceUsageWrite];
-
-                uint32_t dtg = std::min(
-                    (uint32_t) detect_pso.maxTotalThreadsPerThreadgroup,
-                    round_pow2(bucket_count));
-                [enc dispatchThreads:MTLSizeMake(bucket_count, 1, 1)
-                    threadsPerThreadgroup:MTLSizeMake(dtg, 1, 1)];
-            }
+            void *counter = nullptr, *offsets_staging = nullptr;
+            if (offsets)
+                metal_mkperm_detect_offsets(this, buckets, bucket_count, size,
+                                            rows_per_group, offsets, &counter,
+                                            &offsets_staging);
 
             // Phase 4: scatter the permutation (stage perm if host-only)
-            size_t perm_off = 0;
-            id<MTLBuffer> pb_caller = (__bridge id<MTLBuffer>)
-                jitc_metal_find_buffer((void *) perm, &perm_off);
-            id<MTLBuffer> perm_staging = nil;
-            if (pb_caller) {
-                tp.perm = [pb_caller gpuAddress] + perm_off;
-            } else {
-                id<MTLDevice> dev_mtl = (__bridge id<MTLDevice>) metal_device;
-                perm_staging = [dev_mtl
-                    newBufferWithLength:(size_t) size * sizeof(uint32_t)
-                                options:MTLResourceStorageModeShared];
-                tp.perm = [perm_staging gpuAddress];
-            }
-            {
-                id<MTLComputeCommandEncoder> enc =
-                    (__bridge id<MTLComputeCommandEncoder>) ensure_compute_encoder();
-                [enc setComputePipelineState:p4_tiny];
-                [enc setBytes:&tp length:sizeof(tp) atIndex:0];
-                [enc setThreadgroupMemoryLength:shared_bytes atIndex:0];
+            void *perm_staging = nullptr;
+            id<MTLBuffer> perm_buf = metal_resolve_or_stage(
+                perm, (size_t) size * sizeof(uint32_t), &tp.perm,
+                &perm_staging);
 
-                size_t off = 0;
-                id<MTLBuffer> vb = (__bridge id<MTLBuffer>)
-                    jitc_metal_find_buffer((void *) values, &off);
-                id<MTLBuffer> bb = (__bridge id<MTLBuffer>)
-                    jitc_metal_find_buffer(buckets, &off);
-                if (vb) [enc useResource:vb usage:MTLResourceUsageRead];
-                if (bb) [enc useResource:bb usage:MTLResourceUsageRead];
-                if (pb_caller)
-                    [enc useResource:pb_caller usage:MTLResourceUsageWrite];
-                if (perm_staging)
-                    [enc useResource:perm_staging usage:MTLResourceUsageWrite];
-                [enc dispatchThreadgroups:grid threadsPerThreadgroup:tgsz];
-            }
+            metal_dispatch_groups(
+                this, metal_pipeline(this, MetalKernel::MkpermPhase4Tiny), tp,
+                {{ values_buf, MTLResourceUsageRead },
+                 { buckets_buf, MTLResourceUsageRead },
+                 { perm_buf, MTLResourceUsageWrite }},
+                grid, thread_count, shared_bytes);
 
-            // 'buckets' frees on completion of the command buffer just encoded
-            // (its last reader), so block only when results go back to the host.
-            jitc_free(buckets);
-            hist.record();
-            flush(/* wait = */ offsets || perm_staging);
-
-            uint32_t unique_count = 0;
-            if (offsets) {
-                unique_count = *(uint32_t *) [counter_buf contents];
-                if (offsets_staging)
-                    std::memcpy(offsets, [offsets_staging contents],
-                                (size_t) unique_count * 4u * sizeof(uint32_t));
-                offsets[4 * bucket_count] = unique_count;
-            }
-            if (perm_staging)
-                std::memcpy((void *) perm, [perm_staging contents],
-                            (size_t) size * sizeof(uint32_t));
-            return unique_count;
+            return metal_mkperm_finish(this, hist, buckets, size, bucket_count,
+                                       perm, perm_staging, offsets, counter,
+                                       offsets_staging);
         }
 
         // ---- Fallback: global-atomic path (single block only) ------
@@ -1420,196 +1308,58 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
                  "bucket_count=%u, variant=global)", (uintptr_t) values, size,
                  block_size, bucket_count);
 
-        // Allocate and zero-initialize histogram
+        // Allocate the histogram and zero it via a blit fill
         uint32_t bucket_bytes = bucket_count * sizeof(uint32_t);
         void *buckets = jitc_malloc(JitBackend::Metal, bucket_bytes);
-
-        // Zero the histogram
         {
             size_t off = 0;
             id<MTLBuffer> bb =
                 (__bridge id<MTLBuffer>) jitc_metal_find_buffer(buckets, &off);
             id<MTLBlitCommandEncoder> enc =
-                (__bridge id<MTLBlitCommandEncoder>)
-                    ensure_blit_encoder();
+                (__bridge id<MTLBlitCommandEncoder>) ensure_blit_encoder();
             [enc fillBuffer:bb range:NSMakeRange(off, bucket_bytes) value:0];
         }
 
-        id<MTLComputePipelineState> phase1_pso =
-            (__bridge id<MTLComputePipelineState>)
-                state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::MkpermPhase1];
-        id<MTLComputePipelineState> phase3_pso =
-            (__bridge id<MTLComputePipelineState>)
-                state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::MkpermPhase3];
-
-        struct {
-            uint64_t values, buckets, perm;
-            uint32_t size, bucket_count;
-        } params;
-        params.values = (uint64_t)(uintptr_t) values;
-        params.buckets = (uint64_t)(uintptr_t) buckets;
-        params.perm = (uint64_t)(uintptr_t) perm;
-        params.size = size;
-        params.bucket_count = bucket_count;
+        MkpermParams params;
+        id<MTLBuffer> values_buf = metal_resolve(values, &params.values);
+        id<MTLBuffer> buckets_buf = metal_resolve(buckets, &params.buckets);
+        params.perm = 0; // patched before phase 3
 
         // Phase 1: Build histogram via global atomics
-        {
-            id<MTLComputeCommandEncoder> enc =
-                (__bridge id<MTLComputeCommandEncoder>)
-                    ensure_compute_encoder();
-            [enc setComputePipelineState:phase1_pso];
-            [enc setBytes:&params length:sizeof(params) atIndex:0];
-
-            size_t off = 0;
-            id<MTLBuffer> vb =
-                (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) values, &off);
-            id<MTLBuffer> bb =
-                (__bridge id<MTLBuffer>) jitc_metal_find_buffer(buckets, &off);
-            if (vb) [enc useResource:vb usage:MTLResourceUsageRead];
-            if (bb) [enc useResource:bb usage:MTLResourceUsageRead |
-                                              MTLResourceUsageWrite];
-
-            uint32_t tg = std::min(
-                (uint32_t) phase1_pso.maxTotalThreadsPerThreadgroup,
-                round_pow2(size));
-            [enc dispatchThreads:MTLSizeMake(size, 1, 1)
-                threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
-        }
+        metal_dispatch_threads(
+            this, metal_pipeline(this, MetalKernel::MkpermPhase1), params,
+            {{ values_buf, MTLResourceUsageRead },
+             { buckets_buf, MTLResourceUsageRead | MTLResourceUsageWrite }},
+            size);
 
         // Phase 2: Exclusive prefix sum over histogram (same command buffer).
         block_prefix_reduce(VarType::UInt32, ReduceOp::Add, bucket_count,
                             bucket_count, true, false, buckets, buckets);
 
         // Phase 2.5 (optional): Detect non-empty buckets
-        uint32_t unique_count = 0;
-        id<MTLBuffer> counter_buf = nil, staging_buf = nil;
-        if (offsets) {
-            id<MTLComputePipelineState> detect_pso =
-                (__bridge id<MTLComputePipelineState>)
-                    state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::MkpermDetectOffsets];
-            if (!detect_pso)
-                jitc_raise("jit_block_mkperm(): mkperm_detect_offsets "
-                           "kernel not found.");
+        void *counter = nullptr, *offsets_staging = nullptr;
+        if (offsets)
+            metal_mkperm_detect_offsets(this, buckets, bucket_count, size,
+                                        /* row_stride = */ 1, offsets,
+                                        &counter, &offsets_staging);
 
-            id<MTLDevice> dev_mtl = (__bridge id<MTLDevice>) metal_device;
-            counter_buf =
-                [dev_mtl newBufferWithLength:sizeof(uint32_t)
-                                     options:MTLResourceStorageModeShared];
-            *(uint32_t *) [counter_buf contents] = 0;
+        // Phase 3: Scatter indices using atomics on the prefix-summed
+        // histogram (stage perm if host-only)
+        void *perm_staging = nullptr;
+        id<MTLBuffer> perm_buf = metal_resolve_or_stage(
+            perm, (size_t) size * sizeof(uint32_t), &params.perm,
+            &perm_staging);
 
-            // The kernel writes to ``offsets`` from the GPU. If the caller passed
-            // a HostPinned (= Shared) buffer, hand its GPU address directly.
-            // Otherwise stage through a fresh Shared buffer and copy back.
-            size_t off_off = 0;
-            id<MTLBuffer> ob_buf =
-                (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) offsets, &off_off);
-            size_t offsets_bytes = (size_t) bucket_count * 4u * sizeof(uint32_t);
-            uint64_t offsets_gpu_addr;
-            if (ob_buf) {
-                offsets_gpu_addr = [ob_buf gpuAddress] + off_off;
-            } else {
-                staging_buf = [dev_mtl newBufferWithLength:offsets_bytes
-                                                   options:MTLResourceStorageModeShared];
-                offsets_gpu_addr = [staging_buf gpuAddress];
-            }
+        metal_dispatch_threads(
+            this, metal_pipeline(this, MetalKernel::MkpermPhase3), params,
+            {{ values_buf, MTLResourceUsageRead },
+             { buckets_buf, MTLResourceUsageRead | MTLResourceUsageWrite },
+             { perm_buf, MTLResourceUsageWrite }},
+            size);
 
-            struct {
-                uint64_t buckets, offsets, counter;
-                uint32_t bucket_count, perm_size, row_stride;
-            } oparams;
-            oparams.buckets = (uint64_t)(uintptr_t) buckets;
-            oparams.offsets = offsets_gpu_addr;
-            oparams.counter = (uint64_t) [counter_buf gpuAddress];
-            oparams.bucket_count = bucket_count;
-            oparams.perm_size = size;
-            oparams.row_stride = 1;
-
-            id<MTLComputeCommandEncoder> enc =
-                (__bridge id<MTLComputeCommandEncoder>)
-                    ensure_compute_encoder();
-            [enc setComputePipelineState:detect_pso];
-            [enc setBytes:&oparams length:sizeof(oparams) atIndex:0];
-
-            size_t off = 0;
-            id<MTLBuffer> bb =
-                (__bridge id<MTLBuffer>) jitc_metal_find_buffer(buckets, &off);
-            if (bb) [enc useResource:bb usage:MTLResourceUsageRead];
-            if (ob_buf)
-                [enc useResource:ob_buf usage:MTLResourceUsageWrite];
-            if (staging_buf)
-                [enc useResource:staging_buf usage:MTLResourceUsageWrite];
-            [enc useResource:counter_buf usage:MTLResourceUsageRead |
-                                               MTLResourceUsageWrite];
-
-            uint32_t tg = std::min(
-                (uint32_t) detect_pso.maxTotalThreadsPerThreadgroup,
-                round_pow2(bucket_count));
-            [enc dispatchThreads:MTLSizeMake(bucket_count, 1, 1)
-                threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
-        }
-
-        // Phase 3: Scatter indices using atomics on the prefix-summed histogram.
-        // ``perm`` may be a Host-only pointer; stage through a Shared buffer if so.
-        id<MTLDevice> dev_mtl_perm = (__bridge id<MTLDevice>) metal_device;
-        size_t perm_off = 0;
-        id<MTLBuffer> pb_caller =
-            (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) perm, &perm_off);
-        id<MTLBuffer> perm_staging = nil;
-        uint64_t perm_gpu_addr;
-        if (pb_caller) {
-            perm_gpu_addr = [pb_caller gpuAddress] + perm_off;
-        } else {
-            perm_staging = [dev_mtl_perm
-                newBufferWithLength:(size_t) size * sizeof(uint32_t)
-                            options:MTLResourceStorageModeShared];
-            perm_gpu_addr = [perm_staging gpuAddress];
-        }
-        {
-            // Patch params.perm with the address the kernel will actually write to.
-            params.perm = perm_gpu_addr;
-
-            id<MTLComputeCommandEncoder> enc =
-                (__bridge id<MTLComputeCommandEncoder>)
-                    ensure_compute_encoder();
-            [enc setComputePipelineState:phase3_pso];
-            [enc setBytes:&params length:sizeof(params) atIndex:0];
-
-            size_t off = 0;
-            id<MTLBuffer> vb =
-                (__bridge id<MTLBuffer>) jitc_metal_find_buffer((void *) values, &off);
-            id<MTLBuffer> bb =
-                (__bridge id<MTLBuffer>) jitc_metal_find_buffer(buckets, &off);
-            if (vb) [enc useResource:vb usage:MTLResourceUsageRead];
-            if (bb) [enc useResource:bb usage:MTLResourceUsageRead |
-                                              MTLResourceUsageWrite];
-            if (pb_caller)
-                [enc useResource:pb_caller usage:MTLResourceUsageWrite];
-            if (perm_staging)
-                [enc useResource:perm_staging usage:MTLResourceUsageWrite];
-
-            uint32_t tg = std::min(
-                (uint32_t) phase3_pso.maxTotalThreadsPerThreadgroup,
-                round_pow2(size));
-            [enc dispatchThreads:MTLSizeMake(size, 1, 1)
-                threadsPerThreadgroup:MTLSizeMake(tg, 1, 1)];
-        }
-
-        // Single flush: block only when results are read back to the host.
-        jitc_free(buckets);
-        hist.record();
-        flush(/* wait = */ offsets || perm_staging);
-
-        if (offsets) {
-            unique_count = *(uint32_t *) [counter_buf contents];
-            if (staging_buf)
-                std::memcpy(offsets, [staging_buf contents],
-                            (size_t) unique_count * 4u * sizeof(uint32_t));
-            offsets[4 * bucket_count] = unique_count;
-        }
-        if (perm_staging)
-            std::memcpy((void *) perm, [perm_staging contents],
-                        (size_t) size * sizeof(uint32_t));
-        return unique_count;
+        return metal_mkperm_finish(this, hist, buckets, size, bucket_count,
+                                   perm, perm_staging, offsets, counter,
+                                   offsets_staging);
     }
 }
 
@@ -1657,8 +1407,7 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
                             options:MTLResourceStorageModeShared];
 
         id<MTLComputePipelineState> pso =
-            (__bridge id<MTLComputePipelineState>)
-                state.metal_devices[this->device].pipelines[(uint32_t) MetalKernel::Aggregate];
+            metal_pipeline(this, MetalKernel::Aggregate);
 
         id<MTLComputeCommandEncoder> enc =
             (__bridge id<MTLComputeCommandEncoder>)
@@ -1666,7 +1415,6 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
         [enc setComputePipelineState:pso];
         [enc setBuffer:dst_buf offset:dst_off atIndex:0];
         [enc setBuffer:entries_buf offset:0 atIndex:1];
-        [enc setBytes:&size length:sizeof(uint32_t) atIndex:2];
         [enc useResource:dst_buf usage:MTLResourceUsageWrite];
 
         // Mark each src buffer (negative-size entries: src is a device pointer)
@@ -1686,8 +1434,6 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
         // One thread per entry.
         uint32_t threads_per_group = std::min<uint32_t>(
             (uint32_t) pso.maxTotalThreadsPerThreadgroup, size);
-        if (threads_per_group == 0)
-            threads_per_group = 1;
         [enc dispatchThreads:MTLSizeMake(size, 1, 1)
             threadsPerThreadgroup:MTLSizeMake(threads_per_group, 1, 1)];
     }

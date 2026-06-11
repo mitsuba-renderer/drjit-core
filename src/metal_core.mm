@@ -19,6 +19,7 @@
 #include "log.h"
 #include "io.h"
 #include "var.h"
+#include "util.h"
 #include "trace.h"
 #include "record_ts.h"
 #include "drjit-core/metal.h"
@@ -178,10 +179,6 @@ void *jitc_metal_unregister_buffer(void *ptr) {
 /// Kernel function names, indexed by MetalKernel. The order must match the
 /// MetalKernel enum in internal.h.
 static const char *metal_kernel_names[(uint32_t) MetalKernel::Count] = {
-    "reduce_all_init",
-    "reduce_any_init",
-    "reduce_all",
-    "reduce_any",
     "compress_scatter",
     "mkperm_phase_1",
     "mkperm_phase_3",
@@ -220,6 +217,62 @@ static void *jitc_metal_create_pipeline(id<MTLDevice> dev, id<MTLLibrary> lib,
     return (__bridge_retained void *) pso;
 }
 
+/// Map a Dr.Jit type to the suffix used by the block-reduction kernel names
+static const char *metal_reduce_type_name(VarType vt) {
+    switch (vt) {
+        case VarType::Bool:
+        case VarType::UInt8:   return "u8";
+        case VarType::Float16: return "f16";
+        case VarType::Float32: return "f32";
+        case VarType::UInt32:  return "u32";
+        case VarType::Int32:   return "i32";
+        case VarType::UInt64:  return "u64";
+        case VarType::Int64:   return "i64";
+        default:               return nullptr;
+    }
+}
+
+/// Return the block (prefix) reduction pipeline for the requested kernel
+/// family, type, and reduction, creating it on first use. There are too many
+/// (op, type) combinations to create them all eagerly in jitc_metal_init()
+/// (each pipeline costs a few milliseconds). Returns nullptr if the
+/// combination is unsupported.
+void *jitc_metal_block_reduce_pipeline(int device, MetalReduceKind kind,
+                                       ReduceOp op, VarType vt) {
+    MetalDevice &md = state.metal_devices[device];
+    void *&slot = md.reduce_pipelines[(int) kind][(int) op][(int) vt];
+    if (slot)
+        return slot;
+
+    const char *tname = metal_reduce_type_name(vt);
+    if (!tname)
+        return nullptr;
+
+    const char *prefix = nullptr;
+    switch (kind) {
+        case MetalReduceKind::Small:     prefix = "block_reduce_small"; break;
+        case MetalReduceKind::Chunk:     prefix = "block_reduce"; break;
+        case MetalReduceKind::WideChunk: prefix = "block_reduce_wide"; break;
+        case MetalReduceKind::Scan:      prefix = "block_prefix_reduce"; break;
+        case MetalReduceKind::Dot:       prefix = "reduce_dot"; break;
+        default: return nullptr;
+    }
+
+    char name[64];
+    if (kind == MetalReduceKind::Dot) // the reduction op is implicit here
+        snprintf(name, sizeof(name), "%s_%s", prefix, tname);
+    else
+        snprintf(name, sizeof(name), "%s_%s_%s",
+                 prefix, red_name[(int) op], tname);
+
+    @autoreleasepool {
+        slot = jitc_metal_create_pipeline(
+            (__bridge id<MTLDevice>) md.device,
+            (__bridge id<MTLLibrary>) md.utility_lib, name);
+    }
+    return slot;
+}
+
 // ============================================================================
 //  Backend init / shutdown
 // ============================================================================
@@ -243,7 +296,7 @@ bool jitc_metal_init() {
                 continue;
             }
 
-            MetalDevice md;
+            MetalDevice md {};
             md.device = (__bridge_retained void *) dev;
             md.queue  = (__bridge_retained void *) [dev newCommandQueue];
             md.max_threads_per_threadgroup =
@@ -311,6 +364,15 @@ void jitc_metal_shutdown() {
                 if (pso)
                     (void) (__bridge_transfer id<MTLComputePipelineState>) pso;
                 pso = nullptr;
+            }
+            for (auto &by_op : d.reduce_pipelines) {
+                for (auto &by_type : by_op) {
+                    for (void *&pso : by_type) {
+                        if (pso)
+                            (void) (__bridge_transfer id<MTLComputePipelineState>) pso;
+                        pso = nullptr;
+                    }
+                }
             }
             if (d.queue)
                 (void) (__bridge_transfer id<MTLCommandQueue>) d.queue;
@@ -499,14 +561,14 @@ void jitc_metal_kernel_free(Kernel &kernel) {
 }
 
 /// Resolve a Metal kernel-history entry's execution_time
-float jitc_metal_finalize_kernel_history_entry(void *start_ptr, void *end_ptr) {
+float jitc_metal_finalize_kernel_history_entry(void *task_ptr) {
     @autoreleasepool {
-        id<MTLCommandBuffer> cb_end   = (__bridge_transfer id<MTLCommandBuffer>) end_ptr;
-        id<MTLCommandBuffer> cb_start = (__bridge_transfer id<MTLCommandBuffer>) start_ptr;
-        if (!cb_start)
-            cb_start = cb_end;
-        [cb_end waitUntilCompleted];
-        return (float) ((cb_end.GPUEndTime - cb_start.GPUStartTime) * 1000);
+        if (!task_ptr)
+            return 0.f;
+        id<MTLCommandBuffer> cb =
+            (__bridge_transfer id<MTLCommandBuffer>) task_ptr;
+        [cb waitUntilCompleted];
+        return (float) ((cb.GPUEndTime - cb.GPUStartTime) * 1000);
     }
 }
 

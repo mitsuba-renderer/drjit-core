@@ -329,8 +329,7 @@ if (DRJIT_ENABLE_METAL)
   target_link_libraries(drjit-core PRIVATE
     "-framework Foundation"
     "-framework Metal"
-    "-framework MetalPerformanceShaders"
-    "-framework MetalPerformanceShadersGraph")
+    "-framework MetalPerformanceShaders")
 
   # The native Objective-C++ Metal backend files use ARC.
   set_source_files_properties(

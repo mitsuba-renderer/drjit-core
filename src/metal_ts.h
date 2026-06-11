@@ -18,15 +18,6 @@
 #include "var.h"
 #include "metal.h"
 
-/// A cached MPSGraph together with the placeholder/result tensors needed to run
-/// it. Stored as opaque pointers so this header stays free of Metal types; the
-/// underlying Objective-C objects are retained (released in ~MetalThreadState).
-struct MetalGraph {
-    void *graph  = nullptr;                // MPSGraph*
-    void *in[2]  = { nullptr, nullptr };   // MPSGraphTensor* placeholders
-    void *out[2] = { nullptr, nullptr };   // MPSGraphTensor* results
-};
-
 struct MetalThreadState : ThreadState {
     MetalThreadState() = default;
     ~MetalThreadState();
@@ -64,10 +55,6 @@ struct MetalThreadState : ThreadState {
     /// Reduce elements within blocks
     void block_reduce(VarType vt, ReduceOp op, uint32_t size,
                       uint32_t block_size, const void *in, void *out) override;
-
-    /// Reduce a boolean array to a single value (powers any()/all())
-    void block_reduce_bool(uint8_t *values, uint32_t size, uint8_t *out,
-                           ReduceOp op) override;
 
     /// Narrow a float32 buffer to float16 (For Metal float16 scatter-reductions)
     void narrow_f32_to_f16(void *dst, const void *src, uint32_t size) override;
@@ -156,18 +143,11 @@ public:
     struct CallResource { void *ptr; ResourceKind kind; bool write; };
     std::vector<CallResource> metal_call_resources;
 
-    /// Cache of compiled MPSGraphs
-    tsl::robin_map<uint64_t, MetalGraph> metal_graph_cache;
-
     /// Re-entrancy depth for kernel-history recording
     uint32_t metal_history_depth = 0;
 
     /// The most recently committed command buffer
     void *metal_last_cb = nullptr;
-
-    /// When an MPSGraph op splits its work across command buffers, the first
-    /// (committed) buffer is stashed here so kernel-history timing can span it.
-    void *metal_history_split_cb = nullptr;
 };
 
 #endif // defined(DRJIT_ENABLE_METAL)
