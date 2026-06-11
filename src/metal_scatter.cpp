@@ -81,13 +81,12 @@ static void jitc_metal_emit_warp_match(const char *t, const Variable *ptr,
 void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
                                   const Variable *ptr, const Variable *index,
                                   ReduceOp op, bool aggregate) {
-    fmt_intrinsic("#include <metal_atomic>");
     const Variable *v0  = jitc_var(values[0]);
     VarType vt          = (VarType) v0->type;
     const char *op_name = metal_reduce_op_name[(int) op];
     const char *t       = type_name_metal[(int) vt];
 
-    // Pre-aggregation is only possible for the type/op combinations
+    // Pre-aggregation is only possible for some type/op combinations
     aggregate = aggregate && jitc_metal_can_reduce_local(vt, op);
 
     // Native atomics exist for 32-bit ints (add/min/max/and/or) and float32
@@ -223,8 +222,6 @@ void jitc_metal_render_scatter_cas(Variable *v) {
     Variable *value   = jitc_var(v->dep[2]);
     Variable *index   = jitc_var(v->dep[3]);
 
-    fmt_intrinsic("#include <metal_atomic>");
-
     ScatterCASDData *cas_data = (ScatterCASDData *) v->data;
     Variable *mask = jitc_var(cas_data->mask);
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
@@ -264,8 +261,6 @@ void jitc_metal_render_scatter_exch(Variable *v) {
     Variable *mask  = jitc_var(v->dep[3]);
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
 
-    fmt_intrinsic("#include <metal_atomic>");
-
     fmt("$t $v = ($t) 0;\n", value, v, value);
     if (!is_unmasked)
         fmt("if ($v)\n", mask);
@@ -280,8 +275,6 @@ void jitc_metal_render_scatter_kahan(Variable *v) {
     Variable *ptr_c  = jitc_var(v->dep[1]);
     Variable *index  = jitc_var(v->dep[2]);
     Variable *value  = jitc_var(v->dep[3]);
-
-    fmt_intrinsic("#include <metal_atomic>");
 
     fmt("if ($v != 0.f) {\n"
               "    #pragma clang fp contract(off)\n"
@@ -312,8 +305,6 @@ void jitc_metal_render_scatter_inc(Variable *v) {
     Variable *mask  = jitc_var(v->dep[2]);
 
     bool is_unmasked = mask->is_literal() && mask->literal == 1;
-
-    fmt_intrinsic("#include <metal_atomic>");
 
     fmt("uint $v = 0;\n", v);
 

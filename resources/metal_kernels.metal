@@ -8,8 +8,6 @@
 */
 
 #include <metal_stdlib>
-#include <metal_simdgroup>
-#include <metal_atomic>
 using namespace metal;
 
 // ============================================================================

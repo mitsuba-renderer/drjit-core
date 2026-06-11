@@ -103,15 +103,13 @@ static void jitc_metal_render_resource_handle(const Variable *v,
         case ResourceKind::IFT: {
             MetalScene *scene = (MetalScene *) (uintptr_t) v->literal;
             metal_register_kernel_scene(scene);
-            fmt_intrinsic("#include <metal_raytracing>\n"
-                          "using namespace raytracing;");
             if (kind == ResourceKind::Accel) {
-                tname = "metal::raytracing::instance_acceleration_structure";
+                tname = "raytracing::instance_acceleration_structure";
             } else {
                 bool curves = scene && (scene->geometry_types_mask & 0x4u) != 0;
                 tname = curves
-                    ? "metal::raytracing::intersection_function_table<metal::raytracing::triangle_data, metal::raytracing::curve_data, metal::raytracing::instancing>"
-                    : "metal::raytracing::intersection_function_table<metal::raytracing::triangle_data, metal::raytracing::instancing>";
+                    ? "raytracing::intersection_function_table<raytracing::triangle_data, raytracing::curve_data, raytracing::instancing>"
+                    : "raytracing::intersection_function_table<raytracing::triangle_data, raytracing::instancing>";
             }
             break;
         }
@@ -913,10 +911,6 @@ static void jitc_metal_render(Variable *v) {
 
         // -- Ray tracing (Metal inline intersection) --
         case VarKind::TraceRay: {
-            fmt_intrinsic(
-                "#include <metal_raytracing>\n"
-                "using namespace raytracing;");
-
             TraceData *td = (TraceData *) v->data;
             Variable *valid = jitc_var(v->dep[0]);
             bool is_unmasked = valid->is_literal() && valid->literal == 1;
@@ -958,22 +952,22 @@ static void jitc_metal_render(Variable *v) {
             put("{\n");
             if (extended) {
                 if (has_curves_local) {
-                    put("metal::raytracing::intersector<metal::raytracing::triangle_data, "
-                        "metal::raytracing::curve_data, metal::raytracing::instancing> _inter;\n");
+                    put("raytracing::intersector<raytracing::triangle_data, "
+                        "raytracing::curve_data, raytracing::instancing> _inter;\n");
                 } else {
-                    put("metal::raytracing::intersector<metal::raytracing::triangle_data, "
-                        "metal::raytracing::instancing> _inter;\n");
+                    put("raytracing::intersector<raytracing::triangle_data, "
+                        "raytracing::instancing> _inter;\n");
                 }
-                put("_inter.force_opacity(metal::raytracing::forced_opacity::opaque);\n"
+                put("_inter.force_opacity(raytracing::forced_opacity::opaque);\n"
                     "_inter.accept_any_intersection(false);\n");
             } else {
-                put("metal::raytracing::intersector<metal::raytracing::triangle_data, "
-                    "metal::raytracing::instancing> _inter;\n"
-                    "_inter.assume_geometry_type(metal::raytracing::geometry_type::triangle);\n"
-                    "_inter.force_opacity(metal::raytracing::forced_opacity::opaque);\n"
+                put("raytracing::intersector<raytracing::triangle_data, "
+                    "raytracing::instancing> _inter;\n"
+                    "_inter.assume_geometry_type(raytracing::geometry_type::triangle);\n"
+                    "_inter.force_opacity(raytracing::forced_opacity::opaque);\n"
                     "_inter.accept_any_intersection(false);\n");
             }
-            fmt("metal::raytracing::ray _r;\n"
+            fmt("raytracing::ray _r;\n"
                 "_r.origin = float3($v, $v, $v);\n"
                 "_r.direction = float3($v, $v, $v);\n"
                 "_r.min_distance = $v;\n"
@@ -1004,14 +998,14 @@ static void jitc_metal_render(Variable *v) {
                 // inside a curve report a spurious hit at t=0 with
                 // garbage curve_parameter).
                 fmt("    auto _ht = _hit.type;\n"
-                    "    bool _zero_curve_hit = (_ht == metal::raytracing::intersection_type::curve) && (_hit.distance <= 0.0f);\n"
-                    "    $v_out_0 = (_ht != metal::raytracing::intersection_type::none) && !_zero_curve_hit;\n"
+                    "    bool _zero_curve_hit = (_ht == raytracing::intersection_type::curve) && (_hit.distance <= 0.0f);\n"
+                    "    $v_out_0 = (_ht != raytracing::intersection_type::none) && !_zero_curve_hit;\n"
                     "    $v_out_1 = _hit.distance;\n"
-                    "    $v_out_2 = (_ht == metal::raytracing::intersection_type::triangle)\n"
+                    "    $v_out_2 = (_ht == raytracing::intersection_type::triangle)\n"
                     "               ? _hit.triangle_barycentric_coord.x\n"
-                    "               : ((_ht == metal::raytracing::intersection_type::curve)\n"
+                    "               : ((_ht == raytracing::intersection_type::curve)\n"
                     "                  ? _hit.curve_parameter : 0.0f);\n"
-                    "    $v_out_3 = (_ht == metal::raytracing::intersection_type::triangle)\n"
+                    "    $v_out_3 = (_ht == raytracing::intersection_type::triangle)\n"
                     "               ? _hit.triangle_barycentric_coord.y : 0.0f;\n"
                     "    $v_out_4 = _hit.instance_id;\n"
                     "    $v_out_5 = _hit.primitive_id;\n"
@@ -1023,7 +1017,7 @@ static void jitc_metal_render(Variable *v) {
                 // triangle+bbox extended path can use the same extraction:
                 // triangle_barycentric_coord is correct for triangle hits and
                 // unused (overwritten) for bbox hits.
-                fmt("    $v_out_0 = (_hit.type != metal::raytracing::intersection_type::none);\n"
+                fmt("    $v_out_0 = (_hit.type != raytracing::intersection_type::none);\n"
                           "    $v_out_1 = _hit.distance;\n"
                           "    $v_out_2 = _hit.triangle_barycentric_coord.x;\n"
                           "    $v_out_3 = _hit.triangle_barycentric_coord.y;\n"
