@@ -156,6 +156,13 @@ static bool dry_run = false;
 /// entries. This function will be set by ``jitc_freeze_replay()``.
 static bool record_kernel_history = false;
 
+/// Cheap check whether messages at the given level would actually be shown.
+/// Used to skip log message construction in hot per-variable replay loops.
+static bool log_enabled(LogLevel level) {
+    return level <= state.log_level_stderr ||
+           (level <= state.log_level_callback && state.log_callback);
+}
+
 /**
  * Represents a variable during replay.
  * It is created from the RecordVariable at the top of the replay function.
@@ -248,14 +255,16 @@ struct ReplayVariable {
     void alloc(JitBackend backend, size_t dsize) {
         if (!data) {
             alloc_size = dsize;
-            jitc_log(LogLevel::Debug, "    allocating output of size %zu.",
-                     dsize);
+            if (unlikely(log_enabled(LogLevel::Debug)))
+                jitc_log(LogLevel::Debug,
+                         "    allocating output of size %zu.", dsize);
             if (!dry_run)
                 data = jitc_malloc(backend, dsize);
         } else if (alloc_size < dsize) {
             alloc_size = dsize;
-            jitc_log(LogLevel::Debug, "    re-allocating output of size %zu.",
-                     dsize);
+            if (unlikely(log_enabled(LogLevel::Debug)))
+                jitc_log(LogLevel::Debug,
+                         "    re-allocating output of size %zu.", dsize);
             if (!dry_run) {
                 jitc_free(data);
                 data = jitc_malloc(backend, dsize);
@@ -331,12 +340,14 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
     }
 
     jitc_log(LogLevel::Debug, "replay(): inputs");
+    bool log_debug = unlikely(log_enabled(LogLevel::Debug));
     // Populate with input variables
     for (uint32_t i = 0; i < inputs.size(); ++i) {
         Variable *input_variable = jitc_var(replay_inputs[i]);
         replay_variables[inputs[i]].init_from_input(input_variable);
-        jitc_log(LogLevel::Debug, "    input %u: r%u maps to slot s%u", i,
-                 replay_inputs[i], inputs[i]);
+        if (log_debug)
+            jitc_log(LogLevel::Debug, "    input %u: r%u maps to slot s%u", i,
+                     replay_inputs[i], inputs[i]);
     }
 
     // The main loop that executes each operation
@@ -451,18 +462,20 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
 
         if (rv.init == RecordedVarInit::Input) {
             // Use input variable
-            jitc_log(LogLevel::Debug,
-                     "    output %u: from slot s%u = input[%u]", i, slot,
-                     rv.index);
+            if (log_debug)
+                jitc_log(LogLevel::Debug,
+                         "    output %u: from slot s%u = input[%u]", i, slot,
+                         rv.index);
             jitc_assert(rv.data, "replay(): freed an input variable "
                                  "that is passed through!");
             uint32_t var_index = replay_inputs[rv.index];
             jitc_var_inc_ref(var_index);
             replay_outputs[i] = var_index;
         } else if (rv.init == RecordedVarInit::Captured) {
-            jitc_log(LogLevel::Debug,
-                     "    output %u: from slot s%u = captured r%u", i, slot,
-                     rv.index);
+            if (log_debug)
+                jitc_log(LogLevel::Debug,
+                         "    output %u: from slot s%u = captured r%u", i,
+                         slot, rv.index);
             jitc_assert(rv.data, "replay(): freed an input variable "
                                  "that is passed through!");
 
@@ -470,7 +483,9 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
 
             replay_outputs[i] = rv.index;
         } else {
-            jitc_log(LogLevel::Debug, "    output %u: from slot s%u", i, slot);
+            if (log_debug)
+                jitc_log(LogLevel::Debug, "    output %u: from slot s%u", i,
+                         slot);
             if (!rv.data)
                 jitc_fail("replay(): freed slot %u used for output.", slot);
             replay_outputs[i] = jitc_var_mem_map(backend, info.vtype, rv.data,
@@ -922,6 +937,7 @@ int Recording::replay_launch(Operation &op) {
     // launch size.
 
     jitc_log(LogLevel::Debug, "replay(): inferring input size");
+    bool log_debug = unlikely(log_enabled(LogLevel::Debug));
 
     // Size of direct input variables
     uint32_t input_size = 0;
@@ -935,7 +951,8 @@ int Recording::replay_launch(Operation &op) {
 
         if (info.type == ParamType::Input) {
             uint32_t size = rv.size(info.vtype);
-            jitc_log(LogLevel::Debug, "    s%u size=%u", info.slot, size);
+            if (log_debug)
+                jitc_log(LogLevel::Debug, "    s%u size=%u", info.slot, size);
 
             if (rv.data == nullptr && !dry_run)
                 jitc_raise("replay(): Kernel input variable s%u not allocated!",
@@ -994,12 +1011,15 @@ int Recording::replay_launch(Operation &op) {
 
         if (info.type == ParamType::Input) {
             uint32_t size = rv.size(info.vtype);
-            jitc_log(LogLevel::Debug, " -> param s%u is_pointer=%u size=%u",
-                     info.slot, info.pointer_access, size);
+            if (log_debug)
+                jitc_log(LogLevel::Debug,
+                         " -> param s%u is_pointer=%u size=%u", info.slot,
+                         info.pointer_access, size);
             input_count++;
         } else {
-            jitc_log(LogLevel::Debug, " <- param s%u is_pointer=%u", info.slot,
-                     info.pointer_access);
+            if (log_debug)
+                jitc_log(LogLevel::Debug, " <- param s%u is_pointer=%u",
+                         info.slot, info.pointer_access);
         }
 
         if (info.type == ParamType::Output) {
