@@ -814,7 +814,7 @@ static void jitc_metal_render(Variable *v) {
                 if (in == out || !in->reg_index || !out->reg_index ||
                     in->is_array() || out->scratch != 1)
                     continue;
-                fmt("$t $v_tmp = $v;\n", in, in, out);
+                fmt("$t $v_tmp = $v;\n", out, out, out);
                 out->scratch = 2;
             }
 
@@ -825,7 +825,7 @@ static void jitc_metal_render(Variable *v) {
                     in->is_array())
                     continue;
                 if (out->scratch == 2)
-                    fmt("$v = $v_tmp;\n", in, in);
+                    fmt("$v = $v_tmp;\n", in, out);
                 else
                     fmt("$v = $v;\n", in, out);
             }
