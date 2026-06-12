@@ -441,7 +441,7 @@ void jitc_cuda_render_loop_end(Variable *a0) {
 
         fmt("    .reg.$b $v_tmp;\n"
             "    mov.$b $v_tmp, $v;\n",
-            in, in, in, in, out);
+            out, out, out, out, out);
 
         // Mark that we have created a temporary
         out->scratch = 2;
@@ -455,7 +455,7 @@ void jitc_cuda_render_loop_end(Variable *a0) {
             continue;
 
         if (out->scratch == 2)
-            fmt("    mov.$b $v, $v_tmp;\n", in, in, in);
+            fmt("    mov.$b $v, $v_tmp;\n", in, in, out);
         else
             fmt("    mov.$b $v, $v;\n", in, in, out);
     }
