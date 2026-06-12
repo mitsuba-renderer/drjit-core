@@ -2425,7 +2425,7 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
                                        VarType::Void, var_info.size, symbolic,
                                        result, jitc_var(result)));
 
-    jitc_var(se)->dep[3] = write_ptr.release();
+    jitc_var(se)->dep[1] = write_ptr.release();
     jitc_var_mark_side_effect(se.release());
 
     return result;
@@ -2533,7 +2533,7 @@ uint32_t jitc_var_scatter_exch(uint32_t *target_p, uint32_t value,
     uint32_t se = jitc_var_new_node_1(var_info.backend, VarKind::Nop,
                                       VarType::Void, var_info.size, symbolic,
                                       scatter_xchg_op, jitc_var(scatter_xchg_op));
-    jitc_var(se)->dep[3] = write_ptr;
+    jitc_var(se)->dep[1] = write_ptr;
     jitc_var_mark_side_effect(se);
 
     return scatter_xchg_op;
@@ -2679,7 +2679,7 @@ void jitc_var_scatter_cas(uint32_t *target_p, uint32_t compare, uint32_t value,
     uint32_t se = jitc_var_new_node_1(var_info.backend, VarKind::Nop,
                                       VarType::Void, var_info.size, symbolic,
                                       scatter_cas_op, jitc_var(scatter_cas_op));
-    jitc_var(se)->dep[3] = write_ptr;
+    jitc_var(se)->dep[1] = write_ptr;
     jitc_var_mark_side_effect(se);
 }
 
