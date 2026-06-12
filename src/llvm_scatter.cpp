@@ -149,7 +149,9 @@ static const char *jitc_llvm_append_reduce_op_direct(VarType vt, ReduceOp op, co
                   "assumes a vector length of <= 32 entries");
 
     uint32_t ptr_align = (uint32_t) sizeof(void *),
-             ptr_align_vec = std::min(ptr_align * jitc_llvm_vector_width, jitc_llvm_max_align);
+             ptr_align_vec = std::min(ptr_align * jitc_llvm_vector_width, jitc_llvm_max_align),
+             val_align = type_size[(int) vt],
+             val_align_vec = val_align * jitc_llvm_vector_width;
 
     const char *op_name = reduce_op_name[(int) op],
                *atomicrmw_name = jitc_llvm_atomicrmw_name(vt, op);
@@ -158,10 +160,10 @@ static const char *jitc_llvm_append_reduce_op_direct(VarType vt, ReduceOp op, co
         "define internal fastcc void @reduce_$s_$h_atomic(<$w x ptr> %ptr, $T %val, i$w %active) local_unnamed_addr #0 {\n"
         "prelude:\n"
         "    %ptr_a = alloca [$w x ptr], align $u\n"
-        "    %val_a = alloca [$w x $t], align $A\n"
+        "    %val_a = alloca [$w x $t], align $u\n"
         "    %valid = zext i$w %active to i32\n"
         "    store <$w x ptr> %ptr, ptr %ptr_a, align $u\n"
-        "    store $T %val, ptr %val_a, align $A\n"
+        "    store $T %val, ptr %val_a, align $u\n"
         "    br label %loop_prefix\n\n"
         "loop_prefix:\n"
         "    %index = phi i32 [ 0, %prelude ], [ %index_next, %loop_suffix ]\n"
@@ -173,7 +175,7 @@ static const char *jitc_llvm_append_reduce_op_direct(VarType vt, ReduceOp op, co
         "    %ptr_p = getelementptr inbounds [$w x ptr], ptr %ptr_a, i32 0, i32 %index\n"
         "    %val_p = getelementptr inbounds [$w x $t], ptr %val_a, i32 0, i32 %index\n"
         "    %ptr_i = load ptr, ptr %ptr_p, align $u\n"
-        "    %val_i = load $t, ptr %val_p, align $a\n"
+        "    %val_i = load $t, ptr %val_p, align $u\n"
         "    atomicrmw $s ptr %ptr_i, $t %val_i monotonic\n"
         "    br label %loop_suffix\n\n"
         "loop_suffix:\n"
@@ -186,10 +188,10 @@ static const char *jitc_llvm_append_reduce_op_direct(VarType vt, ReduceOp op, co
 
         // definition
         op_name, v, v, ptr_align_vec,
-        v, v, ptr_align_vec,
-        v, v,
+        v, val_align_vec, ptr_align_vec,
+        v, val_align_vec,
         v, ptr_align,
-        v, v,
+        v, val_align,
         atomicrmw_name, v
     );
 
@@ -291,6 +293,7 @@ const char *jitc_llvm_append_reduce_op_local(VarType vt, ReduceOp op, const Vari
 static const char *jitc_llvm_append_reduce_op_noconflict(VarType vt, ReduceOp op, const Variable *v) {
     uint32_t ptr_align = (uint32_t) sizeof(void *),
              ptr_align_vec = std::min(ptr_align * jitc_llvm_vector_width, jitc_llvm_max_align),
+             val_align = type_size[(int) vt],
              shiftamt = log2i_ceil(type_size[(int) vt]);
 
     const char *op_name = reduce_op_name[(int) op],
@@ -413,9 +416,9 @@ static const char *jitc_llvm_append_reduce_op_noconflict(VarType vt, ReduceOp op
         "    %ptr_diff = icmp ne <$w x i32> %ptrlo_8, %ptrlo_3\n"
         "    %red_in = select <$w x i1> %ptr_diff, $T %identity_1, $T %value\n"
         "    %red_out = call $s$t @llvm.vector.reduce.$s.v$w$h($s$T %red_in)\n"
-        "    %before = load $t, ptr %ptr_i, align $a\n"
+        "    %before = load $t, ptr %ptr_i, align $u\n"
         "    %after = $s\n"
-        "    store $t %after, ptr %ptr_i, align $a\n"
+        "    store $t %after, ptr %ptr_i, align $u\n"
         "    %active_next = and <$w x i1> %active, %ptr_diff\n"
         "    br label %loop_suffix\n\n"
         "loop_suffix:\n"
@@ -439,9 +442,9 @@ static const char *jitc_llvm_append_reduce_op_noconflict(VarType vt, ReduceOp op
         v, v,
         vector_reduce_modifier, v, vector_reduce_name, v, vector_reduce_identity, v,
 
-        v, v,
+        v, val_align,
         scalar_op,
-        v, v
+        v, val_align
     );
 
     return "noconflict"; // variant name
