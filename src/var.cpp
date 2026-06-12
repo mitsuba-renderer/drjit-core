@@ -955,7 +955,7 @@ uint32_t jitc_var_u32(JitBackend backend, uint32_t value) {
 }
 
 uint32_t jitc_var_pointer(JitBackend backend, const void *value,
-                          uint32_t dep, int write) {
+                          uint32_t dep, int write, bool written) {
     Variable v;
     v.kind = (uint32_t) VarKind::Literal;
     v.type = (uint32_t) VarType::Pointer;
@@ -973,6 +973,7 @@ uint32_t jitc_var_pointer(JitBackend backend, const void *value,
 
     // Write pointers create a special type of reference to indicate pending writes
     v.write_ptr = write != 0;
+    v.written = write != 0 || written;
     if (write)
         jitc_var_inc_ref_se(dep);
     else

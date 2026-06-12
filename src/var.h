@@ -69,9 +69,11 @@ extern uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind,
 /// Create a variable representing uninitialized memory
 extern uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size);
 
-/// Create a variable that refers to a memory region
+/// Create a variable that refers to a memory region (see the documentation of
+/// the 'write_ptr' and 'written' flags in the Variable class)
 extern uint32_t jitc_var_pointer(JitBackend backend, const void *value,
-                                 uint32_t dep, int write);
+                                 uint32_t dep, int write,
+                                 bool written = false);
 
 enum class ResourceKind : uint8_t; // defined in internal.h
 

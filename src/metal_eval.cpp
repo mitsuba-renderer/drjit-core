@@ -1401,7 +1401,7 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
             if (vt == VarType::Pointer) {
                 mts->metal_call_resources.push_back(
                     { (void *) v->literal, ResourceKind::Buffer,
-                      (bool) v->write_ptr });
+                      (bool) v->written });
             } else if (v->is_evaluated() && v->data) {
                 mts->metal_call_resources.push_back(
                     { v->data, ResourceKind::Buffer, false });

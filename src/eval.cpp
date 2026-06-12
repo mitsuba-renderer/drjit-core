@@ -458,7 +458,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             v->param_type = ParamType::Input;
             // A scatter target is written; resource_kind marks a GPU resource
             // handle (texture / acceleration structure, currently Metal-only).
-            add_param((void *) v->literal, (uint8_t) v->write_ptr,
+            add_param((void *) v->literal, (uint8_t) v->written,
                       (uint8_t) v->resource_kind());
             kernel_param_ids.push_back(index);
         } else {

@@ -2389,7 +2389,11 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
         *target_p = target;
     }
 
-    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0));
+    // Pointer through which the operation updates 'target'. It is marked as
+    // 'written' for hazard tracking, while the pending-write (dirty) status of
+    // 'target' is tracked by the write pointer of the side effect node below.
+    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0,
+                                     /* written = */ true));
 
     Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
         index_2 = steal(jitc_scatter_gather_index(target, index));
@@ -2496,10 +2500,11 @@ uint32_t jitc_var_scatter_exch(uint32_t *target_p, uint32_t value,
         target_v = jitc_var(target);
     }
 
-    // Get a pointer to the array data (non-writable).
+    // Get a pointer to the array data (see jit_var_scatter_inc())
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
-    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0));
+    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0,
+                                     /* written = */ true));
 
     // Update target argument
     bool updated_target = false;
@@ -2606,10 +2611,11 @@ void jitc_var_scatter_cas(uint32_t *target_p, uint32_t compare, uint32_t value,
         target_v = jitc_var(target);
     }
 
-    // Get a pointer to the array data (non-writable).
+    // Get a pointer to the array data (see jit_var_scatter_inc())
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
-    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0));
+    Ref ptr = steal(jitc_var_pointer(var_info.backend, target_addr, target, 0,
+                                     /* written = */ true));
 
     // Update target argument
     bool updated_target = false;

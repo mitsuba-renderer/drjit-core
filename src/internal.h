@@ -261,7 +261,7 @@ struct alignas(64) Variable {
     uint32_t scratch;
 
     // ================  Essential flags used in the LVN key  =================
-    // (+15 bits)
+    // (+16 bits)
 
     // Variable kind (IR statement / literal constant / data)
     uint32_t kind : 7;
@@ -272,8 +272,14 @@ struct alignas(64) Variable {
     /// Variable type (Bool/Int/Float/....)
     uint32_t type : 5;
 
-    /// Is this a pointer variable that is used to write to some array?
+    /// Is this a pointer variable that tracks a pending write? It holds a side
+    /// effect reference that keeps the target marked dirty until it expires.
     uint32_t write_ptr : 1;
+
+    /// Is this a pointer variable that a kernel writes through? Unlike
+    /// 'write_ptr', this is a pure annotation without lifetime semantics,
+    /// used by backends with explicit hazard tracking (Metal).
+    uint32_t written : 1;
 
     // =======================  Miscellaneous flags ==========================
     // (+6 bits)
@@ -297,10 +303,8 @@ struct alignas(64) Variable {
     uint32_t coop_vec : 1;
 
     // =========== Entries that are temporarily used in jitc_eval() ============
-    // (+11 bits -> 32 bits with all the preceding individiual bits = 4 bytes)
+    // (+10 bits -> 32 bits with all the preceding individiual bits = 4 bytes)
     // (+2*4 = 8 bytes)
-
-    uint32_t unused : 1;
 
     /// Argument type
     uint32_t param_type : 2;
@@ -391,21 +395,22 @@ struct VariableKey {
     uint64_t literal;
     uint32_t size;
 
-    /// Bits 0..14 hold (kind|backend|type|write_ptr), bit 15 is unused (zero),
-    /// and bits 16..31 hold the array length for array/coop-vec variables.
+    /// Bits 0..15 hold (kind|backend|type|write_ptr|written), and bits 16..31
+    /// hold the array length for array/coop-vec variables.
     uint32_t packed;
 
     VariableKey(const Variable &v) {
         memcpy((void *) this, (const void *) &v.scope, 32);
         uint32_t array_length =
             (v.is_array() || v.coop_vec) ? (uint32_t) v.array_length : 0u;
-        // The bitfields kind:7|backend:2|type:5|write_ptr:1 occupy bits 0..14 of
-        // the 32-bit word immediately after 'scratch' (LSB-first packing), which
-        // is exactly the layout 'packed' wants. Reading the raw word and masking
-        // avoids extracting and re-assembling each field (~14 dependent insns).
+        // The bitfields kind:7|backend:2|type:5|write_ptr:1|written:1 occupy
+        // bits 0..15 of the 32-bit word immediately after 'scratch' (LSB-first
+        // packing), which is exactly the layout 'packed' wants. Reading the raw
+        // word and masking avoids extracting and re-assembling each field
+        // (~14 dependent insns).
         uint32_t flag_word;
         memcpy(&flag_word, &v.scratch + 1, sizeof(flag_word));
-        packed = (flag_word & 0x7FFFu) | (array_length << 16);
+        packed = (flag_word & 0xFFFFu) | (array_length << 16);
     }
 
     bool operator==(const VariableKey &v) const {
