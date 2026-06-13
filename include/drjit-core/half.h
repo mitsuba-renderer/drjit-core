@@ -213,7 +213,7 @@ template <> struct constants<half> {
     static constexpr half SqrtTwo         = half::from_binary(0x3da8);
     static constexpr half InvSqrtTwo      = half::from_binary(0x39a8);
 
-    static constexpr half Infinity        = half::from_binary(0xfc00);
+    static constexpr half Infinity        = half::from_binary(0x7c00);
     static constexpr half NaN             = half::from_binary(0xffff);
     static constexpr half OneMinusEpsilon = half::from_binary(0x3bff);
 };

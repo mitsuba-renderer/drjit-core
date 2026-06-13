@@ -140,7 +140,7 @@ template <typename T> struct reduction_min {
 
 template <> struct reduction_min<half> {
     using Value = half;
-    __device__ half init() { return __ushort_as_half((unsigned short) 0x7BFFU); }
+    __device__ half init() { return __ushort_as_half((unsigned short) 0x7C00U); }
     __device__ half operator()(half a, half b) const {
         return min_(a, b);
     }

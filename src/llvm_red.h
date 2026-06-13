@@ -24,7 +24,7 @@ template <typename T> struct RedMul {
 };
 
 template <typename T> struct RedMin {
-    using Value = T;
+    using Value = std::conditional_t<std::is_same_v<drjit::half, T>, float, T>;
 
     static Value init() {
         if constexpr (std::is_integral_v<Value>)
@@ -36,7 +36,7 @@ template <typename T> struct RedMin {
 };
 
 template <typename T> struct RedMax {
-    using Value = T;
+    using Value = std::conditional_t<std::is_same_v<drjit::half, T>, float, T>;
 
     static Value init() {
         if constexpr (std::is_integral_v<Value>)
