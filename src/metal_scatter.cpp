@@ -208,9 +208,15 @@ void jitc_metal_render_scatter(Variable *v) {
     if (!is_unmasked)
         fmt("if ($v) {\n", mask);
 
+    // Restrict SIMD warp aggregation to newer metal driver versions
+    // (Metal 3.2 in principle support it, but appears to be buggy)
+    bool supports_metal4 =
+        state.metal_devices[thread_state_metal->device].supports_metal4;
+    bool aggregate = mode == ReduceMode::Local && supports_metal4;
+
     // Treat as a single-channel packet reduce
     uint32_t vi = v->dep[1];
-    jitc_metal_emit_reduce_block(1, &vi, ptr, index, op, mode == ReduceMode::Local);
+    jitc_metal_emit_reduce_block(1, &vi, ptr, index, op, aggregate);
 
     if (!is_unmasked)
         put("}\n");
@@ -311,18 +317,28 @@ void jitc_metal_render_scatter_inc(Variable *v) {
     if (!is_unmasked)
         fmt("if ($v) {\n", mask);
 
-    // Perform a warp-aggregated atomic increment
-    put("{\n");
-    jitc_metal_emit_warp_match("uint", ptr, index, 2);
-    fmt("    uint rank = popcount(peers & ((1u << lane) - 1u));\n"
-        "    uint base = 0;\n"
-        "    if (rank == 0u)\n"
-        "        base = atomic_fetch_add_explicit((device atomic_uint*)((device uint*) $v + $v), popcount(peers), memory_order_relaxed);\n"
-        "    base = simd_shuffle(base, (ushort) ctz(peers));\n"
-        "    $v = base + rank;\n"
-        "}\n",
-        ptr, index,
-        v);
+    // Restrict SIMD warp aggregation to newer metal driver versions
+    // (Metal 3.2 in principle support it, but appears to be buggy)
+    bool supports_metal4 =
+        state.metal_devices[thread_state_metal->device].supports_metal4;
+
+    if (supports_metal4) {
+        // Perform a warp-aggregated atomic increment
+        put("{\n");
+        jitc_metal_emit_warp_match("uint", ptr, index, 2);
+        fmt("    uint rank = popcount(peers & ((1u << lane) - 1u));\n"
+            "    uint base = 0;\n"
+            "    if (rank == 0u)\n"
+            "        base = atomic_fetch_add_explicit((device atomic_uint*)((device uint*) $v + $v), popcount(peers), memory_order_relaxed);\n"
+            "    base = simd_shuffle(base, (ushort) ctz(peers));\n"
+            "    $v = base + rank;\n"
+            "}\n",
+            ptr, index,
+            v);
+    } else {
+        fmt("$v = atomic_fetch_add_explicit((device atomic_uint*)((device uint*) $v + $v), 1u, memory_order_relaxed);\n",
+            v, ptr, index);
+    }
 
     if (!is_unmasked)
         put("}\n");
