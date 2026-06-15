@@ -912,10 +912,6 @@ uint32_t LLVMThreadState::block_mkperm(const uint32_t *ptr, uint32_t size,
     return unique_count;
 }
 
-void LLVMThreadState::memcpy(void *dst, const void *src, size_t size) {
-    std::memcpy(dst, src, size);
-}
-
 void LLVMThreadState::memcpy_async(void *dst, const void *src, size_t size) {
     submit_cpu(
         KernelType::Memcpy,
@@ -926,6 +922,15 @@ void LLVMThreadState::memcpy_async(void *dst, const void *src, size_t size) {
 
         (uint32_t) size
     );
+}
+
+void LLVMThreadState::memcpy(void *dst, const void *src, size_t size) {
+    memcpy_async(dst, src, size);
+
+    Task *task = jitc_task;
+    task_retain(task);
+    unlock_guard guard(state.lock);
+    task_wait_and_release(task);
 }
 
 void LLVMThreadState::aggregate(void *dst_, AggregationEntry *agg,

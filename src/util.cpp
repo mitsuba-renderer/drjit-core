@@ -31,11 +31,7 @@ void jitc_memset_async(JitBackend backend, void *ptr, uint32_t size_,
 
 /// Perform a synchronous copy operation
 void jitc_memcpy(JitBackend backend, void *dst, const void *src, size_t size) {
-    ThreadState *ts = thread_state(backend);
-
-    // Temporarily release the lock while copying
-    jitc_sync_thread(ts);
-    ts->memcpy(dst, src, size);
+    thread_state(backend)->memcpy(dst, src, size);
 }
 
 /// Perform an asynchronous copy operation
