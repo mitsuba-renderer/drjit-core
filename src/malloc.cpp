@@ -385,15 +385,23 @@ void* jitc_malloc_migrate(void *ptr, JitBackend dst_backend, int move) {
                jitc_backend_name(dst_backend));
 
 #if defined(DRJIT_ENABLE_METAL)
-    if (jitc_is_metal(gpu_backend))
-        jitc_memcpy_async(JitBackend::Metal, ptr_new, ptr, size);
+    if (jitc_is_metal(gpu_backend)) {
+        if (src_backend == JitBackend::None) {
+            // Stage host -> device copies through a shared buffer
+            void *tmp = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
+            memcpy(tmp, ptr, size);
+            jitc_memcpy_async(JitBackend::Metal, ptr_new, tmp, size);
+            jitc_free(tmp);
+        } else {
+            jitc_memcpy_async(JitBackend::Metal, ptr_new, ptr, size);
+        }
+    }
 #endif
 #if defined(DRJIT_ENABLE_CUDA)
     if (jitc_is_cuda(gpu_backend)) {
         scoped_set_context guard(ts->context);
         if (src_backend == JitBackend::None) {
-            // Host → device: cuMemcpyAsync from pageable host memory is slow;
-            // stage through a pinned buffer instead.
+            // Stage host -> device copies through a shared buffer
             void *tmp = jitc_malloc(JitBackend::CUDA, size, /*shared=*/true);
             memcpy(tmp, ptr, size);
             cuda_check(cuMemcpyAsync((CUdeviceptr) ptr_new,
