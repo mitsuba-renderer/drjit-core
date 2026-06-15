@@ -66,25 +66,32 @@ static std::vector<uint32_t> eval_roots;
 
 /* Generation counter used by jitc_var_traverse() to detect already-visited
    variables. The traversal stamps the current generation into 'Variable::scratch'
-   and treats a variable as visited iff its stamp equals 'visit_gen'. Starting a
-   new traversal then takes only a single increment of 'visit_gen', which makes
+   and treats a variable as visited iff its stamp belongs to 'visit_gen'. Starting
+   a new traversal then takes only a single increment of 'visit_gen', which makes
    every existing stamp stale and so marks all variables unvisited.
 
    jitc_eval_impl() starts a fresh generation for each group of equally-sized
    variables, so the traversal visits (and schedules) a shared sub-expression
    exactly once for each distinct kernel size it feeds into. The generation only
-   needs to encode size. The traversal size stays constant within a group, and a
-   variable's call/loop nesting depth never changes, so the traversal always
-   reaches it at the same depth.
+   needs to encode size, as the traversal size stays constant within a group.
+
+   The stamp's least significant bit records whether the visit happened at
+   depth 0 — the only depth at which variables are scheduled. Most variables
+   are only ever reachable at a single depth (call/loop boundaries route outer
+   references through CallInput nodes), but dependency-free variables such as
+   literals and evaluated arrays are deduplicated across scopes and may be
+   referenced both from within a call/loop body (depth > 0) and from the
+   surrounding kernel (depth == 0). A visit at depth > 0 must therefore not
+   elide a later depth-0 visit, which would leave the variable unscheduled.
 
    Generation 0 serves as the "never visited" sentinel. A freshly constructed
-   variable has scratch == 0, and 'visit_gen' is never 0, so the traversal
-   correctly treats such a variable as unvisited. On the rare 32-bit wraparound,
+   variable has scratch == 0, stamps are always >= 2, so the traversal
+   correctly treats such a variable as unvisited. On the rare 31-bit wraparound,
    reset all stamps to 0 and restart. */
 static uint32_t visit_gen = 0;
 
 static void jitc_visit_new_gen() {
-    if (unlikely(visit_gen == 0xFFFFFFFFu)) {
+    if (unlikely(visit_gen == 0x7FFFFFFFu)) {
         for (Variable &v : state.variables)
             v.scratch = 0;
         visit_gen = 0;
@@ -157,9 +164,10 @@ bool jitc_elide_scatter(uint32_t index, const Variable *v) {
 /// Recursively traverse the computation graph to find variables needed by a computation
 static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0) {
     Variable *v = jitc_var(index);
-    if (v->scratch == visit_gen)
+    uint32_t stamp = (visit_gen << 1) | (depth == 0 ? 1u : 0u);
+    if (v->scratch == stamp || (depth != 0 && v->scratch == (stamp | 1u)))
         return;
-    v->scratch = visit_gen;
+    v->scratch = stamp;
     switch ((VarKind) v->kind) {
         case VarKind::Scatter:
             if (jitc_elide_scatter(index, v))
