@@ -464,8 +464,7 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
                       : nil;
             if (!isect_lib)
                 continue;
-            for (const IFTEntry &e : scene->intersection_fns) {
-                const std::string &name = e.name;
+            for (const std::string &name : scene->intersection_fns) {
                 if (std::find(seen.begin(), seen.end(), name) != seen.end())
                     continue;
                 seen.push_back(name);
@@ -587,18 +586,20 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
                                     void *intersection_fn_library,
                                     uint32_t n_ift_entries,
                                     const char **ift_function_names,
+                                    uint32_t n_ift_buffers,
                                     void **ift_buffers,
                                     const uint32_t *ift_buffer_slots,
-                                    const uint64_t *ift_buffer_offsets,
                                     uint32_t geometry_types_mask) {
     jitc_log(InfoSym,
-             "jit_metal_configure_scene(accel=" DRJIT_PTR ", n_resources=%u, "
-             "ift_lib=" DRJIT_PTR ", n_ift=%u, geom_mask=%u)",
+             "jit_metal_configure_scene(accel=" DRJIT_PTR ", "
+             "n_resources=%u, ift_lib=" DRJIT_PTR ", n_ift=%u, geom_mask=%u)",
              (uintptr_t) accel, n_resources,
              (uintptr_t) intersection_fn_library,
              n_ift_entries, geometry_types_mask);
 
-    auto *scene = new MetalScene();
+    // A fresh scene per configuration; a geometry edit just registers another.
+    MetalScene *scene = new MetalScene();
+
     scene->tlas = accel;
     scene->geometry_types_mask = geometry_types_mask;
 
@@ -612,14 +613,13 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
         scene->intersection_fn_library = (__bridge_retained void *) isect_lib;
     }
 
-    scene->intersection_fns.resize(n_ift_entries);
-    for (uint32_t i = 0; i < n_ift_entries; ++i) {
-        IFTEntry &e = scene->intersection_fns[i];
-        e.name   = ift_function_names[i];
-        e.buffer = ift_buffers        ? ift_buffers[i]        : nullptr;
-        e.slot   = ift_buffer_slots   ? ift_buffer_slots[i]   : 0u;
-        e.offset = ift_buffer_offsets ? ift_buffer_offsets[i] : 0ull;
-    }
+    scene->intersection_fns.reserve(n_ift_entries);
+    for (uint32_t i = 0; i < n_ift_entries; ++i)
+        scene->intersection_fns.emplace_back(ift_function_names[i]);
+
+    scene->ift_bindings.reserve(n_ift_buffers);
+    for (uint32_t i = 0; i < n_ift_buffers; ++i)
+        scene->ift_bindings.push_back({ ift_buffer_slots[i], ift_buffers[i] });
 
     uint32_t index =
         jitc_var_new_node_0(JitBackend::Metal, VarKind::Nop,
@@ -641,7 +641,12 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
         }
         if (s->intersection_fn_library)
             (void) (__bridge_transfer id<MTLLibrary>) s->intersection_fn_library;
+        void (*cleanup)(void *) = s->cleanup;
+        void *cleanup_payload = s->cleanup_payload;
         delete s;
+        // Release the application-owned Metal objects (TLAS/BLAS/buffers)
+        if (cleanup)
+            cleanup(cleanup_payload);
     };
 
     jitc_var_set_callback(index, callback, scene, true);
@@ -650,12 +655,11 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
 }
 
 MetalScene *jitc_metal_get_scene(uint32_t scene_index) {
-    if (!scene_index)
-        return nullptr;
-    Variable *v = jitc_var(scene_index);
+    Variable *v = scene_index ? jitc_var(scene_index) : nullptr;
     if (!v || (VarKind) v->kind != VarKind::Nop ||
         (VarType) v->type != VarType::Void)
-        return nullptr;
+        jitc_fail("jitc_metal_get_scene(): r%u does not wrap a Metal scene.",
+                  scene_index);
     return (MetalScene *) v->literal;
 }
 
@@ -667,6 +671,15 @@ uint32_t jitc_metal_make_resource_handle(void *ptr, ResourceKind kind) {
     uint32_t handle = jitc_var_resource_pointer(backing, kind);
     jitc_var_dec_ref(backing);
     return handle;
+}
+
+uint32_t jitc_metal_scene_owner_handle(uint32_t scene_index) {
+    MetalScene *scene = jitc_metal_get_scene(scene_index);
+    /* The data pointer is the MetalScene owner -- the same pointer carried by
+       jit_metal_ray_trace's Accel/IFT parameters (their dep[3] backing maps
+       this MetalScene*), so the recorder keys both to one input slot. */
+    return jitc_var_mem_map(JitBackend::Metal, VarType::UInt64,
+                            (void *) scene, 1, /*free=*/0);
 }
 
 /// Lazily build (and cache) an IntersectionFunctionTable for the given scene
@@ -695,15 +708,15 @@ jitc_metal_get_or_create_ift_for_scene(MetalScene *scene, void *pso_) {
     // only once even if the IFT references it multiple times).
     NSMutableDictionary<NSString *, id<MTLFunction>> *unique_fns =
         [NSMutableDictionary dictionary];
-    for (const IFTEntry &e : scene->intersection_fns) {
-        NSString *name = @(e.name.c_str());
+    for (const std::string &fn_name : scene->intersection_fns) {
+        NSString *name = @(fn_name.c_str());
         if (unique_fns[name])
             continue;
         id<MTLFunction> f = [isect_lib newFunctionWithName:name];
         if (!f)
             jitc_fail("jitc_metal_get_or_create_ift_for_scene(): intersection "
                       "function \"%s\" not found in user-supplied library.",
-                      e.name.c_str());
+                      fn_name.c_str());
         unique_fns[name] = f;
     }
 
@@ -714,14 +727,15 @@ jitc_metal_get_or_create_ift_for_scene(MetalScene *scene, void *pso_) {
         [pso newIntersectionFunctionTableWithDescriptor:iftd];
 
     for (uint32_t i = 0; i < n_ift; ++i) {
-        const IFTEntry &e = scene->intersection_fns[i];
-        id<MTLFunction> f = unique_fns[@(e.name.c_str())];
+        id<MTLFunction> f = unique_fns[@(scene->intersection_fns[i].c_str())];
         id<MTLFunctionHandle> handle = [pso functionHandleWithFunction:f];
         [ift setFunction:handle atIndex:i];
-
-        if (id<MTLBuffer> buf = (__bridge id<MTLBuffer>) e.buffer)
-            [ift setBuffer:buf offset:e.offset atIndex:e.slot];
     }
+
+    // The table's argument table is shared by all entries; bind each slot once.
+    for (const IFTBinding &b : scene->ift_bindings)
+        if (id<MTLBuffer> buf = (__bridge id<MTLBuffer>) b.buffer)
+            [ift setBuffer:buf offset:0 atIndex:b.slot];
 
     scene->ift_cache.push_back({ pso_, (__bridge_retained void *) ift });
     return scene->ift_cache.back().second;
@@ -848,7 +862,7 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
     Ref accel_h = steal(jitc_metal_make_resource_handle(scene_obj,
                                                         ResourceKind::Accel));
     Ref ift_h = steal(jitc_metal_make_resource_handle(
-        scene_obj && scene_obj->intersection_fn_library ? scene_obj : nullptr,
+        scene_obj->intersection_fn_library ? scene_obj : nullptr,
         ResourceKind::IFT));
 
     // dep[0]=valid, dep[1]=scene, dep[2]=accel handle, dep[3]=IFT.

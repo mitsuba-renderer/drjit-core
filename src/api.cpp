@@ -482,25 +482,26 @@ uint32_t jit_metal_configure_scene(void *accel, void **resources,
                                    void *intersection_fn_library,
                                    uint32_t n_ift_entries,
                                    const char **ift_function_names,
+                                   uint32_t n_ift_buffers,
                                    void **ift_buffers,
                                    const uint32_t *ift_buffer_slots,
-                                   const uint64_t *ift_buffer_offsets,
                                    uint32_t geometry_types_mask) {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_METAL)
-    return jitc_metal_configure_scene(accel, resources, n_resources,
+    return jitc_metal_configure_scene(accel, resources,
+                                      n_resources,
                                       intersection_fn_library,
                                       n_ift_entries,
                                       ift_function_names,
+                                      n_ift_buffers,
                                       ift_buffers,
                                       ift_buffer_slots,
-                                      ift_buffer_offsets,
                                       geometry_types_mask);
 #else
     (void) accel; (void) resources; (void) n_resources;
     (void) intersection_fn_library; (void) n_ift_entries;
-    (void) ift_function_names; (void) ift_buffers; (void) ift_buffer_slots;
-    (void) ift_buffer_offsets; (void) geometry_types_mask;
+    (void) ift_function_names; (void) n_ift_buffers; (void) ift_buffers;
+    (void) ift_buffer_slots; (void) geometry_types_mask;
     jit_raise("jit_metal_configure_scene(): Metal backend not enabled.");
     return 0;
 #endif
@@ -526,6 +527,29 @@ void *jit_metal_lookup_buffer(void *ptr, size_t *offset) {
 #else
     (void) ptr; (void) offset;
     return nullptr;
+#endif
+}
+
+uint32_t jit_metal_scene_owner_handle(uint32_t scene_index) {
+#if defined(DRJIT_ENABLE_METAL)
+    lock_guard guard(state.lock);
+    return jitc_metal_scene_owner_handle(scene_index);
+#else
+    (void) scene_index;
+    jit_raise("jit_metal_scene_owner_handle(): Metal backend not enabled.");
+    return 0;
+#endif
+}
+
+void jit_metal_scene_set_cleanup(uint32_t scene_index,
+                                 void (*callback)(void *), void *payload) {
+#if defined(DRJIT_ENABLE_METAL)
+    lock_guard guard(state.lock);
+    MetalScene *scene = jitc_metal_get_scene(scene_index);
+    scene->cleanup = callback;
+    scene->cleanup_payload = payload;
+#else
+    (void) scene_index; (void) callback; (void) payload;
 #endif
 }
 

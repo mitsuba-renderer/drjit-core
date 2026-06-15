@@ -404,8 +404,8 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                         break;
 
                     [enc useResource:ift usage:MTLResourceUsageRead];
-                    for (const IFTEntry &e : scene->intersection_fns)
-                        if (id<MTLBuffer> buf = (__bridge id<MTLBuffer>) e.buffer)
+                    for (const IFTBinding &b : scene->ift_bindings)
+                        if (id<MTLBuffer> buf = (__bridge id<MTLBuffer>) b.buffer)
                             [enc useResource:buf usage:MTLResourceUsageRead];
                     break;
                 }

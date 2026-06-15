@@ -143,9 +143,9 @@ static void demo() {
         /* intersection_fn_library= */ nullptr,
         /* n_ift_entries=          */ 0,
         /* ift_function_names=     */ nullptr,
+        /* n_ift_buffers=          */ 0,
         /* ift_buffers=            */ nullptr,
         /* ift_buffer_slots=       */ nullptr,
-        /* ift_buffer_offsets=     */ nullptr,
         /* geometry_types_mask=    */ 0x1u));
 
     // Twice, to verify kernel caching (like triangle.cpp).
