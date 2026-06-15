@@ -536,7 +536,7 @@ void jitc_cuda_set_device(int device_id) {
 }
 #endif
 
-void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
+void jitc_sync_thread(ThreadState *ts) {
     if (!ts)
         return;
 
@@ -548,23 +548,15 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
     if (jitc_is_cuda(ts->backend)) {
         scoped_set_context guard(ts->context);
         CUstream stream = ts->stream;
-        if (hold_lock) {
-            cuda_check(cuStreamSynchronize(stream));
-        } else {
-            unlock_guard guard_2(state.lock);
-            cuda_check(cuStreamSynchronize(stream));
-        }
+        unlock_guard guard_2(state.lock);
+        cuda_check(cuStreamSynchronize(stream));
         return;
     }
 #endif
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(ts->backend)) {
-        if (hold_lock) {
-            jitc_metal_sync(ts);
-        } else {
-            unlock_guard guard(state.lock);
-            jitc_metal_sync(ts);
-        }
+        unlock_guard guard(state.lock);
+        jitc_metal_sync(ts);
         return;
     }
 #endif
@@ -581,9 +573,7 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
          * be shared across these tasks
          */
         scoped_reset_thread_state ts_guard(ts);
-        if (hold_lock) {
-            task_wait(task);
-        } else {
+        {
             unlock_guard guard(state.lock);
             task_wait(task);
         }
@@ -596,14 +586,14 @@ void jitc_sync_thread(ThreadState *ts, bool hold_lock) {
 }
 
 /// Wait for all computation on the current stream to finish
-void jitc_sync_thread(bool hold_lock) {
+void jitc_sync_thread() {
     ThreadLocal &tl = jitc_thread_local();
 #if defined(DRJIT_ENABLE_CUDA)
-    jitc_sync_thread(tl.ts_cuda, hold_lock);
+    jitc_sync_thread(tl.ts_cuda);
 #endif
-    jitc_sync_thread(tl.ts_llvm, hold_lock);
+    jitc_sync_thread(tl.ts_llvm);
 #if defined(DRJIT_ENABLE_METAL)
-    jitc_sync_thread(tl.ts_metal, hold_lock);
+    jitc_sync_thread(tl.ts_metal);
 #endif
 }
 

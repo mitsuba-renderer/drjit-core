@@ -502,6 +502,11 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
 }
 
 void jitc_flush_kernel_cache() {
+    // Drain in-flight work first
+    do {
+        jitc_sync_thread();
+    } while (jitc_task);
+
     jitc_log(Info, "jit_flush_kernel_cache(): releasing %zu kernel%s ..",
             state.kernel_cache.size(),
             state.kernel_cache.size() > 1 ? "s" : "");

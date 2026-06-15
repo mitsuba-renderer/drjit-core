@@ -592,9 +592,6 @@ void jit_sync_all_devices() {
 
 void jit_flush_kernel_cache() {
     lock_guard guard(state.lock);
-    // Drain in-flight launches before unmapping kernel pages. Hold the
-    // lock through the wait so no concurrent launch can slip in.
-    jitc_sync_thread(/* hold_lock = */ true);
     jitc_flush_kernel_cache();
 }
 
