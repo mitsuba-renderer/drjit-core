@@ -303,10 +303,6 @@ void jitc_malloc_clear_statistics() {
         state.alloc_watermark[i] = state.alloc_allocated[i];
 }
 
-/// Identifies CUDA and Metal
-static bool is_gpu(JitBackend backend) {
-    return jitc_is_device_backend(backend);
-}
 
 void* jitc_malloc_migrate(void *ptr, JitBackend dst_backend, int move) {
     if (!ptr)
@@ -327,7 +323,7 @@ void* jitc_malloc_migrate(void *ptr, JitBackend dst_backend, int move) {
                    jitc_backend_name(src_backend),
                    jitc_backend_name(dst_backend));
 
-    if (!is_gpu(src_backend) && !is_gpu(dst_backend)) {
+    if (!jitc_is_gpu(src_backend) && !jitc_is_gpu(dst_backend)) {
         // The LLVM backend can directly use CPU buffers and vice versa
         if (move) {
             state.alloc_usage[(int) src_backend] -= size;
@@ -360,10 +356,10 @@ void* jitc_malloc_migrate(void *ptr, JitBackend dst_backend, int move) {
 
     // From here on at least one side is a GPU backend, and (by the rejection
     // above) the other side is either the same GPU backend or None.
-    JitBackend gpu_backend = is_gpu(src_backend) ? src_backend : dst_backend;
+    JitBackend gpu_backend = jitc_is_gpu(src_backend) ? src_backend : dst_backend;
     ThreadState *ts = thread_state(gpu_backend);
     bool same_device =
-        !is_gpu(dst_backend) || device == thread_state(dst_backend)->device;
+        !jitc_is_gpu(dst_backend) || device == thread_state(dst_backend)->device;
 
     // Same GPU backend, non-shared source, same device: move=1 is a no-op;
     // move=0 reduces to an async same-backend memcpy.

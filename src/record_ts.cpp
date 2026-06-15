@@ -708,7 +708,7 @@ void RecordThreadState::record_launch(
     std::vector<void *> &params,
     const std::vector<uint32_t> &kernel_param_ids) {
     uint32_t kernel_param_offset =
-        jitc_is_device_backend(backend) ? 1 : 3;
+        jitc_is_gpu(backend) ? 1 : 3;
 
     // The size of the largest variable used by the kernel directly.
     size_t input_size = 0;
@@ -917,7 +917,7 @@ int Recording::replay_launch(Operation &op) {
     // when replaying.
     kernel_params.clear();
 
-    if (jitc_is_device_backend(backend)) {
+    if (jitc_is_gpu(backend)) {
         // First parameter contains kernel size. Assigned later.
         kernel_params.push_back(nullptr);
     } else {
@@ -1030,7 +1030,7 @@ int Recording::replay_launch(Operation &op) {
     }
 
     // Change kernel size in `kernel_params`
-    if (jitc_is_device_backend(backend))
+    if (jitc_is_gpu(backend))
         kernel_params[0] = (void *) (uintptr_t) launch_size;
 
     if (!dry_run) {

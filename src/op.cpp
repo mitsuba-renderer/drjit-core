@@ -134,7 +134,7 @@ auto jitc_var_check_impl(const char *name, std::index_sequence<Is...>, Args... a
 
         if constexpr (bool(Flags & IsGPU)) {
             JitBackend b = (JitBackend) vi->backend;
-            if (unlikely(!jitc_is_device_backend(b))) {
+            if (unlikely(!jitc_is_gpu(b))) {
                 err = "operation is only supported on GPU backends (CUDA/Metal)";
                 goto fail;
             }

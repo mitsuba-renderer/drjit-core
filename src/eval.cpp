@@ -370,7 +370,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_param_info.push_back({ write, kind });
     };
 
-    if (jitc_is_device_backend(backend)) {
+    if (jitc_is_gpu(backend)) {
         add_param((void *) (uintptr_t) group.size);
 
         // CUDA reserves r0..r3 for the thread-index computation (ctaid/ntid/tid)

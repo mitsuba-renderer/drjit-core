@@ -2039,7 +2039,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, JitBackend dst_backend) {
 uint32_t jitc_var_mask_default(JitBackend backend, size_t size) {
     jitc_check_size("jit_var_mask_default", size);
 
-    if (jitc_is_device_backend(backend)) {
+    if (jitc_is_gpu(backend)) {
         bool value = true;
         return jitc_var_literal(backend, VarType::Bool, &value, size, 0);
     } else {
@@ -2949,7 +2949,7 @@ const char *jitc_var_whos() {
                 auto [size, bk, sh, device] = alloc_info_decode(it->second);
                 (void) size;
 
-                if (jitc_is_device_backend(bk) && !sh)
+                if (jitc_is_gpu(bk) && !sh)
                     var_buffer.fmt("device %-4i", (int) device);
                 else if (sh)
                     var_buffer.fmt("%s shared ", jitc_backend_name(bk));

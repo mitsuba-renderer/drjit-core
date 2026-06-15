@@ -1320,7 +1320,7 @@ template <typename T> inline bool jitc_is_llvm(T b) {
 }
 
 /// Returns true if the given backend uses GPU device memory (CUDA or Metal)
-template <typename T> inline bool jitc_is_device_backend(T b) {
+template <typename T> inline bool jitc_is_gpu(T b) {
     return jitc_is_cuda(b) || jitc_is_metal(b);
 }
 

@@ -173,7 +173,7 @@ void jitc_all_async(JitBackend backend, uint8_t *values, uint32_t size, uint8_t 
 /// 'All' reduction for boolean arrays
 bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
     uint8_t buf[4], *tmp;
-    if (jitc_is_device_backend(backend))
+    if (jitc_is_gpu(backend))
         tmp = (uint8_t *) jitc_malloc(backend, 4, /*shared=*/true);
     else
         tmp = buf;
@@ -185,7 +185,7 @@ bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
     // that combine with a final AND.
     bool result = (tmp[0] & tmp[1] & tmp[2] & tmp[3]) != 0;
 
-    if (jitc_is_device_backend(backend))
+    if (jitc_is_gpu(backend))
         jitc_free(tmp);
 
     return result;
@@ -194,7 +194,7 @@ bool jitc_all(JitBackend backend, uint8_t *values, uint32_t size) {
 /// 'Any' reduction for boolean arrays
 bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
     uint8_t buf[4], *tmp;
-    if (jitc_is_device_backend(backend))
+    if (jitc_is_gpu(backend))
         tmp = (uint8_t *) jitc_malloc(backend, 4, /*shared=*/true);
     else
         tmp = buf;
@@ -204,7 +204,7 @@ bool jitc_any(JitBackend backend, uint8_t *values, uint32_t size) {
 
     bool result = (tmp[0] | tmp[1] | tmp[2] | tmp[3]) != 0;
 
-    if (jitc_is_device_backend(backend))
+    if (jitc_is_gpu(backend))
         jitc_free(tmp);
 
     return result;
