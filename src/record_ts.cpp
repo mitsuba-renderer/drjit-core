@@ -135,9 +135,6 @@
 #include "profile.h"
 #include "util.h"
 #include "var.h"
-#if defined(DRJIT_ENABLE_METAL)
-#include "metal.h"
-#endif
 
 const char *op_type_name[(int) OpType::Count]{
     "Barrier",        "KernelLaunch",      "MemsetAsync",          "Expand",
@@ -748,6 +745,7 @@ void RecordThreadState::record_launch(
         // In case the variable is a pointer, we follow the pointer to the
         // source and record the source size.
         // NOTE: this means that `v` is now the source variable
+        ResourceKind resource_kind = ResourceKind::Buffer;
         if ((VarType) v->type == VarType::Pointer) {
             jitc_assert(v->is_literal(),
                         "record(): Recording non-literal pointers are "
@@ -755,6 +753,10 @@ void RecordThreadState::record_launch(
             jitc_assert(param_type != ParamType::Output,
                         "record(): A pointer, pointing to a kernel "
                         "ouptut is not yet supported!");
+
+            // A resource parameter (texture, acceleration structure, IFT) is
+            // identified by its owner pointer; the kind is recovered at launch.
+            resource_kind = v->resource_kind();
 
             // Follow pointer
             uint32_t ptr_index = index;
@@ -776,8 +778,20 @@ void RecordThreadState::record_launch(
 
         uint32_t slot;
         if (param_type == ParamType::Input) {
+            // Match each parameter (buffer or resource owner) to an input slot
+            // by pointer; a resource owner reaches here through the same path.
             if (has_variable(ptr)) {
                 slot = get_variable(ptr);
+            } else if (resource_kind != ResourceKind::Buffer) {
+                // A resource owner not supplied as an input must raise rather
+                // than be captured as a constant.
+                jitc_raise(
+                    "record(): a ray-tracing / texture resource (kind=%u, "
+                    "owner=%p) referenced by a frozen kernel was not supplied "
+                    "as an input. The owning object (scene, texture, ...) must "
+                    "be part of the frozen function's traversed inputs.",
+                    (uint32_t) resource_kind, ptr);
+                slot = 0; // unreachable (jitc_raise throws)
             } else {
                 slot = capture_variable(index);
             }
@@ -830,32 +844,16 @@ void RecordThreadState::record_launch(
 
     op.size = size;
 
-    // If this kernel uses optix, we have to copy the shader binding table for
-    // replaying
+    /* The OptiX shader binding table reaches optixLaunch() out of band via
+       ThreadState::optix_sbt; bind its owner handle (jit_optix_sbt_owner_handle)
+       as an input so replay rebinds it. */
 #if defined(DRJIT_ENABLE_OPTIX)
     if (uses_optix) {
         op.uses_optix = true;
-
-        pause_scope pause(this);
-        // Copy SBT
-        op.sbt = new OptixShaderBindingTable();
-        std::memcpy(op.sbt, optix_sbt, sizeof(OptixShaderBindingTable));
-
-        // Copy hit groups
-        size_t hit_group_size = optix_sbt->hitgroupRecordStrideInBytes *
-                                optix_sbt->hitgroupRecordCount;
-        op.sbt->hitgroupRecordBase =
-            jitc_malloc(JitBackend::CUDA, hit_group_size);
-        jitc_memcpy(backend, op.sbt->hitgroupRecordBase,
-                    optix_sbt->hitgroupRecordBase, hit_group_size);
-
-        // Copy miss groups
-        size_t miss_group_size =
-            optix_sbt->missRecordStrideInBytes * optix_sbt->missRecordCount;
-        op.sbt->missRecordBase =
-            jitc_malloc(JitBackend::CUDA, miss_group_size);
-        jitc_memcpy(backend, op.sbt->missRecordBase, optix_sbt->missRecordBase,
-                    miss_group_size);
+        if (!has_variable((void *) optix_sbt))
+            jitc_raise("record(): the OptiX shader binding table was not "
+                       "supplied as a frozen-function input.");
+        op.sbt_slot = get_variable((void *) optix_sbt);
     }
 #endif
 
@@ -1052,7 +1050,9 @@ int Recording::replay_launch(Operation &op) {
 #if defined(DRJIT_ENABLE_OPTIX)
         uses_optix = op.uses_optix;
         if (op.uses_optix)
-            ts->optix_sbt = op.sbt;
+            // Rebind the SBT to the current scene's struct pointer.
+            ts->optix_sbt =
+                (OptixShaderBindingTable *) replay_variables[op.sbt_slot].data;
 #endif
 
         // Add a kernel history entry, when replaying a kernel.
@@ -2383,13 +2383,6 @@ void Recording::destroy() {
             free(op.kernel.key->str);
             free(op.kernel.key);
         }
-#if defined(DRJIT_ENABLE_OPTIX)
-        if (op.uses_optix) {
-            jitc_free(op.sbt->hitgroupRecordBase);
-            jitc_free(op.sbt->missRecordBase);
-            delete op.sbt;
-        }
-#endif
     }
 }
 
