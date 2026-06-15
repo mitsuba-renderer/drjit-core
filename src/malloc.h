@@ -63,6 +63,9 @@ extern void jitc_free(void *ptr);
 /// call from a GPU completion handler.
 extern void jitc_malloc_release(AllocInfo info, void *ptr);
 
+/// Release a heap-owned batch of deferred ``(AllocInfo, ptr)`` frees.
+extern void jitc_malloc_release_batch(void *batch);
+
 /// Migrate an allocated memory region to a different backend
 extern void *jitc_malloc_migrate(void *ptr, JitBackend backend, int move = 1);
 

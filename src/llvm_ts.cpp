@@ -72,6 +72,26 @@ void LLVMThreadState::barrier() {
         jitc_task = new_task;
     }
     scheduled_tasks.clear();
+
+    if (!deferred_free.empty())
+        flush_deferred_free();
+}
+
+void LLVMThreadState::flush_deferred_free() {
+    void *batch = take_deferred_free();
+    if (!batch)
+        return;
+
+    if (jitc_task) {
+        Task *new_task = task_submit_dep(
+            nullptr, &jitc_task, 1, /*size=*/1,
+            [](uint32_t, void *p) { jitc_malloc_release_batch(*(void **) p); },
+            &batch, sizeof(void *));
+        task_release(jitc_task);
+        jitc_task = new_task;
+    } else {
+        jitc_malloc_release_batch(batch);
+    }
 }
 
 Task *

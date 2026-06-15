@@ -1078,8 +1078,8 @@ void jitc_eval_impl(ThreadState *ts) {
         jitc_run(ts, group);
     }
 
-    // The barrier ensures that subsequently launched kernels can't start to run
-    // until all kernels in the current launch have finished.
+    // Subsequent kernel launches must be serialized wrt. the launches above.
+    // barrier() also drains shared allocations parked for deferred release.
     ts->barrier();
 
     /* Variables and their dependencies are now computed, hence internal edges

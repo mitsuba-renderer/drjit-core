@@ -77,18 +77,10 @@ void MetalThreadState::flush(bool wait) {
                 (__bridge_transfer id<MTLCommandBuffer>) metal_cb;
             metal_cb = nullptr;
 
-            // Release queued frees in one completion handler.
-            if (!metal_deferred_free.empty()) {
-                using Item = decltype(metal_deferred_free)::value_type;
-                size_t count = metal_deferred_free.size();
-                Item *items = (Item *) malloc_check(count * sizeof(Item));
-                std::memcpy((void *) items, metal_deferred_free.data(),
-                            count * sizeof(Item));
-                metal_deferred_free.clear();
+            // Handle deferred frees in a completion handler
+            if (void *batch = take_deferred_free()) {
                 [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-                    for (size_t i = 0; i < count; ++i)
-                        jitc_malloc_release(items[i].first, items[i].second);
-                    free(items);
+                    jitc_malloc_release_batch(batch);
                 }];
             }
 
@@ -100,19 +92,24 @@ void MetalThreadState::flush(bool wait) {
             metal_last_cb = (__bridge_retained void *) cb;
         }
 
-        // Wait out the in-flight command buffer if requested, and release any
-        // deferred frees not handled above.
+        // Wait out the in-flight command buffer if requested.
         if (wait && metal_last_cb) {
             id<MTLCommandBuffer> last =
                 (__bridge_transfer id<MTLCommandBuffer>) metal_last_cb;
             metal_last_cb = nullptr;
             [last waitUntilCompleted];
 
-            for (const auto &e : metal_deferred_free)
-                jitc_malloc_release(e.first, e.second);
-            metal_deferred_free.clear();
+            // Handle deferred frees not attached to a command buffer, which are
+            // safe to release now.
+            if (void *batch = take_deferred_free())
+                jitc_malloc_release_batch(batch);
         }
     }
+}
+
+void MetalThreadState::flush_deferred_free() {
+    if (!deferred_free.empty())
+        flush(/* wait = */ false);
 }
 
 void MetalThreadState::barrier() {

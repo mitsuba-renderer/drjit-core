@@ -379,7 +379,7 @@ struct Recording {
  * operations performed on it. It does not take ownership of the internal
  * ThreadState and it must stay alive as long as the wrapping RecordThreadState.
  */
-struct RecordThreadState : ThreadState {
+struct RecordThreadState final : ThreadState {
     /// The last exception thrown while recording. This lets us re-throw the
     /// exception when ending the recording. Letting the exception propagate
     /// from a function such as \ref launch will leak variables, since they are

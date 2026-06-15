@@ -1037,6 +1037,18 @@ void CUDAThreadState::enqueue_host_func(void (*callback)(void *),
     cuda_check(cuLaunchHostFunc(stream, callback, payload));
 }
 
+void CUDAThreadState::barrier() {
+    if (!deferred_free.empty())
+        flush_deferred_free();
+}
+
+void CUDAThreadState::flush_deferred_free() {
+    if (void *batch = take_deferred_free()) {
+        scoped_set_context guard(context);
+        cuda_check(cuLaunchHostFunc(stream, jitc_malloc_release_batch, batch));
+    }
+}
+
 void CUDAThreadState::coop_vec_pack(uint32_t count, const void *in_,
                                     const MatrixDescr *in_d, void *out_,
                                     const MatrixDescr *out_d) {

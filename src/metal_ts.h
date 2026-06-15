@@ -18,7 +18,7 @@
 #include "var.h"
 #include "metal.h"
 
-struct MetalThreadState : ThreadState {
+struct MetalThreadState final : ThreadState {
     MetalThreadState() = default;
     ~MetalThreadState();
 
@@ -40,6 +40,8 @@ struct MetalThreadState : ThreadState {
 
     /// The Metal backend uses barrier() as a hint to submit the command buffer
     void barrier() override;
+
+    void flush_deferred_free() override;
 
     // ------- ThreadState API -------
 

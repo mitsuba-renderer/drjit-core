@@ -772,6 +772,9 @@ struct ThreadStateBase {
      */
     int device = 0;
 
+    // Shared allocations parked for release at the next opportunity
+    std::vector<std::pair<uint64_t, void *>> deferred_free;
+
     /// ---------------------------- CUDA-specific ----------------------------
 
 #if defined(DRJIT_ENABLE_CUDA)
@@ -818,11 +821,6 @@ struct ThreadStateBase {
     /// Most recently committed command buffer; may still be in flight. Signals
     /// outstanding GPU work when deciding whether to defer a free.
     void *metal_last_cb = nullptr;
-
-    /// Shared allocations (AllocInfo, ptr) parked for release while GPU work is
-    /// outstanding. flush() frees the batch once the referencing command
-    /// buffers retire.
-    std::vector<std::pair<uint64_t, void *>> metal_deferred_free;
 
     /// Current Metal command encoder and its kind
     void *metal_encoder = nullptr;
@@ -922,6 +920,17 @@ struct ThreadState : public ThreadStateBase {
 
     // Enqueue a function to be run on the host once backend computation is done
     virtual void enqueue_host_func(void (*callback)(void *), void *payload) = 0;
+
+    /**
+     * \brief Insert an asynchronous device callback that recycles any deferred
+     * frees of shared memory buffers, which become safe to reuse when the
+     * callback runs.
+     */
+    virtual void flush_deferred_free();
+
+    /// Move \ref deferred_free array into a heap-owned buffer for use with
+    /// jitc_malloc_release_batch()
+    void *take_deferred_free();
 
     /// LLVM: Notify the thread state, that a variable has been expanded using
     /// \c jitc_var_expand. This is required to record the ThreadState.

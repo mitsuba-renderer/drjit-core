@@ -239,16 +239,15 @@ void jitc_malloc_release(AllocInfo info, void *ptr) {
     state.alloc_free[info].push_back(ptr);
 }
 
-struct ReleaseRecord {
-    AllocInfo info;
-    void *ptr;
-};
-
-/// Wrapper using the callback ABI used by nanothread tasks / CUDA host funcs
-static inline void release_cb(const void *p) {
-    const ReleaseRecord *r = (const ReleaseRecord *) p;
-    jitc_malloc_release(r->info, r->ptr);
-};
+void jitc_malloc_release_batch(void *p) {
+    auto *batch = (std::vector<std::pair<uint64_t, void *>> *) p;
+    {
+        lock_guard guard(state.alloc_free_lock);
+        for (const auto &e : *batch)
+            state.alloc_free[e.first].push_back(e.second);
+    }
+    delete batch;
+}
 
 void jitc_free(void *ptr) {
     if (!ptr)
@@ -284,48 +283,15 @@ void jitc_free(void *ptr) {
     if (ts)
         ts->notify_free(ptr);
 
-    ReleaseRecord rec{info, ptr};
-
     if (shared && !ts) // Leak allocation if Dr.Jit has already shut down
         return;
 
-    // Non-shared allocations can be recycled immediately. Shared allocations
-    // are only safe to reuse once queued computation completes, which we
-    // detect by enqueueing a callback.
-    if (!shared || backend == JitBackend::None) {
-        release_cb(&rec);
-    } else if (jitc_is_llvm(backend)) {
-        if (jitc_task) {
-            Task *new_task = task_submit_dep(
-                nullptr, &jitc_task, 1, /*size=*/1,
-                [](uint32_t, void *p) { release_cb(p); },
-                &rec, sizeof(ReleaseRecord));
-            task_release(jitc_task);
-            jitc_task = new_task;
-        } else {
-            release_cb(&rec);
-        }
-    }
-
-#if defined(DRJIT_ENABLE_CUDA)
-    else if (jitc_is_cuda(backend)) {
-        ReleaseRecord *rec2 = (ReleaseRecord *) malloc_check(sizeof(ReleaseRecord));
-        *rec2 = rec;
-        cuda_check(cuLaunchHostFunc(
-            tl.ts_cuda->stream,
-            [](void *p) { release_cb(p); free(p); },
-            rec2));
-    }
-#endif
-
-#if defined(DRJIT_ENABLE_METAL)
-    else if (jitc_is_metal(backend)) {
-        if (ts->metal_cb || ts->metal_last_cb)
-            ts->metal_deferred_free.push_back({ rec.info, rec.ptr });
-        else
-            release_cb(&rec);
-    }
-#endif
+    // Free regular/host allocations immediately. Shared allocations are parked
+    // for later release via ThreadState::flush_deferred_free()
+    if (!shared || backend == JitBackend::None)
+        jitc_malloc_release(info, ptr);
+    else
+        ts->actual_state()->deferred_free.push_back({ info, ptr });
 
     jitc_trace("jit_free(" DRJIT_PTR ", backend=%s, shared=%i, device=%i, size=%zu)",
                (uintptr_t) ptr, jitc_backend_name(backend), (int) shared,

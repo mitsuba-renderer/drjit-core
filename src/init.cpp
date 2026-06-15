@@ -544,8 +544,13 @@ void jitc_sync_thread(ThreadState *ts) {
         jitc_raise("Attempted to synchronize in a context, where "
                    "synchronization was explicitly forbidden!");
 
+    JitBackend backend = ts->backend;
+
+    // Enqueue any parked deferred frees onto the pipeline
+    ts->actual_state()->flush_deferred_free();
+
 #if defined(DRJIT_ENABLE_CUDA)
-    if (jitc_is_cuda(ts->backend)) {
+    if (jitc_is_cuda(backend)) {
         scoped_set_context guard(ts->context);
         CUstream stream = ts->stream;
         unlock_guard guard_2(state.lock);
@@ -554,13 +559,13 @@ void jitc_sync_thread(ThreadState *ts) {
     }
 #endif
 #if defined(DRJIT_ENABLE_METAL)
-    if (jitc_is_metal(ts->backend)) {
+    if (jitc_is_metal(backend)) {
         unlock_guard guard(state.lock);
         jitc_metal_sync(ts);
         return;
     }
 #endif
-    {
+    if (jitc_is_llvm(backend)) {
         Task *task = jitc_task;
         if (!task)
             return;
@@ -577,6 +582,7 @@ void jitc_sync_thread(ThreadState *ts) {
             unlock_guard guard(state.lock);
             task_wait(task);
         }
+
         // Clear 'jitc_task' if no work was added in the meantime
         if (task == jitc_task) {
             jitc_task = nullptr;
@@ -876,9 +882,26 @@ void KernelHistory::clear() {
 }
 
 /// Default implementations of ThreadState functions
-ThreadState::~ThreadState() { }
+ThreadState::~ThreadState() {
+    // Any allocations still parked for deferred free are released
+    // synchronously: by the time a thread state is destroyed, all referencing
+    // work has completed.
+    if (void *batch = take_deferred_free())
+        jitc_malloc_release_batch(batch);
+}
 ThreadState *ThreadState::actual_state() { return this; }
 void ThreadState::barrier() { }
+void ThreadState::flush_deferred_free() { }
+
+void *ThreadState::take_deferred_free() {
+    if (deferred_free.empty())
+        return nullptr;
+    void *batch = new std::vector<std::pair<uint64_t, void *>>(
+        std::move(deferred_free));
+    deferred_free.clear();
+    return batch;
+}
+
 void ThreadState::reset_state() {
     scheduled.clear();
     side_effects.clear();

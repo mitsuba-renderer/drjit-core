@@ -2637,7 +2637,7 @@ void RecordThreadState::add_out_param(uint32_t slot, uint32_t vtype) {
  *     operations. This is used to prevent operations to one ThreadState being
  *     executed while a different thread state is recorded.
  */
-struct DisabledThreadState : ThreadState {
+struct DisabledThreadState final : ThreadState {
     ThreadState *m_internal;
     JitBackend m_recording_backend;
     bool m_raised = false;

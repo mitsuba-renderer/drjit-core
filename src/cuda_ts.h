@@ -1,7 +1,7 @@
 #include "internal.h"
 #include "log.h"
 
-struct CUDAThreadState : ThreadState {
+struct CUDAThreadState final : ThreadState {
     Task *launch(Kernel kernel, KernelKey &key, XXH128_hash_t hash,
                  uint32_t size, std::vector<void *> &kernel_params,
                  const std::vector<uint32_t> &kernel_param_ids,
@@ -51,6 +51,12 @@ struct CUDAThreadState : ThreadState {
 
     // Enqueue a function to be run on the host once backend computation is done
     void enqueue_host_func(void (*callback)(void *), void *payload) override;
+
+    /// Single-stream ordering serializes launches; barrier() only drains frees
+    void barrier() override;
+
+    /// Drain parked deferred frees behind a single CUDA host function
+    void flush_deferred_free() override;
 
     /// Pack a set of matrices/vectors for use with the cooperative vector API
     void coop_vec_pack(uint32_t count, const void *in, const MatrixDescr *in_d,
