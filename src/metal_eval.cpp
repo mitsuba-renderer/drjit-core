@@ -72,15 +72,38 @@ void metal_register_kernel_scene(MetalScene *scene) {
     metal_kernel_scenes.push_back(scene);
 }
 
+/// Intersection functions and the geometry type influence the PSO linking step
+/// but are otherwise invisible in the generated MSL. This function folds them
+/// in via a comment to ensure that incompatibilities produce unique kernels.
+static void jitc_metal_render_scene_configuration() {
+    for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
+        MetalScene *si = metal_kernel_scenes[i];
+        fmt("// Scene properties: scene_$u mask=$u fns=[",
+            (uint32_t) i, si ? si->geometry_types_mask : 0u);
+        if (si) {
+            for (size_t j = 0; j < si->intersection_fns.size(); ++j) {
+                if (j) put(", ");
+                fmt("$s", si->intersection_fns[j].c_str());
+            }
+        }
+        put("]\n");
+    }
+}
+
 // ----------------------------------------------------------------------------
 //  Resource-handle helpers
 // ----------------------------------------------------------------------------
 
-/// Emit the in-shader type name of a resource handle
-static void jitc_metal_render_resource_handle(const Variable *v,
-                                              ResourceKind kind,
+/// If ``v`` is an opaque resource handle (texture, sampler, acceleration
+/// structure, IFT), emit the MSL that reconstructs a typed reference from its
+/// gpuResourceID and return true. Returns false for ordinary buffer pointers.
+static bool jitc_metal_render_resource_handle(const Variable *v,
                                               bool in_callable,
                                               uint32_t data_offset) {
+    ResourceKind kind = v->resource_kind();
+    if (kind == ResourceKind::Buffer)
+        return false;
+
     const char *tname;
     switch (kind) {
         case ResourceKind::Texture: {
@@ -125,6 +148,7 @@ static void jitc_metal_render_resource_handle(const Variable *v,
     else
         fmt("constant $s& $v = *(constant $s*) &params.args[$o];\n",
             tname, v, tname, v);
+    return true;
 }
 
 /// Scratch buffer holding the formatted copy produced by jitc_metal_format()
@@ -253,7 +277,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     for (uint32_t gi = group.start; gi != group.end; ++gi) {
         uint32_t index = schedule[gi].index;
         Variable *v = jitc_var(index);
-        VarKind kind = (VarKind) v->kind;
         ParamType ptype = (ParamType) v->param_type;
 
         // Apple GPUs have no hardware FP64, so Float64 is promoted to
@@ -263,18 +286,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
             jitc_fail("jitc_metal_assemble(): the program should not contain "
                       "Float64 variables.\n");
 
-        // Declare output variables for TraceRay nodes before they're used
-        if (kind == VarKind::TraceRay) {
-            fmt("bool  $v_out_0 = false;\n"
-                "float $v_out_1 = 0.0f;\n"
-                "float $v_out_2 = 0.0f;\n"
-                "float $v_out_3 = 0.0f;\n"
-                "uint  $v_out_4 = 0u;\n"
-                "uint  $v_out_5 = 0u;\n"
-                "uint  $v_out_6 = 0u;\n",
-                v, v, v, v, v, v, v);
-        }
-
         if (likely(ptype == ParamType::Input)) {
             // -------------------------------------------------
             // Load an input from the params buffer
@@ -282,16 +293,11 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
             if (v->is_literal()) {
                 VarType vt = (VarType) v->type;
                 if (vt == VarType::Pointer) {
-                    // An opaque ray-tracing resource handle reconstructs the
-                    // resource from its ``params.args[]`` slot in place (the
-                    // launch path writes the live ``gpuResourceID`` there).
-                    ResourceKind rkind = v->resource_kind();
-                    if (rkind != ResourceKind::Buffer) {
-                        jitc_metal_render_resource_handle(v, rkind,
-                                                          /*in_callable=*/false,
-                                                          /*data_offset=*/0);
+                    // Opaque resource handles (textures, samplers, ray-tracing
+                    // structures) reconstruct a typed reference in place
+                    if (jitc_metal_render_resource_handle(
+                            v, /*in_callable=*/false, /*data_offset=*/0))
                         continue;
-                    }
                     // Pointer literals must be loaded from params (not inlined)
                     // so frozen function replay can update the address
                     fmt("$t $v = ($t) params.args[$o];\n",
@@ -342,26 +348,7 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
 
     put("}\n");
 
-    // Emit one comment per render-discovered scene capturing its PSO-link
-    // identity: the intersection-function names linked into the pipeline plus
-    // its geometry-type mask. ``kernel_hash`` covers the whole buffer, so two
-    // kernels with identical MSL but different intersection-function sets (not
-    // visible in the MSL source — they are linked separately) hash to distinct
-    // cache keys. Emitted after the body so it sees scenes discovered while
-    // rendering both top-level traces and callable bodies. (A per-node emit
-    // would duplicate entries and miss scenes reached only through callables.)
-    for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
-        MetalScene *si = metal_kernel_scenes[i];
-        fmt("// Scene properties: scene_$u mask=$u fns=[",
-            (uint32_t) i, si ? si->geometry_types_mask : 0u);
-        if (si) {
-            for (size_t j = 0; j < si->intersection_fns.size(); ++j) {
-                if (j) put(", ");
-                fmt("$s", si->intersection_fns[j].name.c_str());
-            }
-        }
-        put("]\n");
-    }
+    jitc_metal_render_scene_configuration();
 
     // -------------------------------------------------------------------
     //   5. Emit callable functions and globals
@@ -915,13 +902,18 @@ static void jitc_metal_render(Variable *v) {
             Variable *valid = jitc_var(v->dep[0]);
             bool is_unmasked = valid->is_literal() && valid->literal == 1;
 
-            // The accel (dep[1]) and optional IFT (dep[2]) handles were each
-            // rendered as a reconstructed reference variable named after the
-            // handle (``jitc_metal_render_resource_handle``); this trace simply
-            // names them in its ``intersect`` call. The owning scene is decoded
-            // from the accel handle's tagged literal for template selection.
+            fmt("bool  $v_out_0 = false;\n"
+                "float $v_out_1 = 0.0f;\n"
+                "float $v_out_2 = 0.0f;\n"
+                "float $v_out_3 = 0.0f;\n"
+                "uint  $v_out_4 = 0u;\n"
+                "uint  $v_out_5 = 0u;\n"
+                "uint  $v_out_6 = 0u;\n"
+                "uint  $v_out_7 = 0u;\n",
+                v, v, v, v, v, v, v, v);
+
             Variable *accel_h = jitc_var(v->dep[2]);
-            Variable *ift_h   = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
+            Variable *ift_h = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
             MetalScene *scene_local = (MetalScene *) (uintptr_t) accel_h->literal;
 
             // Guard with active mask
@@ -952,17 +944,14 @@ static void jitc_metal_render(Variable *v) {
             put("{\n");
             if (extended) {
                 if (has_curves_local) {
-                    put("raytracing::intersector<raytracing::triangle_data, "
-                        "raytracing::curve_data, raytracing::instancing> _inter;\n");
+                    put("raytracing::intersector<raytracing::triangle_data, raytracing::curve_data, raytracing::instancing> _inter;\n");
                 } else {
-                    put("raytracing::intersector<raytracing::triangle_data, "
-                        "raytracing::instancing> _inter;\n");
+                    put("raytracing::intersector<raytracing::triangle_data, raytracing::instancing> _inter;\n");
                 }
                 put("_inter.force_opacity(raytracing::forced_opacity::opaque);\n"
                     "_inter.accept_any_intersection(false);\n");
             } else {
-                put("raytracing::intersector<raytracing::triangle_data, "
-                    "raytracing::instancing> _inter;\n"
+                put("raytracing::intersector<raytracing::triangle_data, raytracing::instancing> _inter;\n"
                     "_inter.assume_geometry_type(raytracing::geometry_type::triangle);\n"
                     "_inter.force_opacity(raytracing::forced_opacity::opaque);\n"
                     "_inter.accept_any_intersection(false);\n");
@@ -973,6 +962,7 @@ static void jitc_metal_render(Variable *v) {
                 "_r.min_distance = $v;\n"
                 "_r.max_distance = $v;\n",
                 ox, oy, oz, dx, dy, dz, tmin, tmax);
+
             // Route the intersect call to this trace's reconstructed accel
             // (+ IFT) reference variables.
             if (has_ift_local)
@@ -1010,22 +1000,20 @@ static void jitc_metal_render(Variable *v) {
                     "    $v_out_4 = _hit.instance_id;\n"
                     "    $v_out_5 = _hit.primitive_id;\n"
                     "    $v_out_6 = _hit.geometry_id;\n"
+                    "    $v_out_7 = _hit.user_instance_id;\n"
                     "}\n",
-                    v, v, v, v, v, v, v);
+                    v, v, v, v, v, v, v, v);
             } else {
-                // No curves — both the triangle-only fast path and the
-                // triangle+bbox extended path can use the same extraction:
-                // triangle_barycentric_coord is correct for triangle hits and
-                // unused (overwritten) for bbox hits.
                 fmt("    $v_out_0 = (_hit.type != raytracing::intersection_type::none);\n"
-                          "    $v_out_1 = _hit.distance;\n"
-                          "    $v_out_2 = _hit.triangle_barycentric_coord.x;\n"
-                          "    $v_out_3 = _hit.triangle_barycentric_coord.y;\n"
-                          "    $v_out_4 = _hit.instance_id;\n"
-                          "    $v_out_5 = _hit.primitive_id;\n"
-                          "    $v_out_6 = _hit.geometry_id;\n"
-                          "}\n",
-                          v, v, v, v, v, v, v);
+                    "    $v_out_1 = _hit.distance;\n"
+                    "    $v_out_2 = _hit.triangle_barycentric_coord.x;\n"
+                    "    $v_out_3 = _hit.triangle_barycentric_coord.y;\n"
+                    "    $v_out_4 = _hit.instance_id;\n"
+                    "    $v_out_5 = _hit.primitive_id;\n"
+                    "    $v_out_6 = _hit.geometry_id;\n"
+                    "    $v_out_7 = _hit.user_instance_id;\n"
+                    "}\n",
+                    v, v, v, v, v, v, v, v);
             }
 
             if (!is_unmasked)
@@ -1328,18 +1316,6 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
         VarType vt = (VarType) v->type;
         VarKind kind = (VarKind) v->kind;
 
-        // Pre-declare TraceRay output variables in callable functions
-        if (kind == VarKind::TraceRay) {
-            fmt("bool  $v_out_0 = false;\n"
-                "float $v_out_1 = 0.0f;\n"
-                "float $v_out_2 = 0.0f;\n"
-                "float $v_out_3 = 0.0f;\n"
-                "uint  $v_out_4 = 0u;\n"
-                "uint  $v_out_5 = 0u;\n"
-                "uint  $v_out_6 = 0u;\n",
-                v, v, v, v, v, v, v);
-        }
-
         if (kind == VarKind::Counter) {
             fmt("$t $v = ($t) index;\n", v, v, v);
         } else if (kind == VarKind::CallInput) {
@@ -1372,21 +1348,13 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
             uint32_t offset = it->second - call->data_offset[inst];
 
-            // An opaque ray-tracing resource handle reached from inside a
-            // callable reconstructs the resource directly from the ``device``
-            // call-data section (validated, zero forwarding). The scene is
-            // registered for launch-time residency; the live ``gpuResourceID``
-            // must be refreshed into the call-data section at launch (handled
-            // by the launch path — see Part A callables).
-            if (vt == VarType::Pointer) {
-                ResourceKind rkind = v->resource_kind();
-                if (rkind != ResourceKind::Buffer) {
-                    jitc_metal_render_resource_handle(v, rkind,
-                                                      /*in_callable=*/true,
-                                                      offset);
-                    continue;
-                }
-            }
+            // Opaque resource handles (textures, samplers, ray-tracing
+            // structures) reconstruct a typed reference directly from the
+            // ``device`` call-data section
+            if (vt == VarType::Pointer &&
+                jitc_metal_render_resource_handle(v, /*in_callable=*/true,
+                                                  offset))
+                continue;
 
             // Track device buffers referenced from callable data for
             // useResource(). During freeze recording the active TS is a

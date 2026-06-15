@@ -820,8 +820,8 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
     if (n_args != 8)
         jitc_raise("jit_metal_ray_trace(): expected 8 ray arguments, got %u.",
                    n_args);
-    if (n_out != 7)
-        jitc_raise("jit_metal_ray_trace(): expected 7 outputs, got %u.",
+    if (n_out != 8)
+        jitc_raise("jit_metal_ray_trace(): expected 8 outputs, got %u.",
                    n_out);
     if (!scene)
         jitc_raise("jit_metal_ray_trace(): a valid scene_index "
@@ -889,17 +889,18 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
         td, true);
 
     // Create Extract children for each output
-    VarType out_types[7] = {
+    VarType out_types[8] = {
         VarType::Bool,    // valid
         VarType::Float32, // distance
         VarType::Float32, // bary_u
         VarType::Float32, // bary_v
-        VarType::UInt32,  // instance_id
+        VarType::UInt32,  // instance_id (raw TLAS instance index)
         VarType::UInt32,  // primitive_id
-        VarType::UInt32   // geometry_id
+        VarType::UInt32,  // geometry_id
+        VarType::UInt32   // user-provided instance ID
     };
 
-    for (uint32_t i = 0; i < 7; ++i)
+    for (uint32_t i = 0; i < 8; ++i)
         out[i] = jitc_var_new_node_1(
             JitBackend::Metal, VarKind::Extract, out_types[i],
             size, symbolic, trace, jitc_var(trace), (uint64_t) i);

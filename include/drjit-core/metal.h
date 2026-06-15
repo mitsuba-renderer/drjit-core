@@ -117,7 +117,7 @@ extern JIT_EXPORT uint32_t jit_metal_configure_scene(
  *     JIT variable index of the active lane mask (Bool).
  *
  * \param out
- *     Array of 7 JIT variable indices (output, written by this function):
+ *     Array of 8 JIT variable indices (output, written by this function):
  *       [0] valid        (Bool)    — true if a hit was found
  *       [1] distance     (Float32) — distance to the closest hit
  *       [2] bary_u       (Float32) — barycentric U coordinate
@@ -125,9 +125,10 @@ extern JIT_EXPORT uint32_t jit_metal_configure_scene(
  *       [4] instance_id  (UInt32)  — instance index in the TLAS
  *       [5] primitive_id  (UInt32)  — triangle index in the mesh
  *       [6] geometry_id   (UInt32)  — geometry index within the instance
+ *       [7] user_instance_id (UInt32) — per-instance userID
  *
  * \param n_out
- *     Number of output variables. Must be 7.
+ *     Number of output variables. Must be 8.
  *
  * \param scene
  *     JIT variable index returned by \c jit_metal_configure_scene. Selects
