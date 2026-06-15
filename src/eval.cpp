@@ -277,20 +277,21 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
 
         case VarKind::TexLookup:
         case VarKind::TexFetchBilerp:
-            if ((JitBackend) v->backend == JitBackend::Metal && v->data) {
-                TexData *td = (TexData *) v->data;
-                for (uint32_t i = 0; i < td->ndim; ++i)
-                    jitc_var_traverse(size, td->indices[i], depth);
-            }
-            break;
+        case VarKind::TexWrite: {
+                // Texture writes always reference their coordinates and values.
+                // On Metal, reads do too, since the coordinates are passed
+                // out-of-band.
+                bool refs_coords =
+                    (VarKind) v->kind == VarKind::TexWrite ||
+                    (JitBackend) v->backend == JitBackend::Metal;
 
-        case VarKind::TexWrite:
-            if (v->data) {
-                TexData *td = (TexData *) v->data;
-                for (uint32_t i = 0; i < td->ndim; ++i)
-                    jitc_var_traverse(size, td->indices[i], depth);
-                for (uint32_t i = 0; i < td->n_values; ++i)
-                    jitc_var_traverse(size, td->values[i], depth);
+                if (v->data && refs_coords) {
+                    TexData *td = (TexData *) v->data;
+                    for (uint32_t i = 0; i < td->ndim; ++i)
+                        jitc_var_traverse(size, td->indices[i], depth);
+                    for (uint32_t i = 0; i < td->n_values; ++i)
+                        jitc_var_traverse(size, td->values[i], depth);
+                }
             }
             break;
 

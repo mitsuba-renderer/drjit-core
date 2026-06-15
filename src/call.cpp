@@ -18,6 +18,7 @@
 #include "op.h"
 #include "profile.h"
 #include "registry.h"
+#include "tex.h"
 #include "trace.h"
 #include "util.h"
 #include "var.h"
@@ -677,6 +678,20 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
         TraceData *td = (TraceData *) v->data;
         for (uint32_t index_2: td->indices)
             jitc_var_call_analyze(call, inst_id, index_2, data_offset);
+    } else if (kind == VarKind::TexLookup || kind == VarKind::TexFetchBilerp ||
+               kind == VarKind::TexWrite) {
+        // Texture writes always reference their coordinates and values. On
+        // Metal, reads do too, since the coordinates are passed out-of-band.
+        bool refs_coords = kind == VarKind::TexWrite ||
+                           (JitBackend) v->backend == JitBackend::Metal;
+
+        if (v->data && refs_coords) {
+            TexData *td = (TexData *) v->data;
+            for (uint32_t i = 0; i < td->ndim; ++i)
+                jitc_var_call_analyze(call, inst_id, td->indices[i], data_offset);
+            for (uint32_t i = 0; i < td->n_values; ++i)
+                jitc_var_call_analyze(call, inst_id, td->values[i], data_offset);
+        }
     } else if (v->is_evaluated() || (VarType) v->type == VarType::Pointer) {
         uint32_t tsize = type_size[v->type],
                  offset = (data_offset + tsize - 1) / tsize * tsize;
