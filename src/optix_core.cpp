@@ -224,6 +224,12 @@ void jitc_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt) {
            sizeof(OptixShaderBindingTable));
 }
 
+uint32_t jitc_optix_sbt_owner_handle(uint32_t sbt_index) {
+    void *sbt_ptr = (void *) jitc_var(sbt_index)->literal;
+    return jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64, sbt_ptr, 1,
+                            /* free = */ 0);
+}
+
 bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                         const char *kern_name, Kernel &kernel) {
     char error_log[16384];

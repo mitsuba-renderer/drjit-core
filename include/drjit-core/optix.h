@@ -71,7 +71,7 @@ extern JIT_EXPORT uint32_t
 jit_optix_configure_sbt(const OptixShaderBindingTable *sbt, uint32_t pipeline);
 
 /**
- * \brief  Update existing OptiX Shader Binding Table data
+ * \brief Update existing OptiX Shader Binding Table data
  *
  * This function updates the Shader Binding Table data held by the JIT
  * variable \c index previously created using \c jit_optix_configure_sbt. This
@@ -81,6 +81,16 @@ jit_optix_configure_sbt(const OptixShaderBindingTable *sbt, uint32_t pipeline);
  */
 extern JIT_EXPORT void
 jit_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt);
+
+/**
+ * \brief Create a handle to the OptiX shader binding table (SBT)
+ *
+ * Returns a \c UInt64 variable, whose data pointer represents the
+ * ``OptixShaderBindingTable`` struct to be passed to ``optixLaunch``. This
+ * handle is recognized by dr.freeze() and allows a recording to be replayed
+ * with different SBTs.
+ */
+extern JIT_EXPORT uint32_t jit_optix_sbt_owner_handle(uint32_t sbt_index);
 
 /* \brief Fields that can be queried from OptiX's generic ``HitObject``.
  *

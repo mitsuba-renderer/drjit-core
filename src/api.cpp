@@ -1421,6 +1421,11 @@ void jit_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt) {
     jitc_optix_update_sbt(index, sbt);
 }
 
+uint32_t jit_optix_sbt_owner_handle(uint32_t sbt_index) {
+    lock_guard guard(state.lock);
+    return jitc_optix_sbt_owner_handle(sbt_index);
+}
+
 void jit_optix_ray_trace(uint32_t n_args, uint32_t *args,
                          uint32_t n_hit_object_field,
                          OptixHitObjectField *hit_object_fields,

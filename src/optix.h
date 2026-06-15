@@ -45,6 +45,10 @@ extern uint32_t jitc_optix_configure_sbt(const OptixShaderBindingTable *sbt,
 /// Overwrite existing OptiX Shader Binding Table given an index
 extern void jitc_optix_update_sbt(uint32_t index, const OptixShaderBindingTable *sbt);
 
+/// Return a UInt64 handle whose data pointer is the SBT struct wrapped by
+/// \c sbt_index, so the out-of-band SBT can rebind as a frozen-function input.
+extern uint32_t jitc_optix_sbt_owner_handle(uint32_t sbt_index);
+
 enum class OptixHitObjectField: uint32_t;
 
 /// Insert a function call to optixTrace into the program
