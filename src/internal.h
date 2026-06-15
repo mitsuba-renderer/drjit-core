@@ -815,6 +815,15 @@ struct ThreadStateBase {
     /// A id<MTLCommandBuffer> with pending work
     void *metal_cb = nullptr;
 
+    /// Most recently committed command buffer; may still be in flight. Signals
+    /// outstanding GPU work when deciding whether to defer a free.
+    void *metal_last_cb = nullptr;
+
+    /// Shared allocations (AllocInfo, ptr) parked for release while GPU work is
+    /// outstanding. flush() frees the batch once the referencing command
+    /// buffers retire.
+    std::vector<std::pair<uint64_t, void *>> metal_deferred_free;
+
     /// Current Metal command encoder and its kind
     void *metal_encoder = nullptr;
     MetalEncoderKind metal_encoder_kind = MetalEncoderKind::None;

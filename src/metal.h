@@ -67,11 +67,6 @@ extern void *metal_buffer_new(void *dev, size_t size, bool shared,
 /// Release a buffer handle allocated by ``metal_buffer_new``.
 extern void metal_buffer_free(void *buffer);
 
-/// Schedule a deferred free: once ``cmdbuf`` finishes executing on the GPU,
-/// return the allocation ``(info, ptr)`` to the malloc free list.
-extern void jitc_metal_cmdbuf_free_on_complete(void *cmdbuf, uint64_t info,
-                                               void *ptr);
-
 /// Register a MTLBuffer so for use with the find_buffer API shown below
 extern void jitc_metal_register_buffer(void *ptr, void *mtl_buffer,
                                        size_t size);

@@ -320,9 +320,8 @@ void jitc_free(void *ptr) {
 
 #if defined(DRJIT_ENABLE_METAL)
     else if (jitc_is_metal(backend)) {
-        if (ts->metal_cb)
-            jitc_metal_cmdbuf_free_on_complete(ts->metal_cb,
-                                               rec.info, rec.ptr);
+        if (ts->metal_cb || ts->metal_last_cb)
+            ts->metal_deferred_free.push_back({ rec.info, rec.ptr });
         else
             release_cb(&rec);
     }

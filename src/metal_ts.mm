@@ -76,6 +76,22 @@ void MetalThreadState::flush(bool wait) {
             id<MTLCommandBuffer> cb =
                 (__bridge_transfer id<MTLCommandBuffer>) metal_cb;
             metal_cb = nullptr;
+
+            // Release queued frees in one completion handler.
+            if (!metal_deferred_free.empty()) {
+                using Item = decltype(metal_deferred_free)::value_type;
+                size_t count = metal_deferred_free.size();
+                Item *items = (Item *) malloc_check(count * sizeof(Item));
+                std::memcpy((void *) items, metal_deferred_free.data(),
+                            count * sizeof(Item));
+                metal_deferred_free.clear();
+                [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
+                    for (size_t i = 0; i < count; ++i)
+                        jitc_malloc_release(items[i].first, items[i].second);
+                    free(items);
+                }];
+            }
+
             [cb commit];
 
             // Keep track of the last submitted command buffer
@@ -84,12 +100,17 @@ void MetalThreadState::flush(bool wait) {
             metal_last_cb = (__bridge_retained void *) cb;
         }
 
-        // If requested, wait and release metal_last_cb
+        // Wait out the in-flight command buffer if requested, and release any
+        // deferred frees not handled above.
         if (wait && metal_last_cb) {
             id<MTLCommandBuffer> last =
                 (__bridge_transfer id<MTLCommandBuffer>) metal_last_cb;
             metal_last_cb = nullptr;
             [last waitUntilCompleted];
+
+            for (const auto &e : metal_deferred_free)
+                jitc_malloc_release(e.first, e.second);
+            metal_deferred_free.clear();
         }
     }
 }
@@ -498,11 +519,38 @@ void MetalThreadState::memset_async(void *ptr, uint32_t size, uint32_t isize,
 }
 
 void MetalThreadState::memcpy(void *dst, const void *src, size_t size) {
-    memcpy_async(dst, src, size);
-    flush(/* wait = */ true);
+    size_t off = 0;
+    bool src_dev = jitc_metal_find_buffer((void *) src, &off) != nullptr;
+    bool dst_dev = jitc_metal_find_buffer(dst, &off) != nullptr;
+
+    if (src_dev && dst_dev) {
+        // Device -> device: enqueue a blit and wait for it to retire.
+        memcpy_async(dst, src, size);
+        flush(/* wait = */ true);
+    } else if (!src_dev && !dst_dev) {
+        // Host -> host: a plain synchronous copy.
+        std::memcpy(dst, src, size);
+    } else {
+        // Exactly one endpoint is host memory: stage through a Shared buffer
+        // and wait. (jitc_var_mem_copy() handles the asynchronous upload path.)
+        void *staging = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
+        if (!src_dev) {
+            // Host -> device upload.
+            std::memcpy(staging, src, size);
+            memcpy_async(dst, staging, size);
+            flush(/* wait = */ true);
+        } else {
+            // Device -> host readback.
+            memcpy_async(staging, src, size);
+            flush(/* wait = */ true);
+            std::memcpy(dst, staging, size);
+        }
+        jitc_free(staging);
+    }
 }
 
-/// Asynchronous copy enqueued into the current command buffer.
+/// Asynchronous blit between two device-resident buffers, enqueued into the
+/// current command buffer.
 void MetalThreadState::memcpy_async(void *dst, const void *src, size_t size) {
     @autoreleasepool {
         MetalHistoryScope hist(this, KernelType::Memcpy, (uint32_t) size);
@@ -513,28 +561,12 @@ void MetalThreadState::memcpy_async(void *dst, const void *src, size_t size) {
         id<MTLBuffer> dst_buf = (__bridge id<MTLBuffer>)
             jitc_metal_find_buffer(dst, &dst_off);
 
-        if (!src_buf && !dst_buf) {
-            std::memcpy(dst, src, size);
-            return;
-        }
-
-        // Host-side endpoints are routed through a Shared staging buffer:
-        // uploads fill it now, readbacks copy from it in a completion handler.
-        void *staging = nullptr;
-        bool readback = false;
-        if (!src_buf) {
-            // CPU -> GPU upload
-            staging = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
-            std::memcpy(staging, src, size);
-            src_buf = (__bridge id<MTLBuffer>)
-                jitc_metal_find_buffer(staging, &src_off);
-        } else if (!dst_buf) {
-            // GPU -> CPU readback
-            readback = true;
-            staging = jitc_malloc(JitBackend::Metal, size, /*shared=*/true);
-            dst_buf = (__bridge id<MTLBuffer>)
-                jitc_metal_find_buffer(staging, &dst_off);
-        }
+        if (unlikely(!src_buf || !dst_buf))
+            jitc_fail("MetalThreadState::memcpy_async(): both endpoints must be "
+                      "device-resident Metal buffers (src=" DRJIT_PTR ", dst="
+                      DRJIT_PTR ", size=%zu); the caller must stage host memory "
+                      "through a Shared buffer.", (uintptr_t) src,
+                      (uintptr_t) dst, size);
 
         id<MTLBlitCommandEncoder> enc =
             (__bridge id<MTLBlitCommandEncoder>) ensure_blit_encoder();
@@ -543,17 +575,6 @@ void MetalThreadState::memcpy_async(void *dst, const void *src, size_t size) {
                    toBuffer:dst_buf
           destinationOffset:dst_off
                        size:size];
-
-        if (readback) {
-            id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) metal_cb;
-            [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-                std::memcpy(dst, staging, size);
-            }];
-        }
-
-        // Deferred: the allocation stays live until the command buffer retires
-        if (staging)
-            jitc_free(staging);
     }
 }
 
@@ -561,7 +582,9 @@ void MetalThreadState::poke(void *dst, const void *src, uint32_t size) {
     @autoreleasepool {
         MetalHistoryScope hist(this, KernelType::Poke, size);
         jitc_log(Debug, "jit_poke(" DRJIT_PTR ", size=%u)", (uintptr_t) dst, size);
-        memcpy_async(dst, src, size);
+        // A single-element store is a one-element memset: the value is
+        // marshalled inline into the kernel, so no host staging is needed.
+        memset_async(dst, /*size=*/1, /*isize=*/size, src);
     }
 }
 

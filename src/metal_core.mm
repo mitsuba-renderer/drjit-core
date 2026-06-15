@@ -96,15 +96,6 @@ void metal_buffer_free(void *buffer) {
     }
 }
 
-void jitc_metal_cmdbuf_free_on_complete(void *cmdbuf, uint64_t info,
-                                        void *ptr) {
-    @autoreleasepool {
-        id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cmdbuf;
-        [cb addCompletedHandler:^(id<MTLCommandBuffer>) {
-            jitc_malloc_release(info, ptr);
-        }];
-    }
-}
 
 // Lazily-sorted flat vector of (base address, id<MTLBuffer>, length) entries.
 // Protected by ``state.lock``.

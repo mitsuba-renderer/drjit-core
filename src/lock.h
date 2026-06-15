@@ -161,6 +161,19 @@ inline void lock_acquire(Lock &lock) {
 }
 
 inline void lock_release(Lock &lock) {
+#if !defined(NDEBUG)
+    /* An unmatched release (e.g. an unlock_guard on a lock that the current
+       thread does not hold) corrupts the recursion bookkeeping and can
+       silently unlock another thread's critical section -- a bug that later
+       manifests as a hard-to-debug deadlock. Catch it at the source. */
+    if (lock.owner.load(std::memory_order_relaxed) != thread_id() ||
+        lock.recursion_count == 0) {
+        fprintf(stderr, "lock_release(): unmatched release (owner=%p, self=%p, "
+                "count=%zu)!\n", (void *) lock.owner.load(),
+                (void *) thread_id(), lock.recursion_count);
+        abort();
+    }
+#endif
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
         __tsan_mutex_pre_unlock(&lock, 0);

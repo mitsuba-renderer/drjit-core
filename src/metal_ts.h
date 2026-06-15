@@ -145,9 +145,6 @@ public:
 
     /// Re-entrancy depth for kernel-history recording
     uint32_t metal_history_depth = 0;
-
-    /// The most recently committed command buffer
-    void *metal_last_cb = nullptr;
 };
 
 #endif // defined(DRJIT_ENABLE_METAL)

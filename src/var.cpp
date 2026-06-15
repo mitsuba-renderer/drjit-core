@@ -1745,28 +1745,24 @@ uint32_t jitc_var_mem_copy(JitBackend backend, VarType vtype, const void *ptr,
     void *target_ptr;
 
     if (from_host) {
-        if (jitc_is_cuda(backend)) {
-            // Stage through a pinned host buffer, then async copy to device.
+        if (jitc_is_gpu(backend)) {
+            // Stage through a pinned/Shared host buffer, releasing the lock
+            // only around the host memcpy; jitc_memcpy_async() then enqueues
+            // the device copy with the lock held.
             target_ptr = jitc_malloc(backend, total_size);
-            void *host_ptr =
-                jitc_malloc(JitBackend::CUDA, total_size, /*shared=*/true);
+            void *host_ptr = jitc_malloc(backend, total_size, /*shared=*/true);
             {
                 unlock_guard guard(state.lock);
                 memcpy(host_ptr, ptr, total_size);
-                jitc_memcpy_async(backend, target_ptr, host_ptr, total_size);
             }
+            jitc_memcpy_async(backend, target_ptr, host_ptr, total_size);
             jitc_free(host_ptr);
-        } else if (jitc_is_metal(backend)) {
-            // Metal has unified memory; copy directly into a device buffer.
-            target_ptr = jitc_malloc(backend, total_size);
-            unlock_guard guard(state.lock);
-            jitc_memcpy_async(backend, target_ptr, ptr, total_size);
         } else {
             // LLVM: target is host-accessible; memcpy synchronously.
             target_ptr =
                 jitc_malloc(JitBackend::LLVM, total_size, /*shared=*/true);
             unlock_guard guard(state.lock);
-            memcpy(target_ptr, ptr, total_size);
+            std::memcpy(target_ptr, ptr, total_size);
         }
     } else {
         // Async device-to-device copy on `backend`'s stream.
