@@ -850,10 +850,11 @@ void RecordThreadState::record_launch(
 #if defined(DRJIT_ENABLE_OPTIX)
     if (uses_optix) {
         op.uses_optix = true;
-        if (!has_variable((void *) optix_sbt))
+        if (has_variable((void *) optix_sbt))
+            op.sbt_slot = get_variable((void *) optix_sbt);
+        else if (optix_sbt != state.optix_default_sbt)
             jitc_raise("record(): the OptiX shader binding table was not "
                        "supplied as a frozen-function input.");
-        op.sbt_slot = get_variable((void *) optix_sbt);
     }
 #endif
 
@@ -1050,9 +1051,11 @@ int Recording::replay_launch(Operation &op) {
 #if defined(DRJIT_ENABLE_OPTIX)
         uses_optix = op.uses_optix;
         if (op.uses_optix)
-            // Rebind the SBT to the current scene's struct pointer.
+            // Rebind the SBT
             ts->optix_sbt =
-                (OptixShaderBindingTable *) replay_variables[op.sbt_slot].data;
+                op.sbt_slot == (uint32_t) -1
+                    ? state.optix_default_sbt
+                    : (OptixShaderBindingTable *) replay_variables[op.sbt_slot].data;
 #endif
 
         // Add a kernel history entry, when replaying a kernel.

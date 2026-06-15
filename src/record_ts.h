@@ -133,8 +133,8 @@ struct Operation {
     bool uses_optix = false;
 
 #if defined(DRJIT_ENABLE_OPTIX)
-    /// Input slot of the OptiX shader binding table
-    uint32_t sbt_slot = 0;
+    /// Input slot of the OptiX SBT, or the default (-1) SBT
+    uint32_t sbt_slot = (uint32_t) -1;
 #endif
 };
 
