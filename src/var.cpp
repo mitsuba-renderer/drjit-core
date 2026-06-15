@@ -1049,12 +1049,10 @@ uint32_t jitc_var_call_input(uint32_t index) {
     if (v->is_literal() && optimize) {
         v2.kind = (uint32_t) VarKind::Literal;
         v2.literal = v->literal;
-        // Temporarily stash the size here (subsequently read in call.cpp)
-        // Will have to be redesigned if the 'scratch' field is ever used
-        // for another purpose.
+        /* Temporarily stash the size here (subsequently read in call.cpp).
+           Value numbering *must* be disabled for this to work reliably. */
         v2.scratch = v->size;
-        disable_lvn = true;
-        return jitc_var_new(v2);
+        return jitc_var_new(v2, /* disable_lvn = */ true);
     } else {
         v2.kind = (uint32_t) VarKind::CallInput;
         v2.symbolic = 1;
