@@ -165,8 +165,20 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                      stride = d->A_descr.stride,
                      a_off  = d->A_descr.offset;
 
-            // mpp::matmul2d requires the contraction dimension to be a
-            // multiple of 16; fall back to the scalar loop otherwise.
+            // mpp::matmul2d only supports output dimensions of 1, 2, 4, or a
+            // multiple of 8 (size 2 produces incorrect results). Round other
+            // sizes up to the next valid value and discard the extra rows. The
+            // contraction dimension must be a multiple of 16, otherwise fall
+            // back to the scalar loop below.
+            auto pad_output = [](uint32_t x) -> uint32_t {
+                if (x <= 1)
+                    return 1;
+                if (x <= 4)
+                    return 4;
+                return (x + 7) & ~7u;
+            };
+            uint32_t m_pad = pad_output(m);
+
             bool use_metal4 =
                 state.metal_devices[thread_state(JitBackend::Metal)->device]
                     .supports_metal4 &&
@@ -198,16 +210,17 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                 for (uint32_t j = 0; j < n; ++j)
                     fmt("$v_mm_in[$u] = $v_$u;\n", v, j, a1, j);
 
-                // Float accumulator (matmul destination).
-                fmt("float $v_mm_acc[$u];\n", v, m);
+                // Float accumulator (matmul destination). Sized to the padded
+                // output dimension; the trailing entries are discarded below.
+                fmt("float $v_mm_acc[$u];\n", v, m_pad);
 
                 fmt("constexpr auto $v_mm_d = matmul2d_descriptor(1, $u, $u, false, $s, $s);\n",
-                    v, m, n, transpose ? "false" : "true",
+                    v, m_pad, n, transpose ? "false" : "true",
                     relaxed ? "true" : "false");
                 fmt("matmul2d<$v_mm_d, execution_thread> $v_mm_op;\n", v, v);
                 fmt("auto $v_mm_x = tensor($v_mm_in, dextents<int,2>($u, 1));\n", v, v, n);
                 fmt("auto $v_mm_w = tensor((device $t*) $v + $u, dextents<int,2>($u, $u));\n", v, v, a0, a_off, cols, rows);
-                fmt("auto $v_mm_o = tensor($v_mm_acc, dextents<int,2>($u, 1));\n", v, v, m);
+                fmt("auto $v_mm_o = tensor($v_mm_acc, dextents<int,2>($u, 1));\n", v, v, m_pad);
                 fmt("$v_mm_op.run($v_mm_x, $v_mm_w, $v_mm_o);\n",
                     v, v, v, v);
 
