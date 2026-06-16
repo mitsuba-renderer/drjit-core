@@ -109,8 +109,6 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
         }
     };
 
-    put("{\n");
-
     if (aggregate)
         jitc_metal_emit_warp_match(t, ptr, index, log2i_ceil(type_size[(int) vt]));
 
@@ -181,8 +179,6 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
 
     if (aggregate)
         put("}\n");
-
-    put("}\n");
 }
 
 void jitc_metal_render_scatter(Variable *v) {
@@ -207,6 +203,8 @@ void jitc_metal_render_scatter(Variable *v) {
 
     if (!is_unmasked)
         fmt("if ($v) {\n", mask);
+    else
+        put("{\n");
 
     // Restrict SIMD warp aggregation to newer metal driver versions
     // (Metal 3.2 in principle support it, but appears to be buggy)
@@ -218,8 +216,7 @@ void jitc_metal_render_scatter(Variable *v) {
     uint32_t vi = v->dep[1];
     jitc_metal_emit_reduce_block(1, &vi, ptr, index, op, aggregate);
 
-    if (!is_unmasked)
-        put("}\n");
+    put("}\n");
 }
 
 void jitc_metal_render_scatter_cas(Variable *v) {

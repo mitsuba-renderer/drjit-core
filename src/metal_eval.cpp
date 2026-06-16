@@ -902,23 +902,24 @@ static void jitc_metal_render(Variable *v) {
             Variable *valid = jitc_var(v->dep[0]);
             bool is_unmasked = valid->is_literal() && valid->literal == 1;
 
-            fmt("bool  $v_out_0 = false;\n"
-                "float $v_out_1 = 0.0f;\n"
-                "float $v_out_2 = 0.0f;\n"
-                "float $v_out_3 = 0.0f;\n"
-                "uint  $v_out_4 = 0u;\n"
-                "uint  $v_out_5 = 0u;\n"
-                "uint  $v_out_6 = 0u;\n"
-                "uint  $v_out_7 = 0u;\n",
+            fmt("bool $v_out_0;\n"
+                "float $v_out_1;\n"
+                "float $v_out_2;\n"
+                "float $v_out_3;\n"
+                "uint $v_out_4;\n"
+                "uint $v_out_5;\n"
+                "uint $v_out_6;\n"
+                "uint $v_out_7;\n",
                 v, v, v, v, v, v, v, v);
 
             Variable *accel_h = jitc_var(v->dep[2]);
             Variable *ift_h = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
             MetalScene *scene_local = (MetalScene *) (uintptr_t) accel_h->literal;
 
-            // Guard with active mask
             if (!is_unmasked)
                 fmt("if ($v) {\n", valid);
+            else
+                put("{\n");
 
             // Read ray parameters from TraceData indices
             Variable *ox   = jitc_var(td->indices[0]);
@@ -941,7 +942,6 @@ static void jitc_metal_render(Variable *v) {
             // - Mixed (any non-triangle): drop the assume hint so curves and
             //   bounding-box geometry are also tested. The IFT is passed only
             //   when custom-intersection shapes are present.
-            put("{\n");
             if (extended) {
                 if (has_curves_local) {
                     put("raytracing::intersector<raytracing::triangle_data, raytracing::curve_data, raytracing::instancing> _inter;\n");
@@ -1000,8 +1000,7 @@ static void jitc_metal_render(Variable *v) {
                     "    $v_out_4 = _hit.instance_id;\n"
                     "    $v_out_5 = _hit.primitive_id;\n"
                     "    $v_out_6 = _hit.geometry_id;\n"
-                    "    $v_out_7 = _hit.user_instance_id;\n"
-                    "}\n",
+                    "    $v_out_7 = _hit.user_instance_id;\n",
                     v, v, v, v, v, v, v, v);
             } else {
                 fmt("    $v_out_0 = (_hit.type != raytracing::intersection_type::none);\n"
@@ -1011,12 +1010,23 @@ static void jitc_metal_render(Variable *v) {
                     "    $v_out_4 = _hit.instance_id;\n"
                     "    $v_out_5 = _hit.primitive_id;\n"
                     "    $v_out_6 = _hit.geometry_id;\n"
-                    "    $v_out_7 = _hit.user_instance_id;\n"
-                    "}\n",
+                    "    $v_out_7 = _hit.user_instance_id;\n",
                     v, v, v, v, v, v, v, v);
             }
 
             if (!is_unmasked)
+                fmt("} else {\n"
+                    "$v_out_0 = false;\n"
+                    "$v_out_1 = 0.0f;\n"
+                    "$v_out_2 = 0.0f;\n"
+                    "$v_out_3 = 0.0f;\n"
+                    "$v_out_4 = 0u;\n"
+                    "$v_out_5 = 0u;\n"
+                    "$v_out_6 = 0u;\n"
+                    "$v_out_7 = 0u;\n"
+                    "}\n",
+                    v, v, v, v, v, v, v, v);
+            else
                 put("}\n");
             break;
         }

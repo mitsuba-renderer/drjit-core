@@ -100,12 +100,13 @@ static void jitc_metal_render_scatter_reduce_packet(const Variable *ptr,
 
     if (is_masked)
         fmt("if ($v) {\n", mask);
+    else
+        put("{\n");
 
     jitc_metal_emit_reduce_block((uint32_t) values.size(), values.data(), ptr,
                                  index, psd->op, psd->mode == ReduceMode::Local);
 
-    if (is_masked)
-        put("}\n");
+    put("}\n");
 }
 
 void jitc_metal_render_scatter_packet(const Variable *v, const Variable *ptr,
