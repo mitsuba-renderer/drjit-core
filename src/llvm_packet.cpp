@@ -100,7 +100,7 @@ void gather_packet_recursive(uint32_t l, uint32_t i, uint32_t n, const Variable 
                      align = type_size[v->type]*n;
 
             fmt( "    %p$u = extractelement <$w x ptr> %p, i32 $u\n"
-                 "    %v$u_$u_$u = load <$u x $m>, ptr %p$u, align $u, !alias.scope !2\n",
+                 "    %v$u_$u_$u = load <$u x $m>, ptr %p$u, align $u, !alias.scope !2, !noalias !2\n",
                 k, k,
                 l, i, j, n, v, k, align);
         }
@@ -211,7 +211,7 @@ void scatter_packet_recursive(ReduceOp op, uint32_t l, uint32_t i, uint32_t n, c
 
                 if (op == ReduceOp::Identity) {
                     fmt("    store <$u x $m> %v$u_$u_$u, ptr "
-                        "%p$u, align $u, !noalias !2\n",
+                        "%p$u, align $u, !alias.scope !2, !noalias !2\n",
                         n, v, l, i, j, k, align);
                 } else if (op == ReduceOp::Add) {
                     fmt("    %v$u_0 = load <$u x $m>, ptr %p$u, align $u\n"

@@ -117,7 +117,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         if (ptype == ParamType::Input && size == 1 && vt == VarType::Pointer) {
             // Case 1: load a pointer address from the parameter array
             fmt("    $v_p1 = getelementptr inbounds ptr, ptr %params, i32 $o\n"
-                "    $v = load ptr, ptr $v_p1, align 8, !alias.scope !2\n",
+                "    $v = load ptr, ptr $v_p1, align 8, !alias.scope !2, !noalias !2, !invariant.load !4\n",
                 v, v, v, v);
         } else if (v->is_array()) {
             if (ptype == ParamType::Input)
@@ -126,7 +126,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
             // Case 3: read a regular input/output parameter
 
             fmt("    $v_p1 = getelementptr inbounds ptr, ptr %params, i32 $o\n"
-                "    $v_p2 = load ptr, ptr $v_p1, align 8, !alias.scope !2\n",
+                "    $v_p2 = load ptr, ptr $v_p1, align 8, !alias.scope !2, !noalias !2, !invariant.load !4\n",
                 v, v, v, v);
 
             // For output parameters and non-scalar inputs
@@ -146,13 +146,13 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
                 const char *nontemporal =
                     vt == VarType::Float16 ? "" : ", !nontemporal !3";
 
-                fmt("    $v$s = load $M, ptr $v_p3, align $A, !alias.scope !2$s\n",
+                fmt("    $v$s = load $M, ptr $v_p3, align $A, !alias.scope !2, !noalias !2$s\n",
                     v, vt == VarType::Bool ? "_0" : "", v, v, v, nontemporal);
                 if (vt == VarType::Bool)
                     fmt("    $v = trunc $M $v_0 to $T\n", v, v, v, v);
             } else {
                 // Load a scalar value and broadcast it
-                fmt("    $v_0 = load $m, ptr $v_p2, align $a, !alias.scope !2\n",
+                fmt("    $v_0 = load $m, ptr $v_p2, align $a, !alias.scope !2, !noalias !2, !invariant.load !4\n",
                     v, v, v, v);
 
                 if (vt == VarType::Bool)
@@ -187,7 +187,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
                     fmt("    $v_e = zext $V to $M\n", v, v, v);
                     ext = "_e";
                 }
-                fmt("    store $M $v$s, ptr $v_p3, align $A, !noalias !2, !nontemporal !3\n",
+                fmt("    store $M $v$s, ptr $v_p3, align $A, !alias.scope !2, !noalias !2, !nontemporal !3\n",
                     v, v, ext, v, v);
             } else {
                 jitc_llvm_render_array_memcpy_out(v);
@@ -200,7 +200,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         "suffix:\n");
     fmt("    %index_next = add i64 %index, $w\n");
     put("    %cond = icmp uge i64 %index_next, %end\n"
-        "    br i1 %cond, label %done, label %body, !llvm.loop !4\n\n"
+        "    br i1 %cond, label %done, label %body, !llvm.loop !5\n\n"
         "done:\n"
         "    ret void\n"
         "}\n");
@@ -236,7 +236,8 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         "!1 = !{!1, !0}\n"
         "!2 = !{!1}\n"
         "!3 = !{i32 1}\n"
-        "!4 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
+        "!4 = !{}\n"
+        "!5 = !{!\"llvm.loop.unroll.disable\", !\"llvm.loop.vectorize.enable\", i1 0}\n\n");
 
     fmt("attributes #0 = { norecurse nounwind \"frame-pointer\"=\"none\" "
         "\"no-builtins\" \"no-stack-arg-probe\" \"target-cpu\"=\"$s\"", jitc_llvm_target_cpu);
@@ -351,7 +352,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
             callable_depth--;
             fmt("    $v_p1 = getelementptr inbounds i8, $<ptr$> %data, i32 $u\n"
                 "    $v_p2 = getelementptr inbounds i8, $<ptr$> $v_p1, <$w x i32> %offsets\n"
-                "    $v$s = call $M @llvm.masked.gather.v$w$h(<$w x ptr> $v_p2, i32 $a, <$w x i1> %mask, $M $z)\n",
+                "    $v$s = call $M @llvm.masked.gather.v$w$h(<$w x ptr> $v_p2, i32 $a, <$w x i1> %mask, $M $z), !alias.scope !2, !noalias !2\n",
                 v, offset,
                 v, v,
                 v, is_pointer_or_bool ? "_p3" : "", v, v, v, v, v);
@@ -892,7 +893,7 @@ static void jitc_llvm_render(Variable *v) {
                     v, v, a2, v);
 
                 fmt("    $v_1 = getelementptr inbounds $t, $<ptr$> $v, $V\n"
-                     "    $v$s = call $T @llvm.masked.gather.v$w$h(<$w x ptr> $v_1, i32 $a, $V, $T $z)\n",
+                     "    $v$s = call $T @llvm.masked.gather.v$w$h(<$w x ptr> $v_1, i32 $a, $V, $T $z), !alias.scope !2, !noalias !2\n",
                      v, v, a0, a1,
                      v, is_bool ? "_2" : "", v, v, v, v, a2, v);
 
@@ -1532,7 +1533,7 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
                       "ptr>, i32, <$w x i1>, <$w x i64>)");
 
         fmt("    %u$u_self_ptr = getelementptr i64, $<ptr$> %rd$u, <$w x i32> %r$u\n"
-             "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x ptr> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z)\n",
+             "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x ptr> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z), !alias.scope !2, !noalias !2\n",
             call_reg, offset_reg, self_reg,
             call_reg, call_reg, mask_reg);
     }

@@ -24,7 +24,7 @@ void jitc_llvm_render_scatter(const Variable *v, const Variable *ptr,
          value, value, mask);
 
     fmt("    $v_1 = getelementptr inbounds $t, $<ptr$> $v, $V\n"
-        "    call void @llvm.masked.scatter.v$w$h($V, <$w x ptr> $v_1, i32 $a, $V)\n",
+        "    call void @llvm.masked.scatter.v$w$h($V, <$w x ptr> $v_1, i32 $a, $V), !alias.scope !2, !noalias !2\n",
         v, value, ptr, index,
         value, value, v, value, mask);
 }
