@@ -471,6 +471,8 @@ void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) 
                 }
                 break;
 
+            case 'Q': cur = w_q64(cur, va_arg(args2, uint64_t)); break;
+
             case 'w':
                 cur = w_u32(cur, jitc_llvm_vector_width);
                 --arg;

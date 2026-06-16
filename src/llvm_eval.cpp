@@ -280,12 +280,29 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
     jitc_call_upload(ts);
 }
 
+/// Emit the LLVM return type of a callable: an anonymous struct of
+/// all active outputs or "void" if there are none.
+static void jitc_llvm_call_ret_type(const CallData *call) {
+    uint32_t n_out = (uint32_t) call->outer_out.size();
+    bool first = true;
+    for (uint32_t i = 0; i < n_out; ++i) {
+        if (call->out_offset[i] == (uint32_t) -1)
+            continue;
+        fmt("$s$T", first ? "{ " : ", ", jitc_var(call->inner_out[i]));
+        first = false;
+    }
+    fmt("$s", first ? "void" : " }");
+}
+
 void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     bool print_labels = std::max(state.log_level_stderr,
                                  state.log_level_callback) >= LogLevel::Trace ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
-    uint32_t width = jitc_llvm_vector_width, callables_local = indirect_callable_count;
-    fmt("define fastcc void @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<$w x i1> %mask");
+    uint32_t callables_local = indirect_callable_count;
+
+    fmt("define fastcc ");
+    jitc_llvm_call_ret_type(call);
+    fmt(" @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<$w x i1> %mask");
 
     if (call->use_self)
         fmt(", <$w x i32> %self");
@@ -296,8 +313,6 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     if (call->use_thread_id)
         put(", i32 %thread_id");
 
-    fmt(", ptr noalias %params");
-
     if (!call->data_map.empty()) {
         if (callable_depth == 1)
             fmt(", ptr noalias %data, <$w x i32> %offsets");
@@ -305,9 +320,20 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
             fmt(", <$w x ptr> %data, <$w x i32> %offsets");
     }
 
+    // Name vector arguments using their (unique) byte offset
+    for (uint32_t i = 0; i < (uint32_t) call->outer_in.size(); ++i) {
+        if (!call->in_active[i])
+            continue;
+        const Variable *vi = jitc_var(call->inner_in[i]);
+        fmt(", $T %in_$u", vi, jitc_var(call->outer_in[i])->param_offset);
+    }
+
     fmt(") #0 {\n"
         "entry:\n"
         "    ; Call: $s\n", call->name.c_str());
+
+    // Offset at which to insert the alloca/callables setup code
+    size_t alloca_target = buffer.size();
 
     alloca_size = alloca_align = -1;
 
@@ -369,14 +395,9 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
 
         switch (kind) {
             case VarKind::CallInput:
-                fmt("    $v_i1 = getelementptr inbounds i8, ptr %params, i64 $u\n"
-                    "    $v$s = load $M, ptr $v_i1, align $A\n",
-                    v, jitc_var(v->dep[0])->param_offset * width,
-                    v, vt == VarType::Bool ? "_i2" : "", v, v, v);
-
-                if (vt == VarType::Bool)
-                    fmt("    $v = trunc $M $v_i2 to $T\n",
-                        v, v, v, v);
+                // Bind the SSA register to the corresponding function argument
+                fmt("    $v = bitcast $T %in_$u to $T\n",
+                    v, v, jitc_var(v->dep[0])->param_offset, v);
                 break;
 
             case VarKind::DefaultMask:
@@ -389,41 +410,35 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
         }
     }
 
+    // Return the active outputs as a struct. The caller is responsible for
+    // merging active lanes into its accumulators, so no masking happens here.
     const uint32_t n_out = (uint32_t) call->outer_out.size();
+    uint32_t slot = 0;
     for (uint32_t i = 0; i < n_out; ++i) {
-        const Variable *v = jitc_var(call->inner_out[inst * n_out + i]);
-        const uint32_t offset = call->out_offset[i];
-
-        if (offset == (uint32_t) -1)
+        if (call->out_offset[i] == (uint32_t) -1)
             continue;
-
-        uint32_t vti = v->type;
-        const VarType vt = (VarType) vti;
-
-        fmt("    %out_$u_1 = getelementptr inbounds i8, ptr %params, i64 $u\n"
-            "    %out_$u_2 = load $M, ptr %out_$u_1, align $A\n",
-            i, offset * width,
-            i, v, i, v);
-
-        if (vt == VarType::Bool)
-            fmt("    %out_$u_zext = zext $V to $M\n"
-                "    %out_$u_3 = select <$w x i1> %mask, $M %out_$u_zext, $M %out_$u_2\n",
-                i, v, v,
-                i, v, i, v, i);
+        const Variable *v = jitc_var(call->inner_out[inst * n_out + i]);
+        fmt("    %ret_$u = insertvalue ", slot + 1);
+        jitc_llvm_call_ret_type(call);
+        if (slot == 0)
+            fmt(" undef, $V, $u\n", v, slot);
         else
-            fmt("    %out_$u_3 = select <$w x i1> %mask, $V, $T %out_$u_2\n",
-                i, v, v, i);
+            fmt(" %ret_$u, $V, $u\n", slot, v, slot);
+        slot++;
+    }
 
-        fmt("    store $M %out_$u_3, ptr %out_$u_1, align $A\n",
-            v, i, i, v);
+    if (slot == 0) {
+        put("    ret void\n");
+    } else {
+        fmt("    ret ");
+        jitc_llvm_call_ret_type(call);
+        fmt(" %ret_$u\n", slot);
     }
 
     /* The function requires extra memory or uses callables. Insert
        setup code the top of the function to accomplish this */
     if (alloca_size >= 0 || callables_local != indirect_callable_count) {
-        size_t suffix_start = buffer.size(),
-               suffix_target =
-                   (char *) strrchr(buffer.get(), '{') - buffer.get() + 9;
+        size_t suffix_start = buffer.size();
 
         if (callables_local != indirect_callable_count)
             fmt("    %callables = load ptr, ptr @callables, align 8\n");
@@ -432,11 +447,10 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
             fmt("    %buffer = alloca i8, i32 $u, align $u\n",
                 (uint32_t) alloca_size, (uint32_t) alloca_align);
 
-        buffer.move_suffix(suffix_start, suffix_target);
+        buffer.move_suffix(suffix_start, alloca_target);
     }
 
-    put("    ret void\n"
-        "}");
+    put("}");
 }
 
 static void jitc_llvm_render(Variable *v) {
@@ -1497,10 +1511,8 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
                                  uint32_t self_reg, uint32_t mask_reg,
                                  uint32_t offset_reg, uint32_t data_reg,
                                  uint32_t buf_size, uint32_t buf_align) {
-    // Allocate enough stack memory for both inputs and outputs
     const uint32_t width = jitc_llvm_vector_width;
-    alloca_size  = std::max(alloca_size, int(buf_size * width));
-    alloca_align = std::max(alloca_align, int(buf_align * width));
+    (void) buf_size; (void) buf_align;
 
     // =====================================================
     // 1. Declare a few intrinsics that we will use
@@ -1553,149 +1565,134 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
             call_reg, call_reg);
     }
 
-    // =====================================================
-    // 2. Pass the input arguments
-    // =====================================================
+    // Number of active outputs (the slots of the struct return value)
+    uint32_t n_active_out = 0;
+    for (uint32_t i = 0; i < call->n_out; ++i)
+        n_active_out += (call->out_offset[i] != (uint32_t) -1);
+    bool has_ret = n_active_out > 0;
 
-    for (uint32_t i = 0; i < call->n_in; ++i) {
-        const Variable *v = jitc_var(call->outer_in[i]);
-        const Variable *v_in = jitc_var(call->inner_in[i]);
-        bool unused =
-            !v->reg_index ||
-            (call->optimize && // Optimizations are on
-                (v->is_literal() || // Literals are propagated
-                 v_in->ref_count == 1)); // CallInput is never used
-
-        if (unused)
-            continue;
-
-        fmt("    %u$u_in_$u_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n",
-            call_reg, i, v->param_offset * width);
-
-        if ((VarType) v->type != VarType::Bool) {
-            fmt("    store $V, ptr %u$u_in_$u_1, align $A\n",
-                v, call_reg, i, v);
-        } else {
-            fmt("    %u$u_$u_zext = zext $V to $M\n"
-                "    store $M %u$u_$u_zext, ptr %u$u_in_$u_1, align $A\n",
-                call_reg, i, v, v,
-                v, call_reg, i, call_reg, i, v);
+    // Emit the trailing call arguments (everything after the leading mask):
+    // self / index / thread_id / data, followed by the active inputs.
+    auto emit_args = [&]() {
+        if (call->use_self)
+            fmt(", <$w x i32> %r$u", self_reg);
+        if (call->use_index)
+            fmt(", i64 %index");
+        if (call->use_thread_id)
+            fmt(", i32 %thread_id");
+        if (data_reg)
+            fmt(", $<ptr$> %rd$u, <$w x i32> %u$u_offset", data_reg, call_reg);
+        for (uint32_t i = 0; i < call->n_in; ++i) {
+            if (!call->in_active[i])
+                continue;
+            fmt(", $V", jitc_var(call->outer_in[i]));
         }
-    }
+    };
 
-    for (uint32_t i = 0; i < call->n_out; ++i) {
-        uint32_t offset = call->out_offset[i];
-        if (offset == (uint32_t) -1)
-            continue;
-
-        const Variable *v = jitc_var(call->inner_out[i]);
-
-        fmt("    %u$u_tmp_$u_1 = getelementptr inbounds i8, ptr %buffer, i64 $u\n"
-            "    store $M $z, ptr %u$u_tmp_$u_1, align $A\n",
-            call_reg, i, offset * width,
-            v, call_reg, i, v);
-    }
+    // Invoke 'fn(slot, var)' for each active output referenced at the call site,
+    // where 'slot' is its index within the struct return value.
+    auto for_each_output = [&](auto &&fn) {
+        uint32_t slot = 0;
+        for (uint32_t i = 0; i < call->n_out; ++i) {
+            if (call->out_offset[i] == (uint32_t) -1)
+                continue;
+            const Variable *v = jitc_var(call->outer_out[i]);
+            if (v && v->reg_index && v->param_type != ParamType::Input)
+                fn(slot, v);
+            slot++;
+        }
+    };
 
     // =====================================================
-    // 3. Perform one call to each unique instance
+    // 2. Perform one call to each unique instance
     // =====================================================
 
     if (call->n_inst == 1) {
         // Direct call to the single callable function
-        put("    call fastcc void @func_");
+        if (has_ret) {
+            fmt("    %u$u_ret = call fastcc ", call_reg);
+            jitc_llvm_call_ret_type(call);
+        } else {
+            put("    call fastcc void");
+        }
         XXH128_hash_t hash = call->inst_hash[0];
-        buffer.put_q64_unchecked(hash.high64);
-        buffer.put_q64_unchecked(hash.low64);
-        fmt("(<$w x i1> %p$u", mask_reg);
-
-        if (call->use_self)
-            fmt(", <$w x i32> %r$u", self_reg);
-
-        if (call->use_index)
-            fmt(", i64 %index");
-
-        if (call->use_thread_id)
-            fmt(", i32 %thread_id");
-
-        fmt(", ptr %buffer");
-
-        if (data_reg)
-            fmt(", $<ptr$> %rd$u, <$w x i32> %u$u_offset", data_reg, call_reg);
-
+        fmt(" @func_$Q$Q(<$w x i1> %p$u", hash.high64, hash.low64, mask_reg);
+        emit_args();
         fmt(")\n");
+
+        // Bind outputs: keep active lanes, set inactive lanes to zero
+        for_each_output([&](uint32_t slot, const Variable *v) {
+            fmt("    %u$u_ev_$u = extractvalue ", call_reg, slot);
+            jitc_llvm_call_ret_type(call);
+            fmt(" %u$u_ret, $u\n"
+                "    $v = select <$w x i1> %p$u, $T %u$u_ev_$u, $T $z\n",
+                call_reg, slot,
+                v, mask_reg, v, call_reg, slot, v);
+        });
     } else {
-    fmt("    br label %l$u_check\n"
-        "\nl$u_check:\n"
-        "    %u$u_self = phi <$w x i32> [ %u$u_self_initial, %l$u_start ], [ %u$u_self_next, %l$u_call ]\n",
-        call_reg,
-        call_reg,
-        call_reg, call_reg, call_reg, call_reg, call_reg);
+        // Multi-instance dispatch loop. Each active output has an accumulator
+        // phi (named directly after the output register) into which the
+        // per-instance calls merge their active lanes.
+        fmt("    br label %l$u_check\n"
+            "\nl$u_check:\n"
+            "    %u$u_self = phi <$w x i32> [ %u$u_self_initial, %l$u_start ], [ %u$u_self_next, %l$u_call ]\n",
+            call_reg,
+            call_reg,
+            call_reg, call_reg, call_reg, call_reg, call_reg);
 
-    fmt("    %u$u_next = call i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32> %u$u_self)\n"
-        "    %u$u_valid = icmp ne i32 %u$u_next, 0\n"
-        "    br i1 %u$u_valid, label %l$u_call, label %l$u_end\n",
-        call_reg, call_reg,
-        call_reg, call_reg,
-        call_reg, call_reg, call_reg);
+        for_each_output([&](uint32_t slot, const Variable *v) {
+            fmt("    $v = phi $T [ $z, %l$u_start ], [ %u$u_accn_$u, %l$u_call ]\n",
+                v, v, call_reg, call_reg, slot, call_reg);
+        });
 
-    fmt("\nl$u_call:\n"
-        "    %u$u_bcast_0 = insertelement <$w x i32> undef, i32 %u$u_next, i32 0\n"
-        "    %u$u_bcast = shufflevector <$w x i32> %u$u_bcast_0, <$w x i32> undef, <$w x i32> $z\n"
-        "    %u$u_active = icmp eq <$w x i32> %u$u_self, %u$u_bcast\n"
-        "    %u$u_func_0 = getelementptr inbounds ptr, ptr %callables, i32 %u$u_next\n"
-        "    %u$u_func = load ptr, ptr %u$u_func_0\n",
-        call_reg,
-        call_reg, call_reg, // bcast_0
-        call_reg, call_reg, // bcast
-        call_reg, call_reg, call_reg, // active
-        call_reg, call_reg, // func_0
-        call_reg, call_reg // func_1
-    );
+        fmt("    %u$u_next = call i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32> %u$u_self)\n"
+            "    %u$u_valid = icmp ne i32 %u$u_next, 0\n"
+            "    br i1 %u$u_valid, label %l$u_call, label %l$u_end\n",
+            call_reg, call_reg,
+            call_reg, call_reg,
+            call_reg, call_reg, call_reg);
 
-    // Perform the actual function call
-    fmt("    call fastcc void %u$u_func(<$w x i1> %u$u_active",
-        call_reg, call_reg);
+        fmt("\nl$u_call:\n"
+            "    %u$u_bcast_0 = insertelement <$w x i32> undef, i32 %u$u_next, i32 0\n"
+            "    %u$u_bcast = shufflevector <$w x i32> %u$u_bcast_0, <$w x i32> undef, <$w x i32> $z\n"
+            "    %u$u_active = icmp eq <$w x i32> %u$u_self, %u$u_bcast\n"
+            "    %u$u_func_0 = getelementptr inbounds ptr, ptr %callables, i32 %u$u_next\n"
+            "    %u$u_func = load ptr, ptr %u$u_func_0\n",
+            call_reg,
+            call_reg, call_reg, // bcast_0
+            call_reg, call_reg, // bcast
+            call_reg, call_reg, call_reg, // active
+            call_reg, call_reg, // func_0
+            call_reg, call_reg // func_1
+        );
 
-    if (call->use_self)
-        fmt(", <$w x i32> %r$u", self_reg);
+        // Perform the actual function call
+        if (has_ret) {
+            fmt("    %u$u_ret = call fastcc ", call_reg);
+            jitc_llvm_call_ret_type(call);
+            fmt(" %u$u_func(<$w x i1> %u$u_active", call_reg, call_reg);
+        } else {
+            fmt("    call fastcc void %u$u_func(<$w x i1> %u$u_active",
+                call_reg, call_reg);
+        }
+        emit_args();
+        fmt(")\n");
 
-    if (call->use_index)
-        fmt(", i64 %index");
+        // Merge this instance's active lanes into the accumulators
+        for_each_output([&](uint32_t slot, const Variable *v) {
+            fmt("    %u$u_ev_$u = extractvalue ", call_reg, slot);
+            jitc_llvm_call_ret_type(call);
+            fmt(" %u$u_ret, $u\n"
+                "    %u$u_accn_$u = select <$w x i1> %u$u_active, $T %u$u_ev_$u, $T $v\n",
+                call_reg, slot,
+                call_reg, slot, call_reg, v, call_reg, slot, v, v);
+        });
 
-    if (call->use_thread_id)
-        fmt(", i32 %thread_id");
-
-    fmt(", ptr %buffer");
-
-    if (data_reg)
-        fmt(", $<ptr$> %rd$u, <$w x i32> %u$u_offset", data_reg, call_reg);
-
-    fmt(")\n"
-        "    %u$u_self_next = select <$w x i1> %u$u_active, <$w x i32> $z, <$w x i32> %u$u_self\n"
-        "    br label %l$u_check\n"
-        "\nl$u_end:\n",
-        call_reg, call_reg, call_reg, call_reg,
-        call_reg);
-    }
-
-    // =====================================================
-    // 5. Read back the output arguments
-    // =====================================================
-
-    for (uint32_t i = 0; i < call->n_out; ++i) {
-        const Variable *v = jitc_var(call->outer_out[i]);
-        if (!v || !v->reg_index || v->param_type == ParamType::Input)
-            continue;
-
-        bool is_bool = (VarType) v->type == VarType::Bool;
-
-        fmt("    %u$u_out_$u_1 = getelementptr inbounds i8, ptr %buffer, i64 $u\n"
-            "    $v$s = load $M, ptr %u$u_out_$u_1, align $A\n",
-            call_reg, i, call->out_offset[i] * width,
-            v, is_bool ? "_0" : "", v, call_reg, i, v);
-
-            if (is_bool)
-                fmt("    $v = trunc $M $v_0 to $T\n", v, v, v, v);
+        fmt("    %u$u_self_next = select <$w x i1> %u$u_active, <$w x i32> $z, <$w x i32> %u$u_self\n"
+            "    br label %l$u_check\n"
+            "\nl$u_end:\n",
+            call_reg, call_reg, call_reg,
+            call_reg, call_reg);
     }
 
     if (call->n_inst != 1) {
