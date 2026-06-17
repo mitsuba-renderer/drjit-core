@@ -91,7 +91,7 @@ include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bin2c.cmake)
 
 # LZ4 dictionary for the kernel cache used by the LLVM backend
 drjit_embed_binary(
-  OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/kernels_dict.c
+  OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/resources/kernels_dict.c
   SYMBOLS kernels_dict
   INPUTS  ${CMAKE_CURRENT_SOURCE_DIR}/resources/kernels_dict.lz4
   TYPE    char
@@ -105,7 +105,7 @@ drjit_embed_binary(
 if (DRJIT_ENABLE_CUDA)
   # Precompiled CUDA PTX kernels
   drjit_embed_binary(
-    OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/kernels_75.c
+    OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/resources/kernels_75.c
     SYMBOLS kernels_75
     INPUTS  ${CMAKE_CURRENT_SOURCE_DIR}/resources/kernels_75.lz4
     TYPE    char
@@ -134,7 +134,7 @@ if (DRJIT_ENABLE_CUDA)
     src/gl_interop.cpp
 
     # Precompiled CUDA PTX kernels (embedded above)
-    ${CMAKE_CURRENT_BINARY_DIR}/kernels_75.c
+    ${CMAKE_CURRENT_BINARY_DIR}/resources/kernels_75.c
   )
 endif()
 
@@ -246,7 +246,7 @@ add_library(
   # LZ4 kernel-cache dictionary (CUDA PTX kernels are added under
   # DRJIT_CUDA_FILES so they are only compiled with the CUDA backend)
   resources/kernels.h
-  ${CMAKE_CURRENT_BINARY_DIR}/kernels_dict.c
+  ${CMAKE_CURRENT_BINARY_DIR}/resources/kernels_dict.c
 )
 
 target_include_directories(drjit-core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -348,11 +348,11 @@ if (DRJIT_ENABLE_METAL)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_METAL=1)
   # Embed the precompiled Metal kernel metallib (declarations in src/metal.h)
   drjit_embed_binary(
-    OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/metal_kernels.c
+    OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/resources/metal_kernels.c
     SYMBOLS metal_kernels_metallib
     INPUTS  ${CMAKE_CURRENT_SOURCE_DIR}/resources/metal_kernels.metallib
     SIZE)
-  target_sources(drjit-core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/metal_kernels.c")
+  target_sources(drjit-core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/resources/metal_kernels.c")
   target_link_libraries(drjit-core PRIVATE
     "-framework Foundation"
     "-framework Metal"

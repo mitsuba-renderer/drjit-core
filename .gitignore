@@ -39,7 +39,10 @@ tests/test_record
 tests/optix_triangle
 tests/metal_triangle
 tests/microbenchmark
+
+/resources/kernels_dict.c
+/resources/kernels_75.c
+/resources/metal_kernels.c
 /resources/pack
 /resources/kernels_75.ptx
-/resources/kernels.c
-/resources/metal_kernels.c
+/resources/metal_kernels.air
