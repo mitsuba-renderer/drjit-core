@@ -1,19 +1,12 @@
 // metal_triangle.mm — Metal analog of triangle.cpp.
 //
-// Mirrors tests/triangle.cpp (CUDA/OptiX) for the Metal backend: it builds a
+// Mirrors tests/optix_triangle.cpp for the Metal backend: it builds a
 // single-triangle acceleration structure with the raw (native Objective-C)
 // Metal API, registers it with Dr.Jit via jit_metal_configure_scene(), then
 // generates a 16x16 grid of camera rays using the high-level MetalArray<>
 // wrapper, traces them all in a single batched jit_metal_ray_trace() launch,
 // migrates the hit mask to the host, and prints the resulting image. The loop
-// runs twice to exercise kernel caching, exactly like triangle.cpp.
-//
-// Unlike OptiX, Metal performs the triangle intersection inline in the compute
-// kernel, so there are no miss/closest-hit shaders, program groups, or SBT.
-//
-// This file uses native Objective-C Metal (#import <Metal/Metal.h>) and ARC —
-// the metal-cpp bindings (MTL::/NS::) the original metal_rt_test.cpp relied on
-// are no longer part of the project.
+// runs twice to exercise kernel caching.
 
 #include <drjit-core/array.h>
 #include <drjit-core/metal.h>
@@ -27,7 +20,7 @@ namespace dr = drjit;
 // NOTE: avoid the name `UInt32` for the alias — <Metal/Metal.h> pulls in
 // Foundation, which already typedefs `UInt32` to `unsigned int`.
 using Float = dr::MetalArray<float>;
-using UIntM  = dr::MetalArray<uint32_t>;
+using UIntM = dr::MetalArray<uint32_t>;
 using Mask  = dr::MetalArray<bool>;
 
 // A single triangle, matching the one in tests/triangle.cpp.
@@ -175,7 +168,7 @@ static void demo() {
         };
 
         uint32_t out[7];
-        jit_metal_ray_trace(8, ray_args, mask.index(), out, 7, scene.index());
+        jit_metal_ray_trace(8, ray_args, mask.index(), out, 7, scene.index(), false);
 
         Mask valid = Mask::steal(out[0]);
         for (int k = 1; k < 7; ++k)
