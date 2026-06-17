@@ -131,7 +131,7 @@ static bool jitc_metal_render_resource_handle(const Variable *v,
             } else {
                 bool curves = scene && (scene->geometry_types_mask & 0x4u) != 0;
                 tname = curves
-                    ? "raytracing::intersection_function_table<raytracing::triangle_data, raytracing::curve_data, raytracing::instancing>"
+                    ? "raytracing::intersection_function_table<raytracing::triangle_data, raytracing::instancing, raytracing::curve_data>"
                     : "raytracing::intersection_function_table<raytracing::triangle_data, raytracing::instancing>";
             }
             break;
@@ -940,6 +940,8 @@ static void jitc_metal_render(Variable *v) {
             bool has_ift_local = ift_h != nullptr;
             bool has_curves_local =
                 scene_local && (scene_local->geometry_types_mask & 0x4u) != 0;
+            bool has_backface_culled_triangles_local =
+                scene_local && (scene_local->geometry_types_mask & 0x8u) != 0;
             bool extended = has_ift_local || has_curves_local;
 
             fmt("raytracing::intersector<raytracing::triangle_data, raytracing::instancing$s> _inter;\n",
@@ -951,6 +953,8 @@ static void jitc_metal_render(Variable *v) {
             fmt("_inter.force_opacity(raytracing::forced_opacity::opaque);\n"
                 "_inter.accept_any_intersection($s);\n",
                 td->shadow ? "true" : "false");
+            if (has_backface_culled_triangles_local)
+                put("_inter.set_triangle_cull_mode(raytracing::triangle_cull_mode::back);\n");
 
             fmt("raytracing::ray _r;\n"
                 "_r.origin = float3($v, $v, $v);\n"
@@ -973,52 +977,31 @@ static void jitc_metal_render(Variable *v) {
             // - Curve hit:    prim_uv = (curve_parameter, 0)
             // - Bbox hit:     prim_uv = (0, 0) — compute_surface_interaction()
             //                 will recompute it from the hit point.
+            put("    auto _ht = _hit.type;\n"
+                "    bool _valid_hit = (_ht != raytracing::intersection_type::none);\n");
+
             if (td->shadow) {
-                if (has_curves_local) {
-                    // See the note below on zero-distance curve hits.
-                    fmt("    auto _ht = _hit.type;\n"
-                        "    bool _zero_curve_hit = (_ht == raytracing::intersection_type::curve) && (_hit.distance <= 0.0f);\n"
-                        "    $v_out_0 = (_ht != raytracing::intersection_type::none) && !_zero_curve_hit;\n",
-                        v);
-                } else {
-                    fmt("    $v_out_0 = (_hit.type != raytracing::intersection_type::none);\n",
-                        v);
-                }
-            } else if (has_curves_local) {
-                // Apple's HW curve intersector reports a degenerate ``curve``
-                // hit at ``distance = 0`` when the ray's origin lies inside
-                // the swept-tube volume of a `CurveTypeRound` geometry — even
-                // though there's no actual surface at the origin. Embree and
-                // OptiX never produce such hits. Treat zero-distance curve
-                // hits as misses so the public ray_intersect contract agrees
-                // across backends (otherwise backface tests on rays starting
-                // inside a curve report a spurious hit at t=0 with
-                // garbage curve_parameter).
-                fmt("    auto _ht = _hit.type;\n"
-                    "    bool _zero_curve_hit = (_ht == raytracing::intersection_type::curve) && (_hit.distance <= 0.0f);\n"
-                    "    $v_out_0 = (_ht != raytracing::intersection_type::none) && !_zero_curve_hit;\n"
+                fmt("    $v_out_0 = _valid_hit;\n",
+                    v);
+            } else {
+                const char *prim_u = has_curves_local
+                    ? "(_ht == raytracing::intersection_type::triangle)\n"
+                      "               ? _hit.triangle_barycentric_coord.x\n"
+                      "               : ((_ht == raytracing::intersection_type::curve)\n"
+                      "                  ? _hit.curve_parameter : 0.0f)"
+                    : "(_ht == raytracing::intersection_type::triangle)\n"
+                      "               ? _hit.triangle_barycentric_coord.x : 0.0f";
+
+                fmt("    $v_out_0 = _valid_hit;\n"
                     "    $v_out_1 = _hit.distance;\n"
-                    "    $v_out_2 = (_ht == raytracing::intersection_type::triangle)\n"
-                    "               ? _hit.triangle_barycentric_coord.x\n"
-                    "               : ((_ht == raytracing::intersection_type::curve)\n"
-                    "                  ? _hit.curve_parameter : 0.0f);\n"
+                    "    $v_out_2 = $s;\n"
                     "    $v_out_3 = (_ht == raytracing::intersection_type::triangle)\n"
                     "               ? _hit.triangle_barycentric_coord.y : 0.0f;\n"
                     "    $v_out_4 = _hit.instance_id;\n"
                     "    $v_out_5 = _hit.primitive_id;\n"
                     "    $v_out_6 = _hit.geometry_id;\n"
                     "    $v_out_7 = _hit.user_instance_id;\n",
-                    v, v, v, v, v, v, v, v);
-            } else {
-                fmt("    $v_out_0 = (_hit.type != raytracing::intersection_type::none);\n"
-                    "    $v_out_1 = _hit.distance;\n"
-                    "    $v_out_2 = _hit.triangle_barycentric_coord.x;\n"
-                    "    $v_out_3 = _hit.triangle_barycentric_coord.y;\n"
-                    "    $v_out_4 = _hit.instance_id;\n"
-                    "    $v_out_5 = _hit.primitive_id;\n"
-                    "    $v_out_6 = _hit.geometry_id;\n"
-                    "    $v_out_7 = _hit.user_instance_id;\n",
-                    v, v, v, v, v, v, v, v);
+                    v, v, v, prim_u, v, v, v, v, v);
             }
 
             if (!is_unmasked) {

@@ -139,8 +139,9 @@ struct MetalScene {
     /// Buffer bindings shared by all IFT entries (see IFTBinding).
     std::vector<IFTBinding> ift_bindings;
 
-    /// Bit 0 = triangle, bit 1 = bounding_box, bit 2 = curves. Used to
-    /// specialize the MSL ``intersector<...>`` template at codegen time.
+    /// Bit 0 = triangle, bit 1 = bounding_box, bit 2 = curves, bit 3 =
+    /// triangle backface culling. Used to specialize the MSL
+    /// ``intersector<...>`` template at codegen time.
     uint32_t geometry_types_mask = 0;
 
     /// Lazily created intersection function tables, paired with the MSL
