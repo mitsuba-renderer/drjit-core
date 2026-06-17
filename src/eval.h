@@ -152,8 +152,8 @@ extern void jitc_metal_assemble_reset();
 
 /// Produce an indented copy of the assembled MSL for the PrintIR / console IR
 /// dump. The main code buffer stays unformatted. Returns a scratch pointer
-/// valid until the next call.
-extern const char *jitc_metal_format();
+/// valid until the next call; ``*size_out`` receives its length if non-null.
+extern const char *jitc_metal_format(size_t *size_out = nullptr);
 
 /// Args index of the bindless slot reserved for the kernel's visible function
 /// table, or -1 if the kernel performs no calls. Set by jitc_assemble().

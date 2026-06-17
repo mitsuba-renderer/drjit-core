@@ -833,14 +833,9 @@ void RecordThreadState::record_launch(
     op.dependency_range = std::pair(start, end);
 
     op.kernel.kernel   = kernel;
-    op.kernel.key      = (KernelKey *) malloc_check(sizeof(KernelKey));
-    size_t str_size    = buffer.size() + 1;
-    op.kernel.key->str = (char *) malloc_check(str_size);
-    std::memcpy(op.kernel.key->str, key.str, str_size);
-    op.kernel.hash            = hash;
-    op.kernel.key->device     = key.device;
-    op.kernel.key->flags      = key.flags;
-    op.kernel.key->hash       = key.hash;
+    op.kernel.hash     = hash;
+    op.kernel.device   = key.device;
+    op.kernel.flags    = key.flags;
 
     op.size = size;
 
@@ -1066,10 +1061,9 @@ int Recording::replay_launch(Operation &op) {
             kernel_history_entry.recording_mode = KernelRecordingMode::Replayed;
             kernel_history_entry.hash[0] = op.kernel.hash.low64;
             kernel_history_entry.hash[1] = op.kernel.hash.high64;
-            uint32_t str_size = (uint32_t) std::strlen(op.kernel.key->str);
-            kernel_history_entry.ir      = (char *) malloc_check(str_size + 1);
-            std::memcpy(kernel_history_entry.ir, op.kernel.key->str,
-                        str_size + 1);
+            const Kernel &k = op.kernel.kernel;
+            kernel_history_entry.ir = (char *) malloc_check(k.src_size + 1);
+            std::memcpy(kernel_history_entry.ir, k.src, k.src_size + 1);
             kernel_history_entry.uses_optix   = uses_optix;
             kernel_history_entry.size = launch_size;
             kernel_history_entry.cache_hit = true;
@@ -1079,7 +1073,8 @@ int Recording::replay_launch(Operation &op) {
         }
 
         const std::vector<uint32_t> empty_param_ids;
-        ts->launch(kernel, *op.kernel.key, op.kernel.hash, launch_size,
+        KernelKey key(op.kernel.hash, op.kernel.device, op.kernel.flags);
+        ts->launch(kernel, key, op.kernel.hash, launch_size,
                    kernel_params, empty_param_ids,
                    unlikely(record_kernel_history) ? &kernel_history_entry
                                                    : nullptr);
@@ -2365,7 +2360,8 @@ bool Recording::check_kernel_cache() {
         Operation &op = operations[i];
         if (op.type == OpType::KernelLaunch) {
             // Test if this kernel is still in the cache
-            auto it = state.kernel_cache.find(*op.kernel.key);
+            KernelKey key(op.kernel.hash, op.kernel.device, op.kernel.flags);
+            auto it = state.kernel_cache.find(key);
             if (it == state.kernel_cache.end())
                 return false;
         }
@@ -2379,12 +2375,6 @@ void Recording::destroy() {
     for (RecordedVariable &rv : this->recorded_variables) {
         if (rv.init == RecordedVarInit::Captured) {
             jitc_var_dec_ref(rv.index);
-        }
-    }
-    for (Operation &op : this->operations) {
-        if (op.type == OpType::KernelLaunch) {
-            free(op.kernel.key->str);
-            free(op.kernel.key);
         }
     }
 }

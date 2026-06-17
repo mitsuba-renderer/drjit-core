@@ -462,6 +462,7 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
 
 void jitc_kernel_free(int device_id, const Kernel &kernel) {
     delete[] kernel.param_info;
+    free(kernel.src);
 
     if (device_id == -1) {
         if (kernel.llvm.n_reloc)
@@ -513,7 +514,6 @@ void jitc_flush_kernel_cache() {
 
     for (auto &v : state.kernel_cache) {
         jitc_kernel_free(v.first.device, v.second);
-        free(v.first.str);
     }
 
     state.kernel_cache.clear();

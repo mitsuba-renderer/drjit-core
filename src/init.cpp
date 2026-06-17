@@ -203,10 +203,8 @@ void jitc_shutdown(int light) {
                 state.kernel_cache.size(),
                 state.kernel_cache.size() > 1 ? "s" : "");
 
-        for (auto &v : state.kernel_cache) {
+        for (auto &v : state.kernel_cache)
             jitc_kernel_free(v.first.device, v.second);
-            free(v.first.str);
-        }
 
         state.kernel_cache.clear();
         state.kernel_cache_generation++;

@@ -168,7 +168,7 @@ static StringBuffer metal_reindent_scratch;
 ///
 /// These are currently satisfied. Violating them degrades indentation quality
 /// but never changes semantics.
-const char *jitc_metal_format() {
+const char *jitc_metal_format(size_t *size_out) {
     metal_reindent_scratch.swap(buffer);
     buffer.clear();
 
@@ -247,6 +247,8 @@ const char *jitc_metal_format() {
     // Restore the unformatted source to ``buffer`` and keep the formatted copy in
     // the scratch buffer, whose contents we return.
     metal_reindent_scratch.swap(buffer);
+    if (size_out)
+        *size_out = metal_reindent_scratch.size();
     return metal_reindent_scratch.get();
 }
 

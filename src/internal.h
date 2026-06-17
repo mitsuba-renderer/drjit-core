@@ -994,17 +994,16 @@ private:
     ThreadStateBase cached_ts;
 };
 
-/// Key data structure for kernel source code & device ID
+/// Key data structure identifying a kernel by its hash, device & flags
 struct KernelKey {
-    char *str = nullptr;
     int device = 0;
     uint64_t flags = 0;
     /// 128-bit source code hash; Dr.Jit treats these hashes as collision-free
     /// kernel identifiers, hence key equality compares hashes, not source code.
     XXH128_hash_t hash{ 0, 0 };
 
-    KernelKey(char *str, XXH128_hash_t hash, int device, uint64_t flags)
-        : str(str), device(device), flags(flags), hash(hash) {}
+    KernelKey(XXH128_hash_t hash, int device, uint64_t flags)
+        : device(device), flags(flags), hash(hash) {}
 
     bool operator==(const KernelKey &k) const {
         return hash.low64 == k.hash.low64 && hash.high64 == k.hash.high64 &&

@@ -75,9 +75,10 @@ struct Operation {
     union {
         /// Additional information of a kernel launch
         struct {
-            KernelKey *key;
             Kernel kernel;
             XXH128_hash_t hash;
+            int device;
+            uint64_t flags;
         } kernel;
 
         /// The reduce type of a block reduction operation

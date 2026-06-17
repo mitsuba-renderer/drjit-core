@@ -40,6 +40,10 @@ struct Kernel {
     uint32_t size;
     uint32_t operation_count;
 
+    /// Generated source code and its length
+    char *src;
+    size_t src_size;
+
     /// Per-slot parameter metadata, parallel to the launch ``kernel_params``
     /// vector (see KernelParamInfo).
     KernelParamInfo *param_info;

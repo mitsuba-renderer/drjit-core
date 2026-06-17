@@ -646,10 +646,8 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         const char *ir = buffer.get();
         size_t ir_size = buffer.size();
 #if defined(DRJIT_ENABLE_METAL)
-        if (jitc_is_metal(backend)) {
-            ir = jitc_metal_format();
-            ir_size = strlen(ir);
-        }
+        if (jitc_is_metal(backend))
+            ir = jitc_metal_format(&ir_size);
 #endif
         kernel_history_entry.ir = (char *) malloc_check(ir_size + 1);
         memcpy(kernel_history_entry.ir, ir, ir_size + 1);
@@ -679,8 +677,7 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     }
 #endif
 
-    KernelKey kernel_key((char *) buffer.get(), kernel_hash, ts->device,
-                         flags);
+    KernelKey kernel_key(kernel_hash, ts->device, flags);
     auto it = state.kernel_cache.find(kernel_key);
     Kernel kernel;
     memset(&kernel, 0, sizeof(Kernel)); // quench uninitialized variable warning on MSVC
@@ -765,8 +762,9 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                 std::string(jitc_time_string(link_time)).c_str(),
                 std::string(jitc_mem_string(kernel.size)).c_str());
 
-        kernel_key.str = (char *) malloc_check(buffer.size() + 1);
-        memcpy(kernel_key.str, buffer.get(), buffer.size() + 1);
+        kernel.src_size = buffer.size();
+        kernel.src = (char *) malloc_check(kernel.src_size + 1);
+        memcpy(kernel.src, buffer.get(), kernel.src_size + 1);
         state.kernel_cache.emplace(kernel_key, kernel);
 
         if (cache_hit)
