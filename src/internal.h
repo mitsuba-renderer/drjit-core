@@ -1291,6 +1291,10 @@ extern void jitc_cuda_set_device(int device);
 extern void jitc_sync_thread();
 extern void jitc_sync_thread(ThreadState *stream);
 
+/// Submit the current thread's pending computation to the queue without waiting
+extern void jitc_flush_thread();
+extern void jitc_flush_thread(ThreadState *stream);
+
 /// Wait for all computation on the current device to finish
 extern void jitc_sync_device();
 

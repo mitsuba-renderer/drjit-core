@@ -604,6 +604,11 @@ void jit_sync_thread() {
     jitc_sync_thread();
 }
 
+void jit_flush_thread() {
+    lock_guard guard(state.lock);
+    jitc_flush_thread();
+}
+
 void jit_sync_device() {
     lock_guard guard(state.lock);
     jitc_sync_device();

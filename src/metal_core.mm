@@ -564,8 +564,12 @@ float jitc_metal_finalize_kernel_history_entry(void *task_ptr) {
 
 /// Flush the thread's pending command buffer and wait for the GPU to finish
 void jitc_metal_sync(ThreadState *ts) {
-    // Unwrap recording/disabling wrappers (used by frozen functions)
     ((MetalThreadState *) ts->actual_state())->flush(/* wait = */ true);
+}
+
+/// Submit the thread's pending command buffer to the GPU without waiting
+void jitc_metal_flush(ThreadState *ts) {
+    ((MetalThreadState *) ts->actual_state())->flush(/* wait = */ false);
 }
 
 // ============================================================================

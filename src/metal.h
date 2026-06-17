@@ -49,6 +49,9 @@ extern void jitc_metal_profile_stop();
 /// Wait for all Metal work submitted on the current thread to complete.
 extern void jitc_metal_sync(ThreadState *ts);
 
+/// Submit the current thread's pending command buffer without waiting for it.
+extern void jitc_metal_flush(ThreadState *ts);
+
 /// Resolve a Metal kernel-history entry's execution_time. The entry's task
 /// slot holds an owned id<MTLCommandBuffer>: wait for it and release it.
 extern float jitc_metal_finalize_kernel_history_entry(void *task);

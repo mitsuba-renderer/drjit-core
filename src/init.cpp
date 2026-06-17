@@ -603,6 +603,22 @@ void jitc_sync_thread() {
 #endif
 }
 
+void jitc_flush_thread(ThreadState *ts) {
+    (void) ts;
+#if defined(DRJIT_ENABLE_METAL)
+    if (!ts && jitc_is_metal(ts->backend)) {
+        jitc_metal_flush(ts);
+        return;
+    }
+#endif
+}
+
+void jitc_flush_thread() {
+#if defined(DRJIT_ENABLE_METAL)
+    jitc_flush_thread(jitc_thread_local().ts_metal);
+#endif
+}
+
 /// Wait for all computation on the current device to finish
 void jitc_sync_device() {
     ThreadLocal &tl = jitc_thread_local();

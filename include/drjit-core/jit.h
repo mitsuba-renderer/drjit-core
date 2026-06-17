@@ -140,6 +140,17 @@ extern JIT_EXPORT void jit_shutdown(int light JIT_DEF(0));
  */
 extern JIT_EXPORT void jit_sync_thread();
 
+/**
+ * \brief Submit the current thread's pending computation to the device queue
+ * without waiting for it to finish.
+ *
+ * Unlike \ref jit_sync_thread(), this never blocks the host. It only guarantees
+ * that the work scheduled so far is committed to the backend's queue/stream.
+ * This operation is only relevant for Metal. On backends that submit work as it
+ * is issued (CUDA, LLVM) this is a no-op.
+ */
+extern JIT_EXPORT void jit_flush_thread();
+
 /// Wait for all computation on the current device to finish
 extern JIT_EXPORT void jit_sync_device();
 
