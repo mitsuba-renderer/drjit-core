@@ -95,6 +95,10 @@ struct Kernel {
             /// id<MTLVisibleFunctionTable> for indirect-call dispatch, or null
             /// if the kernel performs no multi-target calls.
             void *call_table_vft;
+
+            /// Whether codegen reserved a trailing ``params.args[]`` call-table
+            /// slot (even if call_table_vft is potentially NULL).
+            bool has_call_table;
         } metal;
 #endif
     };

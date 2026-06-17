@@ -362,13 +362,20 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
             }
         }
 
-        // Append the kernel's visible function table as a trailing bindless
-        // ``params.args[]`` slot when it performs indirect calls.
-        if (id<MTLVisibleFunctionTable> vft =
-                (__bridge id<MTLVisibleFunctionTable>) kernel.metal.call_table_vft) {
-            kernel_params.push_back((void *) (uintptr_t)
-                memcpy_cast<uint64_t>(vft.gpuResourceID));
-            [enc useResource:vft usage:MTLResourceUsageRead];
+        // Append the kernel's trailing call-table ``params.args[]`` slot when
+        // codegen reserved one (i.e. the kernel performs any call). It holds the
+        // visible function table for indirect (multi-target) dispatch; kernels
+        // with only single-target calls have no table but still pass the slot to
+        // their callables, so pack a null pointer to keep the bound parameters
+        // matching the kernel's ``Params`` layout.
+        if (kernel.metal.has_call_table) {
+            id<MTLVisibleFunctionTable> vft =
+                (__bridge id<MTLVisibleFunctionTable>) kernel.metal.call_table_vft;
+            kernel_params.push_back(
+                vft ? (void *) (uintptr_t) memcpy_cast<uint64_t>(vft.gpuResourceID)
+                    : nullptr);
+            if (vft)
+                [enc useResource:vft usage:MTLResourceUsageRead];
         }
 
         // Prefer to include the parameters directly in the command buffer if

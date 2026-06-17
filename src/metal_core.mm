@@ -529,6 +529,8 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
         kernel.metal.library        = (__bridge_retained void *) lib;
         kernel.metal.call_table_vft = vft ? (__bridge_retained void *) vft
                                           : nullptr;
+        // Check if kernels must be launched with a call table slot
+        kernel.metal.has_call_table = metal_vft_arg_index >= 0;
         kernel.size = (uint32_t) std::strlen(source);
         return false;
     }
