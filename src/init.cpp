@@ -604,12 +604,13 @@ void jitc_sync_thread() {
 }
 
 void jitc_flush_thread(ThreadState *ts) {
-    (void) ts;
 #if defined(DRJIT_ENABLE_METAL)
-    if (!ts && jitc_is_metal(ts->backend)) {
+    if (ts && jitc_is_metal(ts->backend)) {
         jitc_metal_flush(ts);
         return;
     }
+#else
+    (void) ts;
 #endif
 }
 
