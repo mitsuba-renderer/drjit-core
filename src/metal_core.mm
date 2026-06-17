@@ -813,7 +813,7 @@ void jitc_metal_profile_stop() {
 
 void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
                           uint32_t mask, uint32_t *out,
-                          uint32_t n_out, uint32_t scene) {
+                          uint32_t n_out, uint32_t scene, int shadow) {
     if (n_args != 8)
         jitc_raise("jit_metal_ray_trace(): expected 8 ray arguments, got %u.",
                    n_args);
@@ -847,6 +847,7 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
 
     // Build TraceData with ray parameter indices
     TraceData *td = new TraceData();
+    td->shadow = shadow != 0;
     td->indices.reserve(n_args);
     for (uint32_t i = 0; i < n_args; ++i) {
         td->indices.push_back(args[i]);
@@ -897,7 +898,7 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
         VarType::UInt32   // user-provided instance ID
     };
 
-    for (uint32_t i = 0; i < 8; ++i)
+    for (uint32_t i = 0; i < (td->shadow ? 1u : 8u); ++i)
         out[i] = jitc_var_new_node_1(
             JitBackend::Metal, VarKind::Extract, out_types[i],
             size, symbolic, trace, jitc_var(trace), (uint64_t) i);

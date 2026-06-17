@@ -509,13 +509,13 @@ uint32_t jit_metal_configure_scene(void *accel, void **resources,
 
 void jit_metal_ray_trace(uint32_t n_args, uint32_t *args,
                          uint32_t mask, uint32_t *out, uint32_t n_out,
-                         uint32_t scene) {
+                         uint32_t scene, int shadow) {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_METAL)
-    jitc_metal_ray_trace(n_args, args, mask, out, n_out, scene);
+    jitc_metal_ray_trace(n_args, args, mask, out, n_out, scene, shadow);
 #else
     (void) n_args; (void) args; (void) mask; (void) out; (void) n_out;
-    (void) scene;
+    (void) scene; (void) shadow;
     jit_raise("jit_metal_ray_trace(): Metal backend not enabled.");
 #endif
 }

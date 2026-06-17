@@ -219,6 +219,6 @@ extern uint32_t jitc_metal_configure_scene(void *accel, void **resources,
 /// of the public ``jit_metal_ray_trace`` (see drjit-core/metal.h).
 extern void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
                                  uint32_t mask, uint32_t *out,
-                                 uint32_t n_out, uint32_t scene);
+                                 uint32_t n_out, uint32_t scene, int shadow);
 
 #endif // defined(DRJIT_ENABLE_METAL)

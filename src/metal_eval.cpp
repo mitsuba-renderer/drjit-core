@@ -904,15 +904,19 @@ static void jitc_metal_render(Variable *v) {
             Variable *valid = jitc_var(v->dep[0]);
             bool is_unmasked = valid->is_literal() && valid->literal == 1;
 
-            fmt("bool $v_out_0;\n"
-                "float $v_out_1;\n"
-                "float $v_out_2;\n"
-                "float $v_out_3;\n"
-                "uint $v_out_4;\n"
-                "uint $v_out_5;\n"
-                "uint $v_out_6;\n"
-                "uint $v_out_7;\n",
-                v, v, v, v, v, v, v, v);
+            if (td->shadow) {
+                fmt("bool $v_out_0;\n", v);
+            } else {
+                fmt("bool $v_out_0;\n"
+                    "float $v_out_1;\n"
+                    "float $v_out_2;\n"
+                    "float $v_out_3;\n"
+                    "uint $v_out_4;\n"
+                    "uint $v_out_5;\n"
+                    "uint $v_out_6;\n"
+                    "uint $v_out_7;\n",
+                    v, v, v, v, v, v, v, v);
+            }
 
             Variable *accel_h = jitc_var(v->dep[2]);
             Variable *ift_h = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
@@ -938,26 +942,16 @@ static void jitc_metal_render(Variable *v) {
                 scene_local && (scene_local->geometry_types_mask & 0x4u) != 0;
             bool extended = has_ift_local || has_curves_local;
 
-            // Emit intersector + ray setup + intersect call.
-            // - Triangle-only fast path: `intersector<triangle_data, instancing>`
-            //   with `assume_geometry_type(triangle)`.
-            // - Mixed (any non-triangle): drop the assume hint so curves and
-            //   bounding-box geometry are also tested. The IFT is passed only
-            //   when custom-intersection shapes are present.
-            if (extended) {
-                if (has_curves_local) {
-                    put("raytracing::intersector<raytracing::triangle_data, raytracing::curve_data, raytracing::instancing> _inter;\n");
-                } else {
-                    put("raytracing::intersector<raytracing::triangle_data, raytracing::instancing> _inter;\n");
-                }
-                put("_inter.force_opacity(raytracing::forced_opacity::opaque);\n"
-                    "_inter.accept_any_intersection(false);\n");
-            } else {
-                put("raytracing::intersector<raytracing::triangle_data, raytracing::instancing> _inter;\n"
-                    "_inter.assume_geometry_type(raytracing::geometry_type::triangle);\n"
-                    "_inter.force_opacity(raytracing::forced_opacity::opaque);\n"
-                    "_inter.accept_any_intersection(false);\n");
-            }
+            fmt("raytracing::intersector<raytracing::triangle_data, raytracing::instancing$s> _inter;\n",
+                has_curves_local ? ", raytracing::curve_data" : "");
+
+            if (!extended)
+                put("_inter.assume_geometry_type(raytracing::geometry_type::triangle);\n");
+
+            fmt("_inter.force_opacity(raytracing::forced_opacity::opaque);\n"
+                "_inter.accept_any_intersection($s);\n",
+                td->shadow ? "true" : "false");
+
             fmt("raytracing::ray _r;\n"
                 "_r.origin = float3($v, $v, $v);\n"
                 "_r.direction = float3($v, $v, $v);\n"
@@ -979,7 +973,18 @@ static void jitc_metal_render(Variable *v) {
             // - Curve hit:    prim_uv = (curve_parameter, 0)
             // - Bbox hit:     prim_uv = (0, 0) — compute_surface_interaction()
             //                 will recompute it from the hit point.
-            if (extended && has_curves_local) {
+            if (td->shadow) {
+                if (has_curves_local) {
+                    // See the note below on zero-distance curve hits.
+                    fmt("    auto _ht = _hit.type;\n"
+                        "    bool _zero_curve_hit = (_ht == raytracing::intersection_type::curve) && (_hit.distance <= 0.0f);\n"
+                        "    $v_out_0 = (_ht != raytracing::intersection_type::none) && !_zero_curve_hit;\n",
+                        v);
+                } else {
+                    fmt("    $v_out_0 = (_hit.type != raytracing::intersection_type::none);\n",
+                        v);
+                }
+            } else if (has_curves_local) {
                 // Apple's HW curve intersector reports a degenerate ``curve``
                 // hit at ``distance = 0`` when the ray's origin lies inside
                 // the swept-tube volume of a `CurveTypeRound` geometry — even
@@ -1016,20 +1021,27 @@ static void jitc_metal_render(Variable *v) {
                     v, v, v, v, v, v, v, v);
             }
 
-            if (!is_unmasked)
-                fmt("} else {\n"
-                    "$v_out_0 = false;\n"
-                    "$v_out_1 = 0.0f;\n"
-                    "$v_out_2 = 0.0f;\n"
-                    "$v_out_3 = 0.0f;\n"
-                    "$v_out_4 = 0u;\n"
-                    "$v_out_5 = 0u;\n"
-                    "$v_out_6 = 0u;\n"
-                    "$v_out_7 = 0u;\n"
-                    "}\n",
-                    v, v, v, v, v, v, v, v);
-            else
+            if (!is_unmasked) {
+                if (td->shadow)
+                    fmt("} else {\n"
+                        "$v_out_0 = false;\n"
+                        "}\n",
+                        v);
+                else
+                    fmt("} else {\n"
+                        "$v_out_0 = false;\n"
+                        "$v_out_1 = 0.0f;\n"
+                        "$v_out_2 = 0.0f;\n"
+                        "$v_out_3 = 0.0f;\n"
+                        "$v_out_4 = 0u;\n"
+                        "$v_out_5 = 0u;\n"
+                        "$v_out_6 = 0u;\n"
+                        "$v_out_7 = 0u;\n"
+                        "}\n",
+                        v, v, v, v, v, v, v, v);
+            } else {
                 put("}\n");
+            }
             break;
         }
 
