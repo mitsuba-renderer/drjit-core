@@ -320,12 +320,12 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
             fmt(", <$w x ptr> %data, <$w x i32> %offsets");
     }
 
-    // Name vector arguments using their (unique) byte offset
+    // Name each input argument by slot index
     for (uint32_t i = 0; i < (uint32_t) call->outer_in.size(); ++i) {
         if (!call->in_active[i])
             continue;
         const Variable *vi = jitc_var(call->inner_in[i]);
-        fmt(", $T %in_$u", vi, jitc_var(call->outer_in[i])->param_offset);
+        fmt(", $T %in_$u", vi, i);
     }
 
     fmt(") #0 {\n"
@@ -394,11 +394,15 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
         }
 
         switch (kind) {
-            case VarKind::CallInput:
-                // Bind the SSA register to the corresponding function argument
-                fmt("    $v = bitcast $T %in_$u to $T\n",
-                    v, v, jitc_var(v->dep[0])->param_offset, v);
+            case VarKind::CallInput: {
+                // Bind to the argument of the matching slot (inner_in[in_i]).
+                uint32_t in_i = 0;
+                for (; in_i < call->n_in; ++in_i)
+                    if (call->inner_in[in_i] == sv.index)
+                        break;
+                fmt("    $v = bitcast $T %in_$u to $T\n", v, v, in_i, v);
                 break;
+            }
 
             case VarKind::DefaultMask:
                 fmt("    $v = bitcast <$w x i1> %mask to <$w x i1>\n", v);
