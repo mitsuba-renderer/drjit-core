@@ -177,7 +177,11 @@ enum OptixHitObjectField {
   * The outgoing hit object produced by the ``optixTraverse`` call can be
   * queried by specifying a list of requested fields with \c n_hit_object_field
   * and \c hit_object_fields. The results will be stored in new variables whose
-  * indices are written to \c hit_object_out.
+  * indices are written to \c hit_object_out. For lanes that are masked off or
+  * that miss the geometry, the \c RayTMax field is set to +infinity and every
+  * other queried field is set to zero. When \c OptixHitObjectField::IsHit is
+  * among the requested fields and \c invoke is disabled, missed lanes skip the
+  * remaining queries entirely.
   *
   * Shader execution reordering can be requested by using the \c reorder flag.
   * When the flag is set, the reordering will use the interesected shape's ID

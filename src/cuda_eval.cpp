@@ -1307,6 +1307,54 @@ static void jitc_cuda_render(Variable *v) {
 }
 
 #if defined(DRJIT_ENABLE_OPTIX)
+/// Emit the OptiX hit-object query for field \c i into register $v_out_{32+i}.
+/// The register itself is declared and zero-initialized by the caller.
+static void jitc_cuda_render_trace_field(const Variable *v, uint32_t i,
+                                         uint32_t field_i) {
+    uint32_t r = 32 + i;
+    switch ((OptixHitObjectField) field_i) {
+        case OptixHitObjectField::IsHit:
+            fmt("    call ($v_out_$u), _optix_hitobject_is_hit, ();\n", v, r);
+            break;
+
+        case OptixHitObjectField::InstanceId:
+            fmt("    call ($v_out_$u), _optix_hitobject_get_instance_id, ();\n", v, r);
+            break;
+
+        case OptixHitObjectField::PrimitiveIndex:
+            fmt("    call ($v_out_$u), _optix_hitobject_get_primitive_idx, ();\n", v, r);
+            break;
+
+        case OptixHitObjectField::SBTDataPointer:
+            fmt("    call ($v_out_$u), _optix_hitobject_get_sbt_data_pointer, ();\n", v, r);
+            break;
+
+        case OptixHitObjectField::RayTMax:
+            fmt("    call ($v_out_$u), _optix_hitobject_get_ray_tmax, ();\n", v, r);
+            break;
+
+        case OptixHitObjectField::Attribute0:
+        case OptixHitObjectField::Attribute1:
+        case OptixHitObjectField::Attribute2:
+        case OptixHitObjectField::Attribute3:
+        case OptixHitObjectField::Attribute4:
+        case OptixHitObjectField::Attribute5:
+        case OptixHitObjectField::Attribute6:
+        case OptixHitObjectField::Attribute7: {
+            uint32_t idx = field_i - (uint32_t) OptixHitObjectField::Attribute0;
+            fmt("    .reg.u32 $v_attr_idx_$u;\n"
+                "    mov.u32 $v_attr_idx_$u, $u;\n"
+                "    call ($v_out_$u), _optix_hitobject_get_attribute, ($v_attr_idx_$u);\n",
+                v, idx, v, idx, idx, v, r, v, idx);
+            break;
+        }
+
+        default:
+            jitc_fail("jitc_cuda_render_trace(): unhandled hit object "
+                      "field type (value %u)!", field_i);
+    }
+}
+
 static void jitc_cuda_render_trace(const Variable *v,
                                    const Variable *valid,
                                    const Variable *pipeline,
@@ -1342,6 +1390,21 @@ static void jitc_cuda_render_trace(const Variable *v,
     }
 
     fmt("    .reg.u32 $v_out_<32>;\n", v);
+
+    // Initialize each field register to its canonical miss value (RayTMax to
+    // +infinity, the rest to zero). Masked lanes branch over the trace and
+    // missed lanes branch out at the is_hit early-out below, so both keep these.
+    size_t n_fields = td->hit_object_fields.size();
+    int hit_field = -1;
+    for (uint32_t i = 0; i < n_fields; ++i) {
+        OptixHitObjectField f = (OptixHitObjectField) td->hit_object_fields[i];
+        const char *ty = "u32", *zero = "0";
+        if (f == OptixHitObjectField::RayTMax) { ty = "f32"; zero = "0f7f800000"; }
+        else if (f == OptixHitObjectField::SBTDataPointer) ty = "b64";
+        if (f == OptixHitObjectField::IsHit) hit_field = (int) i;
+        fmt("    .reg.$s $v_out_$u;\n    mov.$s $v_out_$u, $s;\n",
+            ty, v, 32 + i, ty, v, 32 + i, zero);
+    }
 
     if (valid->is_literal()) {
         if (valid->literal == 0)
@@ -1420,69 +1483,23 @@ static void jitc_cuda_render_trace(const Variable *v,
     // =====================================================
     // 3. Get HitObject fields
     // =====================================================
-    size_t n_fields = td->hit_object_fields.size();
+    // Query is_hit first and branch missed lanes to l_masked, skipping the
+    // remaining queries (only valid when the invoke below does not run).
+    bool miss_skip = hit_field >= 0 && !td->invoke;
+    if (miss_skip) {
+        jitc_cuda_render_trace_field(v, (uint32_t) hit_field,
+                                     td->hit_object_fields[hit_field]);
+        fmt("    .reg.pred $v_hit_p;\n"
+            "    setp.ne.u32 $v_hit_p, $v_out_$u, 0;\n"
+            "    @!$v_hit_p bra l_masked_$u;\n",
+            v, v, v, 32 + (uint32_t) hit_field, v, v->reg_index);
+        some_masked = true; // ensure the l_masked label is emitted below
+    }
+
     for (uint32_t i = 0; i < n_fields; ++i) {
-        uint32_t field_i = td->hit_object_fields[i];
-        switch ((OptixHitObjectField) field_i) {
-            case OptixHitObjectField::IsHit:
-                fmt("    .reg.u32 $v_out_$u;\n"
-                    "    call ($v_out_$u), _optix_hitobject_is_hit, ();\n",
-                    v, 32 + i,
-                    v, 32 + i);
-                break;
-
-            case OptixHitObjectField::InstanceId:
-                fmt("    .reg.u32 $v_out_$u;\n"
-                    "    call ($v_out_$u), _optix_hitobject_get_instance_id, ();\n",
-                    v, 32 + i,
-                    v, 32 + i);
-                break;
-
-            case OptixHitObjectField::PrimitiveIndex:
-                fmt("    .reg.u32 $v_out_$u;\n"
-                    "    call ($v_out_$u), _optix_hitobject_get_primitive_idx, ();\n",
-                    v, 32 + i,
-                    v, 32 + i);
-                break;
-
-            case OptixHitObjectField::SBTDataPointer:
-                fmt("    .reg.b64 $v_out_$u;\n"
-                    "    call ($v_out_$u), _optix_hitobject_get_sbt_data_pointer, ();\n",
-                    v, 32 + i,
-                    v, 32 + i);
-                break;
-
-            case OptixHitObjectField::RayTMax:
-                fmt("    .reg.f32 $v_out_$u;\n"
-                    "    call ($v_out_$u), _optix_hitobject_get_ray_tmax, ();\n",
-                    v, 32 + i,
-                    v, 32 + i);
-                break;
-
-            case OptixHitObjectField::Attribute0:
-            case OptixHitObjectField::Attribute1:
-            case OptixHitObjectField::Attribute2:
-            case OptixHitObjectField::Attribute3:
-            case OptixHitObjectField::Attribute4:
-            case OptixHitObjectField::Attribute5:
-            case OptixHitObjectField::Attribute6:
-            case OptixHitObjectField::Attribute7: {
-                uint32_t idx = field_i - (uint32_t) OptixHitObjectField::Attribute0;
-                fmt("    .reg.u32 $v_out_$u;\n"
-                    "    .reg.u32 $v_attr_idx_$u;\n"
-                    "    mov.u32 $v_attr_idx_$u, $u;\n"
-                    "    call ($v_out_$u), _optix_hitobject_get_attribute, ($v_attr_idx_$u);\n",
-                    v, 32 + i,
-                    v, idx,
-                    v, idx, idx,
-                    v, 32 + i, v, idx);
-            }
-            break;
-
-            default:
-                jitc_fail("jitc_cuda_render_trace(): unhandled hit object "
-                          "field type (value %u)!", field_i);
-        }
+        if (miss_skip && (int) i == hit_field)
+            continue;
+        jitc_cuda_render_trace_field(v, i, td->hit_object_fields[i]);
     }
 
     // =====================================================

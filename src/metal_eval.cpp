@@ -904,17 +904,20 @@ static void jitc_metal_render(Variable *v) {
             Variable *valid = jitc_var(v->dep[0]);
             bool is_unmasked = valid->is_literal() && valid->literal == 1;
 
+            // Initialize all outputs to their canonical miss values (distance
+            // +infinity, validity false, the rest zero). Masked lanes skip the
+            // block below and missed lanes skip the hit-field write, keeping these.
             if (td->shadow) {
-                fmt("bool $v_out_0;\n", v);
+                fmt("bool $v_out_0 = false;\n", v);
             } else {
-                fmt("bool $v_out_0;\n"
-                    "float $v_out_1;\n"
-                    "float $v_out_2;\n"
-                    "float $v_out_3;\n"
-                    "uint $v_out_4;\n"
-                    "uint $v_out_5;\n"
-                    "uint $v_out_6;\n"
-                    "uint $v_out_7;\n",
+                fmt("bool $v_out_0 = false;\n"
+                    "float $v_out_1 = as_type<float>(0x7f800000u);\n"
+                    "float $v_out_2 = 0.0f;\n"
+                    "float $v_out_3 = 0.0f;\n"
+                    "uint $v_out_4 = 0u;\n"
+                    "uint $v_out_5 = 0u;\n"
+                    "uint $v_out_6 = 0u;\n"
+                    "uint $v_out_7 = 0u;\n",
                     v, v, v, v, v, v, v, v);
             }
 
@@ -977,11 +980,12 @@ static void jitc_metal_render(Variable *v) {
             // - Curve hit:    prim_uv = (curve_parameter, 0)
             // - Bbox hit:     prim_uv = (0, 0) — compute_surface_interaction()
             //                 will recompute it from the hit point.
+            // On a hit, overwrite the miss defaults set above.
             put("    auto _ht = _hit.type;\n"
-                "    bool _valid_hit = (_ht != raytracing::intersection_type::none);\n");
+                "    if (_ht != raytracing::intersection_type::none) {\n");
 
             if (td->shadow) {
-                fmt("    $v_out_0 = _valid_hit;\n",
+                fmt("        $v_out_0 = true;\n",
                     v);
             } else {
                 const char *prim_u = has_curves_local
@@ -992,39 +996,20 @@ static void jitc_metal_render(Variable *v) {
                     : "(_ht == raytracing::intersection_type::triangle)\n"
                       "               ? _hit.triangle_barycentric_coord.x : 0.0f";
 
-                fmt("    $v_out_0 = _valid_hit;\n"
-                    "    $v_out_1 = _hit.distance;\n"
-                    "    $v_out_2 = $s;\n"
-                    "    $v_out_3 = (_ht == raytracing::intersection_type::triangle)\n"
+                fmt("        $v_out_0 = true;\n"
+                    "        $v_out_1 = _hit.distance;\n"
+                    "        $v_out_2 = $s;\n"
+                    "        $v_out_3 = (_ht == raytracing::intersection_type::triangle)\n"
                     "               ? _hit.triangle_barycentric_coord.y : 0.0f;\n"
-                    "    $v_out_4 = _hit.instance_id;\n"
-                    "    $v_out_5 = _hit.primitive_id;\n"
-                    "    $v_out_6 = _hit.geometry_id;\n"
-                    "    $v_out_7 = _hit.user_instance_id;\n",
+                    "        $v_out_4 = _hit.instance_id;\n"
+                    "        $v_out_5 = _hit.primitive_id;\n"
+                    "        $v_out_6 = _hit.geometry_id;\n"
+                    "        $v_out_7 = _hit.user_instance_id;\n",
                     v, v, v, prim_u, v, v, v, v, v);
             }
 
-            if (!is_unmasked) {
-                if (td->shadow)
-                    fmt("} else {\n"
-                        "$v_out_0 = false;\n"
-                        "}\n",
-                        v);
-                else
-                    fmt("} else {\n"
-                        "$v_out_0 = false;\n"
-                        "$v_out_1 = 0.0f;\n"
-                        "$v_out_2 = 0.0f;\n"
-                        "$v_out_3 = 0.0f;\n"
-                        "$v_out_4 = 0u;\n"
-                        "$v_out_5 = 0u;\n"
-                        "$v_out_6 = 0u;\n"
-                        "$v_out_7 = 0u;\n"
-                        "}\n",
-                        v, v, v, v, v, v, v, v);
-            } else {
-                put("}\n");
-            }
+            put("    }\n" // close: if (_ht != none)
+                "}\n");   // close: if (valid) / unconditional block
             break;
         }
 

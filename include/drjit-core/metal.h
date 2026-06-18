@@ -98,7 +98,10 @@ extern JIT_EXPORT uint32_t jit_metal_configure_scene(
  *
  * Creates a ``VarKind::TraceRay`` IR node that, when evaluated, emits an
  * MSL ``intersector<triangle_data, instancing>::intersect()`` call against
- * the scene identified by \c scene.
+ * the scene identified by \c scene. For lanes that are masked off or that miss
+ * the geometry, the distance output is set to +infinity, the validity flag to
+ * ``false``, and every other output to zero, so callers need not separately
+ * clear them.
  *
  * \param n_args
  *     Number of ray input arguments. Must be 8.
