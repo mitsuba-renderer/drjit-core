@@ -2467,6 +2467,18 @@ jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *variant,
  * - tfar
  * - mask, id, flags
  * </tt>.
+ *
+ * The \c out array receives one boolean hit mask for shadow rays. Closest-hit
+ * rays receive eight outputs:
+ *
+ * - valid
+ * - t
+ * - u, v
+ * - primID, geomID, instID
+ * - hit_inst
+ *
+ * Missed and inactive lanes set \c valid and \c hit_inst to false and \c t to
+ * +infinity.
  */
 extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
                                           int shadow_ray, const uint32_t *in,

@@ -1274,6 +1274,7 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
              symbolic ? " [symbolic]" : "");
 
     TraceData *td = new TraceData();
+    td->shadow = shadow_ray != 0;
     td->indices.reserve(n_args);
     for (uint32_t i = 0; i < n_args; ++i) {
         uint32_t id = i != 1 ? in[i] : valid;
@@ -1288,11 +1289,20 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
 
     jitc_var(index)->data = td;
 
-    for (int i = 0; i < (shadow_ray ? 1 : 6); ++i)
-        out[i] = jitc_var_new_node_1(JitBackend::LLVM, VarKind::Extract,
-                                     i < 3 ? float_type : VarType::UInt32, size,
-                                     symbolic, index, jitc_var(index),
-                                     (uint64_t) i);
+    if (shadow_ray) {
+        out[0] = jitc_var_new_node_1(
+            JitBackend::LLVM, VarKind::Extract, VarType::Bool, size, symbolic,
+            index, jitc_var(index), 0);
+    } else {
+        for (int i = 0; i < 8; ++i) {
+            VarType vt = (i == 0 || i == 7) ? VarType::Bool
+                       : i < 4              ? float_type
+                                            : VarType::UInt32;
+            out[i] = jitc_var_new_node_1(
+                JitBackend::LLVM, VarKind::Extract, vt, size, symbolic,
+                index, jitc_var(index), (uint64_t) i);
+        }
+    }
     // Free resources when this variable is destroyed
     auto callback = [](uint32_t /*index*/, int free, void *ptr) {
         if (free)
@@ -1328,8 +1338,9 @@ static void jitc_llvm_render_trace(const Variable *v,
         19 uint32_t geomID
         20 uint32_t instID[] */
 
-    const std::vector<uint32_t> &indices = ((TraceData *) v->data)->indices;
-    bool shadow_ray = v->literal == 1;
+    TraceData *td = (TraceData *) v->data;
+    const std::vector<uint32_t> &indices = td->indices;
+    bool shadow_ray = td->shadow;
     VarType float_type = jitc_var_type(indices[2]);
 
     uint32_t width          = jitc_llvm_vector_width,
@@ -1491,20 +1502,48 @@ static void jitc_llvm_render_trace(const Variable *v,
 
     offset = (8 * float_size + 4) * width;
 
-    for (int i = 0; i < (shadow_ray ? 1 : 6); ++i) {
-        VarType vt = (i < 3) ? float_type : VarType::UInt32;
-        const char *tname = type_name_llvm[(int) vt];
-        uint32_t tsize = type_size[(int) vt];
+    const char *tname = type_name_llvm[(int) float_type];
 
-        fmt("    $v_out_$u_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
-            "    $v_out_$u = load <$w x $s>, ptr $v_out_$u_1, align $u\n",
-            v, i, offset,
-            v, i, tname, v, i, float_size * width);
+    if (shadow_ray) {
+        fmt("    $v_out_tfar_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
+            "    $v_out_tfar = load <$w x $s>, ptr $v_out_tfar_1, align $u\n"
+            "    $v_out_0 = fcmp olt <$w x $s> $v_out_tfar, $z\n",
+            v, offset,
+            v, tname, v, float_size * width,
+            v, tname, v);
+    } else {
+        fmt("    $v_out_tfar_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
+            "    $v_out_tfar = load <$w x $s>, ptr $v_out_tfar_1, align $u\n",
+            v, offset,
+            v, tname, v, float_size * width);
 
-        if (i == 0)
-            offset += (4 * float_size + 3 * 4) * width;
-        else
-            offset += tsize * width;
+        offset += (4 * float_size + 3 * 4) * width;
+
+        for (int i = 2; i < 7; ++i) {
+            VarType vt = (i < 4) ? float_type : VarType::UInt32;
+            const char *oname = type_name_llvm[(int) vt];
+            uint32_t osize = type_size[(int) vt];
+
+            fmt("    $v_out_$u_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
+                "    $v_out_$u = load <$w x $s>, ptr $v_out_$u_1, align $u\n",
+                v, i, offset,
+                v, i, oname, v, i, float_size * width);
+
+            offset += osize * width;
+        }
+
+        fmt("    $v_out_0 = icmp ne <$w x i32> $v_out_5, $s\n"
+            "    $v_out_7_raw = icmp ne <$w x i32> $v_out_6, $s\n"
+            "    $v_out_7 = and <$w x i1> $v_out_0, $v_out_7_raw\n"
+            "    $v_inf_0 = insertelement <$w x $s> undef, $s 0x7ff0000000000000, i32 0\n"
+            "    $v_inf = shufflevector <$w x $s> $v_inf_0, <$w x $s> undef, <$w x i32> $z\n"
+            "    $v_out_1 = select <$w x i1> $v_out_0, <$w x $s> $v_out_tfar, <$w x $s> $v_inf\n",
+            v, v, jitc_llvm_ones_bit_str[(int) VarType::Int32],
+            v, v, jitc_llvm_ones_bit_str[(int) VarType::Int32],
+            v, v, v,
+            v, tname, tname,
+            v, tname, v, tname,
+            v, v, tname, v, tname, v);
     }
 
     put("    ; -------------------\n\n");

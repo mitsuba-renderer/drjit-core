@@ -3,10 +3,8 @@
 // Payload for IR nodes that encode a ray tracing operation
 struct TraceData {
     std::vector<uint32_t> indices;
-#if defined(DRJIT_ENABLE_METAL)
     /// Occlusion query: accept any hit and terminate traversal early
     bool shadow = false;
-#endif
 #if defined(DRJIT_ENABLE_OPTIX)
     std::vector<uint32_t> hit_object_fields;
     bool invoke;
