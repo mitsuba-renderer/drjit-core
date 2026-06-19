@@ -73,7 +73,7 @@ void LLVMThreadState::barrier() {
     }
     scheduled_tasks.clear();
 
-    if (!deferred_free.empty())
+    if (!free_later.empty())
         flush_deferred_free();
 }
 

@@ -772,8 +772,13 @@ struct ThreadStateBase {
      */
     int device = 0;
 
-    // Shared allocations parked for release at the next opportunity
-    std::vector<std::pair<uint64_t, void *>> deferred_free;
+    // Allocations released once their GPU work *completes* (shared buffers,
+    // which the host accesses directly).
+    std::vector<std::pair<uint64_t, void *>> free_later;
+
+    // Device allocations released once the current command buffer is *submitted*
+    // (Metal); a reuse is then ordered behind the prior use in the queue.
+    std::vector<std::pair<uint64_t, void *>> free_next;
 
     /// ---------------------------- CUDA-specific ----------------------------
 
@@ -928,7 +933,7 @@ struct ThreadState : public ThreadStateBase {
      */
     virtual void flush_deferred_free();
 
-    /// Move \ref deferred_free array into a heap-owned buffer for use with
+    /// Move \ref free_later array into a heap-owned buffer for use with
     /// jitc_malloc_release_batch()
     void *take_deferred_free();
 

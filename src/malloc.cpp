@@ -283,15 +283,22 @@ void jitc_free(void *ptr) {
     if (ts)
         ts->notify_free(ptr);
 
-    if (shared && !ts) // Leak allocation if Dr.Jit has already shut down
+    if (shared && !ts) // Leak shared allocation if Dr.Jit has already shut down
         return;
 
+    // A freed Metal buffer is not safe to reuse (by other threads) until the
+    // current thread has committed its command buffer, so park it until then
+    // (see ThreadState::free_next).
+    bool submit_deferred = !shared && backend == JitBackend::Metal && ts;
+
     // Free regular/host allocations immediately. Shared allocations are parked
-    // for later release via ThreadState::flush_deferred_free()
-    if (!shared || backend == JitBackend::None)
+    // until their GPU work completes; Metal device allocations until submission.
+    if (backend == JitBackend::None || (!shared && !submit_deferred)) {
         jitc_malloc_release(info, ptr);
-    else
-        ts->actual_state()->deferred_free.push_back({ info, ptr });
+    } else {
+        ThreadState *as = ts->actual_state();
+        (shared ? as->free_later : as->free_next).push_back({ info, ptr });
+    }
 
     jitc_trace("jit_free(" DRJIT_PTR ", backend=%s, shared=%i, device=%i, size=%zu)",
                (uintptr_t) ptr, jitc_backend_name(backend), (int) shared,

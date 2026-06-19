@@ -92,6 +92,13 @@ void MetalThreadState::flush(bool wait) {
             metal_last_cb = (__bridge_retained void *) cb;
         }
 
+        // Return released buffers to the memory cache
+        if (!free_next.empty()) {
+            for (const auto &e : free_next)
+                jitc_malloc_release(e.first, e.second);
+            free_next.clear();
+        }
+
         // Wait out the in-flight command buffer if requested.
         if (wait && metal_last_cb) {
             id<MTLCommandBuffer> last =
@@ -108,7 +115,7 @@ void MetalThreadState::flush(bool wait) {
 }
 
 void MetalThreadState::flush_deferred_free() {
-    if (!deferred_free.empty())
+    if (!free_later.empty() || !free_next.empty())
         flush(/* wait = */ false);
 }
 

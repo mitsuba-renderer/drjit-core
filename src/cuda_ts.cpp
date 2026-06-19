@@ -1038,7 +1038,7 @@ void CUDAThreadState::enqueue_host_func(void (*callback)(void *),
 }
 
 void CUDAThreadState::barrier() {
-    if (!deferred_free.empty())
+    if (!free_later.empty())
         flush_deferred_free();
 }
 

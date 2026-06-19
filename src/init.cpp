@@ -903,17 +903,19 @@ ThreadState::~ThreadState() {
     // work has completed.
     if (void *batch = take_deferred_free())
         jitc_malloc_release_batch(batch);
+    for (const auto &e : free_next)
+        jitc_malloc_release(e.first, e.second);
 }
 ThreadState *ThreadState::actual_state() { return this; }
 void ThreadState::barrier() { }
 void ThreadState::flush_deferred_free() { }
 
 void *ThreadState::take_deferred_free() {
-    if (deferred_free.empty())
+    if (free_later.empty())
         return nullptr;
     void *batch = new std::vector<std::pair<uint64_t, void *>>(
-        std::move(deferred_free));
-    deferred_free.clear();
+        std::move(free_later));
+    free_later.clear();
     return batch;
 }
 
