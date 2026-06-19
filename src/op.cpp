@@ -461,8 +461,10 @@ uint32_t jitc_var_sqrt(uint32_t a0) {
         return f32_unary_op(jitc_var_sqrt, a0);
 
     if (!result && info.size) {
+        bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
         bool approx =
-            jitc_is_cuda(info.backend) && info.type == VarType::Float32;
+            info.type == VarType::Float32 &&
+            jitc_is_gpu(info.backend) && fast_math;
         result = jitc_var_new_node_1(
             info.backend, approx ? VarKind::SqrtApprox : VarKind::Sqrt,
             info.type, info.size, info.symbolic, a0, v0);
@@ -632,8 +634,10 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
         return f32_binary_op(jitc_var_div, a0, a1, true);
 
     if (!result && info.size) {
+        bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
         bool approx =
-            jitc_is_cuda(info.backend) && info.type == VarType::Float32;
+            info.type == VarType::Float32 &&
+            jitc_is_gpu(info.backend) && fast_math;
         result = jitc_var_new_node_2(
             info.backend, approx ? VarKind::DivApprox : VarKind::Div, info.type,
             info.size, info.symbolic, a0, v0, a1, v1);
