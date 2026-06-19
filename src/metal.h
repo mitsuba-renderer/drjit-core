@@ -52,6 +52,13 @@ extern void jitc_metal_sync(ThreadState *ts);
 /// Submit the current thread's pending command buffer without waiting for it.
 extern void jitc_metal_flush(ThreadState *ts);
 
+/// Event API functions for the Metal backend
+extern JitEvent jitc_metal_event_create(bool enable_timing);
+extern void jitc_metal_event_destroy(JitEvent event);
+extern void jitc_metal_event_record(JitEvent event);
+extern int jitc_metal_event_query(JitEvent event);
+extern void jitc_metal_event_wait(JitEvent event);
+
 /// Resolve a Metal kernel-history entry's execution_time. The entry's task
 /// slot holds an owned id<MTLCommandBuffer>: wait for it and release it.
 extern float jitc_metal_finalize_kernel_history_entry(void *task);

@@ -1248,11 +1248,13 @@ inline ThreadState *thread_state(JitBackend backend) {
             result = thread_state_cuda;
             break;
 #endif
+
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:
             result = thread_state_metal;
             break;
 #endif
+
         case JitBackend::LLVM:
             result = thread_state_llvm;
             break;

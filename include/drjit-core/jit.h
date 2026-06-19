@@ -3192,11 +3192,12 @@ typedef struct JitEvent_* JitEvent;
  * \brief Create a new event for synchronization and timing
  *
  * \param backend
- *     The backend to create the event for (CUDA or LLVM)
+ *     The backend to create the event for (CUDA, LLVM, or Metal)
  *
  * \param enable_timing
  *     If true, the event can be used for timing measurements.
- *     If false, timing queries will raise an error.
+ *     If false, timing queries will raise an error. This flag is ignored by
+ *     the Metal backend, which does not support timing.
  *
  * \return
  *     An opaque handle to the created event
@@ -3257,7 +3258,9 @@ extern JIT_EXPORT void jit_event_wait(JitEvent event);
  *     Elapsed time in milliseconds between start and end events
  *
  * \note
- *     Both events must have timing enabled and must be from the same backend
+ *     Both events must have timing enabled and must be from the same backend.
+ *     The Metal backend does not support timing; this function always raises
+ *     for Metal events.
  */
 extern JIT_EXPORT float jit_event_elapsed_time(JitEvent start, JitEvent end);
 
@@ -3266,6 +3269,7 @@ extern JIT_EXPORT float jit_event_elapsed_time(JitEvent start, JitEvent end);
  *
  * For CUDA backend, returns the CUevent handle.
  * For LLVM backend, returns the Task* pointer.
+ * For Metal backend, returns the id<MTLSharedEvent> handle.
  *
  * \param event
  *     The event to get the handle from

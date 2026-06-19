@@ -1439,3 +1439,69 @@ void MetalThreadState::enqueue_host_func(void (*callback)(void *),
         [cb addCompletedHandler:^(id<MTLCommandBuffer>) { callback(payload); }];
     }
 }
+
+// ====================================================================
+//                       Event API implementation
+// ====================================================================
+
+JitEvent jitc_metal_event_create(bool enable_timing) {
+    ThreadState *ts = thread_state(JitBackend::Metal);
+
+    EventData *event = new EventData(JitBackend::Metal, enable_timing);
+    event->ts = ts;
+
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>) ts->metal_device;
+        id<MTLSharedEvent> ev = [device newSharedEvent];
+        event->metal_event = (__bridge_retained void *) ev;
+    }
+
+    return (JitEvent) event;
+}
+
+void jitc_metal_event_destroy(JitEvent event) {
+    EventData *e = (EventData *) event;
+    if (e->metal_event) {
+        (void) (__bridge_transfer id<MTLSharedEvent>) e->metal_event;
+        e->metal_event = nullptr;
+    }
+    delete e;
+}
+
+void jitc_metal_event_record(JitEvent event) {
+    EventData *e = (EventData *) event;
+    MetalThreadState *ts = (MetalThreadState *) e->ts;
+
+    @autoreleasepool {
+        // encodeSignalEvent requires that the buffer has no open command encoder
+        ts->close_encoder();
+        id<MTLCommandBuffer> cb =
+            (__bridge id<MTLCommandBuffer>) ts->ensure_cmdbuf();
+        id<MTLSharedEvent> ev = (__bridge id<MTLSharedEvent>) e->metal_event;
+        [cb encodeSignalEvent:ev value:++e->metal_value];
+    }
+
+    ts->flush(/* wait = */ false);
+}
+
+int jitc_metal_event_query(JitEvent event) {
+    EventData *e = (EventData *) event;
+    id<MTLSharedEvent> ev = (__bridge id<MTLSharedEvent>) e->metal_event;
+    return ev.signaledValue >= e->metal_value ? 1 : 0;
+}
+
+void jitc_metal_event_wait(JitEvent event) {
+    EventData *e = (EventData *) event;
+    MetalThreadState *ts = (MetalThreadState *) e->ts;
+
+    // Commit before blocking, else a same-thread record()/wait() self-deadlocks.
+    ts->flush(/* wait = */ false);
+
+    @autoreleasepool {
+        id<MTLSharedEvent> ev = (__bridge id<MTLSharedEvent>) e->metal_event;
+        uint64_t value = e->metal_value;
+        // waitUntilSignaledValue returns false on timeout; loop to be unbounded.
+        while (ev.signaledValue < value)
+            [ev waitUntilSignaledValue:value timeoutMS:1000];
+    }
+}
