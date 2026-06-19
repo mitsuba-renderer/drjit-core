@@ -208,24 +208,6 @@ static VarType make_int_type_unsigned(VarType type) {
     }
 }
 
-/// Resolve a result pointer that a kernel writes to: device allocations
-/// resolve directly; host memory is staged through a fresh Shared allocation
-/// (returned via ``*staging_out``) that the caller must copy back after
-/// synchronizing and then release.
-static id<MTLBuffer> metal_resolve_or_stage(void *ptr, size_t bytes,
-                                            uint64_t *addr_out,
-                                            void **staging_out) {
-    size_t off = 0;
-    id<MTLBuffer> buf =
-        (__bridge id<MTLBuffer>) jitc_metal_find_buffer(ptr, &off);
-    if (buf) {
-        *addr_out = (uint64_t) [buf gpuAddress] + off;
-        return buf;
-    }
-    *staging_out = jitc_malloc(JitBackend::Metal, bytes, /*shared=*/true);
-    return metal_resolve(*staging_out, addr_out);
-}
-
 /// Lazily created block (prefix) reduction pipeline, or nil if the
 /// (kind, op, type) combination is unsupported
 static id<MTLComputePipelineState>
@@ -1144,13 +1126,11 @@ uint32_t MetalThreadState::compress(const uint8_t *in, uint32_t size,
 /// non-empty buckets, appending (bucket, offset, count) records to
 /// ``offsets`` and counting them in a fresh Shared allocation (returned via
 /// ``*counter_out`` for post-flush readback). ``row_stride`` is the distance
-/// between consecutive bucket base entries; ``offsets`` may live in host
-/// memory, in which case a staging buffer is returned via ``*staging_out``.
+/// between consecutive bucket base entries.
 static void metal_mkperm_detect_offsets(MetalThreadState *ts, void *buckets,
                                         uint32_t bucket_count, uint32_t size,
                                         uint32_t row_stride, uint32_t *offsets,
-                                        void **counter_out,
-                                        void **staging_out) {
+                                        void **counter_out) {
     void *counter = jitc_malloc(JitBackend::Metal, sizeof(uint32_t),
                                 /*shared=*/true);
     *(uint32_t *) counter = 0;
@@ -1159,9 +1139,7 @@ static void metal_mkperm_detect_offsets(MetalThreadState *ts, void *buckets,
     MkpermOffsetsParams params;
     id<MTLBuffer> buckets_buf = metal_resolve(buckets, &params.buckets);
     id<MTLBuffer> counter_buf = metal_resolve(counter, &params.counter);
-    id<MTLBuffer> offsets_buf = metal_resolve_or_stage(
-        offsets, (size_t) bucket_count * 4u * sizeof(uint32_t),
-        &params.offsets, staging_out);
+    id<MTLBuffer> offsets_buf = metal_resolve(offsets, &params.offsets);
     params.bucket_count = bucket_count;
     params.perm_size = size;
     params.row_stride = row_stride;
@@ -1175,35 +1153,26 @@ static void metal_mkperm_detect_offsets(MetalThreadState *ts, void *buckets,
 }
 
 /// Shared mkperm epilogue: release the histogram, record kernel history,
-/// flush (waiting only when results must be read back on the host), and copy
-/// out the optional offsets/permutation stagings. Returns the number of
-/// non-empty buckets (0 if ``offsets`` was not requested).
+/// flush (waiting only when offsets must be read back on the host), and record
+/// the unique-bucket count. Returns the number of non-empty buckets (0 if
+/// ``offsets`` was not requested).
 static uint32_t metal_mkperm_finish(MetalThreadState *ts,
                                     MetalHistoryScope &hist, void *buckets,
-                                    uint32_t size, uint32_t bucket_count,
-                                    uint32_t *perm, void *perm_staging,
-                                    uint32_t *offsets, void *counter,
-                                    void *offsets_staging) {
+                                    uint32_t bucket_count, uint32_t *offsets,
+                                    void *counter) {
     // 'buckets' frees on completion of the command buffer just encoded
     // (its last reader), so block only when results go back to the host.
     jitc_free(buckets);
     hist.record();
-    ts->flush(/* wait = */ offsets || perm_staging);
+    ts->flush(/* wait = */ offsets != nullptr);
 
     uint32_t unique_count = 0;
     if (offsets) {
         unique_count = *(uint32_t *) counter;
-        if (offsets_staging)
-            std::memcpy(offsets, offsets_staging,
-                        (size_t) unique_count * 4u * sizeof(uint32_t));
         offsets[4 * bucket_count] = unique_count;
     }
-    if (perm_staging)
-        std::memcpy(perm, perm_staging, (size_t) size * sizeof(uint32_t));
 
     jitc_free(counter);
-    jitc_free(offsets_staging);
-    jitc_free(perm_staging);
     return unique_count;
 }
 
@@ -1301,17 +1270,13 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             // Phase 2.5 (optional, single block): detect non-empty buckets.
             // The bucket-major layout puts bucket b's base at buckets[b*rows],
             // so the detector strides by rows_per_group.
-            void *counter = nullptr, *offsets_staging = nullptr;
+            void *counter = nullptr;
             if (offsets)
                 metal_mkperm_detect_offsets(this, buckets, bucket_count, size,
-                                            rows_per_group, offsets, &counter,
-                                            &offsets_staging);
+                                            rows_per_group, offsets, &counter);
 
-            // Phase 4: scatter the permutation (stage perm if host-only)
-            void *perm_staging = nullptr;
-            id<MTLBuffer> perm_buf = metal_resolve_or_stage(
-                perm, (size_t) size * sizeof(uint32_t), &tp.perm,
-                &perm_staging);
+            // Phase 4: scatter the permutation
+            id<MTLBuffer> perm_buf = metal_resolve(perm, &tp.perm);
 
             metal_dispatch_groups(
                 this, metal_pipeline(this, MetalKernel::MkpermPhase4Tiny), tp,
@@ -1320,9 +1285,8 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
                  { perm_buf, MTLResourceUsageWrite }},
                 grid, thread_count, shared_bytes);
 
-            return metal_mkperm_finish(this, hist, buckets, size, bucket_count,
-                                       perm, perm_staging, offsets, counter,
-                                       offsets_staging);
+            return metal_mkperm_finish(this, hist, buckets, bucket_count,
+                                       offsets, counter);
         }
 
         // ---- Fallback: global-atomic path (single block only) ------
@@ -1371,18 +1335,14 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
                             bucket_count, true, false, buckets, buckets);
 
         // Phase 2.5 (optional): Detect non-empty buckets
-        void *counter = nullptr, *offsets_staging = nullptr;
+        void *counter = nullptr;
         if (offsets)
             metal_mkperm_detect_offsets(this, buckets, bucket_count, size,
                                         /* row_stride = */ 1, offsets,
-                                        &counter, &offsets_staging);
+                                        &counter);
 
-        // Phase 3: Scatter indices using atomics on the prefix-summed
-        // histogram (stage perm if host-only)
-        void *perm_staging = nullptr;
-        id<MTLBuffer> perm_buf = metal_resolve_or_stage(
-            perm, (size_t) size * sizeof(uint32_t), &params.perm,
-            &perm_staging);
+        // Phase 3: Scatter indices using atomics on the prefix-summed histogram
+        id<MTLBuffer> perm_buf = metal_resolve(perm, &params.perm);
 
         metal_dispatch_threads(
             this, metal_pipeline(this, MetalKernel::MkpermPhase3), params,
@@ -1391,9 +1351,8 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
              { perm_buf, MTLResourceUsageWrite }},
             size);
 
-        return metal_mkperm_finish(this, hist, buckets, size, bucket_count,
-                                   perm, perm_staging, offsets, counter,
-                                   offsets_staging);
+        return metal_mkperm_finish(this, hist, buckets, bucket_count,
+                                   offsets, counter);
     }
 }
 

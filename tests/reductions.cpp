@@ -323,14 +323,14 @@ TEST_ALL_FLOAT_AGNOSTIC(13_mkperm) {
             uint32_t *data    = (uint32_t *) jit_malloc(JitBackend::None,
                                                         size * sizeof(uint32_t));
             uint32_t *perm    = (uint32_t *) jit_malloc(
-                Float::Backend == JitBackend::CUDA ? JitBackend::CUDA
+                Float::Backend != JitBackend::LLVM ? Float::Backend
                                                    : JitBackend::None,
                 size * sizeof(uint32_t));
             uint32_t *offsets = (uint32_t *) jit_malloc(
-                Float::Backend == JitBackend::CUDA ? JitBackend::CUDA
+                Float::Backend != JitBackend::LLVM ? Float::Backend
                                                    : JitBackend::None,
                 (n_buckets * 4 + 1) * sizeof(uint32_t),
-                /*shared=*/Float::Backend == JitBackend::CUDA);
+                /*shared=*/Float::Backend != JitBackend::LLVM);
             uint64_t *ref = new uint64_t[size];
 
             for (size_t k = 0; k < size; ++k) {
