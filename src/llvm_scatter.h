@@ -23,12 +23,6 @@ extern void jitc_llvm_render_scatter_reduce(const Variable *v,
                                             const Variable *index,
                                             const Variable *mask);
 
-extern void jitc_llvm_render_scatter_add_kahan(const Variable *v,
-                                               const Variable *ptr_1,
-                                               const Variable *ptr_2,
-                                               const Variable *index,
-                                               const Variable *value);
-
 extern void jitc_llvm_render_scatter_inc(Variable *v, const Variable *ptr,
                                          const Variable *index,
                                          const Variable *mask);

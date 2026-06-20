@@ -481,14 +481,6 @@ Array scatter_inc(Array &target, const Array index, const JitArray<Array::Backen
     return Array::steal(jit_var_scatter_inc(target.index_ptr(), index.index(), mask.index()));
 }
 
-template <typename Array, typename Index>
-void scatter_add_kahan(Array &target_1, Array &target_2, const Array &value,
-                          const JitArray<Array::Backend, Index> &index,
-                          const JitArray<Array::Backend, bool> &mask = true) {
-    jit_var_scatter_add_kahan(target_1.index_ptr(), target_2.index_ptr(),
-                              value.index(), index.index(), mask.index());
-}
-
 template <typename Array>
 Array arange(size_t start, size_t stop, size_t step) {
     using UInt32 = typename Array::template ReplaceValue<uint32_t>;

@@ -720,10 +720,6 @@ static void jitc_metal_render(Variable *v) {
             jitc_metal_render_scatter_inc(v);
             break;
 
-        case VarKind::ScatterKahan:
-            jitc_metal_render_scatter_kahan(v);
-            break;
-
         case VarKind::ScatterCAS:
             jitc_metal_render_scatter_cas(v);
             break;

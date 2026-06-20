@@ -1925,10 +1925,6 @@ uint32_t jitc_var_check_bounds(BoundsCheckType bct, uint32_t index,
                         msg = "drjit.scatter_inc(): out-of-bounds write to position";
                         break;
 
-                    case BoundsCheckType::ScatterAddKahan:
-                        msg = "drjit.scatter_add_kahan(): out-of-bounds write to position";
-                        break;
-
                     case BoundsCheckType::ScatterCAS:
                         msg = "drjit.scatter_cas(): out-of-bounds write to position";
                         break;
@@ -2242,110 +2238,6 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
 static const char *reduce_op_symbol[(int) ReduceOp::Count] = {
     "=", "+=", "*=", "= min", "= max", "&=", "|="
 };
-
-void jitc_var_scatter_add_kahan(uint32_t *target_1_p, uint32_t *target_2_p,
-                                uint32_t value, uint32_t index, uint32_t mask) {
-    if (value == 0 && index == 0)
-        return;
-
-    auto [var_info, value_v, index_v, mask_v] =
-        jitc_var_check("jit_var_scatter_add_kahan", value, index, mask);
-
-    Ref target_1 = borrow(*target_1_p),
-        target_2 = borrow(*target_2_p);
-
-    auto [target_info, target_1_v, target_2_v] =
-        jitc_var_check("jit_var_scatter_add_kahan",
-                       (uint32_t) target_1,
-                       (uint32_t) target_2);
-
-    // Go to the original if 'target' is wrapped into a loop state variable
-    unwrap(target_1, target_1_v);
-    unwrap(target_2, target_2_v);
-
-    if (target_1_v->symbolic || target_2_v->symbolic)
-        jitc_raise("jit_var_scatter_add_kahan(): cannot scatter to a symbolic "
-                   "variable (r%u, r%u).",
-                   (uint32_t) target_1, (uint32_t) target_2);
-
-    if (target_1_v->type != value_v->type || target_2_v->type != value_v->type)
-        jitc_raise("jit_var_scatter_add_kahan(): target/value type mismatch.");
-
-    if (target_1_v->size != target_2_v->size)
-        jitc_raise("jit_var_scatter_add_kahan(): target size mismatch.");
-
-    if (value_v->is_literal() && value_v->literal == 0)
-        return;
-
-    if (mask_v->is_literal() && mask_v->literal == 0)
-        return;
-
-    uint32_t flags = jitc_flags();
-    var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
-
-    // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
-    if (target_1_v->ref_count != 2 && target_1_v->ref_count_stashed != 1) {
-        target_1 = steal(jitc_var_copy(target_1));
-
-        // The above operation may have invalidated 'target_2_v' which is accessed below
-        target_2_v = jitc_var(target_2);
-    }
-
-    // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
-    if ((target_2_v->ref_count != 2 && target_2_v->ref_count_stashed != 1) ||
-        target_1 == target_2)
-        target_2 = steal(jitc_var_copy(target_2));
-
-    void *target_1_addr = nullptr, *target_2_addr = nullptr;
-    target_1 = steal(jitc_var_data(target_1, false, &target_1_addr));
-    target_2 = steal(jitc_var_data(target_2, false, &target_2_addr));
-
-    if (target_1 != *target_1_p) {
-        jitc_var_inc_ref(target_1);
-        jitc_var_dec_ref(*target_1_p);
-        *target_1_p = target_1;
-    }
-
-    if (target_2 != *target_2_p) {
-        jitc_var_inc_ref(target_2);
-        jitc_var_dec_ref(*target_2_p);
-        *target_2_p = target_2;
-    }
-
-    Ref ptr_1 = steal(jitc_var_pointer(var_info.backend, target_1_addr, target_1, 1));
-    Ref ptr_2 = steal(jitc_var_pointer(var_info.backend, target_2_addr, target_2, 1));
-
-    Ref mask_2  = steal(jitc_var_mask_apply(mask, var_info.size)),
-        index_2 = steal(jitc_scatter_gather_index(target_1, index));
-
-    if (flags & (uint32_t) JitFlag::Debug)
-        mask_2 = steal(jitc_var_check_bounds(BoundsCheckType::ScatterAddKahan,
-                                             index, mask_2, target_info.size));
-
-    var_info.size = std::max(var_info.size, jitc_var(mask_2)->size);
-
-    Ref value_2 = steal(jitc_var_and(value, mask_2));
-
-    bool symbolic = jit_flag(JitFlag::SymbolicScope);
-    if (var_info.symbolic && !symbolic)
-        jitc_raise(
-            "jit_var_scatter_add_kahan(): input arrays are symbolic, but the "
-            "operation was issued outside of a symbolic recording session.");
-
-    uint32_t result = jitc_var_new_node_4(
-        var_info.backend, VarKind::ScatterKahan, VarType::Void, var_info.size,
-        symbolic, ptr_1, jitc_var(ptr_1), ptr_2, jitc_var(ptr_2), index_2,
-        jitc_var(index_2), value_2, jitc_var(value_2));
-
-    jitc_log(Debug,
-             "jit_var_scatter_add_kahan(): (r%u[r%u], r%u[r%u]) += r%u "
-             "(mask=r%u, ptrs=(r%u, r%u), se=r%u)",
-             (uint32_t) target_1, (uint32_t) index_2, (uint32_t) target_2,
-             (uint32_t) index_2, (uint32_t) value_2, (uint32_t) mask_2,
-             (uint32_t) ptr_1, (uint32_t) ptr_2, result);
-
-    jitc_var_mark_side_effect(result);
-}
 
 uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask) {
     auto [var_info, index_v, mask_v] =

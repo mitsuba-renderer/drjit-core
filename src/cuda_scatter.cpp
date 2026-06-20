@@ -341,58 +341,6 @@ void jitc_cuda_render_scatter_inc(Variable *v, const Variable *ptr,
     v->consumed = 1;
 }
 
-void jitc_cuda_render_scatter_add_kahan(const Variable *v,
-                                        const Variable *ptr_1,
-                                        const Variable *ptr_2,
-                                        const Variable *index,
-                                        const Variable *value) {
-    fmt("    setp.eq.$t %p3, $v, 0.0;\n"
-        "    @%p3 bra l_$u_done;\n"
-        "    mad.wide.$t %rd2, $v, $a, $v;\n"
-        "    mad.wide.$t %rd3, $v, $a, $v;\n",
-        value, value,
-        v->reg_index,
-        index, index, value, ptr_1,
-        index, index, value, ptr_2);
-
-    const char* op_suffix = jitc_is_single(value) ? ".ftz" : "";
-
-    fmt("    {\n"
-        "        .reg.$t %before, %after, %value, %case_1, %case_2;\n"
-        "        .reg.$t %abs_before, %abs_value, %result;\n"
-        "        .reg.pred %cond;\n"
-        "\n"
-        "        mov.$t %value, $v;\n"
-        "        atom.global.add.$t %before, [%rd2], %value;\n"
-        "        add$s.$t %after, %before, %value;\n"
-        "        sub$s.$t %case_1, %before, %after;\n"
-        "        add$s.$t %case_1, %case_1, %value;\n"
-        "        sub$s.$t %case_2, %value, %after;\n"
-        "        add$s.$t %case_2, %case_2, %before;\n"
-        "        abs$s.$t %abs_before, %before;\n"
-        "        abs$s.$t %abs_value, %value;\n"
-        "        setp.ge.$t %cond, %abs_before, %abs_value;\n"
-        "        selp.$t %result, %case_1, %case_2, %cond;\n"
-        "        red.global.add.$t [%rd3], %result;\n"
-        "    }\n",
-        value,
-        value,
-        value, value,
-        value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        op_suffix, value,
-        value,
-        value,
-        value);
-
-    fmt("\nl_$u_done:\n", v->reg_index);
-}
-
 void jitc_cuda_render_scatter_exch(Variable *v,
                                    const Variable *ptr,
                                    const Variable *value,

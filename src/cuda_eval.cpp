@@ -1020,10 +1020,6 @@ static void jitc_cuda_render(Variable *v) {
             jitc_cuda_render_scatter_inc(v, a0, a1, a2);
             break;
 
-        case VarKind::ScatterKahan:
-            jitc_cuda_render_scatter_add_kahan(v, a0, a1, a2, a3);
-            break;
-
         case VarKind::ScatterExch:
             jitc_cuda_render_scatter_exch(v, a0, a1, a2, a3);
             break;

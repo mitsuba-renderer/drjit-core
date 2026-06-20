@@ -327,7 +327,6 @@ extern uint32_t jitc_var_reverse(uint32_t index);
 enum class BoundsCheckType {
     Scatter,
     ScatterReduce,
-    ScatterAddKahan,
     ScatterInc,
     ScatterExch,
     ScatterCAS,

@@ -33,11 +33,6 @@ extern uint32_t jitc_var_scatter_packet(size_t n, uint32_t target,
                                         uint32_t mask, ReduceOp op,
                                         ReduceMode mode);
 
-/// Atomic Kahan summation
-extern void jitc_var_scatter_add_kahan(uint32_t *target_1, uint32_t *target_2,
-                                       uint32_t value, uint32_t index,
-                                       uint32_t mask);
-
 /// Atomic scatter-increment
 extern uint32_t jitc_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t mask);
 

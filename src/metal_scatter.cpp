@@ -273,35 +273,6 @@ void jitc_metal_render_scatter_exch(Variable *v) {
     v->consumed = 1;
 }
 
-void jitc_metal_render_scatter_kahan(Variable *v) {
-    Variable *ptr_t  = jitc_var(v->dep[0]);
-    Variable *ptr_c  = jitc_var(v->dep[1]);
-    Variable *index  = jitc_var(v->dep[2]);
-    Variable *value  = jitc_var(v->dep[3]);
-
-    fmt("if ($v != 0.f) {\n"
-              "    #pragma clang fp contract(off)\n"
-              "    volatile float _kahan_before = atomic_fetch_add_explicit("
-              "(device atomic_float*)((device float*) $v + $v), "
-              "$v, memory_order_relaxed);\n"
-              "    volatile float _kahan_after = _kahan_before + $v;\n"
-              "    volatile float _kahan_c1 = (_kahan_before - _kahan_after) + $v;\n"
-              "    volatile float _kahan_c2 = ($v - _kahan_after) + _kahan_before;\n"
-              "    float _kahan_comp = abs(_kahan_before) >= abs($v) ? _kahan_c1 : _kahan_c2;\n"
-              "    atomic_fetch_add_explicit("
-              "(device atomic_float*)((device float*) $v + $v), "
-              "_kahan_comp, memory_order_relaxed);\n"
-              "}\n",
-              value,
-              ptr_t, index,
-              value,
-              value,
-              value,
-              value,
-              value,
-              ptr_c, index);
-}
-
 void jitc_metal_render_scatter_inc(Variable *v) {
     Variable *ptr   = jitc_var(v->dep[0]);
     Variable *index = jitc_var(v->dep[1]);

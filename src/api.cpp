@@ -833,12 +833,6 @@ uint32_t jit_var_scatter_packet(size_t n, uint32_t target,
     return jitc_var_scatter_packet(n, target, values, index, mask, op, mode);
 }
 
-void jit_var_scatter_add_kahan(uint32_t *target_1, uint32_t *target_2,
-                                  uint32_t value, uint32_t index, uint32_t mask) {
-    lock_guard guard(state.lock);
-    jitc_var_scatter_add_kahan(target_1, target_2, value, index, mask);
-}
-
 uint32_t jit_var_scatter_inc(uint32_t *target, uint32_t index, uint32_t mask) {
     lock_guard guard(state.lock);
     return jitc_var_scatter_inc(target, index, mask);
