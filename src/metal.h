@@ -151,6 +151,10 @@ struct MetalScene {
     /// ``intersector<...>`` template at codegen time.
     uint32_t geometry_types_mask = 0;
 
+    /// Cached handle variables for the scene's TLAS and (optionally) IFT
+    uint32_t accel_handle = 0;
+    uint32_t ift_handle = 0;
+
     /// Lazily created intersection function tables, paired with the MSL
     /// compute pipeline they were built for. We need separate IFT instances
     /// per pipeline because each MTLIntersectionFunctionTable is bound to
@@ -173,6 +177,11 @@ extern MetalScene *jitc_metal_get_scene(uint32_t scene_index);
 /// as a resource handle: mem-maps a fresh backing for ``ptr`` and delegates to
 /// jitc_var_resource_pointer(). Returns 0 if ``ptr`` is null.
 extern uint32_t jitc_metal_make_resource_handle(void *ptr, ResourceKind kind);
+
+/// Return the cached resource handle (Accel or IFT) for ``scene``, creating it
+/// on first use. The returned index carries a reference the caller must release
+extern uint32_t jitc_metal_scene_resource_handle(MetalScene *scene,
+                                                 ResourceKind kind);
 
 /// Create a UInt64 whose data pointer is the ``MetalScene`` owner of
 /// ``scene_index``, surfacing the scene as a rebindable freeze input. Returns

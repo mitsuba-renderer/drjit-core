@@ -631,6 +631,11 @@ uint32_t jitc_metal_configure_scene(void *accel, void **resources,
                  (uintptr_t) s->intersection_fn_library,
                  s->intersection_fns.size(),
                  s->ift_cache.size());
+        // Release the cached TLAS/IFT resource handles
+        if (s->accel_handle)
+            jitc_var_dec_ref(s->accel_handle);
+        if (s->ift_handle)
+            jitc_var_dec_ref(s->ift_handle);
         for (auto &kv : s->ift_cache) {
             if (kv.second)
                 (void) (__bridge_transfer id<MTLIntersectionFunctionTable>)
@@ -668,6 +673,17 @@ uint32_t jitc_metal_make_resource_handle(void *ptr, ResourceKind kind) {
     uint32_t handle = jitc_var_resource_pointer(backing, kind);
     jitc_var_dec_ref(backing);
     return handle;
+}
+
+uint32_t jitc_metal_scene_resource_handle(MetalScene *scene, ResourceKind kind) {
+    if (!scene)
+        return 0;
+    uint32_t &slot = (kind == ResourceKind::IFT) ? scene->ift_handle
+                                                 : scene->accel_handle;
+    if (!slot)
+        slot = jitc_metal_make_resource_handle(scene, kind);
+    jitc_var_inc_ref(slot);
+    return slot;
 }
 
 uint32_t jitc_metal_scene_owner_handle(uint32_t scene_index) {
@@ -857,9 +873,9 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
     // Build acceleration-structure and intersection-function-table handles
     // The scene reference in dep[1] keeps MetalScene alive.
     MetalScene *scene_obj = jitc_metal_get_scene(scene);
-    Ref accel_h = steal(jitc_metal_make_resource_handle(scene_obj,
-                                                        ResourceKind::Accel));
-    Ref ift_h = steal(jitc_metal_make_resource_handle(
+    Ref accel_h = steal(jitc_metal_scene_resource_handle(scene_obj,
+                                                         ResourceKind::Accel));
+    Ref ift_h = steal(jitc_metal_scene_resource_handle(
         scene_obj->intersection_fn_library ? scene_obj : nullptr,
         ResourceKind::IFT));
 
