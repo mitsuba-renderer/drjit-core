@@ -984,24 +984,26 @@ static void jitc_metal_render(Variable *v) {
                 fmt("        $v_out_0 = true;\n",
                     v);
             } else {
-                const char *prim_u = has_curves_local
-                    ? "(_ht == raytracing::intersection_type::triangle)\n"
-                      "               ? _hit.triangle_barycentric_coord.x\n"
-                      "               : ((_ht == raytracing::intersection_type::curve)\n"
-                      "                  ? _hit.curve_parameter : 0.0f)"
-                    : "(_ht == raytracing::intersection_type::triangle)\n"
-                      "               ? _hit.triangle_barycentric_coord.x : 0.0f";
+                const char *prim_u, *prim_v;
+                if (has_curves_local) {
+                    prim_u = "(_ht == raytracing::intersection_type::curve)"
+                             " ? _hit.curve_parameter : _hit.triangle_barycentric_coord.x";
+                    prim_v = "(_ht == raytracing::intersection_type::curve)"
+                             " ? 0.0f : _hit.triangle_barycentric_coord.y";
+                } else {
+                    prim_u = "_hit.triangle_barycentric_coord.x";
+                    prim_v = "_hit.triangle_barycentric_coord.y";
+                }
 
                 fmt("        $v_out_0 = true;\n"
                     "        $v_out_1 = _hit.distance;\n"
                     "        $v_out_2 = $s;\n"
-                    "        $v_out_3 = (_ht == raytracing::intersection_type::triangle)\n"
-                    "               ? _hit.triangle_barycentric_coord.y : 0.0f;\n"
+                    "        $v_out_3 = $s;\n"
                     "        $v_out_4 = _hit.instance_id;\n"
                     "        $v_out_5 = _hit.primitive_id;\n"
                     "        $v_out_6 = _hit.geometry_id;\n"
                     "        $v_out_7 = _hit.user_instance_id;\n",
-                    v, v, v, prim_u, v, v, v, v, v);
+                    v, v, v, prim_u, v, prim_v, v, v, v, v);
             }
 
             put("    }\n" // close: if (_ht != none)
