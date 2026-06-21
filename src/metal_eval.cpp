@@ -273,6 +273,13 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
         "    constant Params& params [[buffer(0)]],\n"
         "    uint r0 [[thread_position_in_grid]]) {\n");
 
+    // Load the call-data base pointer once, shared by every call's dispatch in
+    // this kernel. The args index is the parameter index minus one (the leading
+    // 'size' field, see the '$o' convention).
+    if (call_buffer.base_v)
+        fmt("    device uint8_t* r$u = (device uint8_t*) params.args[$u];\n",
+            call_buffer.base_reg, call_buffer.base_param_index - 1);
+
     // -------------------------------------------------------------------
     //   4. Render every variable in the schedule
     // -------------------------------------------------------------------
@@ -1122,12 +1129,9 @@ static void jitc_metal_render(Variable *v) {
 
         case VarKind::Call: {
             Variable *a0 = jitc_var(v->dep[0]),
-                     *a1 = jitc_var(v->dep[1]),
-                     *a2 = jitc_var(v->dep[2]),
-                     *a3 = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
+                     *a1 = jitc_var(v->dep[1]);
             jitc_var_call_assemble((CallData *) v->data, v->reg_index,
-                                   a0->reg_index, a1->reg_index, a2->reg_index,
-                                   a3 ? a3->reg_index : 0);
+                                   a0->reg_index, a1->reg_index);
             break;
         }
 
@@ -1264,6 +1268,14 @@ static void jitc_metal_callable_signature(const CallData *call, bool with_names)
     else
         put("uint, uint, device uint8_t*, constant void*");
 
+    // Callables containing a nested call also receive the base pointer.
+    if (call->use_nested) {
+        if (with_names)
+            put(", device uint8_t* base");
+        else
+            put(", device uint8_t*");
+    }
+
     for (uint32_t i = 0; i < call->n_in; ++i) {
         if (!call->in_active[i])
             continue;
@@ -1387,7 +1399,6 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
 void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
                                   uint32_t self_reg, uint32_t mask_reg,
-                                  uint32_t offset_reg, uint32_t data_reg,
                                   uint32_t /*in_size*/, uint32_t /*in_align*/,
                                   uint32_t /*out_size*/, uint32_t /*out_align*/) {
     // =====================================================
@@ -1436,16 +1447,32 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     if (is_masked)
         fmt("if (r$u) {\n", mask_reg);
 
-    // Load the uint64_t entry: (data_offset << 32) | callable_index
-    fmt("$sulong _oe_$u = ((device const ulong*) r$u)[r$u];\n"
-        "$suint _ci_$u = (uint)(_oe_$u & 0xFFFFFFFFu);\n",
-        indent, call_reg, offset_reg, self_reg,
-        indent, call_reg, call_reg);
+    // Name of the base pointer: at the kernel level the register holding the
+    // base pointer parameter, inside a callable the forwarded 'base' argument.
+    char base[32];
+    if (callable_depth == 0)
+        snprintf(base, sizeof(base), "r%u", call_buffer.base_reg);
+    else
+        snprintf(base, sizeof(base), "base");
 
-    if (data_reg)
+    bool has_slots  = !call->slots.empty();
+    bool need_entry = call->n_inst != 1 || has_slots;
+
+    // Load the uint64_t offset-table entry: (abs_data_offset << 32) |
+    // callable_index. This call's table begins at element 'offset_base/8' of B.
+    if (need_entry) {
+        fmt("$sulong _oe_$u = ((device const ulong*) $s)[$u + r$u];\n",
+            indent, call_reg, base,
+            call->offset_base / (uint32_t) sizeof(uint64_t), self_reg);
+        if (call->n_inst != 1)
+            fmt("$suint _ci_$u = (uint)(_oe_$u & 0xFFFFFFFFu);\n",
+                indent, call_reg, call_reg);
+    }
+
+    if (has_slots)
         fmt("$sdevice uint8_t* _cd_$u = "
-            "(device uint8_t*) r$u + (uint)(_oe_$u >> 32);\n",
-            indent, call_reg, data_reg, call_reg);
+            "(device uint8_t*) $s + (uint)(_oe_$u >> 32);\n",
+            indent, call_reg, base, call_reg);
 
     // =====================================================
     // 4. Dispatch
@@ -1461,7 +1488,7 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     // index, self, data, call_table, live inputs (by value).
     auto put_args = [&]() {
         fmt("$s, r$u, ", index_name, self_reg);
-        if (data_reg)
+        if (has_slots)
             fmt("_cd_$u", call_reg);
         else
             put("(device uint8_t*) nullptr");
@@ -1470,6 +1497,9 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
         else
             fmt(", (constant void*) &params.args[$u]",
                 (uint32_t) metal_vft_arg_index);
+        // Callables containing a nested call receive the base pointer.
+        if (call->use_nested)
+            fmt(", $s", base);
         // Live inputs always have a register: in_active mirrors the packing
         // predicate, which excludes !reg_index inputs.
         for (uint32_t i = 0; i < call->n_in; ++i)

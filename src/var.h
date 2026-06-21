@@ -73,7 +73,8 @@ extern uint32_t jitc_var_undefined(JitBackend backend, VarType type, size_t size
 /// the 'write_ptr' and 'written' flags in the Variable class)
 extern uint32_t jitc_var_pointer(JitBackend backend, const void *value,
                                  uint32_t dep, int write,
-                                 bool written = false);
+                                 bool written = false,
+                                 bool disable_lvn = false);
 
 enum class ResourceKind : uint8_t; // defined in internal.h
 

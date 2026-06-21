@@ -158,6 +158,13 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         params_type = "global";
     }
 
+    // Load the call-data base pointer once, shared by every call's dispatch in
+    // this kernel.
+    if (call_buffer.base_v)
+        fmt("    ld.$s.u64 %rd$u, [$s+$u];\n", params_type, call_buffer.base_reg,
+            params_base,
+            call_buffer.base_param_index * (uint32_t) sizeof(void *));
+
     for (uint32_t gi = group.start; gi != group.end; ++gi) {
         uint32_t index = schedule[gi].index;
         Variable *v = jitc_var(index);
@@ -300,6 +307,9 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
         put(".reg .u32 self, ");
     if (!call->slots.empty())
         put(".reg .u64 data, ");
+    // Callables containing a nested call receive the base pointer.
+    if (call->use_nested)
+        put(".reg .u64 base, ");
     if (in_size)
         fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
     buffer.delete_trailing_commas();
@@ -999,8 +1009,7 @@ static void jitc_cuda_render(Variable *v) {
 
         case VarKind::Call:
             jitc_var_call_assemble((CallData *) v->data, v->reg_index,
-                                   a0->reg_index, a1->reg_index, a2->reg_index,
-                                   a3 ? a3->reg_index : 0);
+                                   a0->reg_index, a1->reg_index);
             break;
 
         case VarKind::CallOutput:
@@ -1508,7 +1517,6 @@ static void jitc_cuda_render_reorder(const Variable *v, const Variable *key) {
 /// Virtual function call code generation -- CUDA/PTX-specific bits
 void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
                                  uint32_t self_reg, uint32_t mask_reg,
-                                 uint32_t offset_reg, uint32_t data_reg,
                                  uint32_t in_size, uint32_t in_align,
                                  uint32_t out_size, uint32_t out_align) {
     // =====================================================
@@ -1521,17 +1529,35 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
         fmt("\n    @!%p$u bra l_masked_$u;\n", mask_reg, call_reg);
     fmt("\n    { // Call: $s\n", call->name.c_str());
 
+    // Name of the base pointer: at the kernel level the register holding the
+    // base pointer parameter, inside a callable the forwarded 'base' argument.
+    // 'has_slots' selects whether the callee reads its own captured data;
+    // 'use_nested' selects whether it must receive the base pointer to forward.
+    char base[32];
+    if (callable_depth == 0)
+        snprintf(base, sizeof(base), "%%rd%u", call_buffer.base_reg);
+    else
+        snprintf(base, sizeof(base), "base");
+
+    bool has_slots  = !call->slots.empty();
+    // The dispatch reads the offset table whenever it must resolve a callable
+    // index (multi-target) or a per-lane data offset (own slots).
+    bool need_entry = call->n_inst != 1 || has_slots;
+
     // =====================================================
-    // 2. Determine unique callable ID
+    // 2. Determine unique callable ID + data offset
     // =====================================================
 
-    // %r3: callable ID
-    // %rd3: (high 32 bit): data offset
-    fmt("\n"
-        "        mad.wide.u32 %rd3, %r$u, 8, %rd$u;\n"
-        "        ld.global.u64 %rd3, [%rd3];\n"
-        "        cvt.u32.u64 %r3, %rd3;\n",
-        self_reg, offset_reg);
+    // %r3: callable ID; %rd3 (high 32 bit): absolute data offset in the buffer.
+    // This call's offset table begins at byte 'offset_base'.
+    if (need_entry) {
+        fmt("\n"
+            "        mad.wide.u32 %rd3, %r$u, 8, $s;\n"
+            "        ld.global.u64 %rd3, [%rd3+$u];\n",
+            self_reg, base, call->offset_base);
+        if (call->n_inst != 1)
+            put("        cvt.u32.u64 %r3, %rd3;\n");
+    }
 
     // =====================================================
     // 3. Turn callable ID into a function pointer
@@ -1549,13 +1575,13 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     }
 
     // =====================================================
-    // 4. Obtain pointer to supplemental call data
+    // 4. Resolve the per-lane call-data pointer (= B + absolute offset)
     // =====================================================
 
-    if (data_reg)
+    if (has_slots)
         fmt("        shr.u64 %rd3, %rd3, 32;\n"
-            "        add.u64 %rd3, %rd3, %rd$u;\n",
-            data_reg);
+            "        add.u64 %rd3, %rd3, $s;\n",
+            base);
 
     // %rd2: function pointer (if applicable)
     // %rd3: call data pointer with offset
@@ -1593,8 +1619,10 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
             put(".reg .u32 index, ");
         if (call->use_self)
             put(".reg .u32 self, ");
-        if (data_reg)
+        if (has_slots)
             put(".reg .u64 data, ");
+        if (call->use_nested)
+            put(".reg .u64 base, ");
         if (in_size)
             fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
         buffer.delete_trailing_commas();
@@ -1657,8 +1685,10 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
     }
     if (call->use_self)
         fmt("%r$u, ", self_reg);
-    if (data_reg)
+    if (has_slots)
         put("%rd3, ");
+    if (call->use_nested)
+        fmt("$s, ", base);
     if (in_size)
         put("in, ");
     buffer.delete_trailing_commas();
