@@ -830,8 +830,8 @@ void jitc_metal_profile_stop() {
 void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
                           uint32_t mask, uint32_t *out,
                           uint32_t n_out, uint32_t scene, int shadow) {
-    if (n_args != 8)
-        jitc_raise("jit_metal_ray_trace(): expected 8 ray arguments, got %u.",
+    if (n_args != 9)
+        jitc_raise("jit_metal_ray_trace(): expected 9 ray arguments, got %u.",
                    n_args);
     if (n_out != 8)
         jitc_raise("jit_metal_ray_trace(): expected 8 outputs, got %u.",

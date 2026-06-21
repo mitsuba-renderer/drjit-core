@@ -80,6 +80,7 @@ extern JIT_EXPORT void *jit_metal_command_queue();
  *     Bit 1: bounding-box (custom-intersection) geometry present.
  *     Bit 2: curve geometry present.
  *     Bit 3: triangle backface culling required for at least one instance.
+ *     Bit 4: motion (instance motion) present.
  */
 extern JIT_EXPORT uint32_t jit_metal_configure_scene(
     void *acceleration_structure,
