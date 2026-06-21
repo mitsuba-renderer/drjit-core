@@ -969,7 +969,8 @@ uint32_t jitc_var_u32(JitBackend backend, uint32_t value) {
 }
 
 uint32_t jitc_var_pointer(JitBackend backend, const void *value,
-                          uint32_t dep, int write, bool written) {
+                          uint32_t dep, int write, bool written,
+                          bool disable_lvn) {
     Variable v;
     v.kind = (uint32_t) VarKind::Literal;
     v.type = (uint32_t) VarType::Pointer;
@@ -997,7 +998,7 @@ uint32_t jitc_var_pointer(JitBackend backend, const void *value,
     ThreadState *ts = thread_state(backend);
     uint32_t scope_backup = 1;
     std::swap(scope_backup, ts->scope);
-    uint32_t result = jitc_var_new(v);
+    uint32_t result = jitc_var_new(v, disable_lvn);
     std::swap(scope_backup, ts->scope);
 
     jitc_log(Debug, "jit_var_pointer(): pointer r%u = " DRJIT_PTR " (r%u, write=%i)",

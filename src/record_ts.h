@@ -152,15 +152,6 @@ enum class RecordedVarState {
 
     /// This variable is part of the function input
     Input,
-
-    /// This variable has been captured i.e. it is copied and part of the
-    /// recording. For example, the offset buffer of a vcall does not change
-    /// between recording and replay and can be copied. This is currently the
-    /// only case where captured variables are used. Captured variables are
-    /// immutable and copied when replaying, so that they are not changed by the
-    /// replaying kernels. This introduces some memory overhead, but we assume
-    /// that the offset buffers are sufficiently small.
-    Captured,
 };
 
 /// Records how this variable has been initialized. As opposed to \ref
@@ -170,7 +161,6 @@ enum class RecordedVarState {
 /// initialized when replaying and is recorded in the \ref Recording struct.
 enum class RecordedVarInit {
     None,
-    Captured,
     Input,
 };
 
@@ -183,8 +173,7 @@ enum class RecordedVarInit {
  * allocated using `jit_malloc`, otherwise it cannot be tracked.
  */
 struct RecordedVariable {
-    /// Stores index into input array if variable is input or index of captured
-    /// variable
+    /// Stores the index into the input array if this variable is an input.
     uint32_t index = 0;
 
     /// Records how this variable has been initialized
@@ -368,9 +357,6 @@ struct Recording {
     /// occur when calling dr.kernel_cache_flush between recording the function
     /// and replaying it.
     bool check_kernel_cache();
-
-    /// Destroys the recording, and releases all variables owned by it.
-    void destroy();
 };
 
 /**
@@ -668,22 +654,6 @@ public:
     //!                     Utility Functions
     // =============================================================
 protected:
-
-    /**
-     * This captures the offset buffer of a vcall in a kernel. The offset buffer
-     * describes where in the data buffer of that vcall the variables or
-     * pointers to variables, for that vcall are stored. It should not change
-     * between invocations and we should therefore be able to capture it and
-     * reuse it when replaying the kernel.
-     *
-     * \param ptr
-     *      the pointer to the offset buffer
-     *
-     * \param dsize
-     *      the size in bytes of the offset buffer
-     *
-     */
-    uint32_t capture_call_offset(const void *ptr, size_t dsize);
 
     /**
      * This function tries to capture a variable that is not known to the

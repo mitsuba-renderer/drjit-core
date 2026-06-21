@@ -167,22 +167,7 @@ struct ReplayVariable {
     uint32_t index;
     RecordedVarInit init;
 
-    ReplayVariable(RecordedVariable &rv) : index(rv.index), init(rv.init) {
-        if (init == RecordedVarInit::Captured) {
-            // Copy the variable, so that it isn't changed by this recording.
-            // Captured variables are only used for vcall offset buffers, which
-            // are not supposed to change between replay calls.
-
-            Variable *v = jitc_var(index);
-            alloc_size  = v->size * type_size[v->type];
-            data_size   = alloc_size;
-            if (!dry_run) {
-                index = jitc_var_copy(index);
-                v = jitc_var(index); // 'v' may have been invalidated
-                data  = v->data;
-            }
-        }
-    }
+    ReplayVariable(RecordedVariable &rv) : index(rv.index), init(rv.init) { }
 
     /// Initializes the \ref ReplayVariable from a function input.
     void init_from_input(Variable *input_variable) {
@@ -463,17 +448,6 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
             uint32_t var_index = replay_inputs[rv.index];
             jitc_var_inc_ref(var_index);
             replay_outputs[i] = var_index;
-        } else if (rv.init == RecordedVarInit::Captured) {
-            if (log_debug)
-                jitc_log(LogLevel::Debug,
-                         "    output %u: from slot s%u = captured r%u", i,
-                         slot, rv.index);
-            jitc_assert(rv.data, "replay(): freed an input variable "
-                                 "that is passed through!");
-
-            jitc_var_inc_ref(rv.index);
-
-            replay_outputs[i] = rv.index;
         } else {
             if (log_debug)
                 jitc_log(LogLevel::Debug, "    output %u: from slot s%u", i,
@@ -495,12 +469,8 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
     }
 
     for (ReplayVariable &rv : replay_variables) {
-        if (rv.init == RecordedVarInit::Captured) {
-            jitc_var_dec_ref(rv.index);
-            rv.data = 0;
-        } else if (rv.init == RecordedVarInit::None && rv.data) {
+        if (rv.init == RecordedVarInit::None && rv.data)
             rv.free();
-        }
     }
 
     return true;
@@ -1442,30 +1412,15 @@ void RecordThreadState::memcpy_async(void *dst, const void *src, size_t size) {
     }
     try {
         if (!paused() && !has_var) {
-            // If we did not know the source variable, this memcpy might be
-            // coming from \c jitc_call_upload.
-            // If that is the case, we have to capture the offset buffer.
-            // Since the pointer might be used, for example by an aggregate call
-            // (nested calls), we have to overwrite the RecordedVariable.
-            CallData *call = nullptr;
-            for (CallData *tmp : calls_assembled) {
-                if (tmp->offset_table == dst) {
-                    call = tmp;
-                    break;
-                }
-            }
-            if (call) {
-                capture_call_offset(dst, size);
-                jitc_log(LogLevel::Debug, "    captured call offset");
-            } else {
-                jitc_raise(
-                    "record(): Tried to record a memcpy_async operation, "
-                    "but the source pointer %p is unknown. This can occur if "
-                    "the source of the memcopy was not found during traversal "
-                    "of the function inputs, or did not refer to the start of "
-                    "a variables memory region.",
-                    src);
-            }
+            // Call data is built and tracked through aggregate() operations, so
+            // a memcpy from an untracked source is a genuine error.
+            jitc_raise(
+                "record(): Tried to record a memcpy_async operation, "
+                "but the source pointer %p is unknown. This can occur if "
+                "the source of the memcopy was not found during traversal "
+                "of the function inputs, or did not refer to the start of "
+                "a variables memory region.",
+                src);
         }
     } catch (...) {
         record_exception();
@@ -2131,13 +2086,10 @@ void RecordThreadState::record_aggregate(void *dst, AggregationEntry *agg,
             is_ptr = true;
 
         if ((p.size == 8 && is_ptr) || p.size < 0) {
-            // Pointer or evaluated
-
-            bool has_var = has_variable(p.src);
-
-            // NOTE: Offset buffers of nested calls might be used by this
-            // aggregate call, before the offset buffer is uploaded. We defer
-            // the offset buffer capture to the memcpy_async operation.
+            // Pointer or evaluated. The source is a captured input / registry
+            // member (a texture, scatter target, gather source, ...). If it was
+            // not traversed as a function input, add_variable() leaves the slot
+            // uninitialized and validate() reports it.
             uint32_t slot = add_variable(p.src);
 
             AccessInfo info;
@@ -2149,9 +2101,8 @@ void RecordThreadState::record_aggregate(void *dst, AggregationEntry *agg,
             add_param(info);
 
             jitc_log(LogLevel::Debug,
-                     "    entry: var at slot s%u %s src=%p, size=%i, offset=%u",
-                     slot, has_var ? "" : "deferred capture", p.src, p.size,
-                     p.offset);
+                     "    entry: var at slot s%u src=%p, size=%i, offset=%u",
+                     slot, p.src, p.size, p.offset);
         } else {
             // Literal
             AccessInfo info;
@@ -2202,26 +2153,17 @@ int Recording::replay_aggregate(Operation &op) {
 
     AggregationEntry *p = agg;
 
+    uint32_t data_size = 0;
+
     for (; i < op.dependency_range.second; ++i) {
         const AccessInfo &param = dependencies[i];
 
         if (param.type == ParamType::Input) {
             ReplayVariable &rv = replay_variables[param.slot];
 
-            if (log_debug) {
+            if (log_debug)
                 jitc_log(LogLevel::Debug, " -> s%u is_pointer=%u offset=%u",
                          param.slot, param.pointer_access, param.extra.offset);
-
-                // 'jitc_var_str' forces evaluation of the variable, so this
-                // must stay gated behind the log-level check.
-                if (rv.init == RecordedVarInit::Captured) {
-                    jitc_log(LogLevel::Debug, "    captured");
-                    jitc_log(LogLevel::Debug, "    label=%s",
-                             jitc_var_label(rv.index));
-                    jitc_log(LogLevel::Debug, "    data=%s",
-                             jitc_var_str(rv.index));
-                }
-            }
 
             p->size   = (int16_t) (param.pointer_access
                             ? 8
@@ -2239,12 +2181,13 @@ int Recording::replay_aggregate(Operation &op) {
             p->src    = (void *) param.extra.data;
         }
 
+        // The entries are unordered, keep track of the max. extent
+        int sz = p->size > 0 ? p->size : -p->size;
+        data_size = std::max(data_size, p->offset + (uint32_t) sz);
+
         p++;
     }
 
-    AggregationEntry *last = p - 1;
-    uint32_t data_size =
-        last->offset + (last->size > 0 ? last->size : -last->size);
     // Restore to full alignment
     data_size = (data_size + 7) / 8 * 8;
 
@@ -2386,72 +2329,6 @@ bool Recording::check_kernel_cache() {
 
     kernel_cache_generation = state.kernel_cache_generation;
     return true;
-}
-
-void Recording::destroy() {
-    for (RecordedVariable &rv : this->recorded_variables) {
-        if (rv.init == RecordedVarInit::Captured) {
-            jitc_var_dec_ref(rv.index);
-        }
-    }
-}
-
-/**
- * \brief
- *     This captures the offset buffer of a vcall in a kernel.
- *
- * The offset buffer describes where in the data buffer of that vcall the
- * variables or pointers to variables, for that vcall are stored.
- * It should not change between invocations and we should therefore be able
- * to capture it and reuse it when replaying the kernel.
- *
- * \param dsize
- *     The size of the offset buffer in bytes.
- */
-uint32_t RecordThreadState::capture_call_offset(const void *ptr, size_t dsize) {
-    jitc_log(LogLevel::Debug, "capture_call_offset(ptr=%p, dsize=%zu)", ptr, dsize);
-    uint32_t size = (uint32_t) dsize / type_size[(uint32_t) VarType::UInt64];
-
-    uint64_t *data = (uint64_t *) jitc_malloc(backend, dsize);
-    jitc_memcpy(backend, data, ptr, dsize);
-
-    uint32_t data_var =
-        jitc_var_mem_map(backend, VarType::UInt64, data, size, true);
-
-    RecordedVariable rv;
-#ifndef NDEBUG
-    rv.ptr = ptr;
-#endif
-    rv.state = RecordedVarState::Captured;
-    rv.init  = RecordedVarInit::Captured;
-    rv.index = data_var;
-
-    uint32_t slot;
-    auto it = ptr_to_slot.find(ptr);
-    if (it == ptr_to_slot.end()) {
-        slot = (uint32_t) m_recording.recorded_variables.size();
-
-        m_recording.recorded_variables.push_back(rv);
-
-        ptr_to_slot.insert({ ptr, slot });
-    } else {
-        slot                  = it.value();
-        RecordedVariable &old = m_recording.recorded_variables[slot];
-        if (old.init != RecordedVarInit::None) {
-            // The offset buffer allocation can be reused. If this happens, we
-            // have to capture the new version, while leaving the old one
-            // intact. We therefore evict the old entry in the ``ptr_to_slot``
-            // mapping and insert the new value.
-            uint32_t new_slot = (uint32_t) m_recording.recorded_variables.size();
-            m_recording.recorded_variables.push_back(rv);
-            ptr_to_slot[ptr] = new_slot;
-            return new_slot;
-        }
-
-        m_recording.recorded_variables[slot] = rv;
-    }
-
-    return slot;
 }
 
 void RecordThreadState::coop_vec_pack(uint32_t count, const void *in,
@@ -2926,10 +2803,10 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
             rts->add_output(outputs[i]);
 
         Recording *recording = new Recording(std::move(rts->m_recording));
-        try{
+        try {
             recording->validate(scope);
         } catch (const std::exception &) {
-            recording->destroy();
+            delete recording;
             throw;
         }
 
@@ -2948,8 +2825,6 @@ void jitc_freeze_abort(JitBackend backend) {
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
         RecordThreadStateGuard guard{ rts };
-
-        rts->m_recording.destroy();
 
         ThreadState *internal = rts->m_internal;
 
@@ -2991,7 +2866,6 @@ void jitc_freeze_abort(JitBackend backend) {
 }
 
 void jitc_freeze_destroy(Recording *recording) {
-    recording->destroy();
     delete recording;
 }
 

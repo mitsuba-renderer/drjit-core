@@ -103,6 +103,10 @@ void jitc_visit_new_gen() {
 static std::vector<void *> kernel_params;
 static std::vector<uint32_t> kernel_param_ids;
 
+/// Call-data base pointer variables created during this jit_eval()
+/// (one per kernel that performs calls). Released after the launch barrier.
+static std::vector<uint32_t> call_base_vars;
+
 /// Metadata for kernel parameters
 std::vector<KernelParamInfo> kernel_param_info;
 
@@ -345,6 +349,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     alloca_size = alloca_align = -1;
     indirect_callable_count = 0;
     indirect_callable_count_unique = 0;
+    call_buffer.reset();
     uses_metal4 = false;
 #if defined(DRJIT_ENABLE_METAL)
     jitc_metal_assemble_reset();
@@ -385,6 +390,10 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     }
 
     (void) timer();
+
+    // Set while scanning the schedule below if this kernel performs any
+    // indirect call (used further down to reserve the call base pointer).
+    bool has_call = false;
 
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         ScheduledVariable &sv = schedule[group_index];
@@ -427,6 +436,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         v->reg_index = n_regs++;
 
         VarKind kind = (VarKind) v->kind;
+        has_call |= (kind == VarKind::Call);
 
         if (unlikely(kind == VarKind::Array ||
                      kind == VarKind::ArrayInit ||
@@ -481,19 +491,45 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         }
     }
 
+    // If this kernel performs any indirect call, reserve the base pointer: a
+    // single kernel-uniform parameter storing callable offsets and opaque
+    // data accessed by callables. Here, we only reserve its register and
+    // parameter slot.
+    if (has_call) {
+        void *placeholder = jitc_malloc(backend, 1);
+        uint32_t base_src = jitc_var_mem_map(backend, VarType::UInt8,
+                                             placeholder, 1, /*free=*/1);
+
+        uint32_t base_v = jitc_var_pointer(backend, placeholder, base_src,
+                                           /*write=*/0, /*written=*/false,
+                                           /*disable_lvn=*/true);
+        jitc_var_dec_ref(base_src); // 'base_v' now owns the backing reference
+
+        uint32_t param_index = (uint32_t) kernel_params.size();
+        Variable *bv = jitc_var(base_v);
+        bv->param_type = ParamType::Input;
+        bv->reg_index = n_regs++;
+        bv->param_offset = param_index * (uint32_t) sizeof(void *);
+
+        call_buffer.base_v = base_v;
+        call_buffer.base_src = base_src;
+        call_buffer.base_reg = bv->reg_index;
+        call_buffer.base_param_index = param_index;
+
+        add_param((void *) (uintptr_t) bv->literal);
+        kernel_param_ids.push_back(base_v);
+
+        // Released after the launch barrier (see jitc_eval_impl).
+        call_base_vars.push_back(base_v);
+    }
+
 #if defined(DRJIT_ENABLE_METAL)
     // If the kernel performs any call, reserve a trailing ``params.args[]`` slot
     // for its visible function table. The slot is not an IR variable, so it stays
     // out of ``kernel_param_ids``.
     metal_vft_arg_index = -1;
-    if (jitc_is_metal(backend)) {
-        for (uint32_t gi = group.start; gi != group.end; ++gi) {
-            if ((VarKind) jitc_var(schedule[gi].index)->kind == VarKind::Call) {
-                metal_vft_arg_index = (int) kernel_params.size() - 1;
-                break;
-            }
-        }
-    }
+    if (jitc_is_metal(backend) && has_call)
+        metal_vft_arg_index = (int) kernel_params.size() - 1;
 #endif
 
     if (unlikely(n_regs > 0xFFFFF))
@@ -555,6 +591,12 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     else
 #endif
         jitc_llvm_assemble(ts, group);
+
+    // Bind the call-data buffer (built by jitc_call_upload() above and stored in
+    // the base pointer variable) into its reserved parameter slot.
+    if (call_buffer.base_v)
+        kernel_params[call_buffer.base_param_index] =
+            (void *) (uintptr_t) jitc_var(call_buffer.base_v)->literal;
 
     // Replace '^'s in '__raygen__^^^..' or 'drjit_^^^..' with hash.
     // Search for the kernel-name marker rather than the first '^', because
@@ -902,6 +944,14 @@ static void jitc_eval_rollback(size_t callbacks_baseline) {
         eval_callbacks.pop_back();
     }
 
+    // Call-data base pointers created before the failure
+    for (uint32_t index : call_base_vars)
+        jitc_var_dec_ref(index);
+    call_base_vars.clear();
+
+    // Captured-source references whose aggregate never ran
+    call_buffer.data_entries.clear();
+
     // IR string of a kernel history entry that no launch consumed
     free(kernel_history_entry.ir);
     kernel_history_entry.ir = nullptr;
@@ -1078,6 +1128,15 @@ void jitc_eval_impl(ThreadState *ts) {
     // Subsequent kernel launches must be serialized wrt. the launches above.
     // barrier() also drains shared allocations parked for deferred release.
     ts->barrier();
+
+    // Release strong references to opaque objects accessed by vcalls
+    call_buffer.data_entries.clear();
+
+    // Release the call-data base pointers now that every launch that
+    // referenced them has completed; this frees the fused buffers they own.
+    for (uint32_t index : call_base_vars)
+        jitc_var_dec_ref(index);
+    call_base_vars.clear();
 
     /* Variables and their dependencies are now computed, hence internal edges
        between them can be removed. This will cause many variables to expire. */

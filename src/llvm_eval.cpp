@@ -206,12 +206,20 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
 
     /* The program requires extra memory or uses callables. Insert
        setup code the top of the function to accomplish this */
-    if (indirect_callable_count > 0 || alloca_size >= 0) {
+    if (indirect_callable_count > 0 || alloca_size >= 0 || call_buffer.base_v) {
         size_t suffix_start = buffer.size(),
                suffix_target = (char *) strchr(buffer.get(), ':') - buffer.get() + 2;
 
         if (indirect_callable_count > 0)
             fmt("    %callables = load ptr, ptr @callables, align 8\n");
+
+        // Load the call-data base pointer once, shared by every call's
+        // dispatch in this kernel.
+        if (call_buffer.base_v)
+            fmt("    %rd$u_basep = getelementptr inbounds ptr, ptr %params, i32 $u\n"
+                "    %rd$u = load ptr, ptr %rd$u_basep, align 8, !alias.scope !2, !noalias !2, !invariant.load !4\n",
+                call_buffer.base_reg, call_buffer.base_param_index,
+                call_buffer.base_reg, call_buffer.base_reg);
 
         if (alloca_size >= 0)
             fmt("    %buffer = alloca i8, i32 $u, align $u\n",
@@ -342,12 +350,14 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     if (call->use_thread_id)
         put(", i32 %thread_id");
 
-    if (!call->slots.empty()) {
-        if (callable_depth == 1)
-            fmt(", ptr noalias %data, <$w x i32> %offsets");
-        else
-            fmt(", <$w x ptr> %data, <$w x i32> %offsets");
-    }
+    // The base pointer is kernel-uniform at every nesting level, hence always a
+    // single uniform pointer. A callable receives it if it reads its own
+    // captured data (then also the per-lane offsets) or if it contains a nested
+    // call (then only the base pointer, to forward downward).
+    if (!call->slots.empty())
+        fmt(", ptr noalias %data, <$w x i32> %offsets");
+    else if (call->use_nested)
+        fmt(", ptr noalias %data");
 
     // Name each input argument by slot index
     for (uint32_t i = 0; i < (uint32_t) call->outer_in.size(); ++i) {
@@ -391,15 +401,14 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
             uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
             bool is_pointer_or_bool =
                 (vt == VarType::Pointer) || (vt == VarType::Bool);
-            // Expand $<..$> only when we are compiling a recursive function call
-            callable_depth--;
-            fmt("    $v_p1 = getelementptr inbounds i8, $<ptr$> %data, i32 $u\n"
-                "    $v_p2 = getelementptr inbounds i8, $<ptr$> $v_p1, <$w x i32> %offsets\n"
+            // %data is the kernel-uniform base pointer; %offsets is the per-lane
+            // absolute byte offset of this instance's data block in the buffer.
+            fmt("    $v_p1 = getelementptr inbounds i8, ptr %data, i32 $u\n"
+                "    $v_p2 = getelementptr inbounds i8, ptr $v_p1, <$w x i32> %offsets\n"
                 "    $v$s = call $M @llvm.masked.gather.v$w$h(<$w x ptr> $v_p2, i32 $a, <$w x i1> %mask, $M $z), !alias.scope !2, !noalias !2\n",
                 v, offset,
                 v, v,
                 v, is_pointer_or_bool ? "_p3" : "", v, v, v, v, v);
-            callable_depth++;
 
             if (vt == VarType::Pointer)
                 fmt("    $v = inttoptr <$w x i64> $v_p3 to <$w x ptr>\n",
@@ -1045,8 +1054,7 @@ static void jitc_llvm_render(Variable *v) {
 
         case VarKind::Call:
             jitc_var_call_assemble((CallData *) v->data, v->reg_index,
-                                   a0->reg_index, a1->reg_index, a2->reg_index,
-                                   a3 ? a3->reg_index : 0);
+                                   a0->reg_index, a1->reg_index);
             break;
 
         case VarKind::CallMask:
@@ -1584,10 +1592,25 @@ static void jitc_llvm_render_trace(const Variable *v,
 /// Virtual function call code generation -- LLVM IR-specific bits
 void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
                                  uint32_t self_reg, uint32_t mask_reg,
-                                 uint32_t offset_reg, uint32_t data_reg,
                                  uint32_t buf_size, uint32_t buf_align) {
     const uint32_t width = jitc_llvm_vector_width;
     (void) buf_size; (void) buf_align;
+
+    // Name of the base pointer: at the kernel level the register holding the
+    // base pointer parameter, inside a callable the forwarded '%data' argument.
+    // Both are uniform 'ptr's. 'has_data' is true if the callee reads its own
+    // captured slots (then we also forward the per-lane offsets); a callee with
+    // no data but a nested call still receives the base pointer.
+    char base[32];
+    if (callable_depth == 0)
+        snprintf(base, sizeof(base), "%%rd%u", call_buffer.base_reg);
+    else
+        snprintf(base, sizeof(base), "%%data");
+
+    bool has_data  = !call->slots.empty();
+    // The dispatch reads the offset table whenever it must resolve a callable
+    // index (multi-target) or a per-lane data offset (own slots).
+    bool need_entry = call->n_inst != 1 || has_data;
 
     // =====================================================
     // 1. Declare a few intrinsics that we will use
@@ -1615,13 +1638,17 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
             call_reg, call_reg);
     }
 
-    if (call->n_inst != 1 || data_reg) {
+    if (need_entry) {
         fmt_intrinsic("declare <$w x i64> @llvm.masked.gather.v$wi64(<$w x "
                       "ptr>, i32, <$w x i1>, <$w x i64>)");
 
-        fmt("    %u$u_self_ptr = getelementptr i64, $<ptr$> %rd$u, <$w x i32> %r$u\n"
+        // This call's offset table starts at byte 'offset_base' in the buffer
+        // (= element 'offset_base/8'); index it by 'self'.
+        fmt("    %u$u_obase = getelementptr i64, ptr $s, i64 $u\n"
+            "    %u$u_self_ptr = getelementptr i64, ptr %u$u_obase, <$w x i32> %r$u\n"
              "    %u$u_self_combined = call <$w x i64> @llvm.masked.gather.v$wi64(<$w x ptr> %u$u_self_ptr, i32 8, <$w x i1> %p$u, <$w x i64> $z), !alias.scope !2, !noalias !2\n",
-            call_reg, offset_reg, self_reg,
+            call_reg, base, call->offset_base / (uint32_t) sizeof(uint64_t),
+            call_reg, call_reg, self_reg,
             call_reg, call_reg, mask_reg);
     }
 
@@ -1630,7 +1657,8 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
             call_reg, call_reg);
     }
 
-    if (data_reg) {
+    if (has_data) {
+        // entry.hi is the absolute byte offset of the instance data block
         fmt("    %u$u_offset_1 = lshr <$w x i64> %u$u_self_combined, <",
                  call_reg, call_reg);
         for (uint32_t i = 0; i < width; ++i)
@@ -1657,8 +1685,10 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
             fmt(", i64 %index");
         if (call->use_thread_id)
             fmt(", i32 %thread_id");
-        if (data_reg)
-            fmt(", $<ptr$> %rd$u, <$w x i32> %u$u_offset", data_reg, call_reg);
+        if (has_data)
+            fmt(", ptr $s, <$w x i32> %u$u_offset", base, call_reg);
+        else if (call->use_nested)
+            fmt(", ptr $s", base);
         for (uint32_t i = 0; i < call->n_in; ++i) {
             if (!call->in_active[i])
                 continue;

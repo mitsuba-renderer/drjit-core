@@ -50,7 +50,7 @@ struct CallData {
     /// A single evaluated/pointer value captured into the per-instance closure
     struct CaptureSlot {
         WeakRef  ref;     ///< weak reference to the variable (index + generation)
-        uint32_t offset;  ///< absolute byte offset into the data buffer
+        uint32_t offset;  ///< byte offset within this call's data block
     };
 
     /// Capture slots, concatenated per instance (offset-ascending)
@@ -60,11 +60,24 @@ struct CallData {
     /// Base byte offset of each instance's data block into the data buffer
     std::vector<uint32_t> instance_offset;
 
-    uint64_t *offset_table = nullptr;
-    size_t offset_table_size = 0;
+    /// Total size (in bytes, 8-aligned) of this call's data block
+    uint32_t data_size = 0;
+    /// Number of offset-table slots (= max instance id + 1)
+    uint32_t offset_count = 0;
+
+    /// Byte offset of this call's offset table within the fused buffer's offset
+    /// region. Assigned once per call during code generation (see
+    /// jitc_var_call_assemble).
+    uint32_t offset_base = 0;
+    /// Byte offset of this call's data block within the fused buffer's data
+    /// region. Assigned once per call during code generation.
+    uint32_t data_base = 0;
 
     /// Does this call contain a 'CallSelf' variable?
     bool use_self = false;
+    /// Does this call contain a nested 'Call' node? Such callables receive the
+    /// base pointer so the nested dispatch can reach its own buffer slice.
+    bool use_nested = false;
     /// Does this call contain a 'Counter' variable?
     bool use_index = false;
     /// Does this call contain a 'ThreadIndex' variable?
@@ -106,6 +119,9 @@ extern void jitc_var_call(const char *domain, bool symbolic, uint32_t self,
                           const uint32_t *inner_out,
                           const uint32_t *checkpoints, uint32_t *out);
 
+/// Build the shared call-data buffer (offset tables + data blocks) for every
+/// call assembled in the current kernel and bind it to the base pointer
+/// parameter. Runs at the end of jitc_{cuda,llvm,metal}_assemble.
 extern void jitc_call_upload(ThreadState *ts);
 
 extern CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
@@ -113,22 +129,62 @@ extern CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
                                         uint32_t *bucket_count_out);
 
 extern void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
-                                   uint32_t self_reg, uint32_t mask_reg,
-                                   uint32_t offset_reg, uint32_t data_reg);
+                                   uint32_t self_reg, uint32_t mask_reg);
 
 extern void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
                                         uint32_t self_reg, uint32_t mask_reg,
-                                        uint32_t offset_reg, uint32_t data_reg,
                                         uint32_t buf_size, uint32_t buf_align);
 
 extern void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
                                         uint32_t self_reg, uint32_t mask_reg,
-                                        uint32_t offset_reg, uint32_t data_reg,
                                         uint32_t in_size, uint32_t in_align,
                                         uint32_t out_size, uint32_t out_align);
 
 extern void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
                                          uint32_t self_reg, uint32_t mask_reg,
-                                         uint32_t offset_reg, uint32_t data_reg,
                                          uint32_t in_size, uint32_t in_align,
                                          uint32_t out_size, uint32_t out_align);
+
+/// All indirect calls in a kernel share a single device buffer that holds every
+/// call's offset table followed by every call's data block:
+///
+///     [ offset tables | data blocks ]
+///
+/// A dispatch indexes its offset table by 'self' to obtain a callable index and
+/// the absolute byte offset of the matching data block, from which it reads the
+/// captured state.
+///
+/// This state is reset in jitc_assemble(), populated as calls are assembled
+/// (each reserves a slice via 'offset_base'/'data_base'), and turned into the
+/// actual buffer by jitc_call_upload().
+struct CallBufferState {
+    /// Combined size (bytes) of all offset tables / all data blocks so far.
+    uint32_t fused_offset_size = 0;
+    uint32_t fused_data_size = 0;
+
+    /// Base pointer variable (0 if the kernel performs no calls) and the
+    /// mem-mapped variable owning its device allocation.
+    uint32_t base_v = 0;
+    uint32_t base_src = 0;
+
+    /// Register holding the base pointer at kernel level, and its slot index in
+    /// 'kernel_params'.
+    uint32_t base_reg = 0;
+    uint32_t base_param_index = 0;
+
+    // Projection of a CallData::CaptureSlot: a strong reference plus a byte
+    // offset into the data region following the offset tables.
+    struct CaptureSlotRef {
+        Ref      src;     ///< captured source variable
+        uint32_t offset;  ///< byte offset within the fused data region
+    };
+    std::vector<CaptureSlotRef> data_entries;
+
+    void reset() {
+        fused_offset_size = fused_data_size = 0;
+        base_v = base_src = base_reg = base_param_index = 0;
+        data_entries.clear();
+    }
+};
+
+extern CallBufferState call_buffer;
