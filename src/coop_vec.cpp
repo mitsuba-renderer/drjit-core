@@ -396,7 +396,7 @@ MatrixDescr jitc_coop_vec_compute_layout(uint32_t index,
                 "offset %u, which is not divisible by 64.", offset_in_bytes);
 
         uint32_t out_align = is_vector ? 16 : 64;
-        offset = (ceil_div(offset * tsize, out_align) * out_align) / tsize;
+        offset = align_up(offset * tsize, out_align) / tsize;
     }
 #else
     (void) index;

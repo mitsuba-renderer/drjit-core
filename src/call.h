@@ -47,12 +47,21 @@ struct CallData {
     /// Array of size 'n_inst' storing hashes of compiled callables
     std::vector<XXH128_hash_t> inst_hash;
 
-    /// Mapping from variable index to offset into call data
-    tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> data_map;
-    std::vector<uint32_t> data_offset;
+    /// A single evaluated/pointer value captured into the per-instance closure
+    struct CaptureSlot {
+        WeakRef  ref;     ///< weak reference to the variable (index + generation)
+        uint32_t offset;  ///< absolute byte offset into the data buffer
+    };
 
-    uint64_t *offset = nullptr;
-    size_t offset_size = 0;
+    /// Capture slots, concatenated per instance (offset-ascending)
+    std::vector<CaptureSlot> slots;
+    /// Size 'n_inst+1'; entries [i],[i+1) bound instance i's slots in 'slots'
+    std::vector<uint32_t> slot_range;
+    /// Base byte offset of each instance's data block into the data buffer
+    std::vector<uint32_t> instance_offset;
+
+    uint64_t *offset_table = nullptr;
+    size_t offset_table_size = 0;
 
     /// Does this call contain a 'CallSelf' variable?
     bool use_self = false;
@@ -82,6 +91,11 @@ struct CallData {
 };
 
 extern std::vector<CallData *> calls_assembled;
+
+extern void jitc_call_bind_slots(const CallData *call, uint32_t inst);
+
+extern uint32_t jitc_call_slot_rel_offset(const CallData *call, uint32_t inst,
+                                          const Variable *v, uint32_t index);
 
 extern uint32_t jitc_var_loop_init(uint32_t *indices, uint32_t n_indices);
 

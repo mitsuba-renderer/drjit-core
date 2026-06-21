@@ -1221,7 +1221,7 @@ uint32_t MetalThreadState::block_mkperm(const uint32_t *values, uint32_t size,
             gpu_blocks_per_group = std::min(gpu_blocks_per_group, max_sub);
 
             uint32_t size_per_block =
-                ceil_div(ceil_div(block_size, gpu_blocks_per_group), warp) * warp;
+                align_up(ceil_div(block_size, gpu_blocks_per_group), warp);
             uint32_t rows_per_group = gpu_blocks_per_group * warp_count;
             uint32_t seg            = rows_per_group * bucket_count;
             uint32_t total_cells    = n_blocks * seg;

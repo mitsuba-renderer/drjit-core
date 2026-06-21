@@ -1449,7 +1449,7 @@ void RecordThreadState::memcpy_async(void *dst, const void *src, size_t size) {
             // (nested calls), we have to overwrite the RecordedVariable.
             CallData *call = nullptr;
             for (CallData *tmp : calls_assembled) {
-                if (tmp->offset == dst) {
+                if (tmp->offset_table == dst) {
                     call = tmp;
                     break;
                 }

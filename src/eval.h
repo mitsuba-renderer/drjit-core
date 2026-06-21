@@ -105,6 +105,15 @@ extern uint32_t callable_depth;
 /// Ordered list of variables that should be computed
 extern std::vector<ScheduledVariable> schedule;
 
+/* Generation counter used to detect already-visited variables during graph
+   traversal (see the detailed comment in eval.cpp). The same counter is shared
+   by jit_eval() scheduling and jitc_var_call_analyze(); a single monotonic
+   counter guarantees stamps from one phase can never be misread by the other. */
+extern uint32_t visit_gen;
+
+/// Begin a fresh visit generation, invalidating all prior Variable::scratch stamps
+extern void jitc_visit_new_gen();
+
 /// Track kernel parameter metadata (writability, GPU resource kind)
 extern std::vector<KernelParamInfo> kernel_param_info;
 

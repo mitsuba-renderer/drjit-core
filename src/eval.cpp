@@ -88,9 +88,9 @@ static std::vector<uint32_t> eval_roots;
    variable has scratch == 0, stamps are always >= 2, so the traversal
    correctly treats such a variable as unvisited. On the rare 31-bit wraparound,
    reset all stamps to 0 and restart. */
-static uint32_t visit_gen = 0;
+uint32_t visit_gen = 0;
 
-static void jitc_visit_new_gen() {
+void jitc_visit_new_gen() {
     if (unlikely(visit_gen == 0x7FFFFFFFu)) {
         for (Variable &v : state.variables)
             v.scratch = 0;
@@ -1011,7 +1011,7 @@ void jitc_eval_impl(ThreadState *ts) {
     for (size_t i = 0, n = eval_tasks.size(); i < n; ) {
         uint32_t group_size = eval_tasks[i].size;
 
-        // Advance generation counter per distinct size
+        // Advance the traversal generation counter per distinct size
         jitc_visit_new_gen();
 
         size_t j = i;

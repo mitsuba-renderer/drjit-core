@@ -298,7 +298,7 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
         put(".reg .u32 index, ");
     if (call->use_self)
         put(".reg .u32 self, ");
-    if (!call->data_map.empty())
+    if (!call->slots.empty())
         put(".reg .u64 data, ");
     if (in_size)
         fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
@@ -311,6 +311,9 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
         "    .reg.f64  %d <$u>; .reg.pred %p<$u>;\n",
         call->name.c_str(), n_regs, n_regs, n_regs, n_regs, n_regs, n_regs,
         n_regs, n_regs);
+
+    // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
+    jitc_call_bind_slots(call, inst);
 
     // Warning: do not rewrite this into a range-based for loop.
     // The memory location of 'schedule' may change.
@@ -338,23 +341,7 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                     "    setp.ne.u16 $v, %w0, 0;\n", a, v);
             }
         } else if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
-            uint64_t key = (uint64_t) sv.index + (((uint64_t) inst) << 32);
-            auto it = call->data_map.find(key);
-
-            if (unlikely(it == call->data_map.end())) {
-                jitc_fail("jitc_cuda_assemble_func(): could not find entry for "
-                          "variable r%u in 'data_map' for function %s", sv.index, call->name.c_str());
-                continue;
-            }
-
-            if (it->second == (uint32_t) -1)
-                jitc_fail(
-                    "jitc_cuda_assemble_func(): variable r%u is referenced by "
-                    "a recorded function call. However, it was evaluated "
-                    "between the recording step and code generation (which "
-                    "is happening now). This is not allowed.", sv.index);
-
-            uint32_t offset = it->second - call->data_offset[inst];
+            uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
             if (vt != VarType::Bool)
                 fmt("    ld.global.$b $v, [data+$u];\n",
                     v, v, offset);
