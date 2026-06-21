@@ -342,7 +342,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     if (call->use_thread_id)
         put(", i32 %thread_id");
 
-    if (!call->data_map.empty()) {
+    if (!call->slots.empty()) {
         if (callable_depth == 1)
             fmt(", ptr noalias %data, <$w x i32> %offsets");
         else
@@ -366,6 +366,9 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
 
     alloca_size = alloca_align = -1;
 
+    // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
+    jitc_call_bind_slots(call, inst);
+
     // Warning: do not rewrite this into a range-based for loop.
     // The memory location of 'schedule' may change.
     for (size_t i = 0; i < schedule.size(); ++i) {
@@ -382,25 +385,10 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
         }
 
         if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
-            uint64_t key = (uint64_t) sv.index + (((uint64_t) inst) << 32);
-            auto it = call->data_map.find(key);
-            if (unlikely(it == call->data_map.end())) {
-                jitc_fail("jitc_llvm_assemble_func(): could not find entry for "
-                          "variable r%u in 'data_map' for function %s", sv.index, call->name.c_str());
-                continue;
-            }
-
-            if (it->second == (uint32_t) -1)
-                jitc_fail(
-                    "jitc_llvm_assemble_func(): variable r%u is referenced by "
-                    "a recorded function call. However, it was evaluated "
-                    "between the recording step and code generation (which is "
-                    "happening now). This is not allowed.", sv.index);
-
             fmt_intrinsic("declare $M @llvm.masked.gather.v$w$h(<$w x ptr>, i32, <$w x i1>, $M)",
                           v, v, v);
 
-            uint32_t offset = it->second - call->data_offset[inst];
+            uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
             bool is_pointer_or_bool =
                 (vt == VarType::Pointer) || (vt == VarType::Bool);
             // Expand $<..$> only when we are compiling a recursive function call

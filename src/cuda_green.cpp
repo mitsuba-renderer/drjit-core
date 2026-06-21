@@ -57,8 +57,7 @@ CUDAGreenContext *jitc_cuda_green_context_make(uint32_t sm_count_requested,
     // Step 2: compute how many SMs we can allocate (respect min/alignment)
     uint32_t total_sm  = sm_resource.sm.smCount;
     uint32_t rounded   = std::max(sm_count_requested, sm_resource.sm.minSmPartitionSize);
-    rounded            = ceil_div(rounded, sm_resource.sm.smCoscheduledAlignment) *
-                         sm_resource.sm.smCoscheduledAlignment;
+    rounded            = align_up(rounded, sm_resource.sm.smCoscheduledAlignment);
 
 
     if (rounded > total_sm)

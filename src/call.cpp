@@ -29,6 +29,41 @@ std::vector<CallData *> calls_assembled;
 extern void jitc_var_call_analyze(CallData *call, uint32_t inst_id,
                                   uint32_t index, uint32_t &data_offset);
 
+// Dr.Jit callables receive captured state through a flat per-instance data
+// block storing pointers to referenced opaque scalars and pointers. This
+// function walks through all such references ("slots") of an instance ``inst``,
+// populating their ``param_offset`` member with the logical variable offset
+// within the data block.
+void jitc_call_bind_slots(const CallData *call, uint32_t inst) {
+    for (uint32_t k = call->slot_range[inst]; k < call->slot_range[inst + 1]; ++k) {
+        if (Variable *v = jitc_var(call->slots[k].ref))
+            v->param_offset = k;
+    }
+}
+
+/// Given an opaque variable ``v`` encountered in a function call ``call``, this
+/// function checks if the variable has a corresponding capture slot, and it then
+/// returns the relative position in the data block. Otherwise it fails with an
+/// error message. This extra check is important to catch situations where new
+/// IR nodes haven't been correctly wired up in the DFS traversal in call.cpp.
+uint32_t jitc_call_slot_rel_offset(const CallData *call, uint32_t inst,
+                                   const Variable *v, uint32_t index) {
+    uint32_t k = v->param_offset;
+    if (likely(k >= call->slot_range[inst] &&
+               k <  call->slot_range[inst + 1] &&
+               jitc_var(call->slots[k].ref) == v))
+        return call->slots[k].offset - call->instance_offset[inst];
+
+    if (v->is_evaluated())
+        jitc_fail("jitc_call_slot_rel_offset(): variable r%u is referenced by a "
+                  "recorded function call. However, it was evaluated between the "
+                  "recording step and code generation (which is happening now). "
+                  "This is not allowed.", index);
+    else
+        jitc_fail("jitc_call_slot_rel_offset(): could not find call-data slot for "
+                  "variable r%u in function %s", index, call->name.c_str());
+}
+
 /// Weave a virtual function call into the computation graph
 void jitc_var_call(const char *name, bool symbolic, uint32_t self,
                    uint32_t mask_, uint32_t n_inst, uint32_t max_inst_id,
@@ -215,9 +250,11 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
     // 4. Collect evaluated data accessed by the instances
     // =====================================================
 
-    call->data_offset.reserve(n_inst);
+    call->instance_offset.reserve(n_inst);
+    call->slot_range.reserve(n_inst + 1);
 
-    // Collect accesses to evaluated variables/pointers
+    // Collect accesses to evaluated variables/pointers, appending a slot (with
+    // its byte offset) to 'slots' for each one in traversal order.
     uint32_t data_size = 0, inst_id_max = 0;
     for (uint32_t i = 0; i < n_inst; ++i) {
         if (unlikely(checkpoints[i] > checkpoints[i + 1]))
@@ -225,7 +262,12 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
                        "monotonically increasing!");
 
         uint32_t id = inst_id[i];
-        call->data_offset.push_back(data_size);
+
+        // Advance the traversal generation counter
+        jitc_visit_new_gen();
+
+        call->instance_offset.push_back(data_size);
+        call->slot_range.push_back((uint32_t) call->slots.size());
 
         for (uint32_t j = 0; j < n_out; ++j)
             jitc_var_call_analyze(call.get(), i, inner_out[j + i * n_out],
@@ -236,22 +278,24 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
                                   call->side_effects[j - checkpoints[0]],
                                   data_size);
 
-        // Restore to full alignment
-        data_size = (data_size + 7) / 8 * 8;
+        // Restore to full (8-byte) alignment
+        data_size = align_up(data_size, 8);
+
         inst_id_max = std::max(id, inst_id_max);
     }
+    call->slot_range.push_back((uint32_t) call->slots.size());
 
     // Allocate memory + wrapper variables for call offset and data arrays
-    call->offset_size = (inst_id_max + 1) * sizeof(uint64_t);
+    call->offset_table_size = (inst_id_max + 1) * sizeof(uint64_t);
 
-    call->offset = (uint64_t *) jitc_malloc(backend, call->offset_size);
+    call->offset_table = (uint64_t *) jitc_malloc(backend, call->offset_table_size);
     uint8_t *data_d = (uint8_t *) jitc_malloc(backend, data_size);
 
     Ref data_buf, data_v,
         offset_buf = steal(jitc_var_mem_map(
-            backend, VarType::UInt64, call->offset, inst_id_max + 1, 1)),
+            backend, VarType::UInt64, call->offset_table, inst_id_max + 1, 1)),
         offset_v =
-            steal(jitc_var_pointer(backend, call->offset, offset_buf, 0));
+            steal(jitc_var_pointer(backend, call->offset_table, offset_buf, 0));
 
     char temp[128];
     snprintf(temp, sizeof(temp), "Call: %s [offsets]", name);
@@ -265,35 +309,27 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
 
         data_v = steal(jitc_var_pointer(backend, data_d, data_buf, 0));
 
-        size_t agg_size = sizeof(AggregationEntry) * call->data_map.size();
+        size_t agg_size = sizeof(AggregationEntry) * call->slots.size();
         AggregationEntry *agg = (AggregationEntry *)
             jitc_malloc(backend, agg_size, /*shared=*/true);
 
         AggregationEntry *p = agg;
 
-        for (auto kv : call->data_map) {
-            uint32_t index = (uint32_t) kv.first, offset = kv.second;
-            if (offset == (uint32_t) -1)
-                continue;
-
-            const Variable *v = jitc_var(index);
+        // 'slots' holds only real slots, with offsets assigned ascending
+        // within each instance and instances concatenated in order, so the flat
+        // list is already globally offset-ascending (no skip, no sort needed).
+        for (const CallData::CaptureSlot &slot : call->slots) {
+            const Variable *v = jitc_var(slot.ref);
             bool is_pointer = (VarType) v->type == VarType::Pointer;
-            p->offset = offset;
+            p->offset = slot.offset;
             p->size = is_pointer ? (int16_t) 8 : (int16_t) -(int) type_size[v->type];
             p->resource_kind = is_pointer ? (uint16_t) v->resource_kind() : (uint16_t) 0;
             p->src = is_pointer ? (const void *) v->literal : v->data;
             p++;
         }
 
-        std::sort(agg, p,
-                  [](const AggregationEntry &a, const AggregationEntry &b) {
-                      return a.offset < b.offset;
-                  });
-
         jitc_aggregate(backend, data_d, agg, (uint32_t) (p - agg));
         jitc_free(agg);
-    } else {
-        call->data_map.clear();
     }
 
     // =====================================================
@@ -532,10 +568,8 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
         out_align = in_align;
 
         // Ensure alignment given that we're appending to the input buffer
-        if (!call_perm.empty()) {
-            const uint32_t size = call_perm[0].size;
-            out_size = (out_size + size - 1) / size * size;
-        }
+        if (!call_perm.empty())
+            out_size = align_up(out_size, call_perm[0].size);
     }
 
     for (PermKey k : call_perm) {
@@ -622,12 +656,14 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
 /// Collect scalar / pointer variables referenced by a computation
 void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
                            uint32_t &data_offset) {
-    uint64_t key = (uint64_t) index + (((uint64_t) inst_id) << 32);
-    auto it_and_status = call->data_map.emplace(key, (uint32_t) -1);
-    if (!it_and_status.second)
-        return;
+    Variable *v = jitc_var(index);
 
-    const Variable *v = jitc_var(index);
+    // Do not visit nodes multiple times. See eval.cpp for details on
+    // the visit generation counting scheme.
+    uint32_t stamp = visit_gen << 1;
+    if (v->scratch == stamp)
+        return;
+    v->scratch = stamp;
 
     if (v->optix)
         call->use_optix |= true;
@@ -693,10 +729,12 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
                 jitc_var_call_analyze(call, inst_id, td->values[i], data_offset);
         }
     } else if (v->is_evaluated() || (VarType) v->type == VarType::Pointer) {
-        uint32_t tsize = type_size[v->type],
-                 offset = (data_offset + tsize - 1) / tsize * tsize;
-        it_and_status.first.value() = offset;
-        data_offset = offset + tsize;
+        // Real data slot. Assign a byte offset with natural alignment and append
+        // it to the current instance's run in 'slots'.
+        uint32_t tsize = type_size[v->type];
+        data_offset = align_up(data_offset, tsize);
+        call->slots.push_back({ WeakRef(index, v->counter), data_offset });
+        data_offset += tsize;
 
         if (v->size != 1)
             jitc_raise(
@@ -719,9 +757,9 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
 void jitc_call_upload(ThreadState *ts) {
     for (CallData *call : calls_assembled) {
         uint64_t *data = (uint64_t *) jitc_malloc(
-            (JitBackend) ts->backend, call->offset_size, /*shared=*/true);
+            (JitBackend) ts->backend, call->offset_table_size, /*shared=*/true);
 
-        memset(data, 0, call->offset_size);
+        memset(data, 0, call->offset_table_size);
 
         for (uint32_t i = 0; i < call->n_inst; ++i) {
             auto it = globals_map.find(GlobalKey(call->inst_hash[i], call->n_inst != 1 ? GlobalType::IndirectCallable : GlobalType::Callable));
@@ -731,11 +769,11 @@ void jitc_call_upload(ThreadState *ts) {
 
             // high part: instance data offset, low part: callable index
             data[call->inst_id[i]] =
-                (((uint64_t) call->data_offset[i]) << 32) |
+                (((uint64_t) call->instance_offset[i]) << 32) |
                 callable_index;
         }
 
-        jitc_memcpy_async(ts->backend, call->offset, data, call->offset_size);
+        jitc_memcpy_async(ts->backend, call->offset_table, data, call->offset_table_size);
         jitc_free(data);
     }
 

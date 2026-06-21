@@ -109,6 +109,11 @@ inline uint32_t ceil_div(uint32_t a, uint32_t b) {
     return (a + b - 1) / b;
 }
 
+/// Round 'x' up to the next multiple of 'a'
+inline uint32_t align_up(uint32_t x, uint32_t a) {
+    return ceil_div(x, a) * a;
+}
+
 inline Ref steal(uint32_t index) {
     Ref r;
     r.index = index;

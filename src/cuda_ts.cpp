@@ -246,7 +246,7 @@ void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
         // changing the numbers below, the kernel expects this configuration.
 
         // Minimum number of threads needed to finish the work
-        uint32_t min_threads = ceil_div(block_count * chunk_size, 32) * 32;
+        uint32_t min_threads = align_up(block_count * chunk_size, 32);
 
         // In general, schedule >= 4 warps/block to improve occupancy. It's
         // okay to use fewer warps if the input data size is tiny.
@@ -583,7 +583,7 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
         // changing the numbers below, the kernel expects this configuration.
 
         // Minimum number of threads needed to finish the work
-        uint32_t min_threads = ceil_div(block_count * chunk_size, 32) * 32;
+        uint32_t min_threads = align_up(block_count * chunk_size, 32);
 
         // In general, schedule >= 4 warps/block to improve occupancy. It's
         // okay to use fewer warps if the input data size is tiny.

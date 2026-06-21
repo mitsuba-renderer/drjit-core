@@ -1298,6 +1298,9 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
     put(") {\n");
     fmt("// Call: $s\n", call->name.c_str());
 
+    // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
+    jitc_call_bind_slots(call, inst);
+
     for (size_t i = 0; i < schedule.size(); ++i) {
         ScheduledVariable &sv = schedule[i];
         Variable *v = jitc_var(sv.index);
@@ -1317,24 +1320,7 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
         } else if (kind == VarKind::CallSelf) {
             fmt("uint $v = self;\n", v);
         } else if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
-            uint64_t key = (uint64_t) sv.index + (((uint64_t) inst) << 32);
-            auto it = call->data_map.find(key);
-
-            if (unlikely(it == call->data_map.end())) {
-                jitc_fail("jitc_metal_assemble_func(): could not find entry for "
-                          "variable r%u in 'data_map' for function %s",
-                          sv.index, call->name.c_str());
-                continue;
-            }
-
-            if (it->second == (uint32_t) -1)
-                jitc_fail(
-                    "jitc_metal_assemble_func(): variable r%u is referenced by "
-                    "a recorded function call. However, it was evaluated "
-                    "between the recording step and code generation (which is "
-                    "happening now). This is not allowed.", sv.index);
-
-            uint32_t offset = it->second - call->data_offset[inst];
+            uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
 
             // Opaque resource handles (textures, samplers, ray-tracing
             // structures) reconstruct a typed reference directly from the
