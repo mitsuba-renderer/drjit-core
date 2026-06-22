@@ -7,7 +7,6 @@
     license that can be found in the LICENSE file.
 */
 
-#include <queue>
 #include <string.h>
 
 #include "registry.h"
@@ -40,15 +39,13 @@ struct Ptr {
     Ptr(void *ptr, bool active) : ptr(ptr), active(active) { }
 };
 
-using FreePriorityQueue = std::priority_queue<uint32_t, std::vector<uint32_t>, std::greater<uint32_t>>;
-
 // Per-domain information: a forward map (index-> pointer) and a list of unused entries
 struct Domain {
     const char *name;
     const char *variant;
     uint32_t id_bound;
     std::vector<Ptr> fwd_map;
-    FreePriorityQueue free_pq;
+    FreeSlots free_slots;
 };
 
 struct ReverseKey {
@@ -91,9 +88,8 @@ uint32_t jitc_registry_put(const char *variant, const char *domain_name, void *p
     // Allocate the lowest-valued ID
     Domain &domain = r.domains[domain_id];
     uint32_t index;
-    if (!domain.free_pq.empty()) {
-        index = domain.free_pq.top();
-        domain.free_pq.pop();
+    if (!domain.free_slots.empty()) {
+        index = domain.free_slots.pop();
         domain.fwd_map[index] = Ptr(ptr, true);
     } else {
         index = (uint32_t) domain.fwd_map.size();
@@ -131,7 +127,7 @@ void jitc_registry_remove(const void *ptr) {
     }
 
     Domain &domain = r.domains[rk.domain_id];
-    domain.free_pq.push(rk.index);
+    domain.free_slots.push(rk.index);
     if (domain.fwd_map[rk.index].ptr != ptr)
         jitc_fail("jit_registry_remove(ptr=%p): data structure corrupt!", ptr);
 
@@ -242,7 +238,7 @@ void jitc_registry_clear() {
     // Clear forward maps and reset state to allow ID allocation from 1
     for (Domain &d : r.domains) {
         d.fwd_map.clear();
-        FreePriorityQueue().swap(d.free_pq);
+        d.free_slots = FreeSlots();
         d.id_bound = 0;
     }
 }
