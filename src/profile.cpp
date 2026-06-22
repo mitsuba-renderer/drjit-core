@@ -13,11 +13,13 @@
 
 #include "nvtx_api.h"
 #include "log.h"
+#include "profile.h"
 #include <stdio.h>
 
+/// Mirrors whether a profiler is attached; see declaration in profile.h.
+bool jitc_profile_active = false;
+
 #if defined(__APPLE__)
-// On Apple platforms we emit os_signpost events, which show up in Instruments'
-// "Points of Interest" track (and Metal System Trace).
 #  include <os/signpost.h>
 #  include <vector>
 #  include <cstring>
@@ -33,14 +35,14 @@ static thread_local std::vector<os_signpost_id_t> jitc_signpost_stack;
 
 void jitc_profile_init() {
 #if defined(__APPLE__)
-    os_log_t log =
-        os_log_create("org.drjit", OS_LOG_CATEGORY_POINTS_OF_INTEREST);
+    os_log_t log = os_log_create("org.drjit", OS_LOG_CATEGORY_DYNAMIC_TRACING);
     if (os_signpost_enabled(log)) {
         jitc_signpost_log = log;
     } else {
         os_release(log);
         jitc_signpost_log = nullptr;
     }
+    jitc_profile_active = jitc_signpost_log != nullptr;
 #endif
 }
 
@@ -51,6 +53,7 @@ void jitc_profile_shutdown() {
         jitc_signpost_log = nullptr;
     }
     jitc_signpost_stack.clear();
+    jitc_profile_active = false;
 #endif
 }
 

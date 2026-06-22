@@ -8,6 +8,7 @@
 */
 
 #include "nvtx_api.h"
+#include "profile.h"
 #include <stdlib.h>
 #include <stdio.h>
 
@@ -136,6 +137,7 @@ void jitc_nvtx_shutdown() {
     if (nvtxDomain && nvtxDomainDestroy) {
         nvtxDomainDestroy(nvtxDomain);
         nvtxDomain = nullptr;
+        jitc_profile_active = false;
     }
 
     if (nvtxHandle) {
@@ -208,8 +210,10 @@ bool jitc_nvtx_init() {
                 if (nvtxInitialize)
                     nvtxInitialize(0);
                 nvtxDomain = nvtxDomainCreateA("Dr.Jit");
-                if (nvtxDomain)
+                if (nvtxDomain) {
+                    jitc_profile_active = true;
                     return true;
+                }
             }
         }
     }

@@ -20,17 +20,26 @@ extern void jitc_profile_range_push(const char *message);
 extern void jitc_profile_range_push_handle(const void *handle);
 extern void jitc_profile_range_pop();
 
+/// Flag to indicate that a profiler (NVTX, Apple os_signpost) is listening.
+extern bool jitc_profile_active;
+
 struct ProfilerRegion {
     explicit ProfilerRegion(const char *ptr) : handle(jitc_profile_register_string(ptr)) { }
     const void *handle;
 };
 
 struct ProfilerPhase {
-    ProfilerPhase(const ProfilerRegion &region) {
-        jitc_profile_range_push_handle(region.handle);
+    /// Latch the decision at construction so the push/pop stays balanced even
+    /// if a profiler attaches/detaches mid-scope.
+    bool active;
+
+    ProfilerPhase(const ProfilerRegion &region) : active(jitc_profile_active) {
+        if (active)
+            jitc_profile_range_push_handle(region.handle);
     }
 
     ~ProfilerPhase() {
-        jitc_profile_range_pop();
+        if (active)
+            jitc_profile_range_pop();
     }
 };
