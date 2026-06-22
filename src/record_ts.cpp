@@ -2998,14 +2998,14 @@ void jitc_freeze_replay(Recording *recording, const uint32_t *inputs,
     try {
         recording->replay(inputs, outputs);
     } catch (const std::exception &) {
-        record_kernel_history = false;
-        if(record_kernel_history)
+        if (record_kernel_history)
             tsr->recording_mode = KernelRecordingMode::Inactive;
+        record_kernel_history = false;
         throw;
     }
-    record_kernel_history = false;
     if (record_kernel_history)
         tsr->recording_mode = KernelRecordingMode::Inactive;
+    record_kernel_history = false;
 }
 
 int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs) {
