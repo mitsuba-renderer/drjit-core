@@ -508,9 +508,7 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Add: jitc_metal_render_binary(v, "+"); break;
         case VarKind::Sub: jitc_metal_render_binary(v, "-"); break;
         case VarKind::Mul: jitc_metal_render_binary(v, "*"); break;
-        case VarKind::Div:
-            jitc_metal_render_binary(v, "/");
-            break;
+        case VarKind::Div: jitc_metal_render_binary(v, "/"); break;
         case VarKind::DivApprox: {
             Variable *a0 = jitc_var(v->dep[0]),
                      *a1 = jitc_var(v->dep[1]);

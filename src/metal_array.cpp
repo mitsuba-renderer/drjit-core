@@ -110,10 +110,16 @@ void jitc_metal_render_array_memcpy_out(const Variable *v) {
 
 void jitc_metal_render_array_select(Variable *v, Variable *mask, Variable *t, Variable *f) {
     uint32_t reg_index = jitc_array_buffer(v)->reg_index;
-    fmt("for (uint _i = 0; _i < $uu; _i++)\n"
-              "    arr_$u[_i] = $v ? arr_$u[_i] : arr_$u[_i];\n",
-              (uint32_t) f->array_length,
-              reg_index, mask, t->reg_index, f->reg_index);
+    fmt("if ($v) {\n"
+              "    for (uint _i = 0; _i < $uu; _i++)\n"
+              "        arr_$u[_i] = arr_$u[_i];\n"
+              "} else {\n"
+              "    for (uint _i = 0; _i < $uu; _i++)\n"
+              "        arr_$u[_i] = arr_$u[_i];\n"
+              "}\n",
+              mask,
+              (uint32_t) f->array_length, reg_index, t->reg_index,
+              (uint32_t) f->array_length, reg_index, f->reg_index);
 
     v->reg_index = reg_index;
 }

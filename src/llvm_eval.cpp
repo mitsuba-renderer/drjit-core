@@ -640,12 +640,8 @@ static void jitc_llvm_render(Variable *v) {
                 fmt_intrinsic("declare $T @llvm.fabs.v$w$h($T)", v, v, a0);
                 fmt("    $v = call $T @llvm.fabs.v$w$h($V)\n", v, v, v, a0);
             } else {
-                fmt("    $v_0 = icmp slt $V, $z\n"
-                    "    $v_1 = sub nsw $T $z, $v\n"
-                    "    $v = select <$w x i1> $v_0, $V_1, $V\n",
-                    v, a0,
-                    v, v, a0,
-                    v, v, v, a0);
+                fmt_intrinsic("declare $T @llvm.abs.v$w$h($T, i1)", v, v, a0);
+                fmt("    $v = call $T @llvm.abs.v$w$h($V, i1 0)\n", v, v, v, a0);
             }
             break;
 
@@ -1477,18 +1473,13 @@ static void jitc_llvm_render_trace(const Variable *v,
             "\nl$u_start:\n"
             "    ; Ray tracing\n"
             "    $v_func_i64 = call i64 @llvm.vector.reduce.umax.v$wi64(<$w x i64> %rd$u_p3)\n"
-            "    $v_func_ptr = inttoptr i64 $v_func_i64 to ptr\n"
+            "    $v_func = inttoptr i64 $v_func_i64 to ptr\n"
             "    $v_tfar_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n",
             v->reg_index,
             v->reg_index,
             v, func->reg_index,
             v, v,
             v, offset_tfar);
-
-        if (jitc_llvm_vector_width > 1)
-            fmt("    $v_func = bitcast ptr $v_func_ptr to ptr\n", v, v);
-        else
-            fmt("    $v_func = bitcast ptr $v_func_ptr to ptr\n", v, v);
 
         // Get original mask, to be overwritten at every iteration
         fmt("    $v_mask_value = load <$w x i32>, ptr $v_in_0_1, align 64\n"
