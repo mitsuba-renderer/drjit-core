@@ -223,6 +223,9 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
 
     uint32_t ctr = 0;
     for (auto &it : globals_map) {
+        // Type definitions are hoisted before the kernel further below
+        if (it.first.type == GlobalType::Type)
+            continue;
         put('\n');
         put(globals.get() + it.second.start, it.second.length);
         put('\n');
@@ -277,21 +280,48 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
 
     put(" }");
 
+    // Hoist type definitions ahead of the kernel
+    size_t types_start = buffer.size();
+    for (auto &it : globals_map) {
+        if (it.first.type != GlobalType::Type)
+            continue;
+        put(globals.get() + it.second.start, it.second.length);
+        put('\n');
+    }
+
+    if (buffer.size() != types_start)
+        buffer.move_suffix(types_start, 0);
+
     jitc_call_upload(ts);
 }
 
-/// Emit the LLVM return type of a callable: an anonymous struct of
-/// all active outputs or "void" if there are none.
-static void jitc_llvm_call_ret_type(const CallData *call) {
-    uint32_t n_out = (uint32_t) call->outer_out.size();
+/// Return/create the LLVM struct type used for a callable's return value
+static std::string jitc_llvm_call_ret_type(const CallData *call) {
+    std::string name = "%Ret_";
+    bool has_out = false;
+    for (uint32_t i = 0; i < call->n_out; ++i) {
+        if (call->out_offset[i] == (uint32_t) -1)
+            continue;
+        name += type_mangle[jitc_var(call->inner_out[i])->type];
+        has_out = true;
+    }
+    if (!has_out)
+        return "void";
+
+    // Register the struct definition
+    size_t off = buffer.size();
+    fmt("$s = type ", name.c_str());
     bool first = true;
-    for (uint32_t i = 0; i < n_out; ++i) {
+    for (uint32_t i = 0; i < call->n_out; ++i) {
         if (call->out_offset[i] == (uint32_t) -1)
             continue;
         fmt("$s$T", first ? "{ " : ", ", jitc_var(call->inner_out[i]));
         first = false;
     }
-    fmt("$s", first ? "void" : " }");
+    fmt(" }");
+    jitc_register_global(buffer.get() + off, GlobalType::Type);
+    buffer.rewind_to(off);
+    return name;
 }
 
 void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
@@ -300,9 +330,10 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
     uint32_t callables_local = indirect_callable_count;
 
-    fmt("define fastcc ");
-    jitc_llvm_call_ret_type(call);
-    fmt(" @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<$w x i1> %mask");
+    std::string ret_ty = jitc_llvm_call_ret_type(call);
+
+    fmt("define fastcc $s @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<$w x i1> %mask",
+        ret_ty.c_str());
 
     if (call->use_self)
         fmt(", <$w x i32> %self");
@@ -422,22 +453,19 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
         if (call->out_offset[i] == (uint32_t) -1)
             continue;
         const Variable *v = jitc_var(call->inner_out[inst * n_out + i]);
-        fmt("    %ret_$u = insertvalue ", slot + 1);
-        jitc_llvm_call_ret_type(call);
         if (slot == 0)
-            fmt(" undef, $V, $u\n", v, slot);
+            fmt("    %ret_$u = insertvalue $s undef, $V, $u\n",
+                slot + 1, ret_ty.c_str(), v, slot);
         else
-            fmt(" %ret_$u, $V, $u\n", slot, v, slot);
+            fmt("    %ret_$u = insertvalue $s %ret_$u, $V, $u\n",
+                slot + 1, ret_ty.c_str(), slot, v, slot);
         slot++;
     }
 
-    if (slot == 0) {
+    if (slot == 0)
         put("    ret void\n");
-    } else {
-        fmt("    ret ");
-        jitc_llvm_call_ret_type(call);
-        fmt(" %ret_$u\n", slot);
-    }
+    else
+        fmt("    ret $s %ret_$u\n", ret_ty.c_str(), slot);
 
     /* The function requires extra memory or uses callables. Insert
        setup code the top of the function to accomplish this */
@@ -1641,6 +1669,8 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         n_active_out += (call->out_offset[i] != (uint32_t) -1);
     bool has_ret = n_active_out > 0;
 
+    std::string ret_ty = jitc_llvm_call_ret_type(call);
+
     // Emit the trailing call arguments (everything after the leading mask):
     // self / index / thread_id / data, followed by the active inputs.
     auto emit_args = [&]() {
@@ -1679,24 +1709,21 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
 
     if (call->n_inst == 1) {
         // Direct call to the single callable function
-        if (has_ret) {
-            fmt("    %u$u_ret = call fastcc ", call_reg);
-            jitc_llvm_call_ret_type(call);
-        } else {
-            put("    call fastcc void");
-        }
         XXH128_hash_t hash = call->inst_hash[0];
-        fmt(" @func_$Q$Q(<$w x i1> %p$u", hash.high64, hash.low64, mask_reg);
+        if (has_ret)
+            fmt("    %u$u_ret = call fastcc $s @func_$Q$Q(<$w x i1> %p$u",
+                call_reg, ret_ty.c_str(), hash.high64, hash.low64, mask_reg);
+        else
+            fmt("    call fastcc void @func_$Q$Q(<$w x i1> %p$u",
+                hash.high64, hash.low64, mask_reg);
         emit_args();
         fmt(")\n");
 
         // Bind outputs: keep active lanes, set inactive lanes to zero
         for_each_output([&](uint32_t slot, const Variable *v) {
-            fmt("    %u$u_ev_$u = extractvalue ", call_reg, slot);
-            jitc_llvm_call_ret_type(call);
-            fmt(" %u$u_ret, $u\n"
+            fmt("    %u$u_ev_$u = extractvalue $s %u$u_ret, $u\n"
                 "    $v = select <$w x i1> %p$u, $T %u$u_ev_$u, $T $z\n",
-                call_reg, slot,
+                call_reg, slot, ret_ty.c_str(), call_reg, slot,
                 v, mask_reg, v, call_reg, slot, v);
         });
     } else {
@@ -1737,24 +1764,20 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         );
 
         // Perform the actual function call
-        if (has_ret) {
-            fmt("    %u$u_ret = call fastcc ", call_reg);
-            jitc_llvm_call_ret_type(call);
-            fmt(" %u$u_func(<$w x i1> %u$u_active", call_reg, call_reg);
-        } else {
+        if (has_ret)
+            fmt("    %u$u_ret = call fastcc $s %u$u_func(<$w x i1> %u$u_active",
+                call_reg, ret_ty.c_str(), call_reg, call_reg);
+        else
             fmt("    call fastcc void %u$u_func(<$w x i1> %u$u_active",
                 call_reg, call_reg);
-        }
         emit_args();
         fmt(")\n");
 
         // Merge this instance's active lanes into the accumulators
         for_each_output([&](uint32_t slot, const Variable *v) {
-            fmt("    %u$u_ev_$u = extractvalue ", call_reg, slot);
-            jitc_llvm_call_ret_type(call);
-            fmt(" %u$u_ret, $u\n"
+            fmt("    %u$u_ev_$u = extractvalue $s %u$u_ret, $u\n"
                 "    %u$u_accn_$u = select <$w x i1> %u$u_active, $T %u$u_ev_$u, $T $v\n",
-                call_reg, slot,
+                call_reg, slot, ret_ty.c_str(), call_reg, slot,
                 call_reg, slot, call_reg, v, call_reg, slot, v, v);
         });
 

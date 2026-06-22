@@ -1271,9 +1271,9 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
 }
 
 /// Register a global declaration that will be included in the final program
-void jitc_register_global(const char *str) {
+void jitc_register_global(const char *str, GlobalType type) {
     size_t length = strlen(str);
-    if (globals_map.emplace(GlobalKey(XXH128(str, length, 0), GlobalType::Global),
+    if (globals_map.emplace(GlobalKey(XXH128(str, length, 0), type),
                             GlobalValue(globals.size(), length)).second)
         globals.put(str, length);
 }

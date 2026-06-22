@@ -1207,17 +1207,6 @@ static void jitc_metal_render(Variable *v) {
 //  Virtual function call support (visible-function-table dispatch)
 // ============================================================================
 
-/// One-character type codes for mangling return-struct names. Lowercase = signed
-/// integer or float, uppercase = unsigned integer; ordered to match VarType. The
-/// resulting name encodes the type and order of active outputs, so every
-/// callable definition and dispatch site agrees and identical structs dedup.
-static const char type_mangle[(int) VarType::Count] = {
-    'v' /* Void   */, 'b' /* Bool    */, '?' /* BaseInt  */, 'a' /* Int8    */,
-    'A' /* UInt8  */, 's' /* Int16   */, 'S' /* UInt16   */, 'i' /* Int32   */,
-    'I' /* UInt32 */, 'l' /* Int64   */, 'L' /* UInt64   */, 'p' /* Pointer */,
-    '?' /* BaseFloat */, 'h' /* Float16 */, 'f' /* Float32 */, 'd' /* Float64 */
-};
-
 /// Does this call have at least one live output? (If not, its callables return
 /// ``void`` instead of a struct.)
 static bool jitc_metal_call_has_out(const CallData *call) {

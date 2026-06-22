@@ -40,7 +40,8 @@ struct ScheduledGroup {
 enum class GlobalType : uint32_t {
     IndirectCallable = 0, // Multi-target vcalls, assembled first
     Callable = 1,         // Single-target vcalls, assembled second
-    Global = 2            // Other globals (intrinsics, etc.), assembled last
+    Global = 2,           // Other globals (intrinsics, etc.), assembled last
+    Type = 3              // Type definitions, hoisted before everything else
 };
 
 struct GlobalKey {
@@ -161,4 +162,5 @@ extern int metal_vft_arg_index;
 #endif
 
 /// Register a global declaration that will be included in the final program
-extern void jitc_register_global(const char *str);
+extern void jitc_register_global(const char *str,
+                                 GlobalType type = GlobalType::Global);

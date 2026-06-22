@@ -123,6 +123,18 @@ const char *type_size_str[(int) VarType::Count] {
     "4", "8", "8", "8", "???", "2", "4", "8"
 };
 
+/// One-character type codes for mangling callable return-struct names. Lowercase
+/// = signed integer or float, uppercase = unsigned integer; ordered to match
+/// VarType. The resulting name encodes the type and order of active outputs, so
+/// every callable definition and dispatch site agrees and identical structs
+/// dedup.
+const char type_mangle[(int) VarType::Count] = {
+    'v' /* Void   */, 'b' /* Bool    */, '?' /* BaseInt  */, 'a' /* Int8    */,
+    'A' /* UInt8  */, 's' /* Int16   */, 'S' /* UInt16   */, 'i' /* Int32   */,
+    'I' /* UInt32 */, 'l' /* Int64   */, 'L' /* UInt64   */, 'p' /* Pointer */,
+    '?' /* BaseFloat */, 'h' /* Float16 */, 'f' /* Float32 */, 'd' /* Float64 */
+};
+
 // Representation an all-1 bit vector
 const uint64_t type_all_ones[(int) VarType::Count] {
     0, 1, 0, 0xff, 0xff, 0xffff, 0xffff, 0xffffffffu,

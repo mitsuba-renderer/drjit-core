@@ -388,6 +388,7 @@ extern const NameTable<(size_t) VarType::Count> type_name_metal;
 extern const NameTable<(size_t) VarType::Count> type_name_metal_bin;
 extern const NameTable<(size_t) VarType::Count> type_prefix;
 extern const char *type_size_str        [(int) VarType::Count];
+extern const char type_mangle           [(int) VarType::Count];
 
 void jitc_var_set_data(Variable &v, void *data);
 
