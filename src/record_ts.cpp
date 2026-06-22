@@ -153,12 +153,6 @@ static bool dry_run = false;
 /// entries. This function will be set by ``jitc_freeze_replay()``.
 static bool record_kernel_history = false;
 
-/// Cheap check whether messages at the given level would actually be shown.
-/// Used to skip log message construction in hot per-variable replay loops.
-static bool log_enabled(LogLevel level) {
-    return level <= state.log_level_stderr ||
-           (level <= state.log_level_callback && state.log_callback);
-}
 
 /**
  * Represents a variable during replay.
@@ -252,14 +246,14 @@ struct ReplayVariable {
     void alloc(JitBackend backend, size_t dsize) {
         if (!data) {
             alloc_size = dsize;
-            if (unlikely(log_enabled(LogLevel::Debug)))
+            if (unlikely(jitc_log_active(LogLevel::Debug)))
                 jitc_log(LogLevel::Debug,
                          "    allocating output of size %zu.", dsize);
             if (!dry_run)
                 data = jitc_malloc(backend, dsize);
         } else if (alloc_size < dsize) {
             alloc_size = dsize;
-            if (unlikely(log_enabled(LogLevel::Debug)))
+            if (unlikely(jitc_log_active(LogLevel::Debug)))
                 jitc_log(LogLevel::Debug,
                          "    re-allocating output of size %zu.", dsize);
             if (!dry_run) {
@@ -290,7 +284,6 @@ static ThreadState *ts = nullptr;
 /// Temporary variables used for replaying a recording.
 static std::vector<ReplayVariable> replay_variables;
 
-static ProfilerRegion pr_operation("Replay Operation");
 static ProfilerRegion pr_kernel_launch("KernelLaunch");
 static ProfilerRegion pr_barrier("Barrier");
 static ProfilerRegion pr_memset_async("MemsetAsync");
@@ -305,6 +298,9 @@ static ProfilerRegion pr_block_prefix_reduce("BlockPrefixReduce");
 static ProfilerRegion pr_reduce_dot("ReduceDot");
 static ProfilerRegion pr_batched_gemm("BatchedGemm");
 static ProfilerRegion pr_aggregate("Aggregate");
+static ProfilerRegion pr_opaque_width("OpaqueWidth");
+static ProfilerRegion pr_init_undefined("InitUndefined");
+static ProfilerRegion pr_block_reduce_bool("BoolBlockReduceBool");
 static ProfilerRegion pr_free("Free");
 static ProfilerRegion pr_output("Output");
 
@@ -316,7 +312,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
     n_kernels = 0;
 #endif
 
-    if (dynamic_cast<RecordThreadState *>(ts) != nullptr)
+    if (ts->is_recording())
         jitc_raise("replay(): Tried to replay while recording! This should not "
                    "occur, as calling frozen functions while recording one "
                    "will not replay the inner function. This indicates a bug "
@@ -337,7 +333,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
     }
 
     jitc_log(LogLevel::Debug, "replay(): inputs");
-    bool log_debug = unlikely(log_enabled(LogLevel::Debug));
+    bool log_debug = unlikely(jitc_log_active(LogLevel::Debug));
     // Populate with input variables
     for (uint32_t i = 0; i < inputs.size(); ++i) {
         Variable *input_variable = jitc_var(replay_inputs[i]);
@@ -350,7 +346,6 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
     // The main loop that executes each operation
     for (uint32_t i = 0; i < operations.size(); ++i) {
         Operation &op = operations[i];
-        ProfilerPhase profiler(pr_operation);
         if (!op.enabled)
             continue;
 
@@ -427,9 +422,9 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
             case OpType::Free: {
                 ProfilerPhase profiler2(pr_free);
 
-                uint32_t j         = op.dependency_range.first;
-                AccessInfo info    = dependencies[j];
-                ReplayVariable &rv = replay_variables[info.slot];
+                uint32_t j             = op.dependency_range.first;
+                const AccessInfo &info = dependencies[j];
+                ReplayVariable &rv     = replay_variables[info.slot];
 
                 rv.free();
 
@@ -453,9 +448,9 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
     // Create output variables
     jitc_log(LogLevel::Debug, "replay(): creating outputs");
     for (uint32_t i = 0; i < outputs.size(); ++i) {
-        AccessInfo info     = outputs[i];
-        uint32_t slot      = info.slot;
-        ReplayVariable &rv = replay_variables[slot];
+        const AccessInfo &info = outputs[i];
+        uint32_t slot          = info.slot;
+        ReplayVariable &rv     = replay_variables[slot];
 
         if (rv.init == RecordedVarInit::Input) {
             // Use input variable
@@ -493,8 +488,7 @@ int Recording::replay(const uint32_t *replay_inputs, uint32_t *replay_outputs) {
     // Set \c rv.data to nullptr for next step, where we free all remaining
     // temporary variables
     for (uint32_t i = 0; i < outputs.size(); ++i) {
-        AccessInfo info     = outputs[i];
-        uint32_t slot      = info.slot;
+        uint32_t slot      = outputs[i].slot;
         ReplayVariable &rv = replay_variables[slot];
 
         rv.data = nullptr;
@@ -544,10 +538,11 @@ void RecordThreadState::notify_opaque_width(uint32_t index,
 }
 
 int Recording::replay_opaque_width(Operation &op) {
+    ProfilerPhase profiler(pr_opaque_width);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo in_info        = dependencies[dependency_index];
-    AccessInfo out_info       = dependencies[dependency_index + 1];
+    const AccessInfo &in_info  = dependencies[dependency_index];
+    const AccessInfo &out_info = dependencies[dependency_index + 1];
 
     ReplayVariable &in_var  = replay_variables[in_info.slot];
     ReplayVariable &out_var = replay_variables[out_info.slot];
@@ -577,9 +572,10 @@ void RecordThreadState::notify_init_undefined(uint32_t index) {
 }
 
 int Recording::replay_init_undefined(Operation &op) {
+    ProfilerPhase profiler(pr_init_undefined);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo out_info        = dependencies[dependency_index];
+    const AccessInfo &out_info = dependencies[dependency_index];
 
     ReplayVariable &out_var = replay_variables[out_info.slot];
 
@@ -931,7 +927,7 @@ int Recording::replay_launch(Operation &op) {
     // launch size.
 
     jitc_log(LogLevel::Debug, "replay(): inferring input size");
-    bool log_debug = unlikely(log_enabled(LogLevel::Debug));
+    bool log_debug = unlikely(jitc_log_active(LogLevel::Debug));
 
     // Size of direct input variables
     uint32_t input_size = 0;
@@ -940,8 +936,8 @@ int Recording::replay_launch(Operation &op) {
 
     for (uint32_t j = op.dependency_range.first; j < op.dependency_range.second;
          ++j) {
-        AccessInfo info     = dependencies[j];
-        ReplayVariable &rv = replay_variables[info.slot];
+        const AccessInfo &info = dependencies[j];
+        ReplayVariable &rv     = replay_variables[info.slot];
 
         if (info.type == ParamType::Input) {
             uint32_t size = rv.size(info.vtype);
@@ -1000,15 +996,14 @@ int Recording::replay_launch(Operation &op) {
     uint32_t output_count = 0;
     for (uint32_t j = op.dependency_range.first; j < op.dependency_range.second;
          ++j) {
-        AccessInfo info     = dependencies[j];
-        ReplayVariable &rv = replay_variables[info.slot];
+        const AccessInfo &info = dependencies[j];
+        ReplayVariable &rv     = replay_variables[info.slot];
 
         if (info.type == ParamType::Input) {
-            uint32_t size = rv.size(info.vtype);
             if (log_debug)
                 jitc_log(LogLevel::Debug,
                          " -> param s%u is_pointer=%u size=%u", info.slot,
-                         info.pointer_access, size);
+                         info.pointer_access, rv.size(info.vtype));
             input_count++;
         } else {
             if (log_debug)
@@ -1041,7 +1036,6 @@ int Recording::replay_launch(Operation &op) {
                  op.uses_optix ? " uses optix" : "");
 #endif
 
-        std::vector<uint32_t> kernel_calls;
         Kernel kernel = op.kernel.kernel;
 #if defined(DRJIT_ENABLE_OPTIX)
         uses_optix = op.uses_optix;
@@ -1145,30 +1139,33 @@ int Recording::replay_expand(Operation &op) {
     uint32_t dependency_index = op.dependency_range.first;
     bool memcpy = op.dependency_range.second == dependency_index + 2;
 
-    AccessInfo dst_info    = dependencies[dependency_index];
-    ReplayVariable &dst_rv = replay_variables[dst_info.slot];
-    VarType vt             = dst_info.vtype;
-    uint32_t tsize         = type_size[(uint32_t) vt];
+    const AccessInfo &dst_info = dependencies[dependency_index];
+    ReplayVariable &dst_rv     = replay_variables[dst_info.slot];
+    VarType vt                 = dst_info.vtype;
+    uint32_t tsize             = type_size[(uint32_t) vt];
 
     uint32_t size;
     void *src_ptr = 0;
     if (memcpy) {
-        AccessInfo src_info     = dependencies[dependency_index + 1];
-        ReplayVariable &src_rv = replay_variables[src_info.slot];
-        size                   = src_rv.size(vt);
-        jitc_log(LogLevel::Debug, "jitc_memcpy_async(dst=%p, src=%p, size=%zu)",
-                 dst_rv.data, src_rv.data, (size_t) size * tsize);
+        const AccessInfo &src_info = dependencies[dependency_index + 1];
+        ReplayVariable &src_rv     = replay_variables[src_info.slot];
+        size                       = src_rv.size(vt);
+        if (unlikely(jitc_log_active(LogLevel::Debug)))
+            jitc_log(LogLevel::Debug,
+                     "jitc_memcpy_async(dst=%p, src=%p, size=%zu)", dst_rv.data,
+                     src_rv.data, (size_t) size * tsize);
 
         src_ptr = src_rv.data;
     } else {
         // Case where in jitc_var_expand, v->is_literal &&
         // v->literal == identity
         size = (uint32_t) op.size;
-        jitc_log(LogLevel::Debug,
-                 "jitc_memcpy_async(dst=%p, src= literal 0x%llx, "
-                 "size=%zu)",
-                 dst_rv.data, (unsigned long long) op.data,
-                 (size_t) size * tsize);
+        if (unlikely(jitc_log_active(LogLevel::Debug)))
+            jitc_log(LogLevel::Debug,
+                     "jitc_memcpy_async(dst=%p, src= literal 0x%llx, "
+                     "size=%zu)",
+                     dst_rv.data, (unsigned long long) op.data,
+                     (size_t) size * tsize);
     }
 
     if (size != op.size)
@@ -1254,7 +1251,7 @@ int Recording::replay_reduce_expanded(Operation &op) {
     ProfilerPhase profiler(pr_reduce_expanded);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo data_info       = dependencies[dependency_index];
+    const AccessInfo &data_info = dependencies[dependency_index];
 
     ReplayVariable &data_var = replay_variables[data_info.slot];
 
@@ -1269,10 +1266,11 @@ int Recording::replay_reduce_expanded(Operation &op) {
         jitc_llvm_expand_replication_factor(size, tsize);
     uint32_t exp = replication_per_worker * workers;
 
-    jitc_log(
-        LogLevel::Debug,
-        "replay(): reduce_expanded(vt=%s, op=%u, data=%p, exp=%u, size=%u)",
-        type_name[(uint32_t) vt], (uint32_t) rop, data_var.data, exp, size);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(
+            LogLevel::Debug,
+            "replay(): reduce_expanded(vt=%s, op=%u, data=%p, exp=%u, size=%u)",
+            type_name[(uint32_t) vt], (uint32_t) rop, data_var.data, exp, size);
 
     if (!dry_run)
         ts->reduce_expanded(vt, rop, data_var.data, exp, size);
@@ -1317,8 +1315,8 @@ int Recording::replay_narrow_f32_to_f16(Operation &op) {
     ProfilerPhase profiler(pr_narrow_f32_to_f16);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo src_info        = dependencies[dependency_index];
-    AccessInfo dst_info        = dependencies[dependency_index + 1];
+    const AccessInfo &src_info = dependencies[dependency_index];
+    const AccessInfo &dst_info = dependencies[dependency_index + 1];
 
     ReplayVariable &src_var = replay_variables[src_info.slot];
     ReplayVariable &dst_var = replay_variables[dst_info.slot];
@@ -1329,9 +1327,10 @@ int Recording::replay_narrow_f32_to_f16(Operation &op) {
     // target and narrow into it.
     dst_var.alloc(backend, size, VarType::Float16);
 
-    jitc_log(LogLevel::Debug,
-             "replay(): narrow_f32_to_f16(dst=%p, src=%p, size=%u)",
-             dst_var.data, src_var.data, size);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(LogLevel::Debug,
+                 "replay(): narrow_f32_to_f16(dst=%p, src=%p, size=%u)",
+                 dst_var.data, src_var.data, size);
 
     if (!dry_run)
         ts->narrow_f32_to_f16(dst_var.data, src_var.data, size);
@@ -1372,11 +1371,12 @@ void RecordThreadState::record_block_reduce_bool(uint8_t *values, uint32_t size,
 }
 
 int Recording::replay_block_reduce_bool(Operation &op) {
+    ProfilerPhase profiler(pr_block_reduce_bool);
 
     uint32_t dependency_index = op.dependency_range.first;
 
-    AccessInfo in_info        = dependencies[dependency_index];
-    AccessInfo out_info       = dependencies[dependency_index + 1];
+    const AccessInfo &in_info  = dependencies[dependency_index];
+    const AccessInfo &out_info = dependencies[dependency_index + 1];
 
     ReplayVariable &in_var = replay_variables[in_info.slot];
     ReplayVariable &out_var = replay_variables[out_info.slot];
@@ -1385,9 +1385,11 @@ int Recording::replay_block_reduce_bool(Operation &op) {
 
     uint32_t size = in_var.size(VarType::Bool);
 
-    jitc_log(LogLevel::Debug,
-             "record(): %s_async_4(values=%p, size=%u, out=%p)",
-             op.rtype == ReduceOp::Or ? "any" : "all", in_var.data, size, out_var.data);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(LogLevel::Debug,
+                 "record(): %s_async_4(values=%p, size=%u, out=%p)",
+                 op.rtype == ReduceOp::Or ? "any" : "all", in_var.data, size,
+                 out_var.data);
 
     if (!dry_run)
         ts->block_reduce_bool((uint8_t *) in_var.data, size,
@@ -1474,17 +1476,18 @@ int Recording::replay_memcpy_async(Operation &op) {
     ProfilerPhase profiler(pr_memcpy_async);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo src_info        = dependencies[dependency_index];
-    AccessInfo dst_info        = dependencies[dependency_index + 1];
+    const AccessInfo &src_info = dependencies[dependency_index];
+    const AccessInfo &dst_info = dependencies[dependency_index + 1];
 
     ReplayVariable &src_var = replay_variables[src_info.slot];
     ReplayVariable &dst_var = replay_variables[dst_info.slot];
 
     dst_var.alloc(backend, src_var.data_size);
 
-    jitc_log(LogLevel::Debug,
-             "replay(): memcpy_async(dst=%p, src=%p, size=%zu)", dst_var.data,
-             src_var.data, src_var.data_size);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(LogLevel::Debug,
+                 "replay(): memcpy_async(dst=%p, src=%p, size=%zu)",
+                 dst_var.data, src_var.data, src_var.data_size);
 
     if (!dry_run)
         ts->memcpy_async(dst_var.data, src_var.data, src_var.data_size);
@@ -1540,17 +1543,18 @@ int Recording::replay_memset_async(Operation &op) {
 
     uint32_t dependency_index = op.dependency_range.first;
 
-    AccessInfo ptr_info = dependencies[dependency_index];
+    const AccessInfo &ptr_info = dependencies[dependency_index];
 
     ReplayVariable &ptr_var = replay_variables[ptr_info.slot];
     ptr_var.alloc(backend, (uint32_t) op.size, (uint32_t) op.input_size);
 
     uint32_t size = ptr_var.size((uint32_t) op.input_size);
 
-    jitc_log(LogLevel::Debug,
-             "replay(): memset_async(ptr=%p, size=%u, "
-             "isize=%zu, src=%p)",
-             ptr_var.data, size, op.input_size, &op.data);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(LogLevel::Debug,
+                 "replay(): memset_async(ptr=%p, size=%u, "
+                 "isize=%zu, src=%p)",
+                 ptr_var.data, size, op.input_size, &op.data);
     if (!dry_run)
         ts->memset_async(ptr_var.data, size, (uint32_t) op.input_size, &op.data);
 
@@ -1595,8 +1599,8 @@ int Recording::replay_compress(Operation &op) {
 
     uint32_t dependency_index = op.dependency_range.first;
 
-    AccessInfo in_info  = dependencies[dependency_index];
-    AccessInfo out_info = dependencies[dependency_index + 1];
+    const AccessInfo &in_info  = dependencies[dependency_index];
+    const AccessInfo &out_info = dependencies[dependency_index + 1];
 
     ReplayVariable &in_rv  = replay_variables[in_info.slot];
     ReplayVariable &out_rv = replay_variables[out_info.slot];
@@ -1620,8 +1624,9 @@ int Recording::replay_compress(Operation &op) {
         return false;
     }
 
-    jitc_log(LogLevel::Debug, "replay(): compress(in=%p, size=%u, out=%p)",
-             in_rv.data, size, (uint32_t *) out_rv.data);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(LogLevel::Debug, "replay(): compress(in=%p, size=%u, out=%p)",
+                 in_rv.data, size, (uint32_t *) out_rv.data);
 
     uint32_t out_size =
         ts->compress((uint8_t *) in_rv.data, size, (uint32_t *) out_rv.data);
@@ -1680,9 +1685,9 @@ int Recording::replay_block_mkperm(Operation &op) {
     ProfilerPhase profiler(pr_block_mkperm);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo values_info     = dependencies[dependency_index];
-    AccessInfo perm_info       = dependencies[dependency_index + 1];
-    AccessInfo offsets_info    = dependencies[dependency_index + 2];
+    const AccessInfo &values_info  = dependencies[dependency_index];
+    const AccessInfo &perm_info    = dependencies[dependency_index + 1];
+    const AccessInfo &offsets_info = dependencies[dependency_index + 2];
 
     ReplayVariable &values_var  = replay_variables[values_info.slot];
     ReplayVariable &perm_var    = replay_variables[perm_info.slot];
@@ -1696,11 +1701,12 @@ int Recording::replay_block_mkperm(Operation &op) {
 
     offsets_var.alloc(backend, bucket_count * 4 + 1, offsets_info.vtype);
 
-    jitc_log(LogLevel::Debug,
-             "replay(): block_mkperm(values=%p, size=%u, "
-             "block_size=%u, bucket_count=%u, perm=%p, offsets=%p)",
-             values_var.data, size, block_size, bucket_count, perm_var.data,
-             offsets_var.data);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(LogLevel::Debug,
+                 "replay(): block_mkperm(values=%p, size=%u, "
+                 "block_size=%u, bucket_count=%u, perm=%p, offsets=%p)",
+                 values_var.data, size, block_size, bucket_count, perm_var.data,
+                 offsets_var.data);
 
     if (!dry_run)
         ts->block_mkperm((uint32_t *) values_var.data, size, block_size,
@@ -1753,8 +1759,8 @@ int Recording::replay_block_reduce(Operation &op) {
     ProfilerPhase profiler(pr_block_reduce);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo in_info         = dependencies[dependency_index];
-    AccessInfo out_info        = dependencies[dependency_index + 1];
+    const AccessInfo &in_info  = dependencies[dependency_index];
+    const AccessInfo &out_info = dependencies[dependency_index + 1];
 
     ReplayVariable &in_var  = replay_variables[in_info.slot];
     ReplayVariable &out_var = replay_variables[out_info.slot];
@@ -1777,11 +1783,12 @@ int Recording::replay_block_reduce(Operation &op) {
 
     out_var.alloc(backend, output_size, out_info.vtype);
 
-    jitc_log(LogLevel::Debug,
-             "replay(): block_reduce(vt=%u, op=%u, size=%u, block_size=%u, "
-             "in=%p, out=%p)",
-             (uint32_t) out_info.vtype, (uint32_t) op.rtype, size, block_size,
-             in_var.data, out_var.data);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(LogLevel::Debug,
+                 "replay(): block_reduce(vt=%u, op=%u, size=%u, block_size=%u, "
+                 "in=%p, out=%p)",
+                 (uint32_t) out_info.vtype, (uint32_t) op.rtype, size,
+                 block_size, in_var.data, out_var.data);
 
     if (!dry_run)
         ts->block_reduce(out_info.vtype, op.rtype, size, block_size,
@@ -1840,8 +1847,8 @@ int Recording::replay_block_prefix_reduce(Operation &op) {
     ProfilerPhase profiler(pr_block_reduce);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo in_info         = dependencies[dependency_index];
-    AccessInfo out_info        = dependencies[dependency_index + 1];
+    const AccessInfo &in_info  = dependencies[dependency_index];
+    const AccessInfo &out_info = dependencies[dependency_index + 1];
 
     ReplayVariable &in_var  = replay_variables[in_info.slot];
     ReplayVariable &out_var = replay_variables[out_info.slot];
@@ -1864,12 +1871,13 @@ int Recording::replay_block_prefix_reduce(Operation &op) {
 
     out_var.alloc(backend, output_size, out_info.vtype);
 
-    jitc_log(LogLevel::Debug,
-             "replay(): block_prefix_reduce(vt=%u, op=%u, size=%u, block_size=%u, "
-             "exclusive=%u, reverse=%u, in=%p, out=%p)",
-             (uint32_t) out_info.vtype, (uint32_t) op.prefix_reduce.rtype, size,
-             block_size, op.prefix_reduce.exclusive, op.prefix_reduce.reverse,
-             in_var.data, out_var.data);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(LogLevel::Debug,
+                 "replay(): block_prefix_reduce(vt=%u, op=%u, size=%u, "
+                 "block_size=%u, exclusive=%u, reverse=%u, in=%p, out=%p)",
+                 (uint32_t) out_info.vtype, (uint32_t) op.prefix_reduce.rtype,
+                 size, block_size, op.prefix_reduce.exclusive,
+                 op.prefix_reduce.reverse, in_var.data, out_var.data);
 
     if (!dry_run)
         ts->block_prefix_reduce(out_info.vtype, op.prefix_reduce.rtype, size,
@@ -1922,9 +1930,9 @@ int Recording::replay_reduce_dot(Operation &op) {
     ProfilerPhase profiler(pr_reduce_dot);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo out_info        = dependencies[dependency_index];
-    AccessInfo ptr_1_info      = dependencies[dependency_index + 1];
-    AccessInfo ptr_2_info      = dependencies[dependency_index + 2];
+    const AccessInfo &out_info   = dependencies[dependency_index];
+    const AccessInfo &ptr_1_info = dependencies[dependency_index + 1];
+    const AccessInfo &ptr_2_info = dependencies[dependency_index + 2];
 
     ReplayVariable &out_var   = replay_variables[out_info.slot];
     ReplayVariable &ptr_1_var = replay_variables[ptr_1_info.slot];
@@ -1939,11 +1947,12 @@ int Recording::replay_reduce_dot(Operation &op) {
 
     out_var.alloc(backend, 1, out_info.vtype);
 
-    jitc_log(
-        LogLevel::Debug,
-        "replay(): reduce_dot(type=%s, ptr_1=%p, ptr_2=%p, size=%u, out=%p)",
-        type_name[(uint32_t) out_info.vtype], ptr_1_var.data, ptr_2_var.data,
-        size1, out_var.data);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(
+            LogLevel::Debug,
+            "replay(): reduce_dot(type=%s, ptr_1=%p, ptr_2=%p, size=%u, out=%p)",
+            type_name[(uint32_t) out_info.vtype], ptr_1_var.data,
+            ptr_2_var.data, size1, out_var.data);
 
     if (!dry_run)
         ts->reduce_dot(out_info.vtype, ptr_1_var.data, ptr_2_var.data, size1,
@@ -2018,9 +2027,9 @@ int Recording::replay_batched_gemm(Operation &op) {
     ProfilerPhase profiler(pr_batched_gemm);
 
     uint32_t dependency_index = op.dependency_range.first;
-    AccessInfo out_info   = dependencies[dependency_index];
-    AccessInfo ptr_A_info = dependencies[dependency_index + 1];
-    AccessInfo ptr_B_info = dependencies[dependency_index + 2];
+    const AccessInfo &out_info   = dependencies[dependency_index];
+    const AccessInfo &ptr_A_info = dependencies[dependency_index + 1];
+    const AccessInfo &ptr_B_info = dependencies[dependency_index + 2];
 
     ReplayVariable &out_var   = replay_variables[out_info.slot];
     ReplayVariable &ptr_A_var = replay_variables[ptr_A_info.slot];
@@ -2063,12 +2072,13 @@ int Recording::replay_batched_gemm(Operation &op) {
     out_var.alloc(backend, (size_t) grid_count * M * N *
                                type_size[(int) out_info.vtype]);
 
-    jitc_log(LogLevel::Debug,
-             "replay(): batched_gemm(type=%s, At=%i, Bt=%i, M=%u, N=%u, K=%u, "
-             "grid=%u, reduce=%u, A=%p, B=%p, C=%p)",
-             type_name[(uint32_t) out_info.vtype], (int) op.batched_gemm.At,
-             (int) op.batched_gemm.Bt, M, N, K, grid_count, reduce_count,
-             ptr_A_var.data, ptr_B_var.data, out_var.data);
+    if (unlikely(jitc_log_active(LogLevel::Debug)))
+        jitc_log(LogLevel::Debug,
+                 "replay(): batched_gemm(type=%s, At=%i, Bt=%i, M=%u, N=%u, "
+                 "K=%u, grid=%u, reduce=%u, A=%p, B=%p, C=%p)",
+                 type_name[(uint32_t) out_info.vtype], (int) op.batched_gemm.At,
+                 (int) op.batched_gemm.Bt, M, N, K, grid_count, reduce_count,
+                 ptr_A_var.data, ptr_B_var.data, out_var.data);
 
     if (!dry_run) {
         const GemmBatch *batch_ptr =
@@ -2169,12 +2179,13 @@ void RecordThreadState::record_aggregate(void *dst, AggregationEntry *agg,
 
 int Recording::replay_aggregate(Operation &op) {
     ProfilerPhase profiler(pr_aggregate);
+    bool log_debug = unlikely(jitc_log_active(LogLevel::Debug));
 
     jitc_log(LogLevel::Debug, "replay(): aggregate");
 
     uint32_t i = op.dependency_range.first;
 
-    AccessInfo dst_info     = dependencies[i++];
+    const AccessInfo &dst_info = dependencies[i++];
     ReplayVariable &dst_rv = replay_variables[dst_info.slot];
 
     AggregationEntry *agg = nullptr;
@@ -2192,19 +2203,24 @@ int Recording::replay_aggregate(Operation &op) {
     AggregationEntry *p = agg;
 
     for (; i < op.dependency_range.second; ++i) {
-        AccessInfo param = dependencies[i];
+        const AccessInfo &param = dependencies[i];
 
         if (param.type == ParamType::Input) {
             ReplayVariable &rv = replay_variables[param.slot];
-            jitc_log(LogLevel::Debug, " -> s%u is_pointer=%u offset=%u",
-                     param.slot, param.pointer_access, param.extra.offset);
 
-            if (rv.init == RecordedVarInit::Captured) {
-                jitc_log(LogLevel::Debug, "    captured");
-                jitc_log(LogLevel::Debug, "    label=%s",
-                         jitc_var_label(rv.index));
-                jitc_log(LogLevel::Debug, "    data=%s",
-                         jitc_var_str(rv.index));
+            if (log_debug) {
+                jitc_log(LogLevel::Debug, " -> s%u is_pointer=%u offset=%u",
+                         param.slot, param.pointer_access, param.extra.offset);
+
+                // 'jitc_var_str' forces evaluation of the variable, so this
+                // must stay gated behind the log-level check.
+                if (rv.init == RecordedVarInit::Captured) {
+                    jitc_log(LogLevel::Debug, "    captured");
+                    jitc_log(LogLevel::Debug, "    label=%s",
+                             jitc_var_label(rv.index));
+                    jitc_log(LogLevel::Debug, "    data=%s",
+                             jitc_var_str(rv.index));
+                }
             }
 
             p->size   = (int16_t) (param.pointer_access
@@ -2214,8 +2230,9 @@ int Recording::replay_aggregate(Operation &op) {
             p->offset = param.extra.offset;
             p->src    = rv.data;
         } else {
-            jitc_log(LogLevel::Debug, " -> literal: offset=%u, size=%u",
-                     param.extra.offset, param.extra.type_size);
+            if (log_debug)
+                jitc_log(LogLevel::Debug, " -> literal: offset=%u, size=%u",
+                         param.extra.offset, param.extra.type_size);
             p->size   = param.extra.type_size;
             p->resource_kind = param.extra.resource_kind;
             p->offset = param.extra.offset;

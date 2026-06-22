@@ -978,6 +978,10 @@ struct ThreadState : public ThreadStateBase {
     // wrapped thread state
     virtual ThreadState *actual_state();
 
+    /// Is this a RecordThreadState that records operations for kernel freezing?
+    /// RecordThreadState overrides this; it avoids an RTTI check on hot paths.
+    virtual bool is_recording() const { return false; }
+
     /// Reset internal dynamic state
     void reset_state();
 };

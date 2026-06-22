@@ -455,6 +455,8 @@ public:
     /// Synchronization should target the real backend thread state we wrap.
     ThreadState *actual_state() override { return m_internal->actual_state(); }
 
+    bool is_recording() const override { return true; }
+
     void barrier() override;
 
     Task *launch(Kernel kernel, KernelKey &key, XXH128_hash_t hash,
