@@ -6,6 +6,7 @@
 #include <string>
 #include <errno.h>
 #include "lock.h"
+#include "free_slots.h"
 
 #if defined(_MSC_VER)
 #  pragma warning (disable:4201) // nonstandard extension used: nameless struct/union
@@ -131,17 +132,6 @@ inline uint32_t log2i_ceil(uint32_t x) {
     return 1u + (uint32_t) y;
 #else
     return 32u - __builtin_clz(x);
-#endif
-}
-
-/// Portable trailing zero count
-inline uint32_t tzcnt_u64(uint64_t x) {
-#if defined(_MSC_VER)
-    unsigned long y;
-    _BitScanForward64(&y, x);
-    return (uint32_t) y;
-#else
-    return (uint32_t) __builtin_ctzll(x);
 #endif
 }
 
