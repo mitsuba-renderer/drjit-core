@@ -690,12 +690,10 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::Eq:
-            if (!jitc_is_bool(a0)) {
+            if (!jitc_is_bool(a0))
                 fmt("    setp.eq.$t $v, $v, $v;\n", a0, v, a0, a1);
-            } else {
-                fmt("    xor.$t $v, $v, $v;\n"
-                    "    not.$t $v, $v;", v, v, a0, a1, v, v, v);
-            }
+            else
+                fmt("    xor.$b $v, $v, !$v;\n", v, v, a0, a1);
             break;
 
         case VarKind::Neq:
@@ -711,14 +709,7 @@ static void jitc_cuda_render(Variable *v) {
                                      : "    setp.lt.$t $v, $v, $v;\n",
                     a0, v, a0, a1);
             else
-                fmt("    .reg .b32 $v_<2>;\n"
-                    "    selp.b32 $v_0, 1, 0, $v;\n"
-                    "    selp.b32 $v_1, 1, 0, $v;\n"
-                    "    setp.lt.u32 $v, $v_0, $v_1;\n",
-                    v,
-                    v, a0,
-                    v, a1,
-                    v, v, v);
+                fmt("    and.$b $v, !$v, $v;\n", v, v, a0, a1);
             break;
 
         case VarKind::Le:
@@ -727,14 +718,7 @@ static void jitc_cuda_render(Variable *v) {
                                      : "    setp.le.$t $v, $v, $v;\n",
                     a0, v, a0, a1);
             else
-                fmt("    .reg .b32 $v_<2>;\n"
-                    "    selp.b32 $v_0, 1, 0, $v;\n"
-                    "    selp.b32 $v_1, 1, 0, $v;\n"
-                    "    setp.le.u32 $v, $v_0, $v_1;\n",
-                    v,
-                    v, a0,
-                    v, a1,
-                    v, v, v);
+                fmt("    or.$b $v, !$v, $v;\n", v, v, a0, a1);
             break;
 
         case VarKind::Gt:
@@ -743,14 +727,7 @@ static void jitc_cuda_render(Variable *v) {
                                      : "    setp.gt.$t $v, $v, $v;\n",
                     a0, v, a0, a1);
             else
-                fmt("    .reg .b32 $v_<2>;\n"
-                    "    selp.b32 $v_0, 1, 0, $v;\n"
-                    "    selp.b32 $v_1, 1, 0, $v;\n"
-                    "    setp.gt.u32 $v, $v_0, $v_1;\n",
-                    v,
-                    v, a0,
-                    v, a1,
-                    v, v, v);
+                fmt("    and.$b $v, $v, !$v;\n", v, v, a0, a1);
             break;
 
         case VarKind::Ge:
@@ -759,14 +736,7 @@ static void jitc_cuda_render(Variable *v) {
                                      : "    setp.ge.$t $v, $v, $v;\n",
                     a0, v, a0, a1);
             else
-                fmt("    .reg .b32 $v_<2>;\n"
-                    "    selp.b32 $v_0, 1, 0, $v;\n"
-                    "    selp.b32 $v_1, 1, 0, $v;\n"
-                    "    setp.ge.u32 $v, $v_0, $v_1;\n",
-                    v,
-                    v, a0,
-                    v, a1,
-                    v, v, v);
+                fmt("    or.$b $v, $v, !$v;\n", v, v, a0, a1);
             break;
 
         case VarKind::Array:
