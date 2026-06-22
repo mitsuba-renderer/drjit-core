@@ -17,7 +17,7 @@ uint32_t jitc_optix_max_coopvec_size = 0;
 void jitc_optix_log(unsigned int level, const char *tag, const char *message, void *) {
     // Note: cannot use jitc_var_log here. Parallel OptiX compilation may enter this
     // region from another thread, causing deadlocks (with the Dr.Jit-Core lock + Python GIL)
-    if (level <= (uint32_t) std::max(state.log_level_callback, state.log_level_stderr))
+    if (level <= (uint32_t) state.log_level_combined)
         fprintf(stderr, "jit_optix_log(): [%s] %s", tag, message);
 
     if (strcmp(tag, "DISKCACHE") == 0 &&

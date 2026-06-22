@@ -134,6 +134,7 @@ uint32_t jit_new_scope(JitBackend backend) {
 void jit_set_log_level_stderr(LogLevel level) {
     /// Allow changing this variable without acquiring a lock
     state.log_level_stderr = level;
+    state.log_level_combined = std::max(level, state.log_level_callback);
 }
 
 LogLevel jit_log_level_stderr() {
@@ -145,6 +146,8 @@ void jit_set_log_level_callback(LogLevel level, LogCallback callback) {
     lock_guard guard(state.lock);
     state.log_level_callback = callback ? level : Disable;
     state.log_callback = callback;
+    state.log_level_combined =
+        std::max(state.log_level_stderr, state.log_level_callback);
 }
 
 LogLevel jit_log_level_callback() {

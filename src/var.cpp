@@ -839,8 +839,7 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         st.variable_counter++;
     }
 
-    if (unlikely(std::max(st.log_level_stderr, st.log_level_callback) >=
-                 LogLevel::Debug)) {
+    if (unlikely(jitc_log_active(LogLevel::Debug))) {
         var_buffer.clear();
         var_buffer.fmt("jit_var_new(): %s r%u", type_name[v.type], index);
         if (v.size > 1)

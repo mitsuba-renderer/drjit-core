@@ -71,8 +71,7 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
     uint32_t flags = jitc_flags();
 
     bool params_global = !uses_optix && n_params > jitc_cuda_arg_limit;
-    bool print_labels  = std::max(state.log_level_stderr,
-                                 state.log_level_callback) >= LogLevel::Trace ||
+    bool print_labels  = jitc_log_active(LogLevel::Trace) ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
 #if defined(DRJIT_ENABLE_OPTIX)
@@ -274,8 +273,7 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                              uint32_t n_regs) {
     uint32_t flags = jitc_flags();
 
-    bool print_labels = std::max(state.log_level_stderr,
-                                 state.log_level_callback) >= LogLevel::Trace ||
+    bool print_labels = jitc_log_active(LogLevel::Trace) ||
                         (flags & (uint32_t) JitFlag::PrintIR);
 
     if (call->n_inst == 1)

@@ -512,8 +512,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     n_ops_total = n_regs;
 
-    bool trace = std::max(state.log_level_stderr, state.log_level_callback) >=
-                 LogLevel::Trace;
+    bool trace = jitc_log_active(LogLevel::Trace);
 
     if (unlikely(trace)) {
         buffer.clear();

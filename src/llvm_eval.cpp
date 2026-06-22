@@ -74,8 +74,7 @@ static void jitc_llvm_render_trace(const Variable *v,
                                    const Variable *scene);
 
 void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
-    bool print_labels = std::max(state.log_level_stderr,
-                                 state.log_level_callback) >= LogLevel::Trace ||
+    bool print_labels = jitc_log_active(LogLevel::Trace) ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
     fmt("define void @drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 "
@@ -325,8 +324,7 @@ static std::string jitc_llvm_call_ret_type(const CallData *call) {
 }
 
 void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
-    bool print_labels = std::max(state.log_level_stderr,
-                                 state.log_level_callback) >= LogLevel::Trace ||
+    bool print_labels = jitc_log_active(LogLevel::Trace) ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
     uint32_t callables_local = indirect_callable_count;
 

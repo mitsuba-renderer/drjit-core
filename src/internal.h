@@ -1085,6 +1085,9 @@ struct State {
     /// Log level (callback)
     LogLevel log_level_callback = LogLevel::Disable;
 
+    /// Cached ``max(log_level_stderr, log_level_callback)``
+    LogLevel log_level_combined = LogLevel::Info;
+
     /// Callback for log messages
     LogCallback log_callback = nullptr;
 
@@ -1244,6 +1247,11 @@ inline ThreadState *thread_state(uint32_t backend) {
 }
 
 extern State state;
+
+/// Check if a log message at the given level might reach a log callback
+inline bool jitc_log_active(LogLevel level) {
+    return level <= state.log_level_combined;
+}
 
 #if !defined(_WIN32)
   extern char *jitc_temp_path;

@@ -300,8 +300,7 @@ void jitc_shutdown(int light) {
     tl.ts_metal = nullptr;
 #endif
 
-    if (std::max(state.log_level_stderr, state.log_level_callback) >= LogLevel::Warn &&
-        state.leak_warnings) {
+    if (jitc_log_active(LogLevel::Warn) && state.leak_warnings) {
         size_t n_leaked = state.variables.size() - state.unused_variables.size() - 1;
 
         if (n_leaked > 0) {

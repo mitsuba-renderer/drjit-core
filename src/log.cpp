@@ -38,6 +38,9 @@ static const char *fatal_error_msg =
     "The error message of this specific failure is as follows:\n>>> ";
 
 void jitc_log(LogLevel log_level, const char* fmt, ...) {
+    if (likely(!jitc_log_active(log_level)))
+        return;
+
     if (unlikely(log_level <= state.log_level_stderr)) {
         va_list args;
         va_start(args, fmt);
@@ -57,6 +60,9 @@ void jitc_log(LogLevel log_level, const char* fmt, ...) {
 }
 
 void jitc_vlog(LogLevel log_level, const char* fmt, va_list args_) {
+    if (likely(!jitc_log_active(log_level)))
+        return;
+
     if (unlikely(log_level <= state.log_level_stderr)) {
         va_list args;
         va_copy(args, args_);
