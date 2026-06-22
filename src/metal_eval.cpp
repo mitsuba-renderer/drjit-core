@@ -459,6 +459,17 @@ static void jitc_metal_render_call(Variable *v, const char *fn,
     put(");\n");
 }
 
+// Emit a rounding op that is optionally fused with a float-to-int conversion
+static void jitc_metal_render_round(Variable *v, const char *fn) {
+    Variable *a0 = jitc_var(v->dep[0]);
+    if (jitc_is_float(v))
+        fmt("$t $v = $s($v);\n", v, v, fn, a0);
+    else if (v->kind == (uint32_t) VarKind::Trunc)
+        fmt("$t $v = ($t) $v;\n", v, v, v, a0);
+    else
+        fmt("$t $v = ($t) $s($v);\n", v, v, v, fn, a0);
+}
+
 static void jitc_metal_render(Variable *v) {
     if (v->coop_vec) {
         Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
@@ -537,10 +548,10 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Max:  jitc_metal_render_call(v, "max",  2); break;
 
         // -- Rounding --
-        case VarKind::Ceil:  jitc_metal_render_call(v, "ceil",  1); break;
-        case VarKind::Floor: jitc_metal_render_call(v, "floor", 1); break;
-        case VarKind::Round: jitc_metal_render_call(v, "rint",  1); break;
-        case VarKind::Trunc: jitc_metal_render_call(v, "trunc", 1); break;
+        case VarKind::Ceil:  jitc_metal_render_round(v, "ceil");  break;
+        case VarKind::Floor: jitc_metal_render_round(v, "floor"); break;
+        case VarKind::Round: jitc_metal_render_round(v, "rint");  break;
+        case VarKind::Trunc: jitc_metal_render_round(v, "trunc"); break;
 
         // -- Comparisons --
         case VarKind::Eq:  jitc_metal_render_binary(v, "=="); break;

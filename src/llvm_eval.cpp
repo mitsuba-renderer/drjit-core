@@ -457,6 +457,17 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     put("}");
 }
 
+// Emit a fused rounding + float-to-int conversion (e.g. `floor2int`). LLVM
+// folds the `rint`-based variant into a single instruction on x86.
+static void jitc_llvm_render_round2int(const Variable *v, const Variable *a0,
+                                       const char *op) {
+    fmt_intrinsic("declare $T @llvm.$s.v$w$h($T)", a0, op, a0, a0);
+    fmt("    %r2i_$u = call $T @llvm.$s.v$w$h($V)\n"
+        "    $v = $s $T %r2i_$u to $T\n",
+        v->reg_index, a0, op, a0, a0,
+        v, jitc_is_uint(v) ? "fptoui" : "fptosi", a0, v->reg_index, v);
+}
+
 static void jitc_llvm_render(Variable *v) {
     const char *stmt = nullptr;
     Variable *a0 = v->dep[0] ? jitc_var(v->dep[0]) : nullptr,
@@ -705,24 +716,44 @@ static void jitc_llvm_render(Variable *v) {
             fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
             break;
 
+        // An integer output type means a fused `ceil2int` and friends. The
+        // `trunc2int` case needs no rounding, since `fptosi`/`fptoui` truncate.
         case VarKind::Ceil:
-            fmt_intrinsic("declare $T @llvm.ceil.v$w$h($T)", v, v, a0);
-            fmt("    $v = call $T @llvm.ceil.v$w$h($V)\n", v, v, v, a0);
+            if (jitc_is_float(v)) {
+                fmt_intrinsic("declare $T @llvm.ceil.v$w$h($T)", v, v, a0);
+                fmt("    $v = call $T @llvm.ceil.v$w$h($V)\n", v, v, v, a0);
+            } else {
+                jitc_llvm_render_round2int(v, a0, "ceil");
+            }
             break;
 
         case VarKind::Floor:
-            fmt_intrinsic("declare $T @llvm.floor.v$w$h($T)", v, v, a0);
-            fmt("    $v = call $T @llvm.floor.v$w$h($V)\n", v, v, v, a0);
+            if (jitc_is_float(v)) {
+                fmt_intrinsic("declare $T @llvm.floor.v$w$h($T)", v, v, a0);
+                fmt("    $v = call $T @llvm.floor.v$w$h($V)\n", v, v, v, a0);
+            } else {
+                jitc_llvm_render_round2int(v, a0, "floor");
+            }
             break;
 
         case VarKind::Round:
-            fmt_intrinsic("declare $T @llvm.nearbyint.v$w$h($T)", v, v, a0);
-            fmt("    $v = call $T @llvm.nearbyint.v$w$h($V)\n", v, v, v, a0);
+            if (jitc_is_float(v)) {
+                fmt_intrinsic("declare $T @llvm.nearbyint.v$w$h($T)", v, v, a0);
+                fmt("    $v = call $T @llvm.nearbyint.v$w$h($V)\n", v, v, v, a0);
+            } else {
+                jitc_llvm_render_round2int(v, a0, "rint");
+            }
             break;
 
         case VarKind::Trunc:
-            fmt_intrinsic("declare $T @llvm.trunc.v$w$h($T)", v, v, a0);
-            fmt("    $v = call $T @llvm.trunc.v$w$h($V)\n", v, v, v, a0);
+            if (jitc_is_float(v)) {
+                fmt_intrinsic("declare $T @llvm.trunc.v$w$h($T)", v, v, a0);
+                fmt("    $v = call $T @llvm.trunc.v$w$h($V)\n", v, v, v, a0);
+            } else {
+                fmt(jitc_is_uint(v) ? "    $v = fptoui $V to $T\n"
+                                    : "    $v = fptosi $V to $T\n",
+                    v, a0, v);
+            }
             break;
 
         case VarKind::Eq:

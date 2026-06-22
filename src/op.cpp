@@ -1750,6 +1750,21 @@ uint32_t jitc_var_cast(uint32_t a0, VarType target_type, int reinterpret) {
         }
     }
 
+    // Fuse `int(floor(x))`, `int(round(x))`, etc. into a single rounding node
+    if (!result && info.size && !reinterpret && source_float && !target_float &&
+        !target_bool &&
+        (jitc_flags() & (uint32_t) JitFlag::ConstantPropagation) &&
+        (source_type == VarType::Float32 || source_type == VarType::Float64)) {
+        uint32_t k = v0->kind;
+        if (k == (uint32_t) VarKind::Floor || k == (uint32_t) VarKind::Ceil ||
+            k == (uint32_t) VarKind::Round || k == (uint32_t) VarKind::Trunc) {
+            uint32_t a0i = v0->dep[0];
+            result = jitc_var_new_node_1(info.backend, (VarKind) k, info.type,
+                                         info.size, info.symbolic, a0i,
+                                         jitc_var(a0i));
+        }
+    }
+
     if (!result && info.size)
         result = jitc_var_new_node_1(
             info.backend, reinterpret ? VarKind::Bitcast : VarKind::Cast,

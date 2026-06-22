@@ -674,19 +674,19 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::Ceil:
-            fmt("    cvt.rpi.$t.$t $v, $v;\n", v, v, v, a0);
+            fmt("    cvt.rpi.$t.$t $v, $v;\n", v, a0, v, a0);
             break;
 
         case VarKind::Floor:
-            fmt("    cvt.rmi.$t.$t $v, $v;\n", v, v, v, a0);
+            fmt("    cvt.rmi.$t.$t $v, $v;\n", v, a0, v, a0);
             break;
 
         case VarKind::Round:
-            fmt("    cvt.rni.$t.$t $v, $v;\n", v, v, v, a0);
+            fmt("    cvt.rni.$t.$t $v, $v;\n", v, a0, v, a0);
             break;
 
         case VarKind::Trunc:
-            fmt("    cvt.rzi.$t.$t $v, $v;\n", v, v, v, a0);
+            fmt("    cvt.rzi.$t.$t $v, $v;\n", v, a0, v, a0);
             break;
 
         case VarKind::Eq:
