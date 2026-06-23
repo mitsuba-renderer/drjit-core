@@ -1078,8 +1078,8 @@ static void jitc_cuda_render(Variable *v) {
             TexData *td = (TexData *) v->data;
             uint32_t nc = td->n_values, ri = v->reg_index;
             uint32_t stride = nc * td->comp_bytes;
-            bool is_f16 = td->comp_bytes == 2;
-            const char *ct = is_f16 ? "b16" : "b32";
+            bool is_u8 = td->comp_bytes == 1, is_f16 = td->comp_bytes == 2;
+            const char *ct = is_u8 ? "b8" : (is_f16 ? "b16" : "b32");
             Variable *mask = v->dep[1] ? jitc_var(v->dep[1]) : nullptr;
 
             fmt("    .reg.u32 %tw$u_x;\n"
@@ -1088,7 +1088,15 @@ static void jitc_cuda_render(Variable *v) {
 
             for (uint32_t c = 0; c < nc; ++c) {
                 Variable *val = jitc_var(td->values[c]);
-                if (is_f16)
+                if (is_u8)
+                    // Normalized 8-bit: the f32 input is already clamped to
+                    // [0, 1] (and sRGB-encoded); scale to 0..255 and round.
+                    fmt("    .reg.f32 %tw$u_f$u;\n"
+                        "    .reg.b8 %tw$u_$u;\n"
+                        "    mul.f32 %tw$u_f$u, $v, 0f437F0000;\n"
+                        "    cvt.rni.sat.u8.f32 %tw$u_$u, %tw$u_f$u;\n",
+                        ri, c, ri, c, ri, c, val, ri, c, ri, c);
+                else if (is_f16)
                     fmt("    .reg.b16 %tw$u_$u;\n"
                         "    cvt.rn.f16.f32 %tw$u_$u, $v;\n",
                         ri, c, ri, c, val);
