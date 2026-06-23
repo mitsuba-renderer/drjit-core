@@ -25,6 +25,7 @@ struct CUDATexture : TextureBase {
     void *graphics_resource = nullptr; /// Registered CUgraphicsResource
     int filter_mode = 1, wrap_mode = 0; /// Sampler settings (texobject rebuild)
     int storage_format = 0; /// VarType of the storage (texobject rebuild)
+    int srgb = 0; /// Decode sRGB -> linear on sampling (UInt8 textures)
 
     /// Allocates the per-sub-texture arrays; \ref TextureBase computes
     /// \c n_textures from the channel count.
@@ -86,12 +87,12 @@ struct TextureReleasePayload {
 /// Build a sampling ``CUtexObject`` over \c array.
 static CUtexObject cuda_tex_make_texobject(CUarray array, int format,
                                            size_t channels, int filter_mode,
-                                           int wrap_mode, size_t width,
+                                           int wrap_mode, int srgb, size_t width,
                                            size_t height, size_t depth);
 
 void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                            int format, int filter_mode, int wrap_mode,
-                           int writable) {
+                           int writable, int srgb) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_create(): invalid texture dimension!");
     else if (n_channels == 0)
@@ -118,6 +119,10 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             array_format = CU_AD_FORMAT_HALF;
             tsize = sizeof(uint16_t);
             break;
+        case VarType::UInt8:
+            array_format = CU_AD_FORMAT_UNSIGNED_INT8;
+            tsize = sizeof(uint8_t);
+            break;
         default:
             jitc_raise("jit_cuda_tex_create(): invalid data type!");
             break;
@@ -126,6 +131,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     CUDATexture *texture =
         new CUDATexture(tsize, n_channels, writable != 0);
     texture->ndim = ndim;
+    texture->srgb = srgb;
     for (size_t i = 0; i < ndim; ++i)
         texture->shape[i] = shape[i];
     for (size_t tex = 0; tex < texture->n_textures; ++tex) {
@@ -154,7 +160,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
 
         texture->arrays[tex] = array;
         texture->textures[tex] = cuda_tex_make_texobject(
-            array, format, tex_channels, filter_mode, wrap_mode, shape[0],
+            array, format, tex_channels, filter_mode, wrap_mode, srgb, shape[0],
             (ndim >= 2) ? shape[1] : 1, (ndim == 3) ? shape[2] : 0);
         texture->indices[tex] =
             jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,
@@ -590,16 +596,21 @@ uintptr_t jitc_cuda_tex_native_handle(const void *handle,
 /// texture on each \ref jitc_cuda_tex_map().
 static CUtexObject cuda_tex_make_texobject(CUarray array, int format,
                                            size_t channels, int filter_mode,
-                                           int wrap_mode, size_t width,
+                                           int wrap_mode, int srgb, size_t width,
                                            size_t height, size_t depth) {
     CUDA_RESOURCE_DESC res_desc{};
     res_desc.resType = CU_RESOURCE_TYPE_ARRAY;
     res_desc.res.array.hArray = array;
 
+    // UInt8 storage is read back as a normalized float in [0, 1] (the default
+    // read mode), optionally decoding sRGB -> linear.
+    bool is_u8 = (VarType) format == VarType::UInt8;
+
     CUDA_TEXTURE_DESC tex_desc{};
     tex_desc.filterMode = tex_desc.mipmapFilterMode =
         (filter_mode == 0) ? CU_TR_FILTER_MODE_POINT : CU_TR_FILTER_MODE_LINEAR;
-    tex_desc.flags = CU_TRSF_NORMALIZED_COORDINATES;
+    tex_desc.flags = CU_TRSF_NORMALIZED_COORDINATES |
+                     ((is_u8 && srgb) ? CU_TRSF_SRGB : 0);
     CUaddress_mode am = (wrap_mode == 0)   ? CU_TR_ADDRESS_MODE_WRAP
                         : (wrap_mode == 1) ? CU_TR_ADDRESS_MODE_CLAMP
                                            : CU_TR_ADDRESS_MODE_MIRROR;
@@ -613,13 +624,16 @@ static CUtexObject cuda_tex_make_texobject(CUarray array, int format,
     view_desc.depth = depth;
     bool is_f32 = (VarType) format == VarType::Float32;
     if (channels == 1)
-        view_desc.format = is_f32 ? CU_RES_VIEW_FORMAT_FLOAT_1X32
+        view_desc.format = is_u8  ? CU_RES_VIEW_FORMAT_UINT_1X8
+                         : is_f32 ? CU_RES_VIEW_FORMAT_FLOAT_1X32
                                   : CU_RES_VIEW_FORMAT_FLOAT_1X16;
     else if (channels == 2)
-        view_desc.format = is_f32 ? CU_RES_VIEW_FORMAT_FLOAT_2X32
+        view_desc.format = is_u8  ? CU_RES_VIEW_FORMAT_UINT_2X8
+                         : is_f32 ? CU_RES_VIEW_FORMAT_FLOAT_2X32
                                   : CU_RES_VIEW_FORMAT_FLOAT_2X16;
     else
-        view_desc.format = is_f32 ? CU_RES_VIEW_FORMAT_FLOAT_4X32
+        view_desc.format = is_u8  ? CU_RES_VIEW_FORMAT_UINT_4X8
+                         : is_f32 ? CU_RES_VIEW_FORMAT_FLOAT_4X32
                                   : CU_RES_VIEW_FORMAT_FLOAT_4X16;
 
     CUtexObject texobj = 0;
@@ -628,7 +642,8 @@ static CUtexObject cuda_tex_make_texobject(CUarray array, int format,
 }
 
 void *jitc_cuda_tex_wrap(uintptr_t handle, size_t ndim, int format,
-                         int writable, int filter_mode, int wrap_mode) {
+                         int writable, int filter_mode, int wrap_mode,
+                         int srgb) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_tex_wrap(): invalid texture dimension!");
 
@@ -659,10 +674,12 @@ void *jitc_cuda_tex_wrap(uintptr_t handle, size_t ndim, int format,
     switch (desc.Format) {
         case CU_AD_FORMAT_FLOAT: tex_format = (int) VarType::Float32; comp_size = 4; break;
         case CU_AD_FORMAT_HALF:  tex_format = (int) VarType::Float16; comp_size = 2; break;
+        case CU_AD_FORMAT_UNSIGNED_INT8: tex_format = (int) VarType::UInt8; comp_size = 1; break;
         default:
             cuda_check(cuGraphicsUnregisterResource(resource));
             jitc_raise("jit_tex_wrap(): unsupported OpenGL texture format; only "
-                       "16- or 32-bit float textures can be wrapped.");
+                       "8-bit unsigned and 16-/32-bit float textures can be "
+                       "wrapped.");
     }
     if (tex_format != format) {
         cuda_check(cuGraphicsUnregisterResource(resource));
@@ -690,6 +707,7 @@ void *jitc_cuda_tex_wrap(uintptr_t handle, size_t ndim, int format,
     texture->filter_mode = filter_mode;
     texture->wrap_mode = wrap_mode;
     texture->storage_format = tex_format;
+    texture->srgb = srgb;
     texture->shape[0] = desc.Width;
     texture->shape[1] = desc.Height;
     texture->shape[2] = desc.Depth;
@@ -729,7 +747,8 @@ void jitc_cuda_tex_map(void *handle) {
     } else {
         texture->textures[0] = cuda_tex_make_texobject(
             array, texture->storage_format, texture->n_channels,
-            texture->filter_mode, texture->wrap_mode, texture->shape[0],
+            texture->filter_mode, texture->wrap_mode, texture->srgb,
+            texture->shape[0],
             texture->shape[1] ? texture->shape[1] : 1, texture->shape[2]);
         texture->indices[0] =
             jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,

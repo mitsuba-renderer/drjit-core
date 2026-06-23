@@ -34,8 +34,22 @@
 //  Helpers
 // ============================================================================
 
-static MTLPixelFormat metal_tex_pixel_format(int format, size_t channels_storage) {
-    if ((VarType) format == VarType::Float32) {
+static MTLPixelFormat metal_tex_pixel_format(int format, size_t channels_storage,
+                                             int srgb) {
+    if ((VarType) format == VarType::UInt8) {
+        if (srgb) {
+            switch (channels_storage) {
+                case 1: return MTLPixelFormatR8Unorm_sRGB;
+                case 2: return MTLPixelFormatRG8Unorm_sRGB;
+                default: return MTLPixelFormatRGBA8Unorm_sRGB;
+            }
+        }
+        switch (channels_storage) {
+            case 1: return MTLPixelFormatR8Unorm;
+            case 2: return MTLPixelFormatRG8Unorm;
+            default: return MTLPixelFormatRGBA8Unorm;
+        }
+    } else if ((VarType) format == VarType::Float32) {
         switch (channels_storage) {
             case 1: return MTLPixelFormatR32Float;
             case 2: return MTLPixelFormatRG32Float;
@@ -131,7 +145,7 @@ static void metal_tex_install_release(MetalTexture *tex, size_t i) {
 
 void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                             int format, int filter_mode, int wrap_mode,
-                            int writable) {
+                            int writable, int srgb) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_metal_tex_create(): invalid texture dimension!");
     else if (n_channels == 0)
@@ -147,6 +161,7 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     switch ((VarType) format) {
         case VarType::Float32: type_size = sizeof(float); break;
         case VarType::Float16: type_size = sizeof(uint16_t); break;
+        case VarType::UInt8:   type_size = sizeof(uint8_t); break;
         default: jitc_raise("jit_metal_tex_create(): invalid data type!");
     }
 
@@ -170,7 +185,7 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
 
             MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
             desc.textureType = (ndim == 3) ? MTLTextureType3D : MTLTextureType2D;
-            desc.pixelFormat = metal_tex_pixel_format(format, ci);
+            desc.pixelFormat = metal_tex_pixel_format(format, ci, srgb);
             desc.width = width;
             desc.height = height;
             desc.depth = depth;
@@ -202,8 +217,10 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     return (void *) tex;
 }
 
-/// Infer (channels, component VarType) from a wrappable ``MTLPixelFormat``.
-static bool metal_tex_format_info(MTLPixelFormat pf, size_t *channels, int *format) {
+/// Infer (channels, component VarType, sRGB) from a wrappable ``MTLPixelFormat``.
+static bool metal_tex_format_info(MTLPixelFormat pf, size_t *channels,
+                                  int *format, int *srgb) {
+    *srgb = 0;
     switch (pf) {
         case MTLPixelFormatR32Float:    *channels = 1; *format = (int) VarType::Float32; return true;
         case MTLPixelFormatRG32Float:   *channels = 2; *format = (int) VarType::Float32; return true;
@@ -211,26 +228,35 @@ static bool metal_tex_format_info(MTLPixelFormat pf, size_t *channels, int *form
         case MTLPixelFormatR16Float:    *channels = 1; *format = (int) VarType::Float16; return true;
         case MTLPixelFormatRG16Float:   *channels = 2; *format = (int) VarType::Float16; return true;
         case MTLPixelFormatRGBA16Float: *channels = 4; *format = (int) VarType::Float16; return true;
+        case MTLPixelFormatR8Unorm:     *channels = 1; *format = (int) VarType::UInt8; return true;
+        case MTLPixelFormatRG8Unorm:    *channels = 2; *format = (int) VarType::UInt8; return true;
+        case MTLPixelFormatRGBA8Unorm:  *channels = 4; *format = (int) VarType::UInt8; return true;
+        case MTLPixelFormatR8Unorm_sRGB:    *channels = 1; *format = (int) VarType::UInt8; *srgb = 1; return true;
+        case MTLPixelFormatRG8Unorm_sRGB:   *channels = 2; *format = (int) VarType::UInt8; *srgb = 1; return true;
+        case MTLPixelFormatRGBA8Unorm_sRGB: *channels = 4; *format = (int) VarType::UInt8; *srgb = 1; return true;
         default: return false;
     }
 }
 
 void *jitc_metal_tex_wrap(uintptr_t handle, size_t ndim, int format,
-                          int writable, int filter_mode, int wrap_mode) {
+                          int writable, int filter_mode, int wrap_mode,
+                          int srgb) {
     if (!handle)
         jitc_raise("jit_tex_wrap(): null texture handle!");
 
     id<MTLTexture> mtl_tex = (__bridge id<MTLTexture>) (void *) handle;
 
     size_t channels = 0;
-    int tex_format = 0;
-    if (!metal_tex_format_info(mtl_tex.pixelFormat, &channels, &tex_format))
+    int tex_format = 0, tex_srgb = 0;
+    if (!metal_tex_format_info(mtl_tex.pixelFormat, &channels, &tex_format,
+                               &tex_srgb))
         jitc_raise("jit_tex_wrap(): unsupported pixel format; only R/RG/RGBA "
-                   "16- or 32-bit float textures can be wrapped.");
+                   "8-bit unorm and 16-/32-bit float textures can be wrapped.");
     if (tex_format != format)
         jitc_raise("jit_tex_wrap(): texture component type does not match the "
                    "Dr.Jit texture's scalar type (use a Float16 texture type "
                    "for a half-precision texture, and vice versa).");
+    (void) srgb; // sRGB decoding is implied by the wrapped pixel format
 
     size_t width = mtl_tex.width, height = 1, depth = 1, tex_ndim;
     switch (mtl_tex.textureType) {
@@ -372,8 +398,9 @@ void jitc_metal_tex_memcpy_d2t(const void *src_ptr, void *dst_handle) {
     size_t depth  = (ndim == 3) ? shape[2] : 1;
 
     bool needs_staging = (tex.n_textures > 1) || (tex.n_channels == 3);
-    MetalKernel deint = (type_size == 2) ? MetalKernel::DeinterleaveU16
-                                         : MetalKernel::DeinterleaveU32;
+    MetalKernel deint = (type_size == 1)   ? MetalKernel::DeinterleaveU8
+                        : (type_size == 2) ? MetalKernel::DeinterleaveU16
+                                           : MetalKernel::DeinterleaveU32;
 
     std::vector<void *> packed(tex.n_textures, nullptr);
     @autoreleasepool {
@@ -455,8 +482,9 @@ void jitc_metal_tex_memcpy_t2d(const void *src_handle, void *dst_ptr) {
     }
 
     // Blit each sub-texture into a buffer, then interleave to destination
-    MetalKernel inter = (type_size == 2) ? MetalKernel::InterleaveU16
-                                         : MetalKernel::InterleaveU32;
+    MetalKernel inter = (type_size == 1)   ? MetalKernel::InterleaveU8
+                        : (type_size == 2) ? MetalKernel::InterleaveU16
+                                           : MetalKernel::InterleaveU32;
     std::vector<void *> packed(tex.n_textures, nullptr);
     @autoreleasepool {
         id<MTLBlitCommandEncoder> blit =

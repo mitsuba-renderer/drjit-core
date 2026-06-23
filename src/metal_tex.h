@@ -56,9 +56,10 @@ struct MetalTexture : TextureBase {
 extern void *jitc_metal_tex_create(size_t ndim, const size_t *shape,
                                    size_t n_channels, int format,
                                    int filter_mode, int wrap_mode,
-                                   int writable);
+                                   int writable, int srgb);
 extern void *jitc_metal_tex_wrap(uintptr_t handle, size_t ndim, int format,
-                                 int writable, int filter_mode, int wrap_mode);
+                                 int writable, int filter_mode, int wrap_mode,
+                                 int srgb);
 extern uintptr_t jitc_metal_tex_native_handle(const void *handle,
                                               size_t sub_index);
 extern void jitc_metal_tex_get_shape(const void *handle, size_t *shape);

@@ -36,7 +36,9 @@ extern "C" {
  *     Components per texel (>= 1).
  *
  * \param format
- *     Per-channel \ref VarType, either <tt>Float32</tt> or <tt>Float16</tt>.
+ *     Per-channel \ref VarType: <tt>Float32</tt>, <tt>Float16</tt>, or
+ *     <tt>UInt8</tt>. An <tt>UInt8</tt> texture stores normalized 8-bit values
+ *     and returns floats in <tt>[0, 1]</tt> when sampled.
  *
  * \param filter_mode
  *     0 = nearest-neighbor, 1 = linear/bi-/tri-linear interpolation.
@@ -47,6 +49,10 @@ extern "C" {
  * \param writable
  *     If nonzero, kernels may also store into the texture via
  *     \ref jit_tex_write().
+ *
+ * \param srgb
+ *     If nonzero (<tt>UInt8</tt> textures only), samples are decoded from sRGB
+ *     to linear by the hardware.
  */
 extern JIT_EXPORT void *jit_tex_create(JitBackend backend,
                                        size_t ndim,
@@ -55,7 +61,8 @@ extern JIT_EXPORT void *jit_tex_create(JitBackend backend,
                                        int format,
                                        int filter_mode JIT_DEF(1),
                                        int wrap_mode JIT_DEF(0),
-                                       int writable JIT_DEF(0));
+                                       int writable JIT_DEF(0),
+                                       int srgb JIT_DEF(0));
 
 /**
  * \brief Wrap an existing native texture object as a Dr.Jit texture
@@ -102,7 +109,8 @@ extern JIT_EXPORT void *jit_tex_wrap(JitBackend backend,
                                      int format,
                                      int writable,
                                      int filter_mode JIT_DEF(1),
-                                     int wrap_mode JIT_DEF(0));
+                                     int wrap_mode JIT_DEF(0),
+                                     int srgb JIT_DEF(0));
 
 /**
  * \brief Make a wrapped texture's storage available to Dr.Jit kernels

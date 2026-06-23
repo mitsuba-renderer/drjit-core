@@ -1464,17 +1464,17 @@ static void jit_tex_unavailable(JitBackend backend) {
 
 void *jit_tex_create(JitBackend backend, size_t ndim, const size_t *shape,
                      size_t n_channels, int format, int filter_mode,
-                     int wrap_mode, int writable) {
+                     int wrap_mode, int writable, int srgb) {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_CUDA)
     if (jitc_is_cuda(backend))
         return jitc_cuda_tex_create(ndim, shape, n_channels, format,
-                                    filter_mode, wrap_mode, writable);
+                                    filter_mode, wrap_mode, writable, srgb);
 #endif
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(backend))
         return jitc_metal_tex_create(ndim, shape, n_channels, format,
-                                     filter_mode, wrap_mode, writable);
+                                     filter_mode, wrap_mode, writable, srgb);
 #endif
     jit_tex_unavailable(backend);
     return nullptr;
@@ -1584,17 +1584,18 @@ void jit_tex_write(void *handle, const uint32_t *pos, const uint32_t *value,
 }
 
 void *jit_tex_wrap(JitBackend backend, uintptr_t handle, size_t ndim,
-                   int format, int writable, int filter_mode, int wrap_mode) {
+                   int format, int writable, int filter_mode, int wrap_mode,
+                   int srgb) {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_CUDA)
     if (jitc_is_cuda(backend))
         return jitc_cuda_tex_wrap(handle, ndim, format, writable, filter_mode,
-                                  wrap_mode);
+                                  wrap_mode, srgb);
 #endif
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(backend))
         return jitc_metal_tex_wrap(handle, ndim, format, writable, filter_mode,
-                                   wrap_mode);
+                                   wrap_mode, srgb);
 #endif
     jit_tex_unavailable(backend);
     return nullptr;

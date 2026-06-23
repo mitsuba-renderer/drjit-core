@@ -4,7 +4,8 @@
 
 extern void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
                                   size_t n_channels, int format,
-                                  int filter_mode, int wrap_mode, int writable);
+                                  int filter_mode, int wrap_mode, int writable,
+                                  int srgb);
 extern void jitc_cuda_tex_get_shape(const void *handle, size_t *shape);
 extern void jitc_cuda_tex_get_indices(const void *handle,
                                       uint32_t *indices);
@@ -21,7 +22,8 @@ extern void jitc_cuda_tex_bilerp_fetch(const void *handle,
                                        const uint32_t *pos, uint32_t active,
                                        uint32_t *out);
 extern void *jitc_cuda_tex_wrap(uintptr_t handle, size_t ndim, int format,
-                                int writable, int filter_mode, int wrap_mode);
+                                int writable, int filter_mode, int wrap_mode,
+                                int srgb);
 extern void jitc_cuda_tex_map(void *handle);
 extern void jitc_cuda_tex_unmap(void *handle);
 extern uintptr_t jitc_cuda_tex_native_handle(const void *handle,

@@ -181,8 +181,10 @@ static const char *metal_kernel_names[(uint32_t) MetalKernel::Count] = {
     "memset_u32",
     "memset_u64",
     "convert_f32_f16",
+    "deinterleave_u8",
     "deinterleave_u16",
     "deinterleave_u32",
+    "interleave_u8",
     "interleave_u16",
     "interleave_u32"
 };

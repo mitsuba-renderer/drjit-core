@@ -665,8 +665,10 @@ enum class MetalKernel : uint32_t {
     MemsetU32,
     MemsetU64,
     ConvertF32F16,
+    DeinterleaveU8,
     DeinterleaveU16,
     DeinterleaveU32,
+    InterleaveU8,
     InterleaveU16,
     InterleaveU32,
     Count

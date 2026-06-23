@@ -391,10 +391,14 @@ kernel void interleave_kernel(constant channel_pack_params &p [[buffer(0)]],
         ((device const T *) p.src)[pix * p.ci + c];
 }
 
+template [[host_name("deinterleave_u8")]]
+kernel void deinterleave_kernel<uchar>(constant channel_pack_params &, uint);
 template [[host_name("deinterleave_u16")]]
 kernel void deinterleave_kernel<ushort>(constant channel_pack_params &, uint);
 template [[host_name("deinterleave_u32")]]
 kernel void deinterleave_kernel<uint>(constant channel_pack_params &, uint);
+template [[host_name("interleave_u8")]]
+kernel void interleave_kernel<uchar>(constant channel_pack_params &, uint);
 template [[host_name("interleave_u16")]]
 kernel void interleave_kernel<ushort>(constant channel_pack_params &, uint);
 template [[host_name("interleave_u32")]]
