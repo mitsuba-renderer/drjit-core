@@ -13,8 +13,10 @@
 #include "var.h"
 #include "llvm_eval.h"
 #include "llvm_packet.h"
+#include "call.h"
 #include "log.h"
 #include "op.h"
+#include <algorithm>
 
 void perm4(const Variable *v, const char *out, const char *arg0, const char *arg1, uint32_t pattern) {
     uint32_t width = jitc_llvm_vector_width;
@@ -119,11 +121,12 @@ void gather_packet_recursive(uint32_t l, uint32_t i, uint32_t n, const Variable 
     }
 }
 
-
-void jitc_llvm_render_gather_packet(const Variable *v, const Variable *ptr,
-                                    const Variable *index, const Variable *mask) {
+/// Emit (and register) the internal helper ``@gather_<n>x<H>`` that reads ``n``
+/// adjacent elements of type ``v`` from each lane's base address and transposes
+/// the result into ``n`` SoA vectors. The per-lane loads are ``type_size * n``
+/// aligned, which both callers guarantee.
+void jitc_llvm_gather_packet_define(const Variable *v, uint32_t n) {
     size_t offset = buffer.size();
-    uint32_t n = (uint32_t) v->literal;
 
     fmt_intrinsic("@zero_$m_$u = private constant [$u x $m] $z, align $u", v, n, n, v,
                   type_size[v->type] * jitc_llvm_vector_width);
@@ -149,6 +152,13 @@ void jitc_llvm_render_gather_packet(const Variable *v, const Variable *ptr,
 
     jitc_register_global(buffer.get() + offset);
     buffer.rewind_to(offset);
+}
+
+void jitc_llvm_render_gather_packet(const Variable *v, const Variable *ptr,
+                                    const Variable *index, const Variable *mask) {
+    uint32_t n = (uint32_t) v->literal;
+
+    jitc_llvm_gather_packet_define(v, n);
 
     const char *ext = "";
     if (v->type == (uint32_t) VarType::Bool)
@@ -172,6 +182,149 @@ void jitc_llvm_render_gather_packet(const Variable *v, const Variable *ptr,
         for (uint32_t i = 0; i < n; ++i)
             fmt("    $v_out_$u = trunc <$w x $m> $v_out_$u_e to <$w x i1>\n",
                 v, i, v, v, i);
+    }
+}
+
+void jitc_llvm_render_call_data(const CallData *call, uint32_t inst,
+                                uint32_t packetized_until[4]) {
+    const CallData::InstanceLayout &layout = call->instance_layout[inst];
+    uint32_t width = jitc_llvm_vector_width,
+             uid   = 0;
+
+    for (uint32_t c = 0; c < 4; ++c)
+        packetized_until[c] = layout.bucket[c].slot_start;
+
+    // A field is loadable iff scheduled (reg_index != 0): only scheduled vars
+    // have an SSA name to bind. This function only iterates coalesceable buckets,
+    // whose membership was classified when slots were captured.
+    //
+    // A coalesceable slot can be unscheduled when it is captured solely by a call
+    // output (or side effect) that the optimizer later eliminated -- the
+    // trace-time layout still reserved its offset, but no codegen references it.
+    // Such "holes" are loaded across (their bytes are contiguous and uploaded)
+    // but bound nowhere; they are dead.
+    auto loadable = [](const Variable *v) {
+        return v && v->reg_index != 0;
+    };
+
+    // The layout pass already grouped coalesceable slots into four homogeneous
+    // size-class buckets. LLVM packet gathers require such homogeneous runs, so
+    // each bucket can be streamed directly rather than rediscovered here.
+    //
+    // A bucket is coalesced on "coalesceable", not "loadable": it may contain
+    // holes -- slots that the optimizer left unscheduled (reg_index 0) and that
+    // are therefore not bound here. Their bytes are contiguous and uploaded like
+    // any other slot, so the packet load reads across them harmlessly and we skip
+    // binding those lanes. Trailing holes are trimmed so the scalar path can pick
+    // up an under-utilized live tail.
+    for (uint32_t c = 0; c < 4; ++c) {
+        const CallData::InstanceLayout::Bucket &bucket = layout.bucket[c];
+        uint32_t k = bucket.slot_start,
+                 kend = bucket.slot_end();
+
+        if (k == kend)
+            continue;
+
+        uint32_t s = CallData::SizeBucket::size_from_id(c),
+                 rel0 = call->slots[k].offset - layout.data_offset,
+                 last_load = (uint32_t) -1;
+
+        for (uint32_t slot = k; slot < kend; ++slot) {
+            const Variable *vk = jitc_var(call->slots[slot].ref);
+            if (loadable(vk))
+                last_load = slot;
+        }
+
+        // Skip a bucket with no loadable fields; otherwise trim trailing holes.
+        if (last_load == (uint32_t) -1)
+            continue;
+        uint32_t run_len = last_load - k + 1;
+
+        // Canonical integer type matching the run's element width.
+        VarType cvt = s == 8 ? VarType::UInt64
+                    : s == 4 ? VarType::UInt32
+                    : s == 2 ? VarType::UInt16
+                             : VarType::UInt8;
+        Variable rep{};
+        rep.type = (uint32_t) cvt;
+
+        uint32_t pos = 0;
+        while (pos < run_len) {
+            uint32_t rem = run_len - pos;
+
+            // Largest packet count (>= 2, <= 8, <= SIMD width) that stays
+            // sufficiently utilized. A return value < 2 falls back to the
+            // per-field gather path below.
+            uint32_t p = jitc_call_pick_llvm_packet_count(
+                rem, width < 8u ? width : 8u);
+            if (p < 2)
+                break;
+
+            uint32_t valid   = std::min(rem, p),
+                     run_off = rel0 + pos * s,
+                     id      = uid++;
+
+            // Each run starts at its size class's packet-aligned boundary (we
+            // coalesce on "coalesceable", the property the layout aligns to) and
+            // advances by whole packets, so ``run_off`` is a multiple of ``p*s`` --
+            // the alignment jitc_llvm_gather_packet_define() bakes into the load.
+            jitc_assert(run_off % (p * s) == 0,
+                        "jitc_llvm_render_call_data(): misaligned packet load "
+                        "(run_off=%u, p=%u, s=%u)", run_off, p, s);
+
+            jitc_llvm_gather_packet_define(&rep, p);
+
+            fmt("    %cd$u_p1 = getelementptr inbounds i8, ptr %data, i32 $u\n"
+                "    %cd$u_p2 = getelementptr inbounds i8, ptr %cd$u_p1, <$w x i32> %offsets\n"
+                "    %cd$u_p3 = getelementptr [$u x $m], ptr @zero_$m_$u, <$w x i32> zeroinitializer\n"
+                "    %cd$u_p4 = select <$w x i1> %mask, <$w x ptr> %cd$u_p2, <$w x ptr> %cd$u_p3\n"
+                "    %cd$u_r = call fastcc [$u x <$w x $m>] @gather_$ux$H(<$w x ptr> %cd$u_p4)\n",
+                id, run_off,
+                id, id,
+                id, p, &rep, &rep, p,
+                id, id, id,
+                id, p, &rep, p, &rep, id);
+
+            for (uint32_t j = 0; j < valid; ++j) {
+                uint32_t slot = k + pos + j;
+                const Variable *vf = jitc_var(call->slots[slot].ref);
+
+                // Skip holes: their lane was loaded but has no SSA value to bind.
+                if (!loadable(vf))
+                    continue;
+
+                VarType ft = (VarType) vf->type;
+
+                // Integers of the run's width are the same LLVM type as the
+                // gathered words and bind directly; floats/bool/pointers convert
+                // from the canonical integer.
+                bool is_int = ft != VarType::Bool && ft != VarType::Pointer &&
+                              ft != VarType::Float16 && ft != VarType::Float32 &&
+                              ft != VarType::Float64;
+
+                if (is_int) {
+                    fmt("    $v = extractvalue [$u x <$w x $m>] %cd$u_r, $u\n",
+                        vf, p, &rep, id, j);
+                } else {
+                    fmt("    %cd$u_o$u = extractvalue [$u x <$w x $m>] %cd$u_r, $u\n",
+                        id, j, p, &rep, id, j);
+                    if (ft == VarType::Bool)
+                        fmt("    $v = trunc <$w x i8> %cd$u_o$u to <$w x i1>\n",
+                            vf, id, j);
+                    else if (ft == VarType::Pointer)
+                        // A pointer's '$T' is '<w x i64>'; the SSA value is the
+                        // '<w x ptr>' produced here (cf. the scalar path).
+                        fmt("    $v = inttoptr <$w x $m> %cd$u_o$u to <$w x ptr>\n",
+                            vf, &rep, id, j);
+                    else // float / half / double
+                        fmt("    $v = bitcast <$w x $m> %cd$u_o$u to $T\n",
+                            vf, &rep, id, j, vf);
+                }
+            }
+
+            pos += valid;
+            packetized_until[c] = k + pos;
+        }
     }
 }
 

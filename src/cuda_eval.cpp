@@ -325,6 +325,52 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
     // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
     jitc_call_bind_slots(call, inst);
 
+    // Issue one or more vector loads to fetch the coalesced part of the call
+    // data (see call.h).
+    const CallData::InstanceLayout &call_layout = call->instance_layout[inst];
+    uint32_t cd_end = call_layout.coalesce_end;
+
+    // Only worth coalescing with >= 2 coalesceable fields.
+    bool cd_coalesce = call_layout.coalesce_count >= 2;
+
+    if (cd_coalesce) {
+        bool supports_256bit =
+            jitc_cuda_supports_256bit(thread_state_cuda, uses_optix);
+
+        // Widest load this device may emit. The last load may cover bytes up
+        // to this boundary beyond ``cd_end``, so reserve that many 32-bit words.
+        uint32_t max_chunk = supports_256bit ? 32u : 16u;
+        uint32_t end    = (cd_end + 3u) & ~3u, // round up to a full word
+                 nwords = ((cd_end + max_chunk - 1u) & ~(max_chunk - 1u)) / 4;
+
+        fmt("    .reg.b32 %cdw<$u>;\n"
+            "    .reg.b64 %cdq;\n"
+            "    .reg.b32 %cdb;\n"
+            "    .reg.b16 %cdh<2>;\n",
+            nwords);
+
+        uint32_t p = 0;
+        while (p < end) {
+            uint32_t w_bytes = jitc_call_pick_word_chunk_size(p, end - p, max_chunk),
+                     first   = p / 4;
+            if (w_bytes == 32)
+                fmt("    ld.global.v8.b32 {%cdw$u, %cdw$u, %cdw$u, %cdw$u, "
+                    "%cdw$u, %cdw$u, %cdw$u, %cdw$u}, [data+$u];\n",
+                    first, first + 1, first + 2, first + 3,
+                    first + 4, first + 5, first + 6, first + 7, p);
+            else if (w_bytes == 16)
+                fmt("    ld.global.v4.b32 {%cdw$u, %cdw$u, %cdw$u, %cdw$u}, [data+$u];\n",
+                    first, first + 1, first + 2, first + 3, p);
+            else if (w_bytes == 8)
+                fmt("    ld.global.v2.b32 {%cdw$u, %cdw$u}, [data+$u];\n",
+                    first, first + 1, p);
+            else
+                fmt("    ld.global.b32 %cdw$u, [data+$u];\n", first, p);
+
+            p += w_bytes;
+        }
+    }
+
     // Warning: do not rewrite this into a range-based for loop.
     // The memory location of 'schedule' may change.
     for (size_t i = 0; i < schedule.size(); ++i) {
@@ -352,7 +398,30 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
             }
         } else if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
             uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
-            if (vt != VarType::Bool)
+            uint32_t tsz = type_size[vti];
+            const CallData::CaptureSlot &capture = call->slots[v->param_offset];
+            if (cd_coalesce && capture.bucket.coalesceable()) {
+                // Reconstruct this field from the coalesced scratch words
+                uint32_t w = offset / 4;
+                if (tsz == 8) // Int64 / UInt64 / Pointer
+                    fmt("    mov.b64 %cdq, {%cdw$u, %cdw$u};\n"
+                        "    mov.b64 $v, %cdq;\n",
+                        w, w + 1, v);
+                else if (tsz == 4)
+                    fmt("    mov.b32 $v, %cdw$u;\n", v, w);
+                else if (tsz == 2) // pick the correct 16-bit half of the word
+                    fmt("    mov.b32 {%cdh0, %cdh1}, %cdw$u;\n"
+                        "    mov.b16 $v, %cdh$u;\n",
+                        w, v, (offset % 4) / 2);
+                else if (vt == VarType::Bool) // tsz == 1: extract the byte
+                    fmt("    bfe.u32 %cdb, %cdw$u, $u, 8;\n"
+                        "    setp.ne.u32 $v, %cdb, 0;\n",
+                        w, (offset % 4) * 8, v);
+                else // tsz == 1: Int8 / UInt8
+                    fmt("    bfe.u32 %cdb, %cdw$u, $u, 8;\n"
+                        "    cvt.u8.u32 $v, %cdb;\n",
+                        w, (offset % 4) * 8, v);
+            } else if (vt != VarType::Bool)
                 fmt("    ld.global.$b $v, [data+$u];\n",
                     v, v, offset);
             else
@@ -1529,17 +1598,16 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
         fmt("\n    @!%p$u bra l_masked_$u;\n", mask_reg, call_reg);
     fmt("\n    { // Call: $s\n", call->name.c_str());
 
-    // Name of the base pointer: at the kernel level the register holding the
-    // base pointer parameter, inside a callable the forwarded 'base' argument.
-    // 'has_slots' selects whether the callee reads its own captured data;
-    // 'use_nested' selects whether it must receive the base pointer to forward.
+    // Name of the base pointer holding the kernel's combined call data
     char base[32];
     if (callable_depth == 0)
         snprintf(base, sizeof(base), "%%rd%u", call_buffer.base_reg);
     else
         snprintf(base, sizeof(base), "base");
 
+    // Does the kernel caller read its call data?
     bool has_slots  = !call->slots.empty();
+
     // The dispatch reads the offset table whenever it must resolve a callable
     // index (multi-target) or a per-lane data offset (own slots).
     bool need_entry = call->n_inst != 1 || has_slots;

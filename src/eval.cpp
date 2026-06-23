@@ -952,6 +952,11 @@ static void jitc_eval_rollback(size_t callbacks_baseline) {
     // Captured-source references whose aggregate never ran
     call_buffer.data_entries.clear();
 
+    // Release references taken by jitc_var_call_assemble()
+    for (CallData *call : calls_assembled)
+        jitc_var_dec_ref(call->id);
+    calls_assembled.clear();
+
     // IR string of a kernel history entry that no launch consumed
     free(kernel_history_entry.ir);
     kernel_history_entry.ir = nullptr;

@@ -350,6 +350,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     if (call->use_thread_id)
         put(", i32 %thread_id");
 
+    // Base pointer holding the kernel's combined call data
     // The base pointer is kernel-uniform at every nesting level, hence always a
     // single uniform pointer. A callable receives it if it reads its own
     // captured data (then also the per-lane offsets) or if it contains a nested
@@ -379,6 +380,12 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
     jitc_call_bind_slots(call, inst);
 
+    // Coalesce the recorded size-class buckets into packet loads up front.
+    // ``packetized_until[c]`` is the first slot past the packetized prefix of
+    // bucket c; the scalar path below validates a slot before consulting it.
+    uint32_t packetized_until[4];
+    jitc_llvm_render_call_data(call, inst, packetized_until);
+
     // Warning: do not rewrite this into a range-based for loop.
     // The memory location of 'schedule' may change.
     for (size_t i = 0; i < schedule.size(); ++i) {
@@ -395,10 +402,22 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
         }
 
         if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
+            uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
+
+            // Skip fields already emitted by the coalesced packet loads above.
+            uint32_t slot = v->param_offset;
+            const CallData::CaptureSlot &capture = call->slots[slot];
+            if (capture.bucket.coalesceable()) {
+                const CallData::InstanceLayout::Bucket &bucket =
+                    call->instance_layout[inst].bucket[capture.bucket.id()];
+                if (slot >= bucket.slot_start &&
+                    slot < packetized_until[capture.bucket.id()])
+                    continue;
+            }
+
             fmt_intrinsic("declare $M @llvm.masked.gather.v$w$h(<$w x ptr>, i32, <$w x i1>, $M)",
                           v, v, v);
 
-            uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
             bool is_pointer_or_bool =
                 (vt == VarType::Pointer) || (vt == VarType::Bool);
             // %data is the kernel-uniform base pointer; %offsets is the per-lane
@@ -1596,18 +1615,16 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
     const uint32_t width = jitc_llvm_vector_width;
     (void) buf_size; (void) buf_align;
 
-    // Name of the base pointer: at the kernel level the register holding the
-    // base pointer parameter, inside a callable the forwarded '%data' argument.
-    // Both are uniform 'ptr's. 'has_data' is true if the callee reads its own
-    // captured slots (then we also forward the per-lane offsets); a callee with
-    // no data but a nested call still receives the base pointer.
+    // Name of the base pointer holding the kernel's combined call data
     char base[32];
     if (callable_depth == 0)
         snprintf(base, sizeof(base), "%%rd%u", call_buffer.base_reg);
     else
         snprintf(base, sizeof(base), "%%data");
 
+    // Does the kernel caller read its call data?
     bool has_data  = !call->slots.empty();
+
     // The dispatch reads the offset table whenever it must resolve a callable
     // index (multi-target) or a per-lane data offset (own slots).
     bool need_entry = call->n_inst != 1 || has_data;

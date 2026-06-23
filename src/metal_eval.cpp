@@ -1291,15 +1291,6 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
                               uint32_t /*in_size*/, uint32_t /*in_align*/,
                               uint32_t /*out_size*/, uint32_t /*out_align*/,
                               uint32_t /*n_regs*/) {
-    // Callables of one call site share a typed signature: inputs by value,
-    // outputs returned by value in a struct, so they stay in registers across
-    // the indirect call. A multi-target callable is marked ``[[visible]]`` so
-    // it can be reached through the kernel's (single, type-erased) visible
-    // function table, reinterpreted at each site with this site's signature; a
-    // single-target callable is called by name and left inline-able. The
-    // ``call_table`` handle is forwarded for nested calls. (A TraceRay inside
-    // the body reconstructs its accel / IFT from the ``device`` call-data
-    // section, so no per-scene parameters are forwarded.)
     jitc_metal_emit_ret_struct(call);
 
     if (call->n_inst != 1)
@@ -1312,6 +1303,92 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
     // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
     jitc_call_bind_slots(call, inst);
+
+    // Issue one or more vector loads to fetch the coalesced part of the call
+    // data (see call.h).
+    const CallData::InstanceLayout &call_layout = call->instance_layout[inst];
+    uint32_t numeric_end = call_layout.coalesce_end;
+
+    // Only worth coalescing with >= 2 coalesceable fields.
+    bool cd_coalesce = call_layout.coalesce_count >= 2;
+
+    if (cd_coalesce) {
+        uint32_t end = (numeric_end + 3u) & ~3u; // round up to a full word
+
+        uint32_t p = 0, chunk = 0;
+        while (p < end) {
+            uint32_t w_bytes = jitc_call_pick_word_chunk_size(p, end - p, 16u);
+
+            const char *lt = w_bytes == 16 ? "uint4"
+                           : w_bytes == 8  ? "uint2" : "uint";
+            fmt("$s cd_c$u = *(device const $s*)(data + $u);\n",
+                lt, chunk, lt, p);
+
+            ++chunk;
+            p += w_bytes;
+        }
+    }
+
+    // Emit the generated MSL expression holding 32-bit word ``word`` of the
+    // coalesced prefix.
+    auto put_cd_word_expr = [&](uint32_t word) {
+        uint32_t target = word * 4,
+                 end    = (numeric_end + 3u) & ~3u,
+                 p      = 0,
+                 chunk  = 0;
+
+        while (p < end) {
+            uint32_t w_bytes = jitc_call_pick_word_chunk_size(p, end - p, 16u);
+            if (target >= p && target < p + w_bytes) {
+                uint32_t lane = (target - p) / 4;
+                fmt("cd_c$u", chunk);
+                if (w_bytes != 4) {
+                    put('.');
+                    put("xyzw"[lane]);
+                }
+                return;
+            }
+            ++chunk;
+            p += w_bytes;
+        }
+
+        jitc_fail("jitc_metal_assemble_func(): internal call-data word lookup "
+                  "failure.");
+    };
+
+    // Emit a declaration extracting a coalesced field of type ``svt`` at relative
+    // byte offset ``off``. Fields outside the packet-loadable SizeBucket prefix
+    // use the per-field typed load instead.
+    auto put_cd_extract = [&](const Variable *v, uint32_t off, VarType svt) {
+        uint32_t s = type_size[(int) svt], j = off / 4;
+        const char *base = type_name_metal[(int) svt];
+
+        if (svt == VarType::Pointer) {
+            // Buffer pointer: reassemble the 64-bit address and C-cast it back to
+            // a device pointer (MSL forbids 'as_type' to a pointer type, but the
+            // integer-to-device-pointer C cast is well-formed).
+            fmt("device uint8_t* $v = "
+                "(device uint8_t*)(as_type<ulong>(uint2(", v);
+            put_cd_word_expr(j);
+            put(", ");
+            put_cd_word_expr(j + 1);
+            put(")));\n");
+        } else if (s == 8) { // Int64 / UInt64 (Float64 cannot occur on Metal)
+            fmt("$t $v = as_type<$s>(uint2(", v, v, base);
+            put_cd_word_expr(j);
+            put(", ");
+            put_cd_word_expr(j + 1);
+            put("));\n");
+        } else if (s == 4) {
+            fmt("$t $v = as_type<$s>(", v, v, base);
+            put_cd_word_expr(j);
+            put(");\n");
+        } else { // s == 2
+            fmt("$t $v = as_type<$s2>(", v, v, base);
+            put_cd_word_expr(j);
+            fmt(").$s;\n", (off % 4) ? "y" : "x");
+        }
+    };
 
     for (size_t i = 0; i < schedule.size(); ++i) {
         ScheduledVariable &sv = schedule[i];
@@ -1361,7 +1438,13 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
                     { v->data, ResourceKind::Buffer, false });
             }
 
-            if (vt == VarType::Bool)
+            const CallData::CaptureSlot &capture = call->slots[v->param_offset];
+            if (cd_coalesce && capture.bucket.coalesceable()) {
+                // Extract this field from the coalesced vector loads; the rest
+                // (1-byte fields; opaque handles took the typed path above) fall
+                // through to the plain typed loads below.
+                put_cd_extract(v, offset, vt);
+            } else if (vt == VarType::Bool)
                 fmt("bool $v = *(device uint8_t*)(data + $u) != 0;\n",
                     v, offset);
             else if (vt == VarType::Pointer)
@@ -1447,8 +1530,7 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     if (is_masked)
         fmt("if (r$u) {\n", mask_reg);
 
-    // Name of the base pointer: at the kernel level the register holding the
-    // base pointer parameter, inside a callable the forwarded 'base' argument.
+    // Name of the base pointer holding the kernel's combined call data
     char base[32];
     if (callable_depth == 0)
         snprintf(base, sizeof(base), "r%u", call_buffer.base_reg);
