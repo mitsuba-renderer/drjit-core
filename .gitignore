@@ -42,6 +42,7 @@ tests/microbenchmark
 
 /resources/kernels_dict.c
 /resources/kernels_75.c
+/resources/kernels.c
 /resources/metal_kernels.c
 /resources/pack
 /resources/kernels_75.ptx

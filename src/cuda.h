@@ -100,6 +100,19 @@ extern CUfunction *jitc_cuda_aggregate;
 // Transpose: 0=nn, 1=nt, 2=tn.
 extern CUfunction *jitc_cuda_gemm[(int) VarType::Count][4][3];
 
+// Lazy accessors for the kernel families above
+extern CUfunction jitc_cuda_poke_function(int device, VarType vt);
+extern CUfunction jitc_cuda_block_reduce_function(int device, ReduceOp op,
+                                                  VarType vt, int kernel_id);
+extern CUfunction jitc_cuda_block_reduce_vec_function(int device, ReduceOp op,
+                                                      VarType vt);
+extern CUfunction jitc_cuda_block_prefix_reduce_function(int device, ReduceOp op,
+                                                         VarType vt,
+                                                         int kernel_id);
+extern CUfunction jitc_cuda_reduce_dot_function(int device, VarType vt);
+extern CUfunction jitc_cuda_gemm_function(int device, VarType vt, int tile,
+                                          int transpose);
+
 /// Check if the current CUDA device supports 256-bit (32-byte) vector operations
 extern bool jitc_cuda_supports_256bit();
 

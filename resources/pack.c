@@ -1,8 +1,22 @@
 /**
- * Dr.Jit's builtin PTX files are quite large (~2MB for each targeted SM version).
+ * pack.c: Pack precompiled kernel PTX for redistribution
  *
- * This file compresses them with LZ4 following a build. This compressed version can
- * then be checked into Git and included in executables
+ * Dr.Jit's builtin PTX files are quite large (~3.6MB uncompressed).
+ * Compiling the entire PTX blob via the CUDA driver's JIT takes several seconds
+ * (cold), even though a typical program only touches a handful of the ~650
+ * kernels. To enable lazy, per-kernel JIT compilation at runtime, this tool
+ * rewrites the monolithic PTX into a self-describing blob:
+ *
+ *     [ preamble ]\0[ entry 0 ]\0[ entry 1 ]\0 ... [ entry N-1 ]\0
+ *
+ * The preamble holds the module header (``.version`` / ``.target`` /
+ * ``.address_size`` and the two ``.extern .shared`` declarations). Each entry
+ * is one complete, self-contained ``.entry`` definition (the kernels contain no
+ * cross-function ``.func`` calls or module-scope data, so an entry prefixed
+ * with the preamble is a valid standalone PTX module). ``kernels_75_offsets[]``
+ * gives the byte offset of each entry within the decompressed blob, parallel to
+ * the kernel names in ``kernels_list``.
+ * The blob is then LZ4-compressed.
  */
 
 #include <stdio.h>
@@ -34,10 +48,11 @@ char *read_file(const char *fname, size_t *size_out) {
     return buf;
 }
 
-void pack(FILE *f, const char *id, const char *source_fname, const char *dst_fname, const void *dict, size_t dict_size) {
+/// LZ4-compress an in-memory buffer, write it to ``dst_fname``, and emit the
+/// ``extern`` symbol declaration and size constants to ``f``.
+void pack_buffer(FILE *f, const char *id, const void *source, size_t source_size,
+                 const char *dst_fname, const void *dict, size_t dict_size) {
     LZ4_streamHC_t *stream = LZ4_createStreamHC();
-    size_t source_size;
-    void *source = read_file(source_fname, &source_size);
 
     int buf_size = LZ4_compressBound(source_size);
     char *buf = (char *) malloc(buf_size);
@@ -60,12 +75,28 @@ void pack(FILE *f, const char *id, const char *source_fname, const char *dst_fna
     fwrite(buf, 1, compressed_size, f2);
     fclose(f2);
     free(buf);
-    free(source);
     LZ4_freeStreamHC(stream);
     fprintf(f, "\n");
 }
 
+/// Read a file and compress it (the common case)
+void pack(FILE *f, const char *id, const char *source_fname, const char *dst_fname, const void *dict, size_t dict_size) {
+    size_t source_size;
+    void *source = read_file(source_fname, &source_size);
+    pack_buffer(f, id, source, source_size, dst_fname, dict, dict_size);
+    free(source);
+}
+
+/// Return the offset of the beginning of the line containing ``pos``
+static size_t line_start(const char *base, const char *pos) {
+    while (pos > base && pos[-1] != '\n')
+        --pos;
+    return (size_t) (pos - base);
+}
+
 int main(int argc, char **argv) {
+    (void) argc; (void) argv;
+
     FILE *f = fopen("kernels.h", "w");
     if (!f) {
         fprintf(stderr, "Could not open 'kernels.h'!");
@@ -87,29 +118,73 @@ int main(int argc, char **argv) {
     fprintf(f, "extern \"C\" {\n");
     fprintf(f, "#endif\n\n");
 
-    pack(f, "kernels_dict", "kernels_dict",  "kernels_dict.lz4", NULL, 0);
-    pack(f, "kernels_75",   "kernels_75.ptx", "kernels_75.lz4",  kernels_dict, kernels_dict_size);
+    pack(f, "kernels_dict", "kernels_dict", "kernels_dict.lz4", NULL, 0);
 
-    size_t kernels_ptx_size;
-    char *kernels_ptx = read_file("kernels_75.ptx", &kernels_ptx_size);
+    size_t ptx_size;
+    char *ptx = read_file("kernels_75.ptx", &ptx_size);
 
-    fprintf(f, "static const char *kernels_list =");
-    char *ptr = kernels_ptx;
-    while (ptr) {
-        ptr = strstr(ptr, ".entry ");
-        if (!ptr)
-            break;
-        ptr += 7;
-        char *next = strstr(ptr, "(");
-        if (!next)
-            break;
-        fprintf(f, "\n    \"");
-        fwrite(ptr, next-ptr, 1, f);
-        fprintf(f, ",\"");
-        ptr = next;
+    // Locate the line-start of every '.entry' definition (each '.entry ' match
+    // lies mid-line, after an optional '.visible ' qualifier).
+    size_t capacity = 1024, count = 0;
+    size_t *entry_pos = malloc(capacity * sizeof(size_t));
+    for (char *p = strstr(ptx, ".entry "); p; p = strstr(p + 7, ".entry ")) {
+        if (count == capacity) {
+            capacity *= 2;
+            entry_pos = realloc(entry_pos, capacity * sizeof(size_t));
+        }
+        entry_pos[count++] = line_start(ptx, p);
+    }
+    if (count == 0) {
+        fprintf(stderr, "pack: no '.entry' definitions found in kernels_75.ptx!\n");
+        exit(EXIT_FAILURE);
     }
 
+    size_t preamble_size = entry_pos[0];
+
+    // Assemble the blob: preamble + each entry, all '\0'-terminated.
+    char *blob = malloc(ptx_size + count + 2);
+    size_t *offsets = malloc(count * sizeof(size_t));
+    size_t pos = 0;
+
+    memcpy(blob, ptx, preamble_size);
+    pos = preamble_size;
+    blob[pos++] = '\0';
+
+    for (size_t i = 0; i < count; ++i) {
+        size_t begin = entry_pos[i];
+        size_t end   = (i + 1 < count) ? entry_pos[i + 1] : ptx_size;
+        offsets[i] = pos;
+        memcpy(blob + pos, ptx + begin, end - begin);
+        pos += end - begin;
+        blob[pos++] = '\0';
+    }
+
+    pack_buffer(f, "kernels_75", blob, pos, "kernels_75.lz4", kernels_dict,
+                kernels_dict_size);
+
+    fprintf(f, "static const size_t kernels_75_preamble_size = %zu;\n\n",
+            preamble_size);
+
+    // Offset of each entry's self-contained PTX within the decompressed blob,
+    // parallel to the names in 'kernels_list' below.
+    fprintf(f, "static const unsigned int kernels_75_offsets[] = {");
+    for (size_t i = 0; i < count; ++i)
+        fprintf(f, "%s%u,", (i % 8 == 0) ? "\n    " : " ",
+                (unsigned int) offsets[i]);
+    fprintf(f, "\n};\n\n");
+
+    // Kernel names, in the same order as 'kernels_75_offsets'.
+    fprintf(f, "static const char *kernels_list =");
+    for (size_t i = 0; i < count; ++i) {
+        char *name = ptx + entry_pos[i];
+        name = strstr(name, ".entry ") + 7;
+        char *next = strchr(name, '(');
+        fprintf(f, "\n    \"");
+        fwrite(name, next - name, 1, f);
+        fprintf(f, ",\"");
+    }
     fprintf(f, ";\n\n");
+
     fprintf(f, "#ifdef __cplusplus\n");
     fprintf(f, "}\n");
     fprintf(f, "#endif\n\n");
@@ -117,10 +192,13 @@ int main(int argc, char **argv) {
     fprintf(f, "#if defined(__GNUC__)\n");
     fprintf(f, "#  pragma GCC diagnostic pop\n");
     fprintf(f, "#endif\n\n");
+
+    free(entry_pos);
+    free(offsets);
+    free(blob);
     free(kernels_dict);
-    free(kernels_ptx);
+    free(ptx);
     fclose(f);
 
     return EXIT_SUCCESS;
 }
-

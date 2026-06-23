@@ -306,10 +306,10 @@ void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
 
     CUfunction func = nullptr;
     if (vector_width != 1) {
-        func = jitc_cuda_block_reduce_vec[(int) op][(int) vt][dev.id];
+        func = jitc_cuda_block_reduce_vec_function(device, op, vt);
     } else {
         int kernel_id = log2i_ceil(chunk_size) - 1;
-        func = jitc_cuda_block_reduce[(int) op][(int) vt][kernel_id][dev.id];
+        func = jitc_cuda_block_reduce_function(device, op, vt, kernel_id);
     }
 
     if (!func)
@@ -357,7 +357,7 @@ void CUDAThreadState::reduce_dot(VarType vt, const void *ptr_1,
                                  const void *ptr_2, uint32_t size, void *out) {
     const CUDADevice &dev = state.devices[device];
 
-    CUfunction red_dot = jitc_cuda_reduce_dot[(int) vt][dev.id];
+    CUfunction red_dot = jitc_cuda_reduce_dot_function(device, vt);
 
     if (!red_dot)
         jitc_raise("jit_reduce_dot(): no existing kernel for type=%s!",
@@ -472,7 +472,7 @@ void CUDAThreadState::batched_gemm(VarType vt, bool At, bool Bt, uint32_t M,
             continue;
         if (ceil_div(M, bm_try) > grid_y_cap)
             continue;
-        CUfunction f = jitc_cuda_gemm[(int) vt][l][t_idx][dev.id];
+        CUfunction f = jitc_cuda_gemm_function(device, vt, l, t_idx);
         if (!f)
             continue;
 
@@ -635,7 +635,7 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
 
     CUfunction func = nullptr;
     int kernel_id = log2i_ceil(chunk_size) - 1;
-    func = jitc_cuda_block_prefix_reduce[(int) op][(int) vt][kernel_id][dev.id];
+    func = jitc_cuda_block_prefix_reduce_function(device, op, vt, kernel_id);
 
     if (!func)
         jitc_raise("jit_block_prefix_reduce(): no existing kernel for type=%s, op=%s!",
@@ -1004,7 +1004,7 @@ void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
 
     scoped_set_context guard(context);
     const CUDADevice &dev = state.devices[device];
-    CUfunction func = jitc_cuda_poke[(int) type][dev.id];
+    CUfunction func = jitc_cuda_poke_function(device, type);
     void *args[] = { &dst, (void *) src };
     submit_gpu(KernelType::Poke, this->recording_mode, func, 1, 1, 0, stream,
                args, nullptr, 1);

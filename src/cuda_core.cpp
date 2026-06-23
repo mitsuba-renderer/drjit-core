@@ -5,8 +5,10 @@
 #include "internal.h"
 #include "io.h"
 #include "optix.h"
+#include "strbuf.h"
 #include "resources/kernels.h"
 #include <lz4.h>
+#include <string>
 
 CUresult jitc_cuda_cuinit_result = CUDA_ERROR_NOT_INITIALIZED;
 
@@ -15,8 +17,6 @@ int jitc_cuda_version_minor = 0;
 uint32_t jitc_cuda_arg_limit = 0;
 
 // Dr.Jit kernel functions
-static CUmodule *jitc_cuda_module = nullptr;
-
 CUfunction *jitc_cuda_fill_64 = nullptr;
 CUfunction *jitc_cuda_block_mkperm_phase_1_tiny = nullptr;
 CUfunction *jitc_cuda_block_mkperm_phase_1_small = nullptr;
@@ -39,6 +39,129 @@ CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
 CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count] = { };
 CUfunction *jitc_cuda_aggregate = nullptr;
 CUfunction *jitc_cuda_gemm[(int) VarType::Count][4][3] = { };
+
+// ====================================================================
+//              Builtin kernel storage & lazy JIT compilation
+// ====================================================================
+
+// Decompressed builtin-kernel PTX blob: preamble '\0' entry_0 '\0' entry_1 ...
+static char *jitc_cuda_kernels_alloc = nullptr;
+static const char *jitc_cuda_kernels = nullptr;
+
+// Scratch buffer (reused, guarded by state.lock) for assembling preamble + entry
+static StringBuffer jitc_cuda_ptx_buf;
+
+/// Return a pointer to builtin kernel ``name``'s PTX, or ``NULL`` if absent.
+static const char *jitc_cuda_find_kernel(const char *name) {
+    size_t name_len = strlen(name);
+    const char *p = kernels_list;
+    uint32_t idx = 0;
+    while (const char *comma = strchr(p, ',')) {
+        if ((size_t) (comma - p) == name_len && memcmp(p, name, name_len) == 0)
+            return jitc_cuda_kernels + kernels_75_offsets[idx];
+        p = comma + 1;
+        ++idx;
+    }
+    return nullptr;
+}
+
+/// Compile the builtin kernel ``name`` into its own module on the given device
+static CUfunction jitc_cuda_compile_kernel(int device, const char *name) {
+    const char *entry = jitc_cuda_find_kernel(name);
+    if (!entry)
+        return nullptr;
+
+    CUDADevice &dev = state.devices[device];
+
+    jitc_cuda_ptx_buf.clear();
+    jitc_cuda_ptx_buf.put(jitc_cuda_kernels, kernels_75_preamble_size);
+    jitc_cuda_ptx_buf.put(entry, strlen(entry));
+
+    scoped_set_context guard(dev.context);
+    CUmodule m = jitc_cuda_compile(jitc_cuda_ptx_buf.get(),
+                                   /* release_state_lock */ false)
+                     .first;
+    dev.modules.push_back(m);
+
+    CUfunction func = nullptr;
+    cuda_check(cuModuleGetFunction(&func, m, name));
+    return func;
+}
+
+CUfunction jitc_cuda_poke_function(int device, VarType vt) {
+    CUfunction &slot = jitc_cuda_poke[(int) vt][state.devices[device].id];
+    if (!slot) {
+        char name[128];
+        snprintf(name, sizeof(name), "poke_%s", type_name_short[(int) vt]);
+        slot = jitc_cuda_compile_kernel(device, name);
+    }
+    return slot;
+}
+
+CUfunction jitc_cuda_block_reduce_function(int device, ReduceOp op, VarType vt,
+                                           int kernel_id) {
+    CUfunction &slot = jitc_cuda_block_reduce[(int) op][(int) vt][kernel_id]
+                                             [state.devices[device].id];
+    if (!slot) {
+        char name[128];
+        snprintf(name, sizeof(name), "block_reduce_%s_%s_%u", red_name[(int) op],
+                 type_name_short[(int) vt], 1u << (kernel_id + 1));
+        slot = jitc_cuda_compile_kernel(device, name);
+    }
+    return slot;
+}
+
+CUfunction jitc_cuda_block_reduce_vec_function(int device, ReduceOp op,
+                                               VarType vt) {
+    CUfunction &slot =
+        jitc_cuda_block_reduce_vec[(int) op][(int) vt][state.devices[device].id];
+    if (!slot) {
+        char name[128];
+        snprintf(name, sizeof(name), "block_reduce_%s_%s_vec_1024",
+                 red_name[(int) op], type_name_short[(int) vt]);
+        slot = jitc_cuda_compile_kernel(device, name);
+    }
+    return slot;
+}
+
+CUfunction jitc_cuda_block_prefix_reduce_function(int device, ReduceOp op,
+                                                  VarType vt, int kernel_id) {
+    CUfunction &slot = jitc_cuda_block_prefix_reduce[(int) op][(int) vt][kernel_id]
+                                                    [state.devices[device].id];
+    if (!slot) {
+        char name[128];
+        snprintf(name, sizeof(name), "block_prefix_reduce_%s_%s_%u",
+                 red_name[(int) op], type_name_short[(int) vt],
+                 1u << (kernel_id + 1));
+        slot = jitc_cuda_compile_kernel(device, name);
+    }
+    return slot;
+}
+
+CUfunction jitc_cuda_reduce_dot_function(int device, VarType vt) {
+    CUfunction &slot = jitc_cuda_reduce_dot[(int) vt][state.devices[device].id];
+    if (!slot) {
+        char name[128];
+        snprintf(name, sizeof(name), "reduce_dot_%s", type_name_short[(int) vt]);
+        slot = jitc_cuda_compile_kernel(device, name);
+    }
+    return slot;
+}
+
+CUfunction jitc_cuda_gemm_function(int device, VarType vt, int tile,
+                                   int transpose) {
+    // tile 0->BM=8..3->BM=64, transpose 0->nn, 1->nt, 2->tn.
+    static const char *gemm_suffix[3] = { "nn", "nt", "tn" };
+    CUfunction &slot =
+        jitc_cuda_gemm[(int) vt][tile][transpose][state.devices[device].id];
+    if (!slot) {
+        char name[128];
+        snprintf(name, sizeof(name), "gemm_%s_%u_%s", type_name_short[(int) vt],
+                 8u << tile, gemm_suffix[transpose]);
+        slot = jitc_cuda_compile_kernel(device, name);
+    }
+    return slot;
+}
 
 std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf, bool release_state_lock) {
     const uintptr_t log_size = 16384;
@@ -135,7 +258,7 @@ void cuda_check_impl(CUresult errval, const char *file, const int line) {
 
 bool jitc_cuda_init() {
     /// Was the CUDA backend already initialized?
-    if (jitc_cuda_module)
+    if (jitc_cuda_kernels_alloc)
         return true;
 
     // First, dynamically load CUDA into the process
@@ -200,10 +323,24 @@ bool jitc_cuda_init() {
                 jitc_cuda_gemm[k][l][t] = (CUfunction *) malloc_check_zero(asize);
     }
 
-    jitc_cuda_module =
-        (CUmodule *) malloc_check_zero(sizeof(CUmodule) * device_count);
-
     jitc_lz4_init();
+
+    // Decompress the builtin-kernel PTX blob once.
+    jitc_cuda_kernels_alloc = (char *) malloc_check(
+        kernels_75_size_uncompressed + jitc_lz4_dict_size + 1);
+    memcpy(jitc_cuda_kernels_alloc, jitc_lz4_dict, jitc_lz4_dict_size);
+    char *kernels = jitc_cuda_kernels_alloc + jitc_lz4_dict_size;
+    jitc_cuda_kernels = kernels;
+
+    int uncompressed_size_actual = LZ4_decompress_safe_usingDict(
+        kernels_75, kernels, (int) kernels_75_size_compressed,
+        (int) kernels_75_size_uncompressed, jitc_cuda_kernels_alloc,
+        jitc_lz4_dict_size);
+    if ((size_t) uncompressed_size_actual != kernels_75_size_uncompressed)
+        jitc_fail("jit_cuda_init(): decompression of builtin kernels failed!"
+                  " Expected %zu bytes (negative value indicates an error), got %d.",
+                  kernels_75_size_uncompressed, uncompressed_size_actual);
+    kernels[kernels_75_size_uncompressed] = '\0';
 
     for (int i = 0; i < device_count; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, sm_count = 0,
@@ -262,25 +399,30 @@ bool jitc_cuda_init() {
             continue;
         }
 
-        // Decompress the supplemental PTX content
-        char *uncompressed =
-            (char *) malloc_check(kernels_75_size_uncompressed + jitc_lz4_dict_size + 1);
-        memcpy(uncompressed, jitc_lz4_dict, jitc_lz4_dict_size);
-        char *uncompressed_ptx = uncompressed + jitc_lz4_dict_size;
+        // Eagerly build a single module for the small set of non-parameterized kernels
+        static const char *core_kernels[] = {
+            "fill_64",
+            "block_mkperm_phase_1_tiny",  "block_mkperm_phase_1_small",
+            "block_mkperm_phase_1_large", "block_mkperm_phase_3",
+            "block_mkperm_phase_4_tiny",  "block_mkperm_phase_4_small",
+            "block_mkperm_phase_4_large", "transpose",
+            "compress_small",             "compress_large",
+            "compress_large_init",        "aggregate"
+        };
 
-        int uncompressed_size_actual = LZ4_decompress_safe_usingDict(
-            kernels_75, uncompressed_ptx, (int) kernels_75_size_compressed,
-            (int) kernels_75_size_uncompressed, uncompressed, jitc_lz4_dict_size);
-        if ((size_t) uncompressed_size_actual != kernels_75_size_uncompressed)
-            jitc_fail("jit_cuda_init(): decompression of builtin kernels failed!"
-                      " Expected %zu bytes (negative value indicates an error), got %d.",
-                      kernels_75_size_uncompressed, uncompressed_size_actual);
+        jitc_cuda_ptx_buf.clear();
+        jitc_cuda_ptx_buf.put(jitc_cuda_kernels, kernels_75_preamble_size);
+        for (const char *kname : core_kernels) {
+            const char *entry = jitc_cuda_find_kernel(kname);
+            if (!entry)
+                jitc_fail("jit_cuda_init(): core kernel \"%s\" is missing from "
+                          "the builtin PTX!", kname);
+            jitc_cuda_ptx_buf.put(entry, strlen(entry));
+        }
 
-        uncompressed_ptx[kernels_75_size_uncompressed] = '\0';
-
-        CUmodule m = jitc_cuda_compile(uncompressed_ptx, /* release_state_lock */ false).first;
-        jitc_cuda_module[i] = m;
-        free(uncompressed);
+        CUmodule m =
+            jitc_cuda_compile(jitc_cuda_ptx_buf.get(),
+                              /* release_state_lock */ false).first;
 
         #define LOAD(name)                                                       \
             if (i == 0)                                                          \
@@ -318,58 +460,6 @@ bool jitc_cuda_init() {
 
         #undef MAXIMIZE_SHARED
 
-        CUfunction func;
-        for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
-            snprintf(name, sizeof(name), "poke_%s", type_name_short[k]);
-            if (strstr(kernels_list, name)) {
-                cuda_check(cuModuleGetFunction(&func, m, name));
-                jitc_cuda_poke[k][i] = func;
-            }
-
-            for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
-                snprintf(name, sizeof(name), "block_reduce_%s_%s_vec_1024", red_name[j],
-                         type_name_short[k]);
-                if (strstr(kernels_list, name)) {
-                    cuda_check(cuModuleGetFunction(&func, m, name));
-                    jitc_cuda_block_reduce_vec[j][k][i] = func;
-                }
-                for (uint32_t l = 0; l < 10; ++l) {
-                    snprintf(name, sizeof(name), "block_reduce_%s_%s_%u", red_name[j],
-                             type_name_short[k], 1 << (l + 1));
-                    if (strstr(kernels_list, name)) {
-                        cuda_check(cuModuleGetFunction(&func, m, name));
-                        jitc_cuda_block_reduce[j][k][l][i] = func;
-                    }
-                    snprintf(name, sizeof(name), "block_prefix_reduce_%s_%s_%u", red_name[j],
-                             type_name_short[k], 1 << (l + 1));
-                    if (strstr(kernels_list, name)) {
-                        cuda_check(cuModuleGetFunction(&func, m, name));
-                        jitc_cuda_block_prefix_reduce[j][k][l][i] = func;
-                    }
-                }
-            }
-
-            snprintf(name, sizeof(name), "reduce_dot_%s", type_name_short[k]);
-            if (strstr(kernels_list, name)) {
-                cuda_check(cuModuleGetFunction(&func, m, name));
-                jitc_cuda_reduce_dot[k][i] = func;
-            }
-
-            // GEMM kernels: tile 0->BM=8..3->BM=64, transpose 0->nn,1->nt,2->tn.
-            static const char *gemm_suffix[3] = { "nn", "nt", "tn" };
-            for (int l = 0; l < 4; ++l) {
-                uint32_t bm = 8u << l;
-                for (int t = 0; t < 3; ++t) {
-                    snprintf(name, sizeof(name), "gemm_%s_%u_%s",
-                             type_name_short[k], bm, gemm_suffix[t]);
-                    if (strstr(kernels_list, name)) {
-                        cuda_check(cuModuleGetFunction(&func, m, name));
-                        jitc_cuda_gemm[k][l][t][i] = func;
-                    }
-                }
-            }
-        }
-
         CUDADevice device;
         device.id = i;
         device.compute_capability = cc_major * 10 + cc_minor;
@@ -378,6 +468,7 @@ bool jitc_cuda_init() {
         device.memory_pool = memory_pool != 0;
         device.preemptable = preemptable;
         device.context = context;
+        device.modules.push_back(m);
 
         cuda_check(cuStreamCreate(&device.stream, CU_STREAM_DEFAULT));
         cuda_check(cuEventCreate(&device.event, CU_EVENT_DISABLE_TIMING));
@@ -449,7 +540,9 @@ void jitc_cuda_shutdown() {
 #if defined(DRJIT_ENABLE_OPTIX)
             jitc_optix_context_destroy(dev);
 #endif
-            cuda_check(cuModuleUnload(jitc_cuda_module[dev.id]));
+            for (CUmodule m : dev.modules)
+                cuda_check(cuModuleUnload(m));
+            dev.modules.clear();
             cuda_check(cuStreamDestroy(dev.stream));
             cuda_check(cuEventDestroy(dev.event));
             cuda_check(cuEventDestroy(dev.sync_stream_event));
@@ -472,7 +565,6 @@ void jitc_cuda_shutdown() {
     Z(jitc_cuda_compress_small);
     Z(jitc_cuda_compress_large);
     Z(jitc_cuda_compress_large_init);
-    Z(jitc_cuda_module);
 
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
         Z(jitc_cuda_poke[k]);
@@ -488,6 +580,10 @@ void jitc_cuda_shutdown() {
             for (int t = 0; t < 3; ++t)
                 Z(jitc_cuda_gemm[k][l][t]);
     }
+
+    free(jitc_cuda_kernels_alloc);
+    jitc_cuda_kernels_alloc = nullptr;
+    jitc_cuda_kernels = nullptr;
 
     jitc_cuda_api_shutdown();
 }

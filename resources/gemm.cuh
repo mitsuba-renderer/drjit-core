@@ -153,13 +153,13 @@ DEVICE FINLINE void gemm_load(const T *src, T *smem, uint32_t tid,
 // groups. The same mapping is reused for the C store, where it also
 // gives fully coalesced vector writes.
 template <typename T, typename Acc, uint32_t BK, uint32_t SA_S, uint32_t SB_S,
-          uint32_t BN, uint32_t TM, uint32_t V>
+          uint32_t BN, uint32_t TM, uint32_t V, uint32_t KU>
 DEVICE FINLINE void gemm_compute(const T *sA, const T *sB,
                                  uint32_t tx, uint32_t ty, Acc acc[TM][TM]) {
     constexpr uint32_t NT_n    = BN / TM;
     constexpr uint32_t StripeN = NT_n * V;
 
-    #pragma unroll
+    #pragma unroll KU
     for (uint32_t kk = 0; kk < BK; ++kk) {
         Acc a_reg[TM], b_reg[TM];
 
@@ -236,6 +236,13 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
     constexpr uint32_t Vmax = 16 / sizeof(T);
     constexpr uint32_t V    = Vmax < TM ? Vmax : TM;
 
+    // K-loop unroll in gemm_compute. float is compute-bound and needs full
+    // ILP; half (LDS-bound) and double (FP64-bound) keep throughput at lower
+    // factors, shrinking their PTX (the bulk of it). 2 beats 1 for f64.
+    constexpr uint32_t KU = std::is_same<T, float>::value  ? BK
+                          : std::is_same<T, double>::value ? 2
+                                                           : 4;
+
     static_assert(NT == 64, "Kernel assumes an 8x8 thread grid (64 threads).");
     static_assert(BM == 8 || BM == 16 || BM == 32 || BM == 64,
                   "BM must be one of {8, 16, 32, 64}.");
@@ -292,7 +299,7 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
             gemm_load<T, BM, BK, NT, SA_S, V, true, false, At>(A, sA, tid, m0, k0, M, K);
             gemm_load<T, BK, BN, NT, SB_S, V, false, true, Bt>(B, sB, tid, k0, n0, K, N);
             __syncthreads();
-            gemm_compute<T, Acc, BK, SA_S, SB_S, BN, TM, V>(sA, sB, tx, ty, acc);
+            gemm_compute<T, Acc, BK, SA_S, SB_S, BN, TM, V, KU>(sA, sB, tx, ty, acc);
             __syncthreads();
         }
 
@@ -301,7 +308,7 @@ DEVICE FINLINE void gemm_impl(const T *__restrict__ A,
             gemm_load<T, BM, BK, NT, SA_S, V, true, true, At>(A, sA, tid, m0, K_bulk, M, K);
             gemm_load<T, BK, BN, NT, SB_S, V, true, true, Bt>(B, sB, tid, K_bulk, n0, K, N);
             __syncthreads();
-            gemm_compute<T, Acc, BK, SA_S, SB_S, BN, TM, V>(sA, sB, tx, ty, acc);
+            gemm_compute<T, Acc, BK, SA_S, SB_S, BN, TM, V, KU>(sA, sB, tx, ty, acc);
             __syncthreads();
         }
     }

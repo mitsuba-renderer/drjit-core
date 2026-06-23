@@ -470,6 +470,9 @@ struct CUDADevice {
     // CUDA device context
     CUcontext context;
 
+    /// Lazily JIT-compiled builtin-kernel modules owned by this device
+    std::vector<CUmodule> modules;
+
     /// Associated CUDA stream handle
     CUstream stream = nullptr;
 
