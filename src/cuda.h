@@ -12,6 +12,8 @@
 #include "cuda_api.h"
 #include <utility>
 
+struct ThreadState;
+
 /// Major version of the detected CUDA version
 extern int jitc_cuda_version_major;
 
@@ -113,8 +115,8 @@ extern CUfunction jitc_cuda_reduce_dot_function(int device, VarType vt);
 extern CUfunction jitc_cuda_gemm_function(int device, VarType vt, int tile,
                                           int transpose);
 
-/// Check if the current CUDA device supports 256-bit (32-byte) vector operations
-extern bool jitc_cuda_supports_256bit();
+/// Does ``ts``'s device support 256-bit (32-byte) vector loads/stores?
+extern bool jitc_cuda_supports_256bit(const ThreadState *ts, bool uses_optix);
 
 /// Event API functions for CUDA backend
 typedef struct JitEvent_* JitEvent;

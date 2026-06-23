@@ -2192,7 +2192,7 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
 
         // Find the largest supported packet size i.e. power of two smaller than
         // ``max_packet_size`` that divides ``n``.
-        uint32_t packet_size = std::min(8u, jitc_llvm_vector_width);;
+        uint32_t packet_size = std::min(8u, jitc_llvm_vector_width);
         while ((n & (packet_size - 1)) != 0)
             packet_size /= 2;
 

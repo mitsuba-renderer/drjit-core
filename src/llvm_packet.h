@@ -10,6 +10,14 @@
 
 #include "eval.h"
 
+struct CallData;
+
+/// Coalesce an instance's per-call capture loads into packet (vector) loads,
+/// setting ``packetized_until[c]`` to the first slot past the packetized prefix
+/// of coalesceable size-class bucket ``c`` (0=8B, 1=4B, 2=2B, 3=1B).
+extern void jitc_llvm_render_call_data(const CallData *call, uint32_t inst,
+                                       uint32_t packetized_until[4]);
+
 extern void jitc_llvm_render_gather_packet(const Variable *v,
                                            const Variable *ptr,
                                            const Variable *index,

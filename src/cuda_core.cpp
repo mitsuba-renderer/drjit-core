@@ -16,6 +16,13 @@ int jitc_cuda_version_major = 0;
 int jitc_cuda_version_minor = 0;
 uint32_t jitc_cuda_arg_limit = 0;
 
+bool jitc_cuda_supports_256bit(const ThreadState *ts, bool uses_optix) {
+    return ts->compute_capability >= 120 &&
+           (!uses_optix ||
+            jitc_cuda_version_major > 13 ||
+            (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2));
+}
+
 // Dr.Jit kernel functions
 CUfunction *jitc_cuda_fill_64 = nullptr;
 CUfunction *jitc_cuda_block_mkperm_phase_1_tiny = nullptr;

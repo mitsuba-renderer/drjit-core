@@ -24,15 +24,8 @@ void jitc_cuda_render_gather_packet(const Variable *v, const Variable *ptr,
              tsize = type_size[v->type],
              total_bytes = count * tsize;
 
-    // Get compute capability for current device
-    const ThreadState *ts = thread_state_cuda;
-    uint32_t compute_capability = state.devices[ts->device].compute_capability;
-
-    // 256-bit operations require CC 12.0+, and for OptiX: CUDA driver 13.2+
-    bool supports_256bit = compute_capability >= 120 &&
-                          (!uses_optix ||
-                           (jitc_cuda_version_major > 13 ||
-                            (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2)));
+    bool supports_256bit =
+        jitc_cuda_supports_256bit(thread_state_cuda, uses_optix);
 
     fmt("    mad.wide.$t %rd3, $v, $u, $v;\n"
         "    .reg.$t $v_out_<$u>;\n",
@@ -326,15 +319,8 @@ void jitc_cuda_render_scatter_packet(const Variable *v, const Variable *ptr,
         return;
     }
 
-    // Get compute capability for current device
-    const ThreadState *ts = thread_state_cuda;
-    uint32_t compute_capability = state.devices[ts->device].compute_capability;
-
-    // 256-bit operations require CC 12.0+, and for OptiX: CUDA driver 13.2+
-    bool supports_256bit = compute_capability >= 120 &&
-                          (!uses_optix ||
-                           (jitc_cuda_version_major > 13 ||
-                            (jitc_cuda_version_major == 13 && jitc_cuda_version_minor >= 2)));
+    bool supports_256bit =
+        jitc_cuda_supports_256bit(thread_state_cuda, uses_optix);
 
     uint32_t count = (uint32_t) values.size(),
              tsize = type_size[v0->type],
