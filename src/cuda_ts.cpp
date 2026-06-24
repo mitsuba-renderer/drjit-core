@@ -302,8 +302,6 @@ void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
              chunks_per_block, vector_width, grid_dim_x, grid_dim_y,
              thread_count, smem_bytes);
 
-    const CUDADevice &dev = state.devices[device];
-
     CUfunction func = nullptr;
     if (vector_width != 1) {
         func = jitc_cuda_block_reduce_vec_function(device, op, vt);
@@ -630,8 +628,6 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
              red_name[(int) op], size, block_size, exclusive, reverse,
              block_count, chunk_size, chunks_per_block, grid_dim_x, grid_dim_y,
              thread_count, smem_bytes);
-
-    const CUDADevice &dev = state.devices[device];
 
     CUfunction func = nullptr;
     int kernel_id = log2i_ceil(chunk_size) - 1;
@@ -1003,7 +999,6 @@ void CUDAThreadState::poke(void *dst, const void *src, uint32_t size) {
     }
 
     scoped_set_context guard(context);
-    const CUDADevice &dev = state.devices[device];
     CUfunction func = jitc_cuda_poke_function(device, type);
     void *args[] = { &dst, (void *) src };
     submit_gpu(KernelType::Poke, this->recording_mode, func, 1, 1, 0, stream,

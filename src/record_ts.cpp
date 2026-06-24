@@ -2813,7 +2813,7 @@ static void jitc_record_ts_forget(ThreadState *ts) {
     jitc_fail("jitc_record_ts_forget(): thread state not found in registry!");
 }
 
-/// RAII helper that unregisters and frees a recording thread state on any exit
+/// RAII helper that unregisters and frees a recording thread state on any exit.
 struct RecordThreadStateGuard {
     RecordThreadState *rts;
     ~RecordThreadStateGuard() {
@@ -2888,14 +2888,9 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
 
         internal->recording_mode = KernelRecordingMode::Inactive;
         jitc_set_flag(JitFlag::FreezingScope, false);
-        if (rts->m_exception) {
-            std::rethrow_exception(rts->m_exception);
-        }
 
-        for (uint32_t i = 0; i < n_outputs; ++i) {
-            rts->add_output(outputs[i]);
-        }
-
+        // Restore the active thread state *before* the recording exception is
+        // rethrown below.
 #if defined(DRJIT_ENABLE_CUDA)
         if (jitc_is_cuda(backend)) {
             thread_state_cuda = internal;
@@ -2923,6 +2918,13 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
             unset_disabled_thread_state(&thread_state_metal);
 #endif
         }
+
+        if (rts->m_exception)
+            std::rethrow_exception(rts->m_exception);
+
+        for (uint32_t i = 0; i < n_outputs; ++i)
+            rts->add_output(outputs[i]);
+
         Recording *recording = new Recording(std::move(rts->m_recording));
         try{
             recording->validate(scope);
