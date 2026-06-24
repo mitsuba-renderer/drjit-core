@@ -1260,6 +1260,15 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
             return a.scope < b.scope;
         });
 
+    // Reset the register index of this instance's captured call-data slots
+    // before assigning fresh registers below. This is needed to detect
+    // slots that are not used in the callable's body.
+    const CallData::InstanceLayout &slot_layout = call->instance_layout[inst];
+    for (uint32_t k = slot_layout.slot_start; k < slot_layout.slot_end(); ++k) {
+        if (Variable *v = jitc_var(call->slots[k].ref))
+            v->reg_index = 0;
+    }
+
     uint32_t n_regs = jitc_is_cuda(call->backend) ? 4 : 1;
     for (ScheduledVariable &sv : schedule) {
         Variable *v = jitc_var(sv.index);
