@@ -1489,12 +1489,14 @@ static void jitc_llvm_render_trace(const Variable *v,
         fmt("    br label %l$u_start\n"
             "\nl$u_start:\n"
             "    ; Ray tracing\n"
-            "    $v_func_i64 = call i64 @llvm.vector.reduce.umax.v$wi64(<$w x i64> %rd$u_p3)\n"
+            "    $v_func_ptr_i64 = ptrtoint <$w x ptr> %rd$u to <$w x i64>\n"
+            "    $v_func_i64 = call i64 @llvm.vector.reduce.umax.v$wi64(<$w x i64> $v_func_ptr_i64)\n"
             "    $v_func = inttoptr i64 $v_func_i64 to ptr\n"
             "    $v_tfar_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n",
             v->reg_index,
             v->reg_index,
             v, func->reg_index,
+            v, v,
             v, v,
             v, offset_tfar);
 
