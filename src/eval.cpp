@@ -305,6 +305,11 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
             }
             break;
 
+        case VarKind::CallGetter:
+            // Only the [index, mask] deps (walked below) are scheduled; the
+            // value table is captured into the buffer at upload, like 'Call'.
+            break;
+
         default:
             break;
     }
@@ -393,7 +398,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     // Set while scanning the schedule below if this kernel performs any
     // indirect call (used further down to reserve the call base pointer).
-    bool has_call = false;
+    // 'needs_call_buffer' additionally covers getters, which read from the same
+    // shared buffer but emit no visible function table.
+    bool has_call = false, needs_call_buffer = false;
 
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         ScheduledVariable &sv = schedule[group_index];
@@ -437,6 +444,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
         VarKind kind = (VarKind) v->kind;
         has_call |= (kind == VarKind::Call);
+        needs_call_buffer |= (kind == VarKind::Call || kind == VarKind::CallGetter);
 
         if (unlikely(kind == VarKind::Array ||
                      kind == VarKind::ArrayInit ||
@@ -491,16 +499,14 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         }
     }
 
-    // If this kernel performs any indirect call, reserve the base pointer: a
-    // single kernel-uniform parameter storing callable offsets and opaque
-    // data accessed by callables. Here, we only reserve its register and
-    // parameter slot.
-    if (has_call) {
-        void *placeholder = jitc_malloc(backend, 1);
+    // If this kernel performs indirect calls or invokes getters, pass a data
+    // buffer containing the call data required by these operations. The code
+    // below reserves a register and parameter slot.
+    if (needs_call_buffer) {
         uint32_t base_src = jitc_var_mem_map(backend, VarType::UInt8,
-                                             placeholder, 1, /*free=*/1);
+                                             nullptr, 1, /*free=*/1);
 
-        uint32_t base_v = jitc_var_pointer(backend, placeholder, base_src,
+        uint32_t base_v = jitc_var_pointer(backend, nullptr, base_src,
                                            /*write=*/0, /*written=*/false,
                                            /*disable_lvn=*/true);
         jitc_var_dec_ref(base_src); // 'base_v' now owns the backing reference
@@ -956,6 +962,11 @@ static void jitc_eval_rollback(size_t callbacks_baseline) {
     for (CallData *call : calls_assembled)
         jitc_var_dec_ref(call->id);
     calls_assembled.clear();
+
+    // Release references taken by jitc_var_call_getter_assemble()
+    for (GetterData *gd : call_buffer.getters)
+        jitc_var_dec_ref(gd->id);
+    call_buffer.getters.clear();
 
     // IR string of a kernel history entry that no launch consumed
     free(kernel_history_entry.ir);

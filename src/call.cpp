@@ -629,6 +629,136 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
     jitc_var_mark_side_effect(se_v.release());
 }
 
+/// Build a getter as a gather from the shared per-kernel call-data buffer. See
+/// the documentation of 'jit_var_call_getter' in the public header for details.
+uint32_t jitc_var_call_getter(VarType type, uint32_t count,
+                              const uint32_t *values, uint32_t index,
+                              uint32_t mask) {
+    if (index == 0 || mask == 0)
+        jitc_raise("jit_var_call_getter(): 'index'/'mask' are uninitialized!");
+
+    const Variable *index_v = jitc_var(index),
+                   *mask_v   = jitc_var(mask);
+
+    JitBackend backend = (JitBackend) index_v->backend;
+
+    if ((VarType) index_v->type != VarType::UInt32)
+        jitc_raise("jit_var_call_getter(): 'index' must be an unsigned 32-bit "
+                   "integer array!");
+    if ((VarType) mask_v->type != VarType::Bool)
+        jitc_raise("jit_var_call_getter(): 'mask' must be a boolean array!");
+    if ((JitBackend) mask_v->backend != backend)
+        jitc_raise("jit_var_call_getter(): 'index' and 'mask' have different "
+                   "backends!");
+
+    // Collect the per-callable values. Literals stay as-is; opaque variables are
+    // evaluated now so a device pointer exists at upload. Absent -> empty Ref.
+    std::unique_ptr<GetterData> gd(new GetterData());
+    gd->type = type;
+    gd->count = count;
+    gd->values.resize(count);
+
+    for (uint32_t j = 0; j < count; ++j) {
+        uint32_t vi = values[j];
+        if (!vi)
+            continue; // absent callable -> empty reference -> reads zero
+
+        const Variable *vv = jitc_var(vi);
+        if (vv->size != 1)
+            jitc_raise("jit_var_call_getter(): value r%u of callable %u has "
+                       "size %u (must be 1)!", vi, j, vv->size);
+        if ((VarType) vv->type != type)
+            jitc_raise("jit_var_call_getter(): value r%u of callable %u has an "
+                       "unexpected type!", vi, j);
+        if ((JitBackend) vv->backend != backend)
+            jitc_raise("jit_var_call_getter(): value r%u of callable %u has a "
+                       "different backend!", vi, j);
+
+        if (vv->is_literal()) {
+            gd->values[j] = borrow(vi);
+        } else {
+            void *ptr = nullptr;
+            gd->values[j] = steal(jitc_var_data(vi, /*eval_dirty=*/true, &ptr));
+        }
+    }
+
+    // Apply the active mask and broadcast the size, as 'jit_var_gather' would.
+    uint32_t size = std::max(jitc_var(index)->size, jitc_var(mask)->size);
+    Ref mask_2 = steal(jitc_var_mask_apply(mask, size));
+    size = std::max(size, jitc_var(mask_2)->size);
+
+    // Build the node by hand with LVN disabled: the value table is outside
+    // 'VariableKey', so LVN could wrongly merge getters sharing [index, mask].
+    bool symbolic = jitc_var(index)->symbolic || jitc_var(mask_2)->symbolic;
+
+    Variable v;
+    v.kind = (uint32_t) VarKind::CallGetter;
+    v.type = (uint32_t) type;
+    v.backend = (uint32_t) backend;
+    v.size = size;
+    v.symbolic = symbolic;
+    v.dep[0] = index;
+    v.dep[1] = (uint32_t) mask_2;
+
+    jitc_var_inc_ref(index);
+    jitc_var_inc_ref(mask_2);
+
+    uint32_t result = jitc_var_new(v, /*disable_lvn=*/true);
+
+    // Re-read the node type in case 'jitc_var_new' demoted it (Metal
+    // Float64 -> Float32), so the header slice matches the emitted load.
+    Variable *rv = jitc_var(result);
+    gd->id = result;
+    gd->type = (VarType) rv->type;
+    rv->data = gd.get();
+
+    jitc_var_set_callback(
+        result,
+        [](uint32_t, int free, void *p) {
+            if (free)
+                delete (GetterData *) p;
+        },
+        gd.release(), true);
+
+    jitc_log(Debug, "jit_var_call_getter(): r%u = getter(index=r%u, mask=r%u) "
+             "over %u callable%s", result, index, (uint32_t) mask_2, count,
+             count == 1 ? "" : "s");
+
+    return result;
+}
+
+/// Reserve a getter's slice of the buffer's header region, register it for
+/// upload, and dispatch to the backend-specific masked-load renderer.
+void jitc_var_call_getter_assemble(Variable *v, const Variable *index,
+                                   const Variable *mask) {
+    GetterData *gd = (GetterData *) v->data;
+    uint32_t tsize = type_size[(int) gd->type];
+
+    // The header region is physically first, so 'header_offset' is the table's
+    // absolute byte offset. Round up to 8 bytes to keep later u64 tables aligned.
+    gd->header_offset = call_buffer.fused_offset_size;
+    call_buffer.fused_offset_size += align_up((gd->count + 1) * tsize, 8u);
+
+    // Keep the node (hence its value references, hence the source data) alive
+    // through the aggregate, mirroring how calls_assembled pins call nodes.
+    jitc_var_inc_ref(gd->id);
+    call_buffer.getters.push_back(gd);
+
+    JitBackend backend = (JitBackend) v->backend;
+    if (jitc_is_llvm(backend))
+        jitc_var_call_getter_assemble_llvm(v, index, mask);
+#if defined(DRJIT_ENABLE_METAL)
+    else if (jitc_is_metal(backend))
+        jitc_var_call_getter_assemble_metal(v, index, mask);
+#endif
+#if defined(DRJIT_ENABLE_CUDA)
+    else if (jitc_is_cuda(backend))
+        jitc_var_call_getter_assemble_cuda(v, index, mask);
+#endif
+    else
+        jitc_fail("jitc_var_call_getter_assemble(): unsupported backend!");
+}
+
 static ProfilerRegion profiler_region_call_assemble("jit_var_call_assemble");
 
 /// Data structure to sort function arguments/return values in order of
@@ -892,6 +1022,10 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
         call->use_nested = true;
         for (uint32_t index_2: call2->outer_in)
             jitc_var_call_analyze(call, inst_id, index_2);
+    } else if (kind == VarKind::CallGetter) {
+        // A nested getter reads the shared buffer, so Dr.Jit must forward the
+        // base pointer into the callable.
+        call->use_nested = true;
     } else if (kind == VarKind::LoopCond) {
         LoopData *loop = (LoopData *) jitc_var(v->dep[0])->data;
 
@@ -964,14 +1098,14 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
 void jitc_call_upload(ThreadState *ts) {
     JitBackend backend = (JitBackend) ts->backend;
 
-    if (calls_assembled.empty()) {
+    if (calls_assembled.empty() && call_buffer.getters.empty()) {
         jitc_assert(call_buffer.base_v == 0,
-                    "jitc_call_upload(): base allocated without calls!");
+                    "jitc_call_upload(): base allocated without calls/getters!");
         return;
     }
 
     jitc_assert(call_buffer.base_v != 0,
-                "jitc_call_upload(): kernel performs calls but has no "
+                "jitc_call_upload(): kernel performs calls/getters but has no "
                 "base pointer!");
 
     // Align the start of the data region so each call's slice lands at an
@@ -981,9 +1115,14 @@ void jitc_call_upload(ThreadState *ts) {
                    data_start = align_up(off_size, align),
                    total      = data_start + call_buffer.fused_data_size;
 
-    // Compute the number of aggregation entries. One per data slot, and
-    // two per offset. ``off_size`` counts 8 bytes per offset, so divide by 4.
-    size_t n_entries = call_buffer.data_entries.size() + off_size / 4;
+    // One aggregation entry per data slot, two per offset-table slot (lo + hi),
+    size_t n_entries = call_buffer.data_entries.size();
+    for (CallData *call : calls_assembled)
+        n_entries += 2 * call->offset_count;
+
+    // ..and 'count + 1' per getter (1 per instance, 1 for the null instance)
+    for (GetterData *gd : call_buffer.getters)
+        n_entries += gd->count + 1;
 
     AggregationEntry *agg = (AggregationEntry *) jitc_malloc(
         backend, sizeof(AggregationEntry) * n_entries, /*shared=*/true);
@@ -1040,24 +1179,62 @@ void jitc_call_upload(ThreadState *ts) {
         p++;
     }
 
+    // Part 3: getter value tables. They live in the header region, so
+    // 'header_offset' is absolute (no 'data_start' shift).
+    for (GetterData *gd : call_buffer.getters) {
+        uint32_t tsize = type_size[(int) gd->type];
+
+        // Null slot (index 0): masked out at read time, zeroed defensively.
+        p->offset = gd->header_offset;
+        p->size = (int16_t) tsize;
+        p->src = 0;
+        p->resource_kind = 0;
+        p++;
+
+        for (uint32_t j = 0; j < gd->count; ++j) {
+            uint32_t off = gd->header_offset + (j + 1) * tsize,
+                     vi  = (uint32_t) gd->values[j];
+            p->offset = off;
+            p->resource_kind = 0;
+            if (!vi) { // absent callable -> zero
+                p->size = (int16_t) tsize;
+                p->src  = 0;
+            } else {
+                const Variable *vv = jitc_var(vi);
+                if (vv->is_literal()) { // literal -> embed by value
+                    p->size = (int16_t) tsize;
+                    p->src  = (const void *) vv->literal;
+                } else { // opaque -> copy by pointer
+                    p->size = (int16_t) -(int) tsize;
+                    p->src  = vv->data;
+                }
+            }
+            p++;
+        }
+    }
+
     uint8_t *buf = (uint8_t *) jitc_malloc(backend, total);
     jitc_aggregate(backend, buf, agg, (uint32_t) (p - agg));
 
     jitc_free(agg);
 
-    // Swap the aggregate buffer into the base pointer variable
+    // Hand the freshly built buffer to the base pointer variable. 'base_src'
+    // had no backing storage (see jitc_assemble), so there is nothing to free;
+    // it now owns 'buf' and releases it after the launch barrier.
     Variable *base_src = jitc_var(call_buffer.base_src);
-    void *placeholder = base_src->data;
     base_src->data = buf;
     base_src->size = total;
-    if (placeholder)
-        jitc_free(placeholder);
 
     jitc_var(call_buffer.base_v)->literal = (uint64_t) (uintptr_t) buf;
 
     for (CallData *call : calls_assembled)
         jitc_var_dec_ref(call->id);
     calls_assembled.clear();
+
+    // Release getter nodes collected during assembly
+    for (GetterData *gd : call_buffer.getters)
+        jitc_var_dec_ref(gd->id);
+    call_buffer.getters.clear();
 }
 
 // Compute a permutation to reorder an array of registered pointers

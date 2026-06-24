@@ -822,6 +822,13 @@ uint32_t jit_var_gather(uint32_t source, uint32_t index, uint32_t mask) {
     return jitc_var_gather(source, index, mask);
 }
 
+uint32_t jit_var_call_getter(VarType type, uint32_t count,
+                             const uint32_t *values, uint32_t index,
+                             uint32_t mask) {
+    lock_guard guard(state.lock);
+    return jitc_var_call_getter(type, count, values, index, mask);
+}
+
 void jit_var_gather_packet(size_t n, uint32_t source, uint32_t index, uint32_t mask, uint32_t *out) {
     lock_guard guard(state.lock);
     jitc_var_gather_packet(n, source, index, mask, out);

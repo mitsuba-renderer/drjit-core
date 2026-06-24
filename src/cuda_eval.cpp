@@ -1081,6 +1081,10 @@ static void jitc_cuda_render(Variable *v) {
                                    a0->reg_index, a1->reg_index);
             break;
 
+        case VarKind::CallGetter:
+            jitc_var_call_getter_assemble(v, a0, a1);
+            break;
+
         case VarKind::CallOutput:
             break;
 
@@ -1582,6 +1586,52 @@ static void jitc_cuda_render_reorder(const Variable *v, const Variable *key) {
     }
 }
 #endif
+
+/// Getter masked load (CUDA/PTX). Mirrors the 'Gather' case, sourcing from
+/// 'base + header_offset'; 'index' is always within [0, count], so no bounds check.
+void jitc_var_call_getter_assemble_cuda(Variable *v, const Variable *index,
+                                        const Variable *mask) {
+    GetterData *gd = (GetterData *) v->data;
+    uint32_t tsize = type_size[(int) gd->type],
+             header_offset = gd->header_offset;
+
+    // Name of the base pointer holding the kernel's combined call data
+    char base[32];
+    if (callable_depth == 0)
+        snprintf(base, sizeof(base), "%%rd%u", call_buffer.base_reg);
+    else
+        snprintf(base, sizeof(base), "base");
+
+    bool is_masked = !mask->is_literal() || mask->literal != 1,
+         is_bool   = v->type == (uint32_t) VarType::Bool;
+
+    // %rd3 = base + index * tsize (the constant 'header_offset' is folded into
+    // the load's address immediate below).
+    if (tsize == 1)
+        fmt("    cvt.u64.$t %rd3, $v;\n"
+            "    add.u64 %rd3, %rd3, $s;\n", index, index, base);
+    else
+        fmt("    mad.wide.$t %rd3, $v, $a, $s;\n", index, index, v, base);
+
+    if (is_masked) {
+        if (is_bool)
+            fmt("    mov.b16 %w0, 0;\n");
+        else if ((VarType) v->type == VarType::UInt8 || (VarType) v->type == VarType::Int8)
+            // There is no `mov.b8`
+            fmt("    cvt.u8.u16 $v, 0;\n", v);
+        else
+            fmt("    mov.$b $v, 0;\n", v, v);
+        fmt("    @$v ", mask);
+    } else {
+        put("    ");
+    }
+
+    if (is_bool)
+        fmt("ld.global.nc.u8 %w0, [%rd3+$u];\n"
+            "    setp.ne.u16 $v, %w0, 0;\n", header_offset, v);
+    else
+        fmt("ld.global.nc.$b $v, [%rd3+$u];\n", v, v, header_offset);
+}
 
 /// Virtual function call code generation -- CUDA/PTX-specific bits
 void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
