@@ -215,8 +215,14 @@ extern uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size);
 /// Return the default mask
 extern uint32_t jitc_var_mask_default(JitBackend backend, size_t size);
 
+/// Allocate the next scope ID, compacting if the counter is about to overflow
+extern uint32_t jitc_scope_next();
+
 /// Start a new scope of the program being recorded
 extern uint32_t jitc_new_scope(JitBackend backend);
+
+/// Debug/test hook: fast-forward the scope counter by ``n``
+extern uint32_t jitc_advance_scope(JitBackend backend, uint32_t n);
 
 /// Reduce (And) a boolean array to a single value, synchronizes.
 extern bool jitc_var_all(uint32_t index);

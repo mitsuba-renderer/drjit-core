@@ -2800,6 +2800,28 @@ void unset_disabled_thread_state(ThreadState **tsp) {
     }
 }
 
+/// Remove a recording thread state from the compaction registry
+static void jitc_record_ts_forget(ThreadState *ts) {
+    std::vector<ThreadState *> &r = state.record_tss;
+    for (size_t i = 0; i < r.size(); ++i) {
+        if (r[i] == ts) {
+            r[i] = r.back();
+            r.pop_back();
+            return;
+        }
+    }
+    jitc_fail("jitc_record_ts_forget(): thread state not found in registry!");
+}
+
+/// RAII helper that unregisters and frees a recording thread state on any exit
+struct RecordThreadStateGuard {
+    RecordThreadState *rts;
+    ~RecordThreadStateGuard() {
+        jitc_record_ts_forget(rts);
+        delete rts;
+    }
+};
+
 void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
                        uint32_t n_inputs) {
 
@@ -2812,6 +2834,7 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
 
     ThreadState *ts_             = thread_state(backend);
     RecordThreadState *record_ts = new RecordThreadState(ts_);
+    state.record_tss.push_back(record_ts);
 
 #if defined(DRJIT_ENABLE_CUDA)
     if (jitc_is_cuda(backend)) {
@@ -2852,6 +2875,7 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
+        RecordThreadStateGuard guard{ rts };
         ThreadState *internal = rts->m_internal;
         uint32_t scope = internal->scope;
 
@@ -2906,7 +2930,6 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
             recording->destroy();
             throw;
         }
-        delete rts;
 
         return recording;
     } else {
@@ -2922,6 +2945,7 @@ void jitc_freeze_abort(JitBackend backend) {
     if (RecordThreadState *rts =
             dynamic_cast<RecordThreadState *>(thread_state(backend));
         rts != nullptr) {
+        RecordThreadStateGuard guard{ rts };
 
         rts->m_recording.destroy();
 
@@ -2958,8 +2982,6 @@ void jitc_freeze_abort(JitBackend backend) {
             unset_disabled_thread_state(&thread_state_metal);
 #endif
         }
-
-        delete rts;
 
         internal->recording_mode = KernelRecordingMode::Inactive;
         jitc_set_flag(JitFlag::FreezingScope, false);

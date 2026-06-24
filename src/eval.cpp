@@ -1113,8 +1113,8 @@ void jitc_eval_impl(ThreadState *ts) {
             v->output_flag = false;
             v->consumed = false;
 
-            if (v->is_array())
-                v->scope = 0;
+            // Now a data buffer; reset scope to match the rule in jitc_var_new.
+            v->scope = v->is_array() ? SCOPE_ARRAY : SCOPE_BUFFER;
 
 #ifndef NDEBUG
             state.ptr_to_variable.insert({ v->data, index });

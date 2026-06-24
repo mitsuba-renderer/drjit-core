@@ -38,7 +38,7 @@ uint32_t jitc_array_create(JitBackend backend, VarType vt, size_t size,
     }
 
     uint32_t index = jitc_var_new(v, true);
-    jitc_var(index)->scope = 0;
+    jitc_var(index)->scope = SCOPE_ARRAY;
     return index;
 }
 

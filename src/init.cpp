@@ -402,7 +402,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
         thread_state_metal = ts;
 
         ts->backend = backend;
-        ts->scope = ++state.scope_ctr;
+        ts->scope = jitc_scope_next();
         state.tss.push_back(ts);
         return ts;
     }
@@ -496,7 +496,7 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
     }
 
     ts->backend = backend;
-    ts->scope = ++state.scope_ctr;
+    ts->scope = jitc_scope_next();
     state.tss.push_back(ts);
     return ts;
 }

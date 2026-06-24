@@ -131,6 +131,11 @@ uint32_t jit_new_scope(JitBackend backend) {
     return jitc_new_scope(backend);
 }
 
+uint32_t jit_advance_scope(JitBackend backend, uint32_t n) {
+    lock_guard guard(state.lock);
+    return jitc_advance_scope(backend, n);
+}
+
 void jit_set_log_level_stderr(LogLevel level) {
     /// Allow changing this variable without acquiring a lock
     state.log_level_stderr = level;

@@ -22,6 +22,12 @@
 #include <new>
 #include <nanothread/nanothread.h>
 
+/// Reserved scope IDs. The schedule sorts by scope ascending, so data leaves
+/// sort ahead of computation and their loads/allocas emit at the kernel top.
+static constexpr uint32_t SCOPE_ARRAY   = 0; ///< variable arrays
+static constexpr uint32_t SCOPE_BUFFER  = 1; ///< plain evaluated data buffers
+static constexpr uint32_t SCOPE_DYNAMIC = 2; ///< first dynamically-allocated scope
+
 /// List of operations in Dr.Jit-Core's intermediate representation (see ``Variable::kind``)
 enum class VarKind : uint32_t {
     // Invalid operation (default initialization in the Variable class)
@@ -1082,7 +1088,7 @@ struct State {
     std::vector<uint32_t> unused_extra;
 
     /// Counter to create variable scopes that enforce a variable ordering
-    uint32_t scope_ctr = 2;
+    uint32_t scope_ctr = SCOPE_DYNAMIC;
     size_t variable_counter = 0;
 
     /// Must be held to execute jitc_eval()
@@ -1115,6 +1121,9 @@ struct State {
 
     /// State associated with each DrJit thread
     std::vector<ThreadState *> tss;
+
+    /// Non-owning registry of active recording thread states (for scope compaction)
+    std::vector<ThreadState *> record_tss;
 
     /// Map of currently allocated memory regions
     AllocUsedMap alloc_used;

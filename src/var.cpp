@@ -20,6 +20,7 @@
 #if defined(DRJIT_ENABLE_METAL)
 #  include "metal.h"
 #endif
+#include <algorithm>
 
 #if defined(DRJIT_ENABLE_METAL)
 static bool jitc_metal_warn_float64_demotion = false;
@@ -751,7 +752,9 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     bool lvn = !disable_lvn && (VarType) v.type != VarType::Void &&
                !v.is_evaluated() && (flags & (uint32_t) JitFlag::ValueNumbering);
 
-    v.scope = ts->scope;
+    // Plain data buffers are dependency-free leaves; pin them to SCOPE_BUFFER so
+    // their loads sort ahead of computation. Arrays keep their scope (set elsewhere).
+    v.scope = (v.is_evaluated() && !v.is_array()) ? SCOPE_BUFFER : ts->scope;
 
     // Allocate a variable slot and move 'v' into it. This is done speculatively
     // assuming that the LVN lookup below misses, which permits overlapping the
@@ -1074,13 +1077,78 @@ uint32_t jitc_var_call_input(uint32_t index) {
     return jitc_var_new(v2, disable_lvn);
 }
 
+/// This function is called when the scope counter overflows, which can happen
+/// in very long-running computations. In this case, it is necessary to compact
+/// the scopes into a contiguous range.
+static void jitc_compact_scopes() {
+    std::vector<uint32_t> scopes;
+
+    auto collect = [&](uint32_t s) { if (s >= SCOPE_DYNAMIC) scopes.push_back(s); };
+    for (size_t i = 1; i < state.variables.size(); ++i) {
+        const Variable &v = state.variables[i];
+        if (v.ref_count || v.ref_count_se)
+            collect(v.scope);
+    }
+    for (ThreadState *ts : state.tss)
+        collect(ts->scope);
+    for (ThreadState *ts : state.record_tss)
+        collect(ts->scope);
+
+    std::sort(scopes.begin(), scopes.end());
+    scopes.erase(std::unique(scopes.begin(), scopes.end()), scopes.end());
+
+    auto remap = [&](uint32_t s) -> uint32_t {
+        if (s < SCOPE_DYNAMIC)
+            return s;
+        return SCOPE_DYNAMIC +
+               (uint32_t) (std::lower_bound(scopes.begin(), scopes.end(), s) -
+                           scopes.begin());
+    };
+
+    for (size_t i = 1; i < state.variables.size(); ++i) {
+        Variable &v = state.variables[i];
+        if (v.ref_count || v.ref_count_se)
+            v.scope = remap(v.scope);
+    }
+    for (ThreadState *ts : state.tss)
+        ts->scope = remap(ts->scope);
+    for (ThreadState *ts : state.record_tss)
+        ts->scope = remap(ts->scope);
+
+    // Rebuild the LVN cache: the key embeds the scope, but membership is unchanged.
+    LVNMap fresh;
+    fresh.reserve(state.lvn_map.size());
+    for (auto &kv : state.lvn_map)
+        fresh.insert({ VariableKey(state.variables[kv.second]), kv.second });
+    state.lvn_map = std::move(fresh);
+
+    state.scope_ctr = SCOPE_DYNAMIC - 1 + (uint32_t) scopes.size();
+    jitc_log(Info, "jitc_compact_scopes(): compacted %zu live scopes following wraparound.",
+             scopes.size());
+}
+
+/// Allocate the next scope ID, compacting if the counter is about to overflow
+uint32_t jitc_scope_next() {
+    if (unlikely(state.scope_ctr == 0xFFFFFFFFu))
+        jitc_compact_scopes();
+    return ++state.scope_ctr;
+}
+
 uint32_t jitc_new_scope(JitBackend backend) {
-    uint32_t scope_index = ++state.scope_ctr;
-    if (unlikely(scope_index == 0))
-        jitc_raise("jit_new_scope(): overflow (more than 2^32=4294967296 scopes created!");
+    uint32_t scope_index = jitc_scope_next();
     jitc_trace("jit_new_scope(%u)", scope_index);
     thread_state(backend)->scope = scope_index;
     return scope_index;
+}
+
+uint32_t jitc_advance_scope(JitBackend backend, uint32_t n) {
+    ThreadState *ts = thread_state(backend);
+    uint32_t v = state.scope_ctr + n;
+    if (v < state.scope_ctr)
+        v = 0xFFFFFFFFu;
+    state.scope_ctr = v;
+    ts->scope = v;
+    return v;
 }
 
 /**

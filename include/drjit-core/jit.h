@@ -2484,6 +2484,9 @@ extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
  */
 extern JIT_EXPORT uint32_t jit_new_scope(JIT_ENUM JitBackend backend);
 
+/// Debug/test hook: fast-forward the scope counter by \c n (saturating)
+extern JIT_EXPORT uint32_t jit_advance_scope(JIT_ENUM JitBackend backend, uint32_t n);
+
 /// Queries the scope identifier (see \ref jit_new_scope())
 extern JIT_EXPORT uint32_t jit_scope(JIT_ENUM JitBackend backend);
 
