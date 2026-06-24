@@ -1135,6 +1135,13 @@ static void jitc_metal_render(Variable *v) {
             break;
         }
 
+        case VarKind::CallGetter: {
+            Variable *index = jitc_var(v->dep[0]),
+                     *mask  = jitc_var(v->dep[1]);
+            jitc_var_call_getter_assemble(v, index, mask);
+            break;
+        }
+
         case VarKind::CallOutput:
             break;
 
@@ -1478,6 +1485,30 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
     }
 
     put("}\n");
+}
+
+/// Getter masked load (Metal/MSL). Mirrors the 'Gather' case, sourcing from
+/// 'base + header_offset'.
+void jitc_var_call_getter_assemble_metal(Variable *v, const Variable *index,
+                                         const Variable *mask) {
+    GetterData *gd = (GetterData *) v->data;
+    uint32_t header_offset = gd->header_offset;
+
+    // Name of the base pointer holding the kernel's combined call data
+    // (a 'device uint8_t*' at every nesting level).
+    char base[32];
+    if (callable_depth == 0)
+        snprintf(base, sizeof(base), "r%u", call_buffer.base_reg);
+    else
+        snprintf(base, sizeof(base), "base");
+
+    bool is_unmasked = mask->is_literal() && mask->literal == 1;
+    if (is_unmasked)
+        fmt("$t $v = ((device const $t*) ($s + $u))[$v];\n",
+            v, v, v, base, header_offset, index);
+    else
+        fmt("$t $v = ($v) ? ((device const $t*) ($s + $u))[$v] : ($t) 0;\n",
+            v, v, mask, v, base, header_offset, index, v);
 }
 
 void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,

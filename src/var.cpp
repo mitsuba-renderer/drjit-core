@@ -257,6 +257,9 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Specialized nodes for calls
     "call_mask", "call_self",
 
+    // Getter implemented as a gather from the shared per-kernel call-data buffer
+    "call_getter",
+
     // Input argument to a function call
     "call_input",
 

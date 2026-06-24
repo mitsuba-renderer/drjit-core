@@ -1076,6 +1076,10 @@ static void jitc_llvm_render(Variable *v) {
                                    a0->reg_index, a1->reg_index);
             break;
 
+        case VarKind::CallGetter:
+            jitc_var_call_getter_assemble(v, a0, a1);
+            break;
+
         case VarKind::CallMask:
             fmt("    $v = bitcast <$w x i1> %mask to <$w x i1>\n", v);
             break;
@@ -1606,6 +1610,45 @@ static void jitc_llvm_render_trace(const Variable *v,
     }
 
     put("    ; -------------------\n\n");
+}
+
+/// Getter masked load (LLVM). Like the call offset-table gather, sourcing from
+/// the uniform 'base + header_offset' pointer.
+void jitc_var_call_getter_assemble_llvm(Variable *v, const Variable *index,
+                                        const Variable *mask) {
+    GetterData *gd = (GetterData *) v->data;
+    uint32_t header_offset = gd->header_offset;
+
+    // Name of the base pointer holding the kernel's combined call data. It is
+    // a uniform scalar 'ptr' at every nesting level (see the call signature).
+    char base[32];
+    if (callable_depth == 0)
+        snprintf(base, sizeof(base), "%%rd%u", call_buffer.base_reg);
+    else
+        snprintf(base, sizeof(base), "%%data");
+
+    bool is_bool = v->type == (uint32_t) VarType::Bool;
+    if (is_bool) // Temporary change so the gather renders as i8
+        v->type = (uint32_t) VarType::UInt8;
+
+    fmt_intrinsic(
+        "declare $T @llvm.masked.gather.v$w$h(<$w x ptr>, i32, $T, $T)",
+        v, v, mask, v);
+
+    // Byte-offset the uniform base, then index by the per-lane instance id to
+    // get a vector of pointers. The '_gp' suffix avoids the '_p1'/'_p2'/'_p3'
+    // namespace of the param preamble (a getter result is often a kernel output).
+    fmt("    $v_gp0 = getelementptr inbounds i8, ptr $s, i64 $u\n"
+        "    $v_gp1 = getelementptr inbounds $t, ptr $v_gp0, $V\n"
+        "    $v$s = call $T @llvm.masked.gather.v$w$h(<$w x ptr> $v_gp1, i32 $a, $V, $T $z), !alias.scope !2, !noalias !2\n",
+        v, base, header_offset,
+        v, v, v, index,
+        v, is_bool ? "_2" : "", v, v, v, v, mask, v);
+
+    if (is_bool) { // Restore
+        v->type = (uint32_t) VarType::Bool;
+        fmt("    $v = trunc <$w x i8> %b$u_2 to <$w x i1>\n", v, v->reg_index);
+    }
 }
 
 /// Virtual function call code generation -- LLVM IR-specific bits

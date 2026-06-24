@@ -906,6 +906,33 @@ extern JIT_EXPORT uint32_t jit_var_gather(uint32_t source, uint32_t index,
                                           uint32_t mask);
 
 /**
+ * \brief Build a getter as a gather from the kernel's call data buffer.
+ *
+ * This function generates IR that conceptually evaluates the expression
+ * ```
+ * result = (mask && index != 0) ? values[index-1] : 0
+ * ```
+ * on the device (taking some freedom with the notation).
+ *
+ * In particular, note that ``values`` is an array of ``count`` indices of
+ * scalar literal or scalar evaluated variables (a zero entry denotes an absent
+ * source that reads as zero). ``index`` and ``mask`` are device-side arrays (a
+ * 32-bit unsigned integer and a boolean, respectively).
+ *
+ * The result is therefore an indirection that fetches a scalar from one of
+ * multiple sources. Dr.Jit uses this functionality to efficiently compile
+ * "getters" for C++ instance arrays.
+ *
+ * Dr.Jit emits efficient machine code for this operation by placing the
+ * data into the call data buffer shared with ``jit_var_call()``.
+ */
+extern JIT_EXPORT uint32_t jit_var_call_getter(JIT_ENUM VarType type,
+                                               uint32_t count,
+                                               const uint32_t *values,
+                                               uint32_t index,
+                                               uint32_t mask);
+
+/**
  * \brief Gather a contiguous packet of values
  *
  * This function is analogous to (but generally more efficient than)

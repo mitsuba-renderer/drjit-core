@@ -175,6 +175,24 @@ struct CallData {
     }
 };
 
+/// Payload of a 'CallGetter' IR node
+struct GetterData {
+    /// Index of the 'CallGetter' variable owning this payload
+    uint32_t id = 0;
+
+    /// Return type / element type of the value table.
+    VarType type = VarType::Void;
+
+    /// Callable count. The table has 'count + 1' entries (entry 0 is the null instance).
+    uint32_t count = 0;
+
+    /// Byte offset of the table in the header region, assigned during codegen.
+    uint32_t header_offset = 0;
+
+    /// Strong reference to the values. Entry 'i' maps to instance 'i+1'.
+    std::vector<Ref> values;
+};
+
 /// This data structure maintains the running call data state during kernel
 /// compilation. See the top of call.h for details on this.
 struct CallBufferState {
@@ -191,19 +209,24 @@ struct CallBufferState {
     uint32_t base_reg = 0;
     uint32_t base_param_index = 0;
 
-    // Projection of a CallData::CaptureSlot: a strong reference plus a byte
-    // offset into the data region following the offset tables.
+    // Projection of a CallData::CaptureSlot into one jitc_aggregate() input:
+    // 'src' is the value to copy, 'offset' is where it lands in the buffer.
     struct CaptureSlotRef {
-        Ref      src;     ///< captured source variable
-        uint32_t offset;  ///< byte offset within the fused data region
+        Ref      src;     ///< captured source variable (what to deposit)
+        uint32_t offset;  ///< deposit offset into the fused data region (pre 'data_start')
     };
 
+    /// Capture slots that will be materialized into the call data
     std::vector<CaptureSlotRef> data_entries;
+
+    /// Getter values that will be materialized into the call data
+    std::vector<GetterData *> getters;
 
     void reset() {
         fused_offset_size = fused_data_size = 0;
         base_v = base_src = base_reg = base_param_index = 0;
         data_entries.clear();
+        getters.clear();
     }
 };
 
@@ -277,3 +300,17 @@ extern void jitc_var_call(const char *domain, bool symbolic, uint32_t self,
 
 extern void jitc_var_call_analyze(CallData *call, uint32_t inst_id,
                                   uint32_t index);
+
+extern uint32_t jitc_var_call_getter(VarType type, uint32_t count,
+                                     const uint32_t *values, uint32_t index,
+                                     uint32_t mask);
+
+extern void jitc_var_call_getter_assemble(Variable *v, const Variable *index,
+                                          const Variable *mask);
+
+extern void jitc_var_call_getter_assemble_cuda(Variable *v, const Variable *index,
+                                               const Variable *mask);
+extern void jitc_var_call_getter_assemble_llvm(Variable *v, const Variable *index,
+                                               const Variable *mask);
+extern void jitc_var_call_getter_assemble_metal(Variable *v, const Variable *index,
+                                                const Variable *mask);

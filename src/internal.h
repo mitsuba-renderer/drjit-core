@@ -114,6 +114,9 @@ enum class VarKind : uint32_t {
     // Specialized nodes for calls
     CallMask, CallSelf,
 
+    // Getter implemented as a gather from the shared per-kernel call-data buffer
+    CallGetter,
+
     // Input argument to a function call
     CallInput,
 
