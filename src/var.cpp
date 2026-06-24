@@ -409,6 +409,10 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
             state_.unused_extra.push_back(index2);
         }
 
+        // Drop this variable's 'jit_var_call_reduce()' cache entry, if any.
+        if (unlikely(!call_reduce_cache.empty()))
+            jitc_var_call_reduce_cache_remove(index);
+
         // Remove from unused variable list
         state_.unused_variables.push(index);
 

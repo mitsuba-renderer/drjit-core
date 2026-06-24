@@ -1237,27 +1237,37 @@ void jitc_call_upload(ThreadState *ts) {
     call_buffer.getters.clear();
 }
 
+std::vector<CallReduceRecord> call_reduce_cache;
+
+void jitc_var_call_reduce_cache_remove(uint32_t index) {
+    for (size_t i = 0; i < call_reduce_cache.size(); ++i) {
+        if (call_reduce_cache[i].index != index)
+            continue;
+
+        // Pop before freeing, so a recursive free via 'dec_ref' sees a
+        // consistent cache.
+        CallReduceRecord rec = call_reduce_cache[i];
+        call_reduce_cache[i] = call_reduce_cache.back();
+        call_reduce_cache.pop_back();
+
+        for (uint32_t j = 0; j < rec.bucket_count; ++j)
+            jitc_var_dec_ref(rec.buckets[j].index);
+        jitc_free(rec.buckets);
+        return;
+    }
+}
+
 // Compute a permutation to reorder an array of registered pointers
 CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
                                  const char *domain, uint32_t index,
                                  uint32_t *bucket_count_inout) {
 
-    struct CallReduceRecord {
-        CallBucket *buckets;
-        uint32_t bucket_count;
-
-        ~CallReduceRecord() {
-            for (uint32_t i = 0; i < bucket_count; ++i)
-                jitc_var_dec_ref(buckets[i].index);
-            jitc_free(buckets);
+    // Reuse a cached result for this index, if present.
+    for (const CallReduceRecord &rec : call_reduce_cache) {
+        if (rec.index == index) {
+            *bucket_count_inout = rec.bucket_count;
+            return rec.buckets;
         }
-    };
-
-    VariableExtra *extra = jitc_var_extra(jitc_var(index));
-    CallReduceRecord *rec = (CallReduceRecord *) extra->callback_data;
-    if (rec) {
-        *bucket_count_inout = rec->bucket_count;
-        return rec->buckets;
     }
 
     uint32_t bucket_count;
@@ -1363,13 +1373,9 @@ CallBucket *jitc_var_call_reduce(JitBackend backend, const char *variant,
 
     jitc_var_dec_ref(perm_var);
 
-    jitc_var_set_callback(
-        index,
-        [](uint32_t, int free, void *p) {
-            if (free)
-                delete (CallReduceRecord *) p;
-        },
-        new CallReduceRecord{ (CallBucket *) offsets, unique_count_out }, true);
+    // Cache for reuse by later calls sharing this index; freed in 'jitc_var_free()'.
+    call_reduce_cache.push_back(
+        CallReduceRecord{ index, unique_count_out, (CallBucket *) offsets });
 
     *bucket_count_inout = unique_count_out;
     return (CallBucket *) offsets;

@@ -393,6 +393,19 @@ struct VariableExtra {
     bool callback_internal = false;
 };
 
+struct CallBucket;
+
+/// Memoized 'jit_var_call_reduce()' result, keyed by its index variable.
+struct CallReduceRecord {
+    uint32_t index;
+    uint32_t bucket_count;
+    CallBucket *buckets; ///< Owns the allocation + bucket refs
+};
+
+/// Small linearly-searched cache of 'jit_var_call_reduce()' results
+extern std::vector<CallReduceRecord> call_reduce_cache;
+extern void jitc_var_call_reduce_cache_remove(uint32_t index);
+
 #pragma pack(push, 1)
 
 /// Abbreviated version of the Variable data structure for Local Value Numbering (LVN)
