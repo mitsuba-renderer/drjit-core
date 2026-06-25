@@ -35,7 +35,9 @@
 #include <cstdio>
 #include <algorithm>
 
-// Metal 4 symbols (MTLGPUFamilyMetal4, MTLLanguageVersion4_0) only exist in the macOS 26 SDK
+// Metal 4 symbols (MTLGPUFamilyMetal4, MTLLanguageVersion4_0) only exist in the
+// macOS 26 SDK. When present they are compiled in but gated at runtime via
+// ``@available``, so the resulting binary still runs on older macOS releases.
 #if defined(__MAC_OS_X_VERSION_MAX_ALLOWED) && defined(__MAC_26_0) && __MAC_OS_X_VERSION_MAX_ALLOWED >= __MAC_26_0
 #  define DRJIT_SUPPORTS_METAL4 1
 #endif
@@ -272,6 +274,14 @@ void *jitc_metal_block_reduce_pipeline(int device, MetalReduceKind kind,
 
 bool jitc_metal_init() {
     @autoreleasepool {
+        // The backend emits Metal Shading Language 3.2, which requires macOS 15+
+        if (@available(macOS 15.0, *)) {
+        } else {
+            jitc_log(Warn, "jit_metal_init(): the Metal backend requires macOS "
+                           "15.0 or newer.");
+            return false;
+        }
+
         NSArray<id<MTLDevice>> *devices = MTLCopyAllDevices();
         if (!devices || devices.count == 0) {
             jitc_log(Warn, "jit_metal_init(): no Metal-capable GPU was detected.");
@@ -297,10 +307,10 @@ bool jitc_metal_init() {
             md.threadgroup_memory_bytes =
                 (uint32_t) [dev maxThreadgroupMemoryLength];
             md.supports_ray_tracing = [dev supportsRaytracing];
-#if defined(DRJIT_SUPPORTS_METAL4)
-            md.supports_metal4 = [dev supportsFamily:MTLGPUFamilyMetal4];
-#else
             md.supports_metal4 = false;
+#if defined(DRJIT_SUPPORTS_METAL4)
+            if (@available(macOS 26.0, *))
+                md.supports_metal4 = [dev supportsFamily:MTLGPUFamilyMetal4];
 #endif
             const char *name = dev.name.UTF8String;
             size_t len = std::strlen(name);
@@ -399,18 +409,22 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
 
         MTLCompileOptions *opts = [MTLCompileOptions new];
 
+        // macOS 15+ is guaranteed by jitc_metal_init(); Metal 4 needs macOS 26
+        if (@available(macOS 15.0, *)) {
+            opts.languageVersion = MTLLanguageVersion3_2;
 #if defined(DRJIT_SUPPORTS_METAL4)
-        opts.languageVersion = uses_metal4 ? MTLLanguageVersion4_0
-                                           : MTLLanguageVersion3_2;
-#else
-        opts.languageVersion = MTLLanguageVersion3_2;
+            if (uses_metal4) {
+                if (@available(macOS 26.0, *))
+                    opts.languageVersion = MTLLanguageVersion4_0;
+            }
 #endif
 
-        // The relaxed/fast math modes are a little aggressive and break the Dr.Jit
-        // test suite. We opt in on a per instruction basis by calling math functions
-        // from the ``fast::`` namespace
+            // The relaxed/fast math modes are a little aggressive and break the
+            // Dr.Jit test suite. We opt in on a per instruction basis by calling
+            // math functions from the ``fast::`` namespace
+            opts.mathMode = MTLMathModeSafe;
+        }
 
-        opts.mathMode = MTLMathModeSafe;
         opts.libraryType = MTLLibraryTypeExecutable;
 
         id<MTLLibrary> lib = [dev newLibraryWithSource:src options:opts error:&err];
