@@ -3301,7 +3301,7 @@ const char *jitc_var_graphviz() {
 
 // Intense internal instrumentation to catch undefined behavior
 #if defined(DRJIT_SANITIZE_INTENSE)
-void jitc_sanitation_checkpoint() {
+JIT_EXPORT void jitc_sanitation_checkpoint() {
     std::vector<Variable> variables_copy(state.variables);
     state.variables = std::move(variables_copy);
 }
