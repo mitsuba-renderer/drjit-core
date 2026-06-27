@@ -12,6 +12,9 @@
 #if defined(DRJIT_ENABLE_CUDA)
 #  include "cuda_ts.h"
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+#  include "amd_ts.h"
+#endif
 #if defined(DRJIT_ENABLE_METAL)
 #  include "metal.h"
 #endif
@@ -84,6 +87,7 @@ void jitc_init(uint32_t backends) {
 
 #if defined(__APPLE__)
     backends &= ~(1u << (uint32_t) JitBackend::CUDA);
+    backends &= ~(1u << (uint32_t) JitBackend::AMD);
 #else
     backends &= ~(1u << (uint32_t) JitBackend::Metal);
 #endif
@@ -138,6 +142,11 @@ void jitc_init(uint32_t backends) {
         state.backends |= 1u << (uint32_t) JitBackend::CUDA;
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+    if ((backends & (1u << (uint32_t) JitBackend::AMD)) && jitc_amd_init())
+        state.backends |= 1u << (uint32_t) JitBackend::AMD;
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
     if ((backends & (1u << (uint32_t) JitBackend::Metal)) && jitc_metal_init())
         state.backends |= 1u << (uint32_t) JitBackend::Metal;
@@ -182,6 +191,11 @@ void jitc_shutdown(int light) {
 #if defined(DRJIT_ENABLE_METAL)
         if (jitc_is_metal(ts->backend)) {
             jitc_metal_sync(ts);
+        }
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        if (jitc_is_amd(ts->backend)) {
+            jitc_amd_sync_thread(ts);
         }
 #endif
         if (!ts->mask_stack.empty() && state.leak_warnings)
@@ -258,6 +272,10 @@ void jitc_shutdown(int light) {
                 cuda_check(cuStreamSynchronize(ts->stream));
             }
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+            if (jitc_is_amd(ts->backend) && ts->amd_stream)
+                jitc_amd_sync_thread(ts);
+#endif
 
             if (!ts->prefix_stack.empty()) {
                 for (char *s : ts->prefix_stack)
@@ -295,6 +313,9 @@ void jitc_shutdown(int light) {
     tl.ts_llvm = nullptr;
 #if defined(DRJIT_ENABLE_CUDA)
     tl.ts_cuda = nullptr;
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+    tl.ts_amd = nullptr;
 #endif
 #if defined(DRJIT_ENABLE_METAL)
     tl.ts_metal = nullptr;
@@ -357,6 +378,9 @@ void jitc_shutdown(int light) {
 #if defined(DRJIT_ENABLE_CUDA)
         jitc_cuda_shutdown();
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+        jitc_amd_shutdown();
+#endif
 #if defined(DRJIT_ENABLE_OPTIX)
         jitc_optix_api_shutdown();
 #endif
@@ -373,6 +397,10 @@ void jitc_shutdown(int light) {
 
 
 ThreadState *jitc_init_thread_state(JitBackend backend) {
+    if (unlikely(backend == JitBackend::None &&
+                 default_backend != JitBackend::None))
+        backend = default_backend;
+
     ThreadState *ts = nullptr;
 
 #if defined(DRJIT_ENABLE_METAL)
@@ -408,6 +436,38 @@ ThreadState *jitc_init_thread_state(JitBackend backend) {
     }
 #endif
 
+    if (jitc_is_amd(backend)) {
+#if defined(DRJIT_ENABLE_AMD)
+        ts = new AMDThreadState();
+        if ((state.backends & (1u << (uint32_t) JitBackend::AMD)) == 0) {
+            delete ts;
+            jitc_raise(
+                "jit_init_thread_state(): the AMD backend has not been "
+                "initialized. Make sure to call jit_init(JitBackend::AMD) "
+                "first.");
+        }
+
+        if (state.amd_devices.empty()) {
+            delete ts;
+            jitc_raise("jit_init_thread_state(): the AMD backend is inactive "
+                       "because no compatible AMD/HIP devices were found on "
+                       "your system.");
+        }
+
+        AMDDevice &device = state.amd_devices[0];
+        ts->device = 0;
+        ts->amd_raw_device = device.id;
+        ts->amd_device = device.device;
+        ts->amd_context = device.context;
+        ts->amd_stream = device.stream;
+        ts->amd_event = device.event;
+        ts->amd_sync_stream_event = device.sync_stream_event;
+        ts->amd_arch = device.arch;
+        ts->amd_wavefront_size = device.wavefront_size;
+        ts->amd_max_threads = device.max_threads_per_block;
+        thread_state_amd = ts;
+#endif
+    } else
     if (jitc_is_cuda(backend)) {
 #if defined(DRJIT_ENABLE_CUDA)
         ts = new CUDAThreadState();
@@ -555,6 +615,12 @@ void jitc_sync_thread(ThreadState *ts) {
         return;
     }
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+    if (jitc_is_amd(backend)) {
+        jitc_amd_sync_thread(ts);
+        return;
+    }
+#endif
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(backend)) {
         unlock_guard guard(state.lock);
@@ -594,6 +660,9 @@ void jitc_sync_thread() {
 #if defined(DRJIT_ENABLE_CUDA)
     jitc_sync_thread(tl.ts_cuda);
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+    jitc_sync_thread(tl.ts_amd);
+#endif
     jitc_sync_thread(tl.ts_llvm);
 #if defined(DRJIT_ENABLE_METAL)
     jitc_sync_thread(tl.ts_metal);
@@ -601,19 +670,30 @@ void jitc_sync_thread() {
 }
 
 void jitc_flush_thread(ThreadState *ts) {
+#if defined(DRJIT_ENABLE_AMD)
+    if (ts && jitc_is_amd(ts->backend)) {
+        jitc_amd_sync_thread(ts);
+        return;
+    }
+#endif
 #if defined(DRJIT_ENABLE_METAL)
     if (ts && jitc_is_metal(ts->backend)) {
         jitc_metal_flush(ts);
         return;
     }
-#else
+#endif
+#if !defined(DRJIT_ENABLE_AMD) && !defined(DRJIT_ENABLE_METAL)
     (void) ts;
 #endif
 }
 
 void jitc_flush_thread() {
+    ThreadLocal &tl = jitc_thread_local();
+#if defined(DRJIT_ENABLE_AMD)
+    jitc_flush_thread(tl.ts_amd);
+#endif
 #if defined(DRJIT_ENABLE_METAL)
-    jitc_flush_thread(jitc_thread_local().ts_metal);
+    jitc_flush_thread(tl.ts_metal);
 #endif
 }
 
@@ -629,6 +709,10 @@ void jitc_sync_device() {
             cuda_check(cuCtxSynchronize());
         }
     }
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+    if (tl.ts_amd)
+        jitc_amd_sync_device(tl.ts_amd);
 #endif
 
     if (tl.ts_llvm) {
@@ -843,6 +927,16 @@ KernelHistoryEntry *KernelHistory::get() {
             k.event_start = k.event_end = 0;
         } else
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+        if (jitc_is_amd(k.backend)) {
+            hip_check(hipEventElapsedTime(&k.execution_time,
+                                          (hipEvent_t) k.event_start,
+                                          (hipEvent_t) k.event_end));
+            hip_check(hipEventDestroy((hipEvent_t) k.event_start));
+            hip_check(hipEventDestroy((hipEvent_t) k.event_end));
+            k.event_start = k.event_end = 0;
+        } else
+#endif
 #if defined(DRJIT_ENABLE_METAL)
         if (jitc_is_metal(k.backend)) {
             k.execution_time =
@@ -874,6 +968,12 @@ void KernelHistory::clear() {
         if (jitc_is_cuda(k.backend)) {
             cuEventDestroy((CUevent) k.event_start);
             cuEventDestroy((CUevent) k.event_end);
+        } else
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        if (jitc_is_amd(k.backend)) {
+            hip_check(hipEventDestroy((hipEvent_t) k.event_start));
+            hip_check(hipEventDestroy((hipEvent_t) k.event_end));
         } else
 #endif
 #if defined(DRJIT_ENABLE_METAL)

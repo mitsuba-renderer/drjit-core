@@ -15,9 +15,13 @@
 #if defined(DRJIT_ENABLE_CUDA)
 #  include "cuda.h"
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+#  include "amd_api.h"
+#endif
 #include "llvm.h"
 #include "alloc.h"
 #include "io.h"
+#include <algorithm>
 #include <string.h>
 #include <new>
 #include <nanothread/nanothread.h>
@@ -276,10 +280,10 @@ struct alignas(64) Variable {
     uint32_t kind : 7;
 
     /// Backend associated with this variable
-    uint32_t backend : 2;
+    uint32_t backend : 3;
 
     /// Variable type (Bool/Int/Float/....)
-    uint32_t type : 5;
+    uint32_t type : 4;
 
     /// Is this a pointer variable that tracks a pending write? It holds a side
     /// effect reference that keeps the target marked dirty until it expires.
@@ -425,7 +429,7 @@ struct VariableKey {
         memcpy((void *) this, (const void *) &v.scope, 32);
         uint32_t array_length =
             (v.is_array() || v.coop_vec) ? (uint32_t) v.array_length : 0u;
-        // The bitfields kind:7|backend:2|type:5|write_ptr:1|written:1 occupy
+        // The bitfields kind:7|backend:3|type:4|write_ptr:1|written:1 occupy
         // bits 0..15 of the 32-bit word immediately after 'scratch' (LSB-first
         // packing), which is exactly the layout 'packed' wants. Reading the raw
         // word and masking avoids extracting and re-assembling each field
@@ -605,6 +609,95 @@ struct CUDADevice {
 
         if (threads_out)
             *threads_out = warps_per_block * warp_size;
+    }
+};
+#endif
+
+#if defined(DRJIT_ENABLE_AMD)
+/// Caches basic information about an AMD/HIP device
+struct AMDDevice {
+    /// Raw HIP device ID
+    int id = -1;
+
+    /// HIP device handle
+    hipDevice_t device = 0;
+
+    /// HIP context associated with this device
+    hipCtx_t context = nullptr;
+
+    /// HIPRT context, created lazily by the AMD trace compiler
+    void *hiprt_context = nullptr;
+
+    /// Lazily JIT-compiled modules owned by this device
+    std::vector<hipModule_t> modules;
+
+    /// Associated HIP stream handle
+    hipStream_t stream = nullptr;
+
+    /// A HIP event for synchronization purposes
+    hipEvent_t event = nullptr;
+
+    /// A HIP event for synchronization with external streams
+    hipEvent_t sync_stream_event = nullptr;
+
+    /// Compute unit count
+    uint32_t multi_processor_count = 0;
+
+    /// Wavefront size
+    uint32_t wavefront_size = 32;
+
+    /// Maximum threads per block
+    uint32_t max_threads_per_block = 1024;
+
+    /// Max. bytes of shared memory per block
+    uint32_t shared_memory_bytes = 0;
+
+    /// Cached AMDGPU architecture string, e.g. "gfx1201" (owned)
+    char *arch = nullptr;
+
+    /// Cached human-readable device name (owned)
+    char *name = nullptr;
+
+    void get_launch_config(uint32_t *blocks_out, uint32_t *threads_out,
+                           uint32_t size, uint32_t max_threads = 1024,
+                           uint32_t max_blocks_per_cu = 0) const {
+        uint32_t wave_size = wavefront_size ? wavefront_size : 32,
+                 wave_count = (size + wave_size - 1) / wave_size,
+                 max_waves_per_block = (max_threads + wave_size - 1) / wave_size,
+                 cu_count = std::max(1u, multi_processor_count);
+
+        uint32_t block_count, waves_per_block;
+        if (wave_count <= cu_count) {
+            block_count = wave_count;
+            waves_per_block = 1;
+        } else {
+            block_count = cu_count;
+            waves_per_block = (wave_count + block_count - 1) / block_count;
+
+            if (waves_per_block > max_waves_per_block) {
+                block_count =
+                    (wave_count + max_waves_per_block - 1) / max_waves_per_block;
+                if (block_count < cu_count * 4)
+                    block_count =
+                        (block_count + cu_count - 1) / cu_count * cu_count;
+
+                uint32_t max_blocks = max_blocks_per_cu * cu_count;
+                if (max_blocks && block_count > max_blocks) {
+                    block_count = max_blocks;
+                    waves_per_block = max_waves_per_block;
+                } else {
+                    waves_per_block =
+                        (wave_count + block_count - 1) / block_count;
+                    block_count =
+                        (wave_count + waves_per_block - 1) / waves_per_block;
+                }
+            }
+        }
+
+        if (blocks_out)
+            *blocks_out = block_count;
+        if (threads_out)
+            *threads_out = waves_per_block * wave_size;
     }
 };
 #endif
@@ -836,6 +929,37 @@ struct ThreadStateBase {
     /// OptiX pipeline associated with the next kernel launch
     OptixPipelineData *optix_pipeline = nullptr;
     OptixShaderBindingTable *optix_sbt = nullptr;
+#endif
+
+    /// ---------------------------- AMD-specific -----------------------------
+
+#if defined(DRJIT_ENABLE_AMD)
+    /// Raw HIP device ID
+    int amd_raw_device = -1;
+
+    /// HIP device handle
+    hipDevice_t amd_device = 0;
+
+    /// HIP context handle
+    hipCtx_t amd_context = nullptr;
+
+    /// Associated HIP stream handle
+    hipStream_t amd_stream = nullptr;
+
+    /// A HIP event for synchronization purposes
+    hipEvent_t amd_event = nullptr;
+
+    /// A HIP event for synchronization with external streams
+    hipEvent_t amd_sync_stream_event = nullptr;
+
+    /// AMDGPU architecture string, e.g. "gfx1201" (non-owning)
+    const char *amd_arch = nullptr;
+
+    /// Wavefront size
+    uint32_t amd_wavefront_size = 32;
+
+    /// Maximum threads per block
+    uint32_t amd_max_threads = 1024;
 #endif
 
     /// ---------------------------- Metal-specific ----------------------------
@@ -1130,6 +1254,11 @@ struct State {
     std::vector<CUDADevice> devices;
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+    /// Available AMD/HIP devices
+    std::vector<AMDDevice> amd_devices;
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
     /// Available Metal devices (Apple Silicon only)
     std::vector<MetalDevice> metal_devices;
@@ -1212,6 +1341,9 @@ struct ThreadLocal {
 #if defined(DRJIT_ENABLE_CUDA)
     ThreadState *ts_cuda = nullptr;
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+    ThreadState *ts_amd = nullptr;
+#endif
 #if defined(DRJIT_ENABLE_METAL)
     ThreadState *ts_metal = nullptr;
 #endif
@@ -1234,6 +1366,9 @@ struct ThreadLocal {
 #if defined(DRJIT_ENABLE_CUDA)
 #  define thread_state_cuda (tls.ts_cuda)
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+#  define thread_state_amd  (tls.ts_amd)
+#endif
 #if defined(DRJIT_ENABLE_METAL)
 #  define thread_state_metal (tls.ts_metal)
 #endif
@@ -1247,11 +1382,20 @@ JIT_INLINE ThreadLocal &jitc_thread_local() { return *std::launder(&tls); }
 extern ThreadState *jitc_init_thread_state(JitBackend backend);
 
 inline ThreadState *thread_state(JitBackend backend) {
+    if (unlikely(backend == JitBackend::None && default_backend != JitBackend::None))
+        backend = default_backend;
+
     ThreadState *result;
     switch (backend) {
 #if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             result = thread_state_cuda;
+            break;
+#endif
+
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:
+            result = thread_state_amd;
             break;
 #endif
 
@@ -1304,6 +1448,21 @@ extern void jitc_shutdown(int light);
 extern void jitc_cuda_set_device(int device);
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+/// Set the currently active AMD device & stream
+extern bool jitc_amd_init();
+extern void jitc_amd_shutdown();
+extern void jitc_amd_set_device(int device);
+extern void jitc_amd_sync_thread(ThreadState *ts);
+extern void jitc_amd_sync_device(ThreadState *ts);
+extern JitEvent jitc_amd_event_create(bool enable_timing);
+extern void jitc_amd_event_destroy(JitEvent event);
+extern void jitc_amd_event_record(JitEvent event);
+extern int jitc_amd_event_query(JitEvent event);
+extern void jitc_amd_event_wait(JitEvent event);
+extern float jitc_amd_event_elapsed_time(JitEvent start, JitEvent end);
+#endif
+
 /// Wait for all computation on the current stream to finish
 extern void jitc_sync_thread();
 extern void jitc_sync_thread(ThreadState *stream);
@@ -1328,6 +1487,14 @@ template <typename T> inline bool jitc_is_cuda(T b) {
 #endif
 }
 
+template <typename T> inline bool jitc_is_amd(T b) {
+#if defined(DRJIT_ENABLE_AMD)
+    return (JitBackend) b == JitBackend::AMD;
+#else
+    (void) b; return false;
+#endif
+}
+
 template <typename T> inline bool jitc_is_metal(T b) {
 #if defined(DRJIT_ENABLE_METAL)
     return (JitBackend) b == JitBackend::Metal;
@@ -1340,9 +1507,9 @@ template <typename T> inline bool jitc_is_llvm(T b) {
     return (JitBackend) b == JitBackend::LLVM;
 }
 
-/// Returns true if the given backend uses GPU device memory (CUDA or Metal)
+/// Returns true if the given backend uses GPU device memory
 template <typename T> inline bool jitc_is_gpu(T b) {
-    return jitc_is_cuda(b) || jitc_is_metal(b);
+    return jitc_is_cuda(b) || jitc_is_amd(b) || jitc_is_metal(b);
 }
 
 /// Search for a shared library and dlopen it if possible
@@ -1505,6 +1672,9 @@ struct EventData {
 #if defined(DRJIT_ENABLE_CUDA)
         CUevent cuda_event;
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+        hipEvent_t amd_event;
+#endif
         Task* llvm_task;
 #if defined(DRJIT_ENABLE_METAL)
         // For Metal we store a (id<MTLSharedEvent>, value) pair encoded into
@@ -1523,6 +1693,11 @@ struct EventData {
 #if defined(DRJIT_ENABLE_CUDA)
         if (jitc_is_cuda(backend))
             cuda_event = nullptr;
+        else
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        if (jitc_is_amd(backend))
+            amd_event = nullptr;
         else
 #endif
 #if defined(DRJIT_ENABLE_METAL)

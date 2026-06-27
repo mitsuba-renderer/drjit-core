@@ -142,6 +142,25 @@ extern void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                                     uint32_t out_size, uint32_t out_align,
                                     uint32_t n_regs);
 
+#if defined(DRJIT_ENABLE_AMD)
+struct Kernel;
+
+/// Used by jitc_eval() to generate AMD HIP source code
+extern void jitc_amd_assemble(ThreadState *ts, ScheduledGroup group,
+                              uint32_t n_regs, uint32_t n_params);
+
+/// Used by jitc_call() to generate HIP source code for callables
+extern void jitc_amd_assemble_func(const CallData *call, uint32_t inst,
+                                   uint32_t in_size, uint32_t in_align,
+                                   uint32_t out_size, uint32_t out_align,
+                                   uint32_t n_regs);
+
+/// Compile a HIP source string to a module and locate the kernel entry point
+extern bool jitc_amd_compile(ThreadState *ts, const char *source,
+                             size_t source_size, const char *kernel_name,
+                             Kernel &kernel);
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
 struct Kernel;
 

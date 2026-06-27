@@ -56,8 +56,11 @@ enum class JitBackend : uint32_t {
     /// Metal backend (Apple Silicon GPUs, generates MSL source)
     Metal = 3,
 
+    /// AMD GPU backend (generates HIP/AMDGPU code objects)
+    AMD = 4,
+
     /// Sentinel value (not a real backend; equals the number of backends)
-    Count = 4
+    Count = 5
 };
 
 /// Compile-time name of a JIT backend (e.g., to identify registry domains)
@@ -65,14 +68,16 @@ template <JitBackend Backend>
 constexpr const char *jit_backend_name_v =
     Backend == JitBackend::CUDA  ? "cuda"  :
     Backend == JitBackend::LLVM  ? "llvm"  :
-    Backend == JitBackend::Metal ? "metal" : "none";
+    Backend == JitBackend::Metal ? "metal" :
+    Backend == JitBackend::AMD   ? "amd"   : "none";
 #else
 enum JitBackend {
     JitBackendNone = 0,
     JitBackendCUDA = 1,
     JitBackendLLVM = 2,
     JitBackendMetal = 3,
-    JitBackendCount = 4
+    JitBackendAMD = 4,
+    JitBackendCount = 5
 };
 #endif
 
@@ -91,7 +96,8 @@ enum JitBackend {
 extern JIT_EXPORT void
 jit_init(uint32_t backends JIT_DEF((1u << (uint32_t) JitBackend::CUDA) |
                                    (1u << (uint32_t) JitBackend::LLVM) |
-                                   (1u << (uint32_t) JitBackend::Metal)));
+                                   (1u << (uint32_t) JitBackend::Metal) |
+                                   (1u << (uint32_t) JitBackend::AMD)));
 
 /**
  * \brief Launch an asynchronous thread that will execute jit_init() and
@@ -113,7 +119,8 @@ jit_init(uint32_t backends JIT_DEF((1u << (uint32_t) JitBackend::CUDA) |
 extern JIT_EXPORT void
 jit_init_async(uint32_t backends JIT_DEF((1u << (uint32_t) JitBackend::CUDA) |
                                          (1u << (uint32_t) JitBackend::LLVM) |
-                                         (1u << (uint32_t) JitBackend::Metal)));
+                                         (1u << (uint32_t) JitBackend::Metal) |
+                                         (1u << (uint32_t) JitBackend::AMD)));
 
 /// Check whether the LLVM backend was successfully initialized
 extern JIT_EXPORT int jit_has_backend(JIT_ENUM JitBackend backend);
@@ -442,7 +449,7 @@ extern JIT_EXPORT void *jit_malloc(JIT_ENUM JitBackend backend, size_t size,
  * synchronous and behaves like ``free()`` — the buffer is placed back into
  * Dr.Jit's internal allocation cache and is immediately available for reuse.
  *
- * For all other backends (LLVM, CUDA, Metal), pending kernels may still
+ * For all other backends (LLVM, CUDA, AMD, Metal), pending kernels may still
  * reference the buffer. The release is therefore *scheduled*: the buffer is
  * only returned to the allocation cache once the work preceding it has
  * completed.

@@ -20,11 +20,18 @@ option(DRJIT_CORE_ENABLE_TESTS "Build Dr.Jit-Core test suite?" OFF)
 if (NOT APPLE)
   option(DRJIT_ENABLE_CUDA  "Enable the NVIDIA CUDA backend?" ON)
   option(DRJIT_DYNAMIC_CUDA "Resolve CUDA dynamically at run time?" ON)
+  option(DRJIT_ENABLE_AMD   "Enable the AMD/HIP backend?" OFF)
+  set(DRJIT_HIPRT_ROOT "" CACHE PATH "Path to the HIPRT source/include root")
   option(DRJIT_ENABLE_OPTIX "Allow the use of OptiX ray tracing calls in kernels?" ON)
 endif()
 
 if (APPLE)
   option(DRJIT_ENABLE_METAL "Enable the Apple Metal backend?" ON)
+endif()
+
+if (DRJIT_ENABLE_OPTIX AND NOT DRJIT_ENABLE_CUDA)
+  message(STATUS "Dr.Jit-Core: disabling OptiX because CUDA is disabled.")
+  set(DRJIT_ENABLE_OPTIX OFF)
 endif()
 
 if (NOT MSVC)
@@ -71,6 +78,12 @@ if (DRJIT_ENABLE_CUDA)
   else()
     message(STATUS "Dr.Jit-Core: OptiX support disabled.")
   endif()
+endif()
+
+if (DRJIT_ENABLE_AMD)
+  message(STATUS "Dr.Jit-Core: AMD/HIP GPU backend enabled.")
+else()
+  message(STATUS "Dr.Jit-Core: AMD/HIP GPU backend disabled.")
 endif()
 
 if (DRJIT_ENABLE_METAL)
@@ -138,6 +151,18 @@ if (DRJIT_ENABLE_CUDA)
   )
 endif()
 
+if (DRJIT_ENABLE_AMD)
+  set(DRJIT_AMD_FILES
+    include/drjit-core/amd.h
+    src/amd_api.h
+    src/amd_core.cpp
+    src/amd_eval.cpp
+    src/amd_rt.h
+    src/amd_rt.cpp
+    src/amd_ts.h
+    src/amd_ts.cpp)
+endif()
+
 if (DRJIT_ENABLE_OPTIX)
   set(DRJIT_OPTIX_FILES
     src/optix.h
@@ -197,6 +222,9 @@ add_library(
 
   # CUDA backend, if enabled
   ${DRJIT_CUDA_FILES}
+
+  # AMD/HIP backend, if enabled
+  ${DRJIT_AMD_FILES}
 
   # OptiX backend, if enabled
   ${DRJIT_OPTIX_FILES}
@@ -321,6 +349,49 @@ else()
   find_package(CUDA REQUIRED)
   target_include_directories(drjit-core PRIVATE ${CUDA_INCLUDE_DIRS})
   target_link_libraries(drjit-core PRIVATE cuda)
+endif()
+
+if (DRJIT_ENABLE_AMD)
+  if (DEFINED ENV{ROCM_HOME})
+    list(APPEND CMAKE_PREFIX_PATH "$ENV{ROCM_HOME}" "$ENV{ROCM_HOME}/lib/cmake")
+  endif()
+  find_package(hip CONFIG REQUIRED)
+  find_package(hiprtc CONFIG REQUIRED)
+
+  if (NOT DRJIT_HIPRT_ROOT)
+    get_filename_component(DRJIT_HIPRT_ROOT_DEFAULT
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../../hiprt" ABSOLUTE)
+    if (IS_DIRECTORY "${DRJIT_HIPRT_ROOT_DEFAULT}/hiprt")
+      set(DRJIT_HIPRT_ROOT "${DRJIT_HIPRT_ROOT_DEFAULT}" CACHE PATH
+          "Path to the HIPRT source/include root" FORCE)
+    endif()
+  endif()
+
+  target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_AMD=1)
+  file(TO_CMAKE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/resources" DRJIT_CORE_RESOURCE_DIR_CMAKE)
+  target_compile_definitions(drjit-core PRIVATE
+    "DRJIT_CORE_RESOURCE_DIR=\"${DRJIT_CORE_RESOURCE_DIR_CMAKE}\"")
+  if (DRJIT_HIPRT_ROOT)
+    file(TO_CMAKE_PATH "${DRJIT_HIPRT_ROOT}" DRJIT_HIPRT_ROOT_CMAKE)
+    target_compile_definitions(drjit-core PRIVATE
+      "DRJIT_HIPRT_ROOT=\"${DRJIT_HIPRT_ROOT_CMAKE}\"")
+    target_include_directories(drjit-core PRIVATE "${DRJIT_HIPRT_ROOT}")
+
+    file(GLOB DRJIT_HIPRT_LIB
+      "${DRJIT_HIPRT_ROOT}/dist/bin/Release/hiprt*64.lib")
+    file(GLOB DRJIT_HIPRT_DLL
+      "${DRJIT_HIPRT_ROOT}/dist/bin/Release/hiprt*64.dll")
+    if (DRJIT_HIPRT_LIB AND DRJIT_HIPRT_DLL)
+      list(GET DRJIT_HIPRT_LIB 0 DRJIT_HIPRT_LIB_0)
+      list(GET DRJIT_HIPRT_DLL 0 DRJIT_HIPRT_DLL_0)
+      target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_HIPRT=1)
+      target_link_libraries(drjit-core PRIVATE "${DRJIT_HIPRT_LIB_0}")
+      add_custom_command(TARGET drjit-core POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+          "${DRJIT_HIPRT_DLL_0}" "$<TARGET_FILE_DIR:drjit-core>")
+    endif()
+  endif()
+  target_link_libraries(drjit-core PRIVATE hip::host hiprtc::hiprtc)
 endif()
 
 if (DRJIT_DYNAMIC_LLVM)

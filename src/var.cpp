@@ -717,8 +717,11 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     ThreadLocal &tl = jitc_thread_local();
 
     // Use the default backend if the variable doesn't specify one
-    if (unlikely(v.backend == (uint32_t) JitBackend::None))
+    if (unlikely(v.backend == (uint32_t) JitBackend::None)) {
         v.backend = (uint32_t) tl.def_backend;
+    } else {
+        tl.def_backend = (JitBackend) v.backend;
+    }
 
 #if defined(DRJIT_ENABLE_METAL)
     // Metal does not support double precision
@@ -745,6 +748,9 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
     switch ((JitBackend) v.backend) {
 #if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:  ts = tl.ts_cuda;  break;
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:   ts = tl.ts_amd;   break;
 #endif
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal: ts = tl.ts_metal; break;
@@ -1551,6 +1557,10 @@ uint32_t jitc_var_eval_force(uint32_t index, Variable &v_, void **ptr_out) {
 #if defined(DRJIT_ENABLE_CUDA)
         if (tl.ts_cuda)
             tl.ts_cuda->notify_init_undefined(result);
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        if (tl.ts_amd)
+            tl.ts_amd->notify_init_undefined(result);
 #endif
 #if defined(DRJIT_ENABLE_METAL)
         if (tl.ts_metal)

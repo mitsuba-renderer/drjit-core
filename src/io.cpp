@@ -77,6 +77,7 @@ static uint32_t compute_padding(const CacheFileHeader &header) {
 static const char *jitc_cache_suffix(JitBackend backend) {
     switch (backend) {
         case JitBackend::CUDA:  return "cuda";
+        case JitBackend::AMD:   return "amd";
         case JitBackend::Metal: return "metal";
         default:                return "llvm";
     }
@@ -85,6 +86,7 @@ static const char *jitc_cache_suffix(JitBackend backend) {
 static const wchar_t *jitc_cache_suffix_w(JitBackend backend) {
     switch (backend) {
         case JitBackend::CUDA:  return L"cuda";
+        case JitBackend::AMD:   return L"amd";
         case JitBackend::Metal: return L"metal";
         default:                return L"llvm";
     }
@@ -476,10 +478,24 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
     } else {
 #if defined(DRJIT_ENABLE_METAL)
         if ((state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0 &&
+            (state.backends & (1u << (uint32_t) JitBackend::AMD)) == 0 &&
             (state.backends & (1u << (uint32_t) JitBackend::Metal)) != 0) {
             // Metal kernel.
             extern void jitc_metal_kernel_free(Kernel &);
             jitc_metal_kernel_free(const_cast<Kernel &>(kernel));
+            return;
+        }
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        if ((state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0 &&
+            (state.backends & (1u << (uint32_t) JitBackend::Metal)) == 0 &&
+            (state.backends & (1u << (uint32_t) JitBackend::AMD)) != 0) {
+            // AMD/HIP kernel.
+            const AMDDevice &device = state.amd_devices.at(device_id);
+            hip_check(hipCtxSetCurrent(device.context));
+            if (kernel.amd.mod && !kernel.amd.hiprt_owned)
+                hip_check(hipModuleUnload(kernel.amd.mod));
+            free(kernel.data);
             return;
         }
 #endif

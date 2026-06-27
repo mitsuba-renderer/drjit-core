@@ -20,6 +20,9 @@
 #if defined(DRJIT_ENABLE_METAL)
 #  include "metal.h"
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+#  include "amd_api.h"
+#endif
 
 // Try to use huge pages for allocations > 2M (only on Linux)
 #if defined(__linux__)
@@ -132,6 +135,13 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
     }
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+    if (jitc_is_amd(backend)) {
+        ts = thread_state(backend);
+        device = ts->device;
+    }
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(backend)) {
         ts = thread_state(backend);
@@ -156,6 +166,25 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
             }
         }
     }
+
+#if defined(DRJIT_ENABLE_AMD)
+    if (!ptr && jitc_is_amd(backend) &&
+        state.alloc_allocated[(int) backend] > state.alloc_usage[(int) backend]) {
+        jitc_sync_thread(ts);
+
+        lock_guard guard(state.alloc_free_lock);
+        auto it = state.alloc_free.find(ai);
+
+        if (it != state.alloc_free.end()) {
+            std::vector<void *> &list = it.value();
+            if (!list.empty()) {
+                ptr = list.back();
+                list.pop_back();
+                descr = "reused after sync";
+            }
+        }
+    }
+#endif
 
     // Otherwise, allocate memory
     if (unlikely(!ptr)) {
@@ -187,6 +216,19 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
                         ret = cuMemAlloc((CUdeviceptr*) &ptr, size);
 
                     if (ret)
+                        ptr = nullptr;
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+                } else if (jitc_is_amd(backend)) {
+                    hipError_t ret;
+
+                    hip_check(hipCtxSetCurrent(ts->amd_context));
+                    if (shared)
+                        ret = hipHostMalloc(&ptr, size);
+                    else
+                        ret = hipMalloc(&ptr, size);
+
+                    if (ret != hipSuccess)
                         ptr = nullptr;
 #endif
                 }
@@ -273,6 +315,9 @@ void jitc_free(void *ptr) {
 #if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA: ts = tl.ts_cuda; break;
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD: ts = tl.ts_amd; break;
+#endif
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal: ts = tl.ts_metal; break;
 #endif
@@ -286,18 +331,27 @@ void jitc_free(void *ptr) {
     if (shared && !ts) // Leak shared allocation if Dr.Jit has already shut down
         return;
 
-    // A freed Metal buffer is not safe to reuse (by other threads) until the
-    // current thread has committed its command buffer, so park it until then
-    // (see ThreadState::free_next).
-    bool submit_deferred = !shared && backend == JitBackend::Metal && ts;
+    // Metal submits command buffers explicitly, so regular device allocations
+    // only become reusable once the current command buffer has been committed.
+    bool submit_deferred = !shared && ts && backend == JitBackend::Metal;
+
+    // HIP allocations are not stream-ordered by the Dr.Jit allocator. Return
+    // them to the cache from a stream callback so later reuse cannot race with
+    // already-queued kernels.
+    bool amd_deferred = !shared && ts && backend == JitBackend::AMD;
 
     // Free regular/host allocations immediately. Shared allocations are parked
     // until their GPU work completes; Metal device allocations until submission.
-    if (backend == JitBackend::None || (!shared && !submit_deferred)) {
+    if (backend == JitBackend::None ||
+        (!shared && !submit_deferred && !amd_deferred)) {
         jitc_malloc_release(info, ptr);
     } else {
         ThreadState *as = ts->actual_state();
-        (shared ? as->free_later : as->free_next).push_back({ info, ptr });
+        (shared || amd_deferred ? as->free_later : as->free_next)
+            .push_back({ info, ptr });
+
+        if (backend == JitBackend::AMD)
+            as->flush_deferred_free();
     }
 
     jitc_trace("jit_free(" DRJIT_PTR ", backend=%s, shared=%i, device=%i, size=%zu)",
@@ -422,6 +476,22 @@ void* jitc_malloc_migrate(void *ptr, JitBackend dst_backend, int move) {
         }
     }
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+    if (jitc_is_amd(gpu_backend)) {
+        hip_check(hipCtxSetCurrent(ts->amd_context));
+        if (src_backend == JitBackend::None) {
+            // Stage host -> device copies through a shared buffer
+            void *tmp = jitc_malloc(JitBackend::AMD, size, /*shared=*/true);
+            memcpy(tmp, ptr, size);
+            hip_check(hipMemcpyAsync(ptr_new, tmp, size, hipMemcpyDefault,
+                                     ts->amd_stream));
+            jitc_free(tmp);
+        } else {
+            hip_check(hipMemcpyAsync(ptr_new, ptr, size, hipMemcpyDefault,
+                                     ts->amd_stream));
+        }
+    }
+#endif
     (void) ts;
 
     if (move)
@@ -496,6 +566,22 @@ void jitc_flush_malloc_cache(bool warn) {
                 } else {
                     for (void *ptr : entries)
                         cuda_check(cuMemFree((CUdeviceptr) ptr));
+                }
+                continue;
+            }
+#endif
+
+#if defined(DRJIT_ENABLE_AMD)
+            if (jitc_is_amd(backend) &&
+                (state.backends & (1u << (uint32_t) JitBackend::AMD))) {
+                const AMDDevice &dev = state.amd_devices[device];
+                hip_check(hipCtxSetCurrent(dev.context));
+                if (shared) {
+                    for (void *ptr : entries)
+                        hip_check(hipHostFree(ptr));
+                } else {
+                    for (void *ptr : entries)
+                        hip_check(hipFree(ptr));
                 }
                 continue;
             }

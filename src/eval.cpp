@@ -591,6 +591,11 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         jitc_cuda_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
     else
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+    if (jitc_is_amd(backend))
+        jitc_amd_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
+    else
+#endif
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(backend))
         jitc_metal_assemble(ts, group, n_regs, (uint32_t) kernel_params.size());
@@ -746,6 +751,13 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                         ts, buffer.get(), buffer.size(), kernel_name, kernel);
                 #endif
             }
+        } else
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        if (jitc_is_amd(ts->backend)) {
+            ProfilerPhase profiler(profiler_region_backend_compile);
+            cache_hit = jitc_amd_compile(ts, buffer.get(), buffer.size(),
+                                         kernel_name, kernel);
         } else
 #endif
 #if defined(DRJIT_ENABLE_METAL)
@@ -1286,6 +1298,13 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         case JitBackend::CUDA:
             jitc_cuda_assemble_func(call, inst, in_size, in_align, out_size,
                                     out_align, n_regs);
+            break;
+#endif
+
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:
+            jitc_amd_assemble_func(call, inst, in_size, in_align, out_size,
+                                   out_align, n_regs);
             break;
 #endif
 

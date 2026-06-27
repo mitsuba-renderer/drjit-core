@@ -11,13 +11,22 @@
 #include "common.h"
 
 DEVICE FINLINE void store_cg(volatile uint64_t *ptr, uint64_t val) {
+#if defined(__HIP_PLATFORM_AMD__)
+    *ptr = val;
+    __threadfence();
+#else
     asm volatile("st.cg.u64 [%0], %1;" : : "l"(ptr), "l"(val));
+#endif
 }
 
 DEVICE FINLINE uint64_t load_cg(volatile uint64_t *ptr) {
+#if defined(__HIP_PLATFORM_AMD__)
+    return *ptr;
+#else
     uint64_t retval;
     asm volatile("ld.volatile.global.u64 %0, [%1];" : "=l"(retval) : "l"(ptr) : "memory");
     return retval;
+#endif
 }
 
 KERNEL void compress_small(const uint8_t *in, uint32_t *out, uint32_t size, uint32_t *count_out) {

@@ -19,6 +19,11 @@
 #  include "cuda_tex.h"
 #  include "cuda_green.h"
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+#  include <drjit-core/amd.h>
+#  include "amd_api.h"
+#  include "amd_rt.h"
+#endif
 #include "op.h"
 #include "call.h"
 #include "loop.h"
@@ -89,6 +94,15 @@ int jit_has_backend(JitBackend backend) {
 #if defined(DRJIT_ENABLE_CUDA)
             result = (state.backends & (1u << (uint32_t) JitBackend::CUDA))
                 && !state.devices.empty();
+#else
+            result = false;
+#endif
+            break;
+
+        case JitBackend::AMD:
+#if defined(DRJIT_ENABLE_AMD)
+            result = (state.backends & (1u << (uint32_t) JitBackend::AMD))
+                && !state.amd_devices.empty();
 #else
             result = false;
 #endif
@@ -371,6 +385,180 @@ void jit_cuda_set_target(uint32_t, uint32_t) { jit_cuda_unavailable(); }
 void *jit_cuda_lookup(const char *) { jit_cuda_unavailable(); return nullptr; }
 void jit_cuda_sync_stream(uintptr_t) { jit_cuda_unavailable(); }
 #endif
+
+// ==========================================================================
+//                          AMD-specific API
+// ==========================================================================
+
+int jit_amd_device_count() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    return (int) state.amd_devices.size();
+#else
+    return 0;
+#endif
+}
+
+void jit_amd_set_device(int device) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    jitc_amd_set_device(device);
+#else
+    (void) device;
+    jit_raise("jit_amd_set_device(): the AMD backend is not enabled in this "
+              "build of Dr.Jit.");
+#endif
+}
+
+int jit_amd_device() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    return thread_state(JitBackend::AMD)->device;
+#else
+    return -1;
+#endif
+}
+
+int jit_amd_device_raw() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    return thread_state(JitBackend::AMD)->amd_raw_device;
+#else
+    return -1;
+#endif
+}
+
+const char *jit_amd_arch() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    return thread_state(JitBackend::AMD)->amd_arch;
+#else
+    return nullptr;
+#endif
+}
+
+void *jit_amd_stream() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    return (void *) thread_state(JitBackend::AMD)->amd_stream;
+#else
+    return nullptr;
+#endif
+}
+
+void *jit_amd_context() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    return (void *) thread_state(JitBackend::AMD)->amd_context;
+#else
+    return nullptr;
+#endif
+}
+
+int jit_amd_runtime_version() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    return jitc_amd_runtime_version_v;
+#else
+    return 0;
+#endif
+}
+
+void jit_amd_sync_device() {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    jitc_amd_sync_device(thread_state(JitBackend::AMD));
+#endif
+}
+
+void jit_amd_sync_stream(uintptr_t stream) {
+#if defined(DRJIT_ENABLE_AMD)
+    return jitc_amd_sync_stream(stream);
+#else
+    (void) stream;
+    jit_raise("jit_amd_sync_stream(): the AMD backend is not enabled in this "
+              "build of Dr.Jit.");
+#endif
+}
+
+uint32_t jit_amd_configure_scene(void *scene, uint32_t geometry_types_mask) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    return jitc_amd_configure_scene(scene, geometry_types_mask);
+#else
+    (void) scene; (void) geometry_types_mask;
+    jit_raise("jit_amd_configure_scene(): AMD backend not enabled.");
+    return 0;
+#endif
+}
+
+uint32_t jit_amd_configure_scene_ex(
+        void *scene, void *func_table, uint32_t num_geom_types,
+        uint32_t num_ray_types, const char **intersect_function_names,
+        const char **filter_function_names, const char *device_source,
+        uint32_t geometry_types_mask) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    return jitc_amd_configure_scene_ex(
+        scene, func_table, num_geom_types, num_ray_types,
+        intersect_function_names, filter_function_names, device_source,
+        geometry_types_mask);
+#else
+    (void) scene; (void) func_table; (void) num_geom_types;
+    (void) num_ray_types; (void) intersect_function_names;
+    (void) filter_function_names; (void) device_source;
+    (void) geometry_types_mask;
+    jit_raise("jit_amd_configure_scene_ex(): AMD backend not enabled.");
+    return 0;
+#endif
+}
+
+void jit_amd_ray_trace(uint32_t n_args, uint32_t *args,
+                       uint32_t mask, uint32_t *out, uint32_t n_out,
+                       uint32_t scene, int shadow) {
+    lock_guard guard(state.lock);
+#if defined(DRJIT_ENABLE_AMD)
+    jitc_amd_ray_trace(n_args, args, mask, out, n_out, scene, shadow);
+#else
+    (void) n_args; (void) args; (void) mask; (void) out; (void) n_out;
+    (void) scene; (void) shadow;
+    jit_raise("jit_amd_ray_trace(): AMD backend not enabled.");
+#endif
+}
+
+uint32_t jit_amd_scene_owner_handle(uint32_t scene_index) {
+#if defined(DRJIT_ENABLE_AMD)
+    lock_guard guard(state.lock);
+    return jitc_amd_scene_owner_handle(scene_index);
+#else
+    (void) scene_index;
+    jit_raise("jit_amd_scene_owner_handle(): AMD backend not enabled.");
+    return 0;
+#endif
+}
+
+uint32_t jit_amd_scene_func_table_handle(uint32_t scene_index) {
+#if defined(DRJIT_ENABLE_AMD)
+    lock_guard guard(state.lock);
+    return jitc_amd_scene_func_table_handle(scene_index);
+#else
+    (void) scene_index;
+    jit_raise("jit_amd_scene_func_table_handle(): AMD backend not enabled.");
+    return 0;
+#endif
+}
+
+void jit_amd_scene_set_cleanup(uint32_t scene_index,
+                               void (*callback)(void *), void *payload) {
+#if defined(DRJIT_ENABLE_AMD)
+    lock_guard guard(state.lock);
+    AMDScene *scene = jitc_amd_get_scene(scene_index);
+    scene->cleanup = callback;
+    scene->cleanup_payload = payload;
+#else
+    (void) scene_index; (void) callback; (void) payload;
+#endif
+}
 
 void jit_llvm_set_thread_count(uint32_t size) {
     pool_set_size(nullptr, size);
@@ -675,8 +863,10 @@ int jit_var_device(uint32_t index) {
 }
 
 uint32_t jit_var_literal(JitBackend backend, VarType type, const void *value,
-                             size_t size, int eval) {
+                         size_t size, int eval) {
     lock_guard guard(state.lock);
+    if (backend != JitBackend::None)
+        default_backend = backend;
     return jitc_var_literal(backend, type, value, size, eval);
 }
 
@@ -1201,6 +1391,10 @@ void jit_eval() {
 #if defined(DRJIT_ENABLE_CUDA)
     if (tl.ts_cuda)
         jitc_eval(tl.ts_cuda);
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+    if (tl.ts_amd)
+        jitc_eval(tl.ts_amd);
 #endif
     if (tl.ts_llvm)
         jitc_eval(tl.ts_llvm);
@@ -2253,6 +2447,11 @@ JitEvent jit_event_create(JitBackend backend, int enable_timing) {
             return jitc_cuda_event_create(enable_timing);
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:
+            return jitc_amd_event_create(enable_timing);
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:
             return jitc_metal_event_create(enable_timing);
@@ -2278,6 +2477,12 @@ void jit_event_destroy(JitEvent event) {
 #if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             jitc_cuda_event_destroy(event);
+            break;
+#endif
+
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:
+            jitc_amd_event_destroy(event);
             break;
 #endif
 
@@ -2311,6 +2516,12 @@ void jit_event_record(JitEvent event) {
             break;
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:
+            jitc_amd_event_record(event);
+            break;
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:
             jitc_metal_event_record(event);
@@ -2339,6 +2550,11 @@ int jit_event_query(JitEvent event) {
             return jitc_cuda_event_query(event);
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:
+            return jitc_amd_event_query(event);
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:
             return jitc_metal_event_query(event);
@@ -2364,6 +2580,12 @@ void jit_event_wait(JitEvent event) {
 #if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             jitc_cuda_event_wait(event);
+            break;
+#endif
+
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:
+            jitc_amd_event_wait(event);
             break;
 #endif
 
@@ -2400,6 +2622,11 @@ float jit_event_elapsed_time(JitEvent start, JitEvent end) {
             return jitc_cuda_event_elapsed_time(start, end);
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:
+            return jitc_amd_event_elapsed_time(start, end);
+#endif
+
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:
             jitc_raise("jit_event_elapsed_time(): event timing is not "
@@ -2425,6 +2652,11 @@ void* jit_event_handle(JitEvent event) {
 #if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
             return (void*)e->cuda_event;
+#endif
+
+#if defined(DRJIT_ENABLE_AMD)
+        case JitBackend::AMD:
+            return (void*) e->amd_event;
 #endif
 
 #if defined(DRJIT_ENABLE_METAL)

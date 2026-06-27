@@ -2535,6 +2535,18 @@ struct DisabledThreadState final : ThreadState {
         this->memory_pool        = internal->memory_pool;
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+        this->amd_raw_device        = internal->amd_raw_device;
+        this->amd_device            = internal->amd_device;
+        this->amd_context           = internal->amd_context;
+        this->amd_stream            = internal->amd_stream;
+        this->amd_event             = internal->amd_event;
+        this->amd_sync_stream_event = internal->amd_sync_stream_event;
+        this->amd_arch              = internal->amd_arch;
+        this->amd_wavefront_size    = internal->amd_wavefront_size;
+        this->amd_max_threads       = internal->amd_max_threads;
+#endif
+
         this->backend         = internal->backend;
         this->scope           = internal->scope;
         this->call_self_value = internal->call_self_value;
@@ -2717,6 +2729,21 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
     if (jitc_is_cuda(backend)) {
         thread_state_cuda = record_ts;
         set_disabled_thread_state(&thread_state_llvm, backend);
+#if defined(DRJIT_ENABLE_AMD)
+        set_disabled_thread_state(&thread_state_amd, backend);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+        set_disabled_thread_state(&thread_state_metal, backend);
+#endif
+    } else
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+    if (jitc_is_amd(backend)) {
+        thread_state_amd = record_ts;
+        set_disabled_thread_state(&thread_state_llvm, backend);
+#if defined(DRJIT_ENABLE_CUDA)
+        set_disabled_thread_state(&thread_state_cuda, backend);
+#endif
 #if defined(DRJIT_ENABLE_METAL)
         set_disabled_thread_state(&thread_state_metal, backend);
 #endif
@@ -2728,6 +2755,9 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
 #if defined(DRJIT_ENABLE_CUDA)
         set_disabled_thread_state(&thread_state_cuda, backend);
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+        set_disabled_thread_state(&thread_state_amd, backend);
+#endif
         set_disabled_thread_state(&thread_state_llvm, backend);
     } else
 #endif
@@ -2735,6 +2765,9 @@ void jitc_freeze_start(JitBackend backend, const uint32_t *inputs,
         thread_state_llvm = record_ts;
 #if defined(DRJIT_ENABLE_CUDA)
         set_disabled_thread_state(&thread_state_cuda, backend);
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        set_disabled_thread_state(&thread_state_amd, backend);
 #endif
 #if defined(DRJIT_ENABLE_METAL)
         set_disabled_thread_state(&thread_state_metal, backend);
@@ -2772,6 +2805,21 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
         if (jitc_is_cuda(backend)) {
             thread_state_cuda = internal;
             unset_disabled_thread_state(&thread_state_llvm);
+#if defined(DRJIT_ENABLE_AMD)
+            unset_disabled_thread_state(&thread_state_amd);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+            unset_disabled_thread_state(&thread_state_metal);
+#endif
+        } else
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        if (jitc_is_amd(backend)) {
+            thread_state_amd = internal;
+            unset_disabled_thread_state(&thread_state_llvm);
+#if defined(DRJIT_ENABLE_CUDA)
+            unset_disabled_thread_state(&thread_state_cuda);
+#endif
 #if defined(DRJIT_ENABLE_METAL)
             unset_disabled_thread_state(&thread_state_metal);
 #endif
@@ -2783,6 +2831,9 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
 #if defined(DRJIT_ENABLE_CUDA)
             unset_disabled_thread_state(&thread_state_cuda);
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+            unset_disabled_thread_state(&thread_state_amd);
+#endif
             unset_disabled_thread_state(&thread_state_llvm);
         } else
 #endif
@@ -2790,6 +2841,9 @@ Recording *jitc_freeze_stop(JitBackend backend, const uint32_t *outputs,
             thread_state_llvm = internal;
 #if defined(DRJIT_ENABLE_CUDA)
             unset_disabled_thread_state(&thread_state_cuda);
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+            unset_disabled_thread_state(&thread_state_amd);
 #endif
 #if defined(DRJIT_ENABLE_METAL)
             unset_disabled_thread_state(&thread_state_metal);
@@ -2836,6 +2890,21 @@ void jitc_freeze_abort(JitBackend backend) {
         if (jitc_is_cuda(backend)) {
             thread_state_cuda = internal;
             unset_disabled_thread_state(&thread_state_llvm);
+#if defined(DRJIT_ENABLE_AMD)
+            unset_disabled_thread_state(&thread_state_amd);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+            unset_disabled_thread_state(&thread_state_metal);
+#endif
+        } else
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+        if (jitc_is_amd(backend)) {
+            thread_state_amd = internal;
+            unset_disabled_thread_state(&thread_state_llvm);
+#if defined(DRJIT_ENABLE_CUDA)
+            unset_disabled_thread_state(&thread_state_cuda);
+#endif
 #if defined(DRJIT_ENABLE_METAL)
             unset_disabled_thread_state(&thread_state_metal);
 #endif
@@ -2847,6 +2916,9 @@ void jitc_freeze_abort(JitBackend backend) {
 #if defined(DRJIT_ENABLE_CUDA)
             unset_disabled_thread_state(&thread_state_cuda);
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+            unset_disabled_thread_state(&thread_state_amd);
+#endif
             unset_disabled_thread_state(&thread_state_llvm);
         } else
 #endif
@@ -2854,6 +2926,9 @@ void jitc_freeze_abort(JitBackend backend) {
             thread_state_llvm = internal;
 #if defined(DRJIT_ENABLE_CUDA)
             unset_disabled_thread_state(&thread_state_cuda);
+#endif
+#if defined(DRJIT_ENABLE_AMD)
+            unset_disabled_thread_state(&thread_state_amd);
 #endif
 #if defined(DRJIT_ENABLE_METAL)
             unset_disabled_thread_state(&thread_state_metal);

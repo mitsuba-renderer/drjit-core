@@ -194,17 +194,22 @@ __device__ void block_reduce(block_reduce_params params) {
         if ((tid & (WarpSize - 1)) == 0)
             shared[tid / Active] = value;
 
+        __syncthreads();
+
         // Most of the thread block can quit after this step
         if (tid >= BlockDim / Active)
             return;
 
         // Load the data right back
-        __syncthreads();
-
         value = shared[tid];
 
+        constexpr uint32_t ActiveMask =
+            BlockDim / Active >= WarpSize
+                ? WarpMask
+                : (uint32_t) ((1ull << (BlockDim / Active)) - 1ull);
+
         for (uint32_t k = 1; k < ReducedChunkSize; k *= 2)
-            value = red(value, __shfl_xor_sync(WarpMask, value, k, ReducedChunkSize));
+            value = red(value, __shfl_xor_sync(ActiveMask, value, k, ReducedChunkSize));
 
         // Different threads handle different chunks, and we moved their state around
         // Need to update the indices.

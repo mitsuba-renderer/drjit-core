@@ -403,6 +403,18 @@ public:
         this->memory_pool        = internal->memory_pool;
 #endif
 
+#if defined(DRJIT_ENABLE_AMD)
+        this->amd_raw_device        = internal->amd_raw_device;
+        this->amd_device            = internal->amd_device;
+        this->amd_context           = internal->amd_context;
+        this->amd_stream            = internal->amd_stream;
+        this->amd_event             = internal->amd_event;
+        this->amd_sync_stream_event = internal->amd_sync_stream_event;
+        this->amd_arch              = internal->amd_arch;
+        this->amd_wavefront_size    = internal->amd_wavefront_size;
+        this->amd_max_threads       = internal->amd_max_threads;
+#endif
+
         this->backend         = internal->backend;
         this->scope           = internal->scope;
         this->call_self_value = internal->call_self_value;

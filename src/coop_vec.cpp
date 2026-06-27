@@ -48,6 +48,10 @@ bool jitc_coop_vec_supported(JitBackend backend) {
 #else
     (void) backend;
 #endif
+#if defined(DRJIT_ENABLE_AMD)
+    if (jitc_is_amd(backend))
+        return false;
+#endif
     return true;
 }
 
@@ -64,9 +68,10 @@ uint32_t jitc_coop_vec_pack(uint32_t n, const uint32_t *in) {
 
     const Variable *arg_v = jitc_var(in[0]);
     if (!jitc_coop_vec_supported((JitBackend) arg_v->backend))
-        jitc_raise("jit_coop_vec_pack(): The use of cooperative vectors on "
-                   "the CUDA/OptiX backend requires CUDA 12.8 or newer "
-                   "(which corresponds to driver version R570+).");
+        jitc_raise("jit_coop_vec_pack(): cooperative vectors are not "
+                   "supported on this backend. CUDA requires CUDA 12.8 or "
+                   "newer via OptiX cooperative vectors; the AMD/HIP backend "
+                   "does not currently expose an equivalent HIPRT facility.");
 
     Variable v;
     v.kind = (uint32_t) VarKind::CoopVecPack;

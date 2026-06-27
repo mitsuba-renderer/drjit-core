@@ -3,13 +3,35 @@
 #include <stdint.h>
 #include <type_traits>
 #include <limits>
-#include <cuda_fp16.h>
+
+#if defined(__HIP_PLATFORM_AMD__)
+#  include <hip/hip_runtime.h>
+#  include <hip/hip_fp16.h>
+using half = __half;
+#else
+#  include <cuda_fp16.h>
+#endif
 
 #define KERNEL extern "C" __global__
 #define DEVICE __device__
 #define FINLINE __forceinline__
 #define WarpSize 32
-#define WarpMask 0xffffffff
+#define WarpMask 0xffffffffu
+
+#if defined(__HIP_PLATFORM_AMD__) && !defined(__grid_constant__)
+#  define __grid_constant__
+#endif
+
+#if defined(__HIP_PLATFORM_AMD__)
+#  define __ballot_sync(mask, pred) ((uint32_t) __ballot_sync((uint64_t) (mask), (pred)))
+#  define __any_sync(mask, pred) __any_sync((uint64_t) (mask), (pred))
+#  define __shfl_sync(mask, var, src_lane, ...) \
+    __shfl_sync((uint64_t) (mask), (var), (src_lane), ##__VA_ARGS__)
+#  define __shfl_down_sync(mask, var, delta, ...) \
+    __shfl_down_sync((uint64_t) (mask), (var), (delta), ##__VA_ARGS__)
+#  define __shfl_xor_sync(mask, var, lane_mask, ...) \
+    __shfl_xor_sync((uint64_t) (mask), (var), (lane_mask), ##__VA_ARGS__)
+#endif
 
 template <typename T> struct SharedMemory {
     __device__ inline static T *get() {
@@ -25,6 +47,51 @@ template <> struct SharedMemory<double> {
     }
 };
 
+
+#if defined(__HIP_PLATFORM_AMD__)
+
+DEVICE float fma_(float a, float b, float c) { return fmaf(a, b, c); }
+DEVICE double fma_(double a, double b, double c) { return fma(a, b, c); }
+DEVICE half fma_(half a, half b, half c) {
+    return (half) fmaf((float) a, (float) b, (float) c);
+}
+
+template <typename T> DEVICE T add_(T a, T b) { return a + b; }
+DEVICE half add_(half a, half b) {
+    return (half) ((float) a + (float) b);
+}
+
+template <typename T> DEVICE T mul_(T a, T b) { return a * b; }
+DEVICE half mul_(half a, half b) {
+    return (half) ((float) a * (float) b);
+}
+
+template <typename T> DEVICE T sub_(T a, T b) { return a - b; }
+DEVICE half sub_(half a, half b) {
+    return (half) ((float) a - (float) b);
+}
+
+DEVICE float max_(float a, float b) { return fmaxf(a, b); }
+DEVICE double max_(double a, double b) { return fmax(a, b); }
+DEVICE uint32_t max_(uint32_t a, uint32_t b) { return a > b ? a : b; }
+DEVICE uint64_t max_(uint64_t a, uint64_t b) { return a > b ? a : b; }
+DEVICE int32_t max_(int32_t a, int32_t b) { return a > b ? a : b; }
+DEVICE int64_t max_(int64_t a, int64_t b) { return a > b ? a : b; }
+DEVICE half max_(half a, half b) {
+    return (half) fmaxf((float) a, (float) b);
+}
+
+DEVICE float min_(float a, float b) { return fminf(a, b); }
+DEVICE double min_(double a, double b) { return fmin(a, b); }
+DEVICE uint32_t min_(uint32_t a, uint32_t b) { return a < b ? a : b; }
+DEVICE uint64_t min_(uint64_t a, uint64_t b) { return a < b ? a : b; }
+DEVICE int32_t min_(int32_t a, int32_t b) { return a < b ? a : b; }
+DEVICE int64_t min_(int64_t a, int64_t b) { return a < b ? a : b; }
+DEVICE half min_(half a, half b) {
+    return (half) fminf((float) a, (float) b);
+}
+
+#else
 
 DEVICE float fma_(float a, float b, float c) { return __fmaf_rn(a, b, c); }
 DEVICE double fma_(double a, double b, double c) { return __fma_rn(a, b, c); }
@@ -89,6 +156,8 @@ DEVICE half min_(half a, half b) {
         return (half) fminf((float) a, (float) b);
     #endif
 }
+
+#endif
 
 template <typename T> struct reduction_add {
     using Value = std::conditional_t<std::is_same<half, T>::value, float, T>;
@@ -177,6 +246,57 @@ __device__ Target memcpy_cast(Source source) {
 }
 
 /// Helper routines to write tagged values while bypassing the L1 cache
+#if defined(__HIP_PLATFORM_AMD__)
+
+__device__ void store_with_status(uint16_t *p, uint16_t value, uint32_t status) {
+    uint32_t v = ((uint32_t) value) | (((uint32_t) status) << 16);
+    *((volatile uint32_t *) p) = v;
+    __threadfence();
+}
+
+__device__ void store_with_status(uint32_t *p, uint32_t value, uint32_t status) {
+    uint64_t v = ((uint64_t) value) | (((uint64_t) status) << 32);
+    *((volatile uint64_t *) p) = v;
+    __threadfence();
+}
+
+__device__ void store_with_status(uint64_t *p, uint64_t value, uint32_t status) {
+    uint64_t status_shift = ((uint64_t) status) << 32,
+             v0 = uint32_t(value)  | status_shift,
+             v1 = (value >> 32)    | status_shift;
+    volatile uint64_t *q = (volatile uint64_t *) p;
+    q[0] = v0;
+    q[1] = v1;
+    __threadfence();
+}
+
+__device__ void load_with_status(volatile uint16_t *p, uint16_t &value, uint32_t &status) {
+    uint32_t v = *((volatile uint32_t *) p);
+    value = (uint16_t) v;
+    status = (uint32_t) (v >> 16);
+}
+
+__device__ void load_with_status(volatile uint32_t *p, uint32_t &value, uint32_t &status) {
+    uint64_t v = *((volatile uint64_t *) p);
+    value = (uint32_t) v;
+    status = (uint32_t) (v >> 32);
+}
+
+__device__ void load_with_status(volatile uint64_t *p, uint64_t &value, uint32_t &status) {
+    volatile uint64_t *q = (volatile uint64_t *) p;
+    uint64_t v0 = q[0], v1 = q[1];
+
+    uint32_t v0_lo = (uint32_t) v0,
+             v1_lo = (uint32_t) v1,
+             v0_hi = (uint32_t) (v0 >> 32),
+             v1_hi = (uint32_t) (v1 >> 32);
+
+    value = (uint64_t) v0_lo + (((uint64_t) v1_lo) << 32);
+    status = v0_hi == v1_hi ? v0_hi : 0;
+}
+
+#else
+
 __device__ void store_with_status(uint16_t *p, uint16_t value, uint32_t status) {
     uint32_t v = ((uint32_t) value) | (((uint32_t) status) << 16);
 
@@ -254,6 +374,8 @@ __device__ void load_with_status(volatile uint64_t *p, uint64_t &value, uint32_t
     status = v0_hi == v1_hi ? v0_hi : 0;
 }
 
+#endif
+
 
 // Vectorized types for 128 bit loads
 template <typename T> struct Vec2 {
@@ -291,9 +413,13 @@ struct divisor {
     uint32_t value;
 
     static __device__ uint32_t mulhi(uint32_t a, uint32_t b) {
+#if defined(__HIP_PLATFORM_AMD__)
+        return (uint32_t) (((uint64_t) a * (uint64_t) b) >> 32);
+#else
         uint32_t r;
         asm("mul.hi.u32 %0, %1, %2;" : "=r"(r) : "r"(a), "r"(b));
         return r;
+#endif
     }
 
     __device__ void div_rem(uint32_t input, uint32_t *out_div, uint32_t *out_rem) const {

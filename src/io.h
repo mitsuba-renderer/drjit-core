@@ -10,6 +10,9 @@
 #pragma once
 
 #include "hash.h"
+#if defined(DRJIT_ENABLE_AMD)
+#  include "amd_api.h"
+#endif
 
 using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, uint32_t thread_id, void **ptr);
 #if defined(DRJIT_ENABLE_CUDA)
@@ -104,6 +107,23 @@ struct Kernel {
             /// slot (even if call_table_vft is potentially NULL).
             bool has_call_table;
         } metal;
+#endif
+
+#if defined(DRJIT_ENABLE_AMD)
+        /// 5. AMD/HIP
+        struct {
+            /// Compiled HIP module
+            hipModule_t mod;
+
+            /// Main kernel entry point
+            hipFunction_t func;
+
+            /// Preferred block size
+            uint32_t block_size;
+
+            /// Module ownership remains with HIPRT's compiler cache
+            bool hiprt_owned;
+        } amd;
 #endif
     };
 };

@@ -22,12 +22,14 @@
 
 #include <cstdlib>
 #include <cstdint>
+#include <cstdio>
 #include <utility>
 #include <type_traits>
 #include <new>
 #include "macros.h"
 #if defined(_MSC_VER)
 #  include <cstring>
+#  include <intrin.h>
 #endif
 
 NAMESPACE_BEGIN(drjit)

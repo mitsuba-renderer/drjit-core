@@ -58,7 +58,7 @@ inline __device__ uint32_t reduce(uint32_t active, uint32_t value, uint32_t *buc
     offset = __shfl_sync(peers, offset, leader_idx);
 
     // Determine current thread's position within peer group
-    uint32_t rel_pos = __popc(peers << (32 - lane_idx));
+    uint32_t rel_pos = lane_idx ? __popc(peers << (32 - lane_idx)) : 0;
 
     return offset + rel_pos;
 }
@@ -82,7 +82,7 @@ inline __device__ uint32_t reduce_atomic(uint32_t active, uint32_t value, uint32
     offset = __shfl_sync(peers, offset, leader_idx);
 
     // Determine current thread's position within peer group
-    uint32_t rel_pos = __popc(peers << (32 - lane_idx));
+    uint32_t rel_pos = lane_idx ? __popc(peers << (32 - lane_idx)) : 0;
 
     return offset + rel_pos;
 }
@@ -312,7 +312,7 @@ KERNEL void block_mkperm_phase_3(uint32_t *buckets,
             offset = __shfl_sync(peers, offset, leader_idx);
 
             // Determine current thread's position within peer group
-            offset += __popc(peers << (32 - lane_idx));
+            offset += lane_idx ? __popc(peers << (32 - lane_idx)) : 0;
 
             offsets[offset] = make_uint4(i, offset_a, offset_b - offset_a, 0);
         }
