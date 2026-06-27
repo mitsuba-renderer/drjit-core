@@ -252,6 +252,10 @@ add_library(
 target_include_directories(drjit-core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
 target_include_directories(drjit-core PRIVATE ${CMAKE_CURRENT_BINARY_DIR})
 
+if (WIN32)
+  target_sources(drjit-core PRIVATE src/llvm_coff.cpp)
+endif()
+
 target_compile_features(drjit-core PUBLIC cxx_std_17)
 
 target_include_directories(drjit-core PRIVATE
@@ -325,6 +329,10 @@ endif()
 
 if (DRJIT_DYNAMIC_LLVM)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_DYNAMIC_LLVM=1)
+  if (WIN32)
+    find_package(LLVM REQUIRED)
+    target_include_directories(drjit-core PRIVATE ${LLVM_INCLUDE_DIRS})
+  endif()
 else()
   find_package(LLVM REQUIRED)
   target_include_directories(drjit-core PRIVATE ${LLVM_INCLUDE_DIRS})

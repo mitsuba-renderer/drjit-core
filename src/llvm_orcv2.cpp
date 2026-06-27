@@ -8,12 +8,16 @@ static LLVMOrcLLJITRef jitc_llvm_lljit = nullptr;
 static LLVMOrcJITDylibRef jitc_llvm_lljit_dylib = nullptr;
 extern LLVMTargetMachineRef jitc_llvm_tm;
 
+#if defined(_WIN32)
+extern "C" void jitc_llvm_set_coff_object_layer_flags(void *layer);
+#endif
+
 LLVMOrcObjectLayerRef oll_creator(void *, LLVMOrcExecutionSessionRef es, const char *) {
 #if defined(LLVM_VERSION_MAJOR) && LLVM_VERSION_MAJOR < 16
     (void) es;
     jitc_fail("OrcV2 interface is not usable in LLVM versions < 16");
 #else
-    return LLVMOrcCreateRTDyldObjectLinkingLayerWithMCJITMemoryManagerLikeCallbacks(
+    LLVMOrcObjectLayerRef layer = LLVMOrcCreateRTDyldObjectLinkingLayerWithMCJITMemoryManagerLikeCallbacks(
         es, nullptr,
         jitc_llvm_memmgr_create_context,
         jitc_llvm_memmgr_notify_terminating,
@@ -22,6 +26,12 @@ LLVMOrcObjectLayerRef oll_creator(void *, LLVMOrcExecutionSessionRef es, const c
         jitc_llvm_memmgr_finalize,
         jitc_llvm_memmgr_destroy
     );
+
+#if defined(_WIN32)
+    jitc_llvm_set_coff_object_layer_flags(layer);
+#endif
+
+    return layer;
 #endif
 }
 
