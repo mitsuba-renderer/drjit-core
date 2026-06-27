@@ -48,7 +48,7 @@ void jitc_cuda_render_array_read(Variable *v, Variable *source, Variable *mask,
     if (!mask->is_literal()) {
         if (is_bool)
             fmt("    mov.b16 %w0, 0;\n");
-        else if ((VarType) v->type == VarType::UInt8 || (VarType) v->type == VarType::Int8)
+        else if (jitc_is_b8((VarType) v->type))
             // There is no `mov.b8`
             fmt("    cvt.u8.u16 $v, 0;\n", v);
         else
