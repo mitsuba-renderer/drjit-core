@@ -429,7 +429,11 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                     "    setp.ne.u16 $v, %w0, 0;\n",
                     offset, v);
         } else if (v->is_literal()) {
-            fmt("    mov.$b $v, $l;\n", v, v, v);
+            // There is no `mov.b8`
+            if (jitc_is_b8((VarType) v->type))
+                fmt("    cvt.u8.u16 $v, $l;\n", v, v);
+            else
+                fmt("    mov.$b $v, $l;\n", v, v, v);
         } else {
             jitc_cuda_render(v);
         }
@@ -470,6 +474,21 @@ static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
     }
 }
 
+static void jitc_cuda_mov(const Variable *dst, const Variable *src) {
+    if (jitc_is_b8((VarType) dst->type))
+        fmt("    cvt.u16.u8 %w$u, $v;\n"
+            "    cvt.u8.u16 $v, %w$u;\n", src->reg_index, src, dst, src->reg_index);
+    else
+        fmt("    mov.$b $v, $v;\n", dst, dst, src);
+}
+
+static void jitc_cuda_mov_zero(const Variable *dst) {
+    if (jitc_is_b8((VarType) dst->type))
+        fmt("    cvt.u8.u16 $v, 0;\n", dst);
+    else
+        fmt("    mov.$b $v, 0;\n", dst, dst);
+}
+
 void jitc_cuda_render_loop_end(Variable *a0) {
     const LoopData *ld = (LoopData *) a0->data;
     uint32_t size = (uint32_t) ld->size;
@@ -503,9 +522,12 @@ void jitc_cuda_render_loop_end(Variable *a0) {
         if (in == out || !in->reg_index || !out->reg_index || out->scratch != 1)
             continue;
 
-        fmt("    .reg.$b $v_tmp;\n"
-            "    mov.$b $v_tmp, $v;\n",
-            out, out, out, out, out);
+        if (jitc_is_b8((VarType) out->type))
+            fmt("    cvt.u16.u8 %w$u, $v;\n", out->reg_index, out);
+        else
+            fmt("    .reg.$b $v_tmp;\n"
+                "    mov.$b $v_tmp, $v;\n",
+                out, out, out, out, out);
 
         // Mark that we have created a temporary
         out->scratch = 2;
@@ -518,10 +540,14 @@ void jitc_cuda_render_loop_end(Variable *a0) {
         if (in == out || !in->reg_index || !out->reg_index)
             continue;
 
-        if (out->scratch == 2)
-            fmt("    mov.$b $v, $v_tmp;\n", in, in, out);
-        else
-            fmt("    mov.$b $v, $v;\n", in, in, out);
+        if (out->scratch == 2) {
+            if (jitc_is_b8((VarType) in->type))
+                fmt("    cvt.u8.u16 $v, %w$u;\n", in, out->reg_index);
+            else
+                fmt("    mov.$b $v, $v_tmp;\n", in, in, out);
+        } else {
+            jitc_cuda_mov(in, out);
+        }
     }
 
     // Reset 'scratch' to not interfere with visited tracking in jit_eval()
@@ -1017,11 +1043,8 @@ static void jitc_cuda_render(Variable *v) {
                 if (is_masked) {
                     if (is_bool)
                         fmt("    mov.b16 %w0, 0;\n");
-                    else if ((VarType) v->type == VarType::UInt8 || (VarType) v->type == VarType::Int8)
-                        // There is no `mov.b8`
-                        fmt("    cvt.u8.u16 $v, 0;\n", v);
                     else
-                        fmt("    mov.$b $v, 0;\n", v, v);
+                        jitc_cuda_mov_zero(v);
                     fmt("    @$v ", a2);
                 } else {
                     put("    ");
@@ -1223,7 +1246,7 @@ static void jitc_cuda_render(Variable *v) {
 #endif
 
         case VarKind::Extract:
-            if (vt == VarType::UInt8 || vt == VarType::Int8) {
+            if (jitc_is_b8(vt)) {
                 fmt("    cvt.u16.u8 %w3, $v_out_$u;\n", a0, (uint32_t) v->literal);
                 fmt("    cvt.u8.u16 $v, %w3;\n", v);
             } else {
@@ -1242,7 +1265,7 @@ static void jitc_cuda_render(Variable *v) {
                         continue; // ignore eliminated loop state variables
 
                     if (inner_in->reg_index && outer_in->reg_index)
-                        fmt("    mov.$b $v, $v;\n", inner_in, inner_in, outer_in);
+                        jitc_cuda_mov(inner_in, outer_in);
 
                     if (outer_out && outer_out->reg_index && inner_in->reg_index)
                         outer_out->reg_index = inner_in->reg_index;
@@ -1290,7 +1313,7 @@ static void jitc_cuda_render(Variable *v) {
                              *vo  = jitc_var(cd->indices_out[i]);
                     if (!vo || !vo->reg_index)
                         continue;
-                    fmt("    mov.$b $v, $v;\n", vo, vo, vt2);
+                    jitc_cuda_mov(vo, vt2);
                 }
                 fmt("    bra l_$u_end;\n\n"
                     "l_$u_f:\n", a0->reg_index, a0->reg_index);
@@ -1304,7 +1327,7 @@ static void jitc_cuda_render(Variable *v) {
                              *vo = jitc_var(cd->indices_out[i]);
                     if (!vo || !vo->reg_index)
                         continue;
-                    fmt("    mov.$b $v, $v;\n", vo, vo, vf);
+                    jitc_cuda_mov(vo, vf);
                 }
                 fmt("\nl_$u_end:\n", a0->reg_index);
             }
@@ -1616,11 +1639,8 @@ void jitc_var_call_getter_assemble_cuda(Variable *v, const Variable *index,
     if (is_masked) {
         if (is_bool)
             fmt("    mov.b16 %w0, 0;\n");
-        else if ((VarType) v->type == VarType::UInt8 || (VarType) v->type == VarType::Int8)
-            // There is no `mov.b8`
-            fmt("    cvt.u8.u16 $v, 0;\n", v);
         else
-            fmt("    mov.$b $v, 0;\n", v, v);
+            jitc_cuda_mov_zero(v);
         fmt("    @$v ", mask);
     } else {
         put("    ");
@@ -1872,7 +1892,7 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
             const Variable *v = jitc_var(call->outer_out[i]);
             if (!v || !v->reg_index)
                 continue;
-            fmt("    mov.$b $v, 0;\n", v, v);
+            jitc_cuda_mov_zero(v);
         }
 
         fmt("\nl_done_$u:\n", call_reg);
