@@ -631,6 +631,9 @@ static void jitc_metal_render(Variable *v) {
             Variable *a = jitc_var(v->dep[0]);
             if ((VarType) v->type == VarType::Bool)
                 fmt("$t $v = !$v;\n", v, v, a);
+            else if (jitc_is_float(v))
+                fmt("$t $v = as_type<$t>(($b)(~as_type<$b>($v)));\n",
+                    v, v, v, v, v, a);
             else
                 fmt("$t $v = ~$v;\n", v, v, a);
             break;
