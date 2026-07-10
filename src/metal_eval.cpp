@@ -131,8 +131,8 @@ static bool jitc_metal_render_resource_handle(const Variable *v,
             } else {
                 bool curves = scene && (scene->geometry_types_mask & 0x4u) != 0;
                 tname = curves
-                    ? "raytracing::intersection_function_table<raytracing::triangle_data, raytracing::instancing, raytracing::curve_data>"
-                    : "raytracing::intersection_function_table<raytracing::triangle_data, raytracing::instancing>";
+                    ? "raytracing::intersection_function_table<raytracing::triangle_data, raytracing::instancing, raytracing::world_space_data, raytracing::curve_data>"
+                    : "raytracing::intersection_function_table<raytracing::triangle_data, raytracing::instancing, raytracing::world_space_data>";
             }
             break;
         }
@@ -962,7 +962,8 @@ static void jitc_metal_render(Variable *v) {
                 scene_local && (scene_local->geometry_types_mask & 0x8u) != 0;
             bool extended = has_ift_local || has_curves_local;
 
-            fmt("raytracing::intersector<raytracing::triangle_data, raytracing::instancing$s> _inter;\n",
+            fmt("raytracing::intersector<raytracing::triangle_data, raytracing::instancing$s$s> _inter;\n",
+                has_ift_local ? ", raytracing::world_space_data" : "",
                 has_curves_local ? ", raytracing::curve_data" : "");
 
             if (!extended)
