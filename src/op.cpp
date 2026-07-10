@@ -2016,6 +2016,12 @@ uint32_t jitc_var_gather(uint32_t src_, uint32_t index, uint32_t mask) {
                        "variable (r%u, kind=%s)!",
                        src_, var_kind_name[(int) src_v->kind]);
 
+        if (var_info.symbolic &&
+            !(jitc_flags() & (uint32_t) JitFlag::SymbolicScope))
+            jitc_raise(
+                "jit_var_gather(): input arrays are symbolic, but the "
+                "operation was issued outside of a symbolic recording session.");
+
         if (mask_v->is_literal() && mask_v->literal == 0) {
             var_info.type = src_info.type;
             result = jitc_make_zero(var_info);
