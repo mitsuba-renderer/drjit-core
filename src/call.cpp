@@ -1225,6 +1225,10 @@ void jitc_call_upload(ThreadState *ts) {
     base_src->data = buf;
     base_src->size = total;
 
+#ifndef NDEBUG
+    state.ptr_to_variable.insert({ base_src->data, call_buffer.base_src });
+#endif
+
     jitc_var(call_buffer.base_v)->literal = (uint64_t) (uintptr_t) buf;
 
     for (CallData *call : calls_assembled)
