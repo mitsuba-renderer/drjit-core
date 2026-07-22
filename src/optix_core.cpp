@@ -642,6 +642,7 @@ void jitc_optix_ray_trace(uint32_t n_args, uint32_t *args,
         switch (hit_object_fields[i]) {
             case OptixHitObjectField::IsHit:
             case OptixHitObjectField::InstanceId:
+            case OptixHitObjectField::InstanceIndex:
             case OptixHitObjectField::PrimitiveIndex:
                 field_type = VarType::UInt32;
                 break;
