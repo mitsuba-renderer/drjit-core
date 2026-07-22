@@ -1385,6 +1385,10 @@ static void jitc_cuda_render_trace_field(const Variable *v, uint32_t i,
             fmt("    call ($v_out_$u), _optix_hitobject_get_instance_id, ();\n", v, r);
             break;
 
+        case OptixHitObjectField::InstanceIndex:
+            fmt("    call ($v_out_$u), _optix_hitobject_get_instance_idx, ();\n", v, r);
+            break;
+
         case OptixHitObjectField::PrimitiveIndex:
             fmt("    call ($v_out_$u), _optix_hitobject_get_primitive_idx, ();\n", v, r);
             break;
