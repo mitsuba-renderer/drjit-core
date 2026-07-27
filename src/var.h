@@ -98,6 +98,9 @@ extern uint32_t jitc_var_mem_copy(JitBackend backend, VarType vtype,
 /// Duplicate a variable
 extern uint32_t jitc_var_copy(uint32_t index);
 
+/// Duplicate a variable into a memory region of its own
+extern uint32_t jitc_var_copy_opaque(uint32_t index);
+
 /// Create a resized copy of a variable
 extern uint32_t jitc_var_resize(uint32_t index, size_t size);
 

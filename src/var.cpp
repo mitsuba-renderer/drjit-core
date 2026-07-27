@@ -1913,6 +1913,44 @@ uint32_t jitc_var_copy(uint32_t index) {
     return result;
 }
 
+uint32_t jitc_var_copy_opaque(uint32_t index) {
+    if (index == 0)
+        return 0;
+
+    Variable *v = jitc_var(index);
+
+    if (unlikely(v->symbolic))
+        jitc_raise_symbolic_error("jitc_var_copy_opaque", index);
+
+    if (unlikely(v->consumed))
+        jitc_raise_consumed_error("jitc_var_copy_opaque", index);
+
+    // Materializing a literal or undefined variable already yields a fresh
+    // allocation, no further copy needed
+    if (v->is_literal() || v->is_undefined()) {
+        void *unused = nullptr;
+        return jitc_var_eval_force(index, *v, &unused);
+    }
+
+    // Evaluate 'index' itself rather than a duplicate of its computation
+    // graph, so that both it and the copy end up backed by memory
+    jitc_var_eval(index);
+
+    v = jitc_var(index);
+    JitBackend backend = (JitBackend) v->backend;
+    VarType vt = (VarType) v->type;
+    uint32_t size = v->size;
+    void *data = v->data;
+
+    uint32_t result = jitc_var_mem_copy(backend, vt, data, size,
+                                        /*from_host=*/false);
+
+    jitc_log(Debug, "jit_var_copy_opaque(): %s r%u[%u] = r%u",
+             type_name[(int) vt], result, size, index);
+
+    return result;
+}
+
 uint32_t jitc_var_shrink(uint32_t index, size_t size) {
     if (index == 0 || size == 0)
         return 0;

@@ -1156,6 +1156,18 @@ extern JIT_EXPORT void jit_var_scatter_cas(uint32_t *target,
 extern JIT_EXPORT uint32_t jit_var_copy(uint32_t index);
 
 /**
+ * \brief Copy the given variable into a memory region of its own
+ *
+ * Like \ref jit_var_copy(), but the result is guaranteed to be backed by
+ * device memory that is not shared with any other variable. Literal constants
+ * are materialized, and an unevaluated \c index is evaluated first so that the
+ * copy duplicates a memory region instead of extending the computation graph.
+ *
+ * The reference count of the returned copy is initialized to 1.
+ */
+extern JIT_EXPORT uint32_t jit_var_copy_opaque(uint32_t index);
+
+/**
  * Register an existing memory region as a variable in the JIT compiler, and
  * return its index. Its reference count is initialized to \c 1.
  *

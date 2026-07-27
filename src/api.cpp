@@ -1095,6 +1095,11 @@ uint32_t jit_var_copy(uint32_t index) {
     return jitc_var_copy(index);
 }
 
+uint32_t jit_var_copy_opaque(uint32_t index) {
+    lock_guard guard(state.lock);
+    return jitc_var_copy_opaque(index);
+}
+
 uint32_t jit_var_migrate(uint32_t index, JitBackend backend) {
     lock_guard guard(state.lock);
     return jitc_var_migrate(index, backend);
