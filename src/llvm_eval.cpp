@@ -1206,7 +1206,7 @@ static void jitc_llvm_render(Variable *v) {
                 for (size_t i = 0; i < cd->indices_t.size(); ++i) {
                     const Variable *vt = jitc_var(cd->indices_t[i]),
                                    *vo = jitc_var(cd->indices_out[i]);
-                    if (!vo || !vo->reg_index)
+                    if (!jitc_cond_output_active(vo))
                         continue;
                     fmt("    $v_$u_t = phi $T [ $v, %l_$u_t_trailer ], [ undef, %l_$u_start ]\n",
                         a0, (uint32_t) i, vt, vt, loop_reg, loop_reg);
@@ -1236,7 +1236,7 @@ static void jitc_llvm_render(Variable *v) {
                 for (size_t i = 0; i < cd->indices_t.size(); ++i) {
                     const Variable *vf = jitc_var(cd->indices_f[i]),
                                    *vo = jitc_var(cd->indices_out[i]);
-                    if (!vo || !vo->reg_index)
+                    if (!jitc_cond_output_active(vo))
                         continue;
                     fmt("    $v_$u_f = phi $T [ $v, %l_$u_f_trailer ], [ undef, %l_$u_next ]\n",
                         a0, (uint32_t) i, vf, vf, loop_reg, loop_reg);
@@ -1244,7 +1244,7 @@ static void jitc_llvm_render(Variable *v) {
 
                 for (size_t i = 0; i < cd->indices_t.size(); ++i) {
                     const Variable *vo = jitc_var(cd->indices_out[i]);
-                    if (!vo || !vo->reg_index)
+                    if (!jitc_cond_output_active(vo))
                         continue;
                     fmt("    $v = select $V, $T $v_$u_t, $T $v_$u_f\n",
                         vo, jitc_var(a0->dep[0]), vo, a0, (uint32_t) i, vo, a0, (uint32_t) i);

@@ -1461,6 +1461,11 @@ inline bool jitc_is_int(const Variable *v) { return jitc_is_int((VarType) v->typ
 inline bool jitc_is_void(const Variable *v) { return jitc_is_void((VarType) v->type); }
 inline bool jitc_is_bool(const Variable *v) { return jitc_is_bool((VarType) v->type); }
 
+/// Should the backend generate code producing the output \c v of a symbolic conditional?
+inline bool jitc_cond_output_active(const Variable *v) {
+    return v && v->reg_index && !v->is_evaluated();
+}
+
 inline bool jitc_is_zero(Variable *v) { return v->is_literal() && v->literal == 0; }
 inline bool jitc_is_any_zero(Variable *v) {
     if (!v->is_literal() && !v->is_coop_vec_literal())

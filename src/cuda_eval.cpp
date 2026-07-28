@@ -1311,7 +1311,7 @@ static void jitc_cuda_render(Variable *v) {
                 for (size_t i = 0; i < cd->indices_out.size(); ++i) {
                     Variable *vt2 = jitc_var(cd->indices_t[i]),
                              *vo  = jitc_var(cd->indices_out[i]);
-                    if (!vo || !vo->reg_index)
+                    if (!jitc_cond_output_active(vo))
                         continue;
                     jitc_cuda_mov(vo, vt2);
                 }
@@ -1325,7 +1325,7 @@ static void jitc_cuda_render(Variable *v) {
                 for (size_t i = 0; i < cd->indices_out.size(); ++i) {
                     Variable *vf = jitc_var(cd->indices_f[i]),
                              *vo = jitc_var(cd->indices_out[i]);
-                    if (!vo || !vo->reg_index)
+                    if (!jitc_cond_output_active(vo))
                         continue;
                     jitc_cuda_mov(vo, vf);
                 }

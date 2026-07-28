@@ -877,7 +877,7 @@ static void jitc_metal_render(Variable *v) {
             // Declare output variables before the if-statement
             for (size_t i = 0; i < cd->indices_out.size(); ++i) {
                 Variable *vo = jitc_var(cd->indices_out[i]);
-                if (vo && vo->reg_index)
+                if (jitc_cond_output_active(vo))
                     fmt("$t $v;\n", vo, vo);
             }
             fmt("if ($v) {\n", cond);
@@ -890,7 +890,7 @@ static void jitc_metal_render(Variable *v) {
             for (size_t i = 0; i < cd->indices_out.size(); ++i) {
                 Variable *vt = jitc_var(cd->indices_t[i]),
                          *vo = jitc_var(cd->indices_out[i]);
-                if (vo && vo->reg_index && vt->reg_index)
+                if (jitc_cond_output_active(vo) && vt->reg_index)
                     fmt("$v = $v;\n", vo, vt);
             }
             put("} else {\n");
@@ -903,7 +903,7 @@ static void jitc_metal_render(Variable *v) {
             for (size_t i = 0; i < cd->indices_out.size(); ++i) {
                 Variable *vf = jitc_var(cd->indices_f[i]),
                          *vo = jitc_var(cd->indices_out[i]);
-                if (vo && vo->reg_index && vf->reg_index)
+                if (jitc_cond_output_active(vo) && vf->reg_index)
                     fmt("$v = $v;\n", vo, vf);
             }
             put("}\n");
