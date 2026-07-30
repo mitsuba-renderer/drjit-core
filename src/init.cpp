@@ -567,6 +567,9 @@ void jitc_sync_thread(ThreadState *ts) {
         if (!task)
             return;
 
+        // Hold a reference for the duration of the wait.
+        task_retain(task);
+
         /* task_wait allows other tasks from the thread pool to be
          * started on this thread while we wait.
          *
@@ -585,6 +588,8 @@ void jitc_sync_thread(ThreadState *ts) {
             jitc_task = nullptr;
             task_release(task);
         }
+
+        task_release(task);
     }
 }
 
