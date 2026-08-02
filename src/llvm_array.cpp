@@ -257,11 +257,11 @@ void jitc_llvm_render_array_write(Variable *v, Variable *target,
                 v, value, ext, v, v);
         } else {
             fmt("    $v_5 = load $M, ptr $v_3, align $A\n"
-                "    $v_6 = select $V, $M $v$s, $V_5\n"
-                "    store $V_6, ptr $v_3, align $A\n",
+                "    $v_6 = select $V, $M $v$s, $M $v_5\n"
+                "    store $M $v_6, ptr $v_3, align $A\n",
                 v, v, v, v,
-                v, mask, v, value, ext, v,
-                v, v, v);
+                v, mask, v, value, ext, v, v,
+                v, v, v, v);
         }
     } else if (jitc_llvm_vector_width >= 8 && DRJIT_LLVM_OPTIMIZE_ARRAY_ACCESSES) {
         /// Check if the scatter can be reduced to a packet store
@@ -302,11 +302,11 @@ void jitc_llvm_render_array_write(Variable *v, Variable *target,
                 v, value, ext, v, v);
         } else {
             fmt("    $v_10 = load $M, ptr $v_8, align $A\n"
-                "    $v_11 = select $V, $M $v$s, $V_10\n"
-                "    store $V_11, ptr $v_8, align $A\n",
+                "    $v_11 = select $V, $M $v$s, $M $v_10\n"
+                "    store $M $v_11, ptr $v_8, align $A\n",
                 v, v, v, v,
-                v, mask, v, value, ext, v,
-                v, v, v);
+                v, mask, v, value, ext, v, v,
+                v, v, v, v);
         }
 
         fmt("    br label %l_$u_done\n\n", v->reg_index);
