@@ -763,6 +763,19 @@ static void jitc_cuda_render(Variable *v) {
                                     v, v, a0, a1);
             break;
 
+        case VarKind::Copysign:
+            // PTX only provides 'copysign' for single/double precision. Note
+            // that its operands are reversed with respect to the C convention.
+            if (jitc_is_half(v))
+                fmt("    .reg.$b $v_m, $v_s;\n"
+                    "    and.$b $v_m, $v, 0x7fff;\n"
+                    "    and.$b $v_s, $v, 0x8000;\n"
+                    "    or.$b $v, $v_m, $v_s;\n",
+                    v, v, v, v, v, a0, v, v, a1, v, v, v, v);
+            else
+                fmt("    copysign.$t $v, $v, $v;\n", v, v, a1, a0);
+            break;
+
         case VarKind::Ceil:
             fmt("    cvt.rpi.$t.$t $v, $v;\n", v, a0, v, a0);
             break;

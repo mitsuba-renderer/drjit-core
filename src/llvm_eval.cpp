@@ -754,6 +754,11 @@ static void jitc_llvm_render(Variable *v) {
             fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
             break;
 
+        case VarKind::Copysign:
+            fmt_intrinsic("declare $T @llvm.copysign.v$w$h($T, $T)", v, v, a0, a1);
+            fmt("    $v = call $T @llvm.copysign.v$w$h($V, $V)\n", v, v, v, a0, a1);
+            break;
+
         // An integer output type means a fused `ceil2int` and friends. The
         // `trunc2int` case needs no rounding, since `fptosi`/`fptoui` truncate.
         case VarKind::Ceil:

@@ -381,6 +381,10 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return steal(jit_var_max(a.m_index, b.m_index));
     }
 
+    friend JitArray copysign(const JitArray &a, const JitArray &b) {
+        return steal(jit_var_copysign(a.m_index, b.m_index));
+    }
+
     friend JitArray hsum(const JitArray &v) {
         return steal(jit_var_reduce(Backend, Type, ReduceOp::Add, v.m_index));
     }

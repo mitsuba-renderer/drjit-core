@@ -885,6 +885,43 @@ uint32_t jitc_var_max(uint32_t a0, uint32_t a1) {
 // --------------------------------------------------------------------------
 
 template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
+T eval_copysign(T v0, T v1) { return T(std::copysign(v0, v1)); }
+
+template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
+T eval_copysign(T, T) { jitc_fail("eval_copysign(): unsupported operands!"); }
+
+uint32_t jitc_var_copysign(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_copysign", a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_copysign(l0, l1); }, v0, v1);
+        else if (a0 == a1)
+            result = jitc_var_resize(a0, info.size);
+    }
+
+    // Integer types have no dedicated instruction, expand into a selection
+    if (!result && info.size && !jitc_is_float(info.type)) {
+        Ref zero = steal(jitc_make_zero(info)),
+            pos  = steal(jitc_var_abs(a0)),
+            neg  = steal(jitc_var_neg(pos)),
+            mask = steal(jitc_var_lt(a1, zero));
+        return jitc_var_select(mask, neg, pos);
+    }
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, VarKind::Copysign, info.type,
+                                     info.size, info.symbolic, a0, v0, a1, v1);
+
+    jitc_trace("jit_var_copysign(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+template <typename T, enable_if_t<drjit::detail::is_floating_point_v<T>> = 0>
 T eval_ceil(T value) { return T(std::ceil(value)); }
 
 template <typename T, enable_if_t<!drjit::detail::is_floating_point_v<T>> = 0>
@@ -3215,6 +3252,7 @@ uint32_t jitc_var_op(JitOp op, const uint32_t *dep) {
         case JitOp::Mod:     return jitc_var_mod(dep[0], dep[1]);
         case JitOp::Min:     return jitc_var_min(dep[0], dep[1]);
         case JitOp::Max:     return jitc_var_max(dep[0], dep[1]);
+        case JitOp::Copysign: return jitc_var_copysign(dep[0], dep[1]);
         case JitOp::Neg:     return jitc_var_neg(dep[0]);
         case JitOp::Not:     return jitc_var_not(dep[0]);
         case JitOp::Sqrt:    return jitc_var_sqrt(dep[0]);

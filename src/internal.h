@@ -63,6 +63,9 @@ enum class VarKind : uint32_t {
     // Minimum, maximum
     Min, Max,
 
+    // Magnitude of the first operand with the sign of the second one
+    Copysign,
+
     // Rounding operations
     Ceil, Floor, Round, Trunc,
 

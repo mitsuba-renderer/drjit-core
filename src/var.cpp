@@ -206,6 +206,9 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Minimum, maximum
     "min", "max",
 
+    // Magnitude of the first operand with the sign of the second one
+    "copysign",
+
     // Rounding operations
     "ceil", "floor", "round", "trunc",
 

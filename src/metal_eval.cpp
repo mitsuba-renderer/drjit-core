@@ -552,6 +552,8 @@ static void jitc_metal_render(Variable *v) {
         case VarKind::Min:  jitc_metal_render_call(v, "min",  2); break;
         case VarKind::Max:  jitc_metal_render_call(v, "max",  2); break;
 
+        case VarKind::Copysign: jitc_metal_render_call(v, "copysign", 2); break;
+
         // -- Rounding --
         case VarKind::Ceil:  jitc_metal_render_round(v, "ceil");  break;
         case VarKind::Floor: jitc_metal_render_round(v, "floor"); break;

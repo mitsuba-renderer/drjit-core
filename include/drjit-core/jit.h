@@ -668,6 +668,9 @@ enum class JitOp : uint32_t {
     // Minimum, maximum
     Min, Max,
 
+    // Magnitude of the first operand with the sign of the second one
+    Copysign,
+
     // Rounding operations
     Ceil, Floor, Round, Trunc,
 
@@ -701,8 +704,8 @@ enum class JitOp : uint32_t {
 #else
 enum JitOp {
     JitOpNeg, JitOpNot, JitOpSqrt, JitOpAbs, JitOpAdd, JitOpSub, JitOpMul,
-    JitOpDiv, JitOpMod, JitOpMulhi, JitOpFma, JitOpMin, JitOpMax, JitOpCeil,
-    JitOpFloor, JitOpRound, JitOpTrunc, JitOpEq, JitOpNeq, JitOpLt, JitOpLe,
+    JitOpDiv, JitOpMod, JitOpMulhi, JitOpFma, JitOpMin, JitOpMax, JitOpCopysign,
+    JitOpCeil, JitOpFloor, JitOpRound, JitOpTrunc, JitOpEq, JitOpNeq, JitOpLt, JitOpLe,
     JitOpGt, JitOpGe, JitOpSelect, JitOpPopc, JitOpClz, JitOpCtz, JitOpAnd,
     JitOpOr, JitOpXor, JitOpShl, JitOpShr, JitOpRcp, JitOpRsqrt, JitOpSin,
     JitOpCos, JitOpExp2, JitOpLog2, JitOpCount
@@ -779,6 +782,9 @@ extern JIT_EXPORT uint32_t jit_var_min(uint32_t a0, uint32_t a1);
 
 /// Compute `max(a0, a1)` and return a variable representing the result
 extern JIT_EXPORT uint32_t jit_var_max(uint32_t a0, uint32_t a1);
+
+/// Return the magnitude of `a0` combined with the sign of `a1`
+extern JIT_EXPORT uint32_t jit_var_copysign(uint32_t a0, uint32_t a1);
 
 /// Compute `ceil(a0)` and return a variable representing the result
 extern JIT_EXPORT uint32_t jit_var_ceil(uint32_t a0);

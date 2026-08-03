@@ -76,6 +76,9 @@ extern uint32_t jitc_var_fma(uint32_t a0, uint32_t a1, uint32_t a2);
 extern uint32_t jitc_var_min(uint32_t a0, uint32_t a1);
 extern uint32_t jitc_var_max(uint32_t a0, uint32_t a1);
 
+// Magnitude of the first operand with the sign of the second one
+extern uint32_t jitc_var_copysign(uint32_t a0, uint32_t a1);
+
 // Rounding operations
 extern uint32_t jitc_var_ceil(uint32_t a0);
 extern uint32_t jitc_var_floor(uint32_t a0);
