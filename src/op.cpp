@@ -2193,9 +2193,9 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
     if (n == 1)
         jitc_raise("jitc_var_gather_packet(): vector size of 1 is not supported!");
 
-    if (src_info.size % 2 != 0 && src_info.size != 1)
+    if (src_info.size % n != 0 && src_info.size != 1)
         jitc_raise("jitc_var_gather_packet(): source r%u has size %u, which is not "
-                   "divisible by %zu!", index, src_info.size, n);
+                   "divisible by %zu!", (uint32_t) src, src_info.size, n);
 
     // Go to the original if 'src' is wrapped into a loop state variable
     unwrap(src, src_v);
@@ -2204,7 +2204,8 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
 
     /// Revert to separate gathers in special various cases
     if (src_v->symbolic || // This will likely fail, let jitc_var_gather() generate an error
-        !(flags & (uint32_t) JitFlag::PacketOps) ||      // Packet gathers are disabled
+        !(flags & (uint32_t) JitFlag::PacketOps) ||         // Packet gathers are disabled
+        n % 2 != 0 ||                                       // Odd packet size
         (mask_v->is_literal() && mask_v->literal == 0) ||   // Masked load
         src_v->size == 1 ||                                 // Scalar load
         src_v->unaligned ||                                 // Source must be aligned
