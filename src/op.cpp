@@ -3045,6 +3045,10 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     const JitBackend backend = var_info.backend;
     VarType vt = (VarType) target_v->type;
 
+    // Go to the original if 'target' is wrapped into a loop state variable
+    unwrap(target, target_v);
+    target_ = target;
+
     // Flush any potential conflicting writes by evaluating the target before the scatter
     if (target_v->is_dirty() && op == ReduceOp::Identity
                              && mode != ReduceMode::Permute
@@ -3053,10 +3057,6 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         jitc_var_eval(target, raise_dirty_error);
         target_v = jitc_var(target);
     }
-
-    // Go to the original if 'target' is wrapped into a loop state variable
-    unwrap(target, target_v);
-    target_ = target;
 
     if (!jitc_can_scatter_reduce(backend, vt, op))
         jitc_raise(
@@ -3159,6 +3159,12 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
 
     // Potentially reduce to a sequence of scatters
     if (!use_packet_op) {
+        // The components write to disjoint addresses (i*n+k), and conflicts with
+        // prior writes were flushed above. Reductions must keep 'mode', which
+        // selects the atomic strategy.
+        ReduceMode sub_mode =
+            op == ReduceOp::Identity ? ReduceMode::NoConflicts : mode;
+
         for (size_t i = 0; i < n; ++i) {
             Ref index2 = steal(jitc_var_u32(backend, (uint32_t) i));
             Ref index3 = steal(jitc_var_fma(index, scale, index2));
@@ -3167,7 +3173,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
             if (index_t == target_)
                 target.reset();
 
-            target = steal(jitc_var_scatter(index_t, values[i], index3, mask, op, mode));
+            target = steal(jitc_var_scatter(index_t, values[i], index3, mask, op, sub_mode));
         }
         return target.release();
     }
