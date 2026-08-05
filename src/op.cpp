@@ -2718,13 +2718,12 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
             break;
 
         case VarType::Float32:
-            if (is_cuda && op != ReduceOp::Add)
-                return false;
+            // CUDA/Metal emulate float32 min/max using integer atomics
             break;
 
         case VarType::Float64:
-            // Double precision reductions require sm_60
-            if (is_cuda && (op != ReduceOp::Add || compute_capability < 60))
+            // Double precision addition requires sm_60, min/max are emulated
+            if (is_cuda && op == ReduceOp::Add && compute_capability < 60)
                 return false;
             break;
 

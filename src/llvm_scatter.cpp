@@ -54,6 +54,37 @@ static const char *jitc_llvm_atomicrmw_name(VarType vt, ReduceOp op) {
               (int) op, (int) vt);
 }
 
+/// Render the atomic update of ``%ptr_i`` by the value in ``src``.
+///
+/// Minimum/maximum reductions are monotone, so a relaxed load can rule out the
+/// atomic when it would not change the target. Control flow continues at
+/// ``next``.
+static std::string jitc_llvm_render_atomic(VarType vt, ReduceOp op,
+                                           const char *src, const char *next) {
+    const char *t = type_name_llvm[(int) vt];
+
+    std::string atomic = std::string("    atomicrmw ") +
+                         jitc_llvm_atomicrmw_name(vt, op) + " ptr %ptr_i, " + t +
+                         " " + src + " monotonic\n";
+
+    const char *cmp = nullptr;
+    if (op == ReduceOp::Min)
+        cmp = jitc_is_float(vt) ? "fcmp ole"
+                                : (jitc_is_sint(vt) ? "icmp sle" : "icmp ule");
+    else if (op == ReduceOp::Max)
+        cmp = jitc_is_float(vt) ? "fcmp oge"
+                                : (jitc_is_sint(vt) ? "icmp sge" : "icmp uge");
+
+    if (!cmp)
+        return atomic;
+
+    return std::string("    %cur = load atomic ") + t + ", ptr %ptr_i monotonic, align " +
+           std::to_string(type_size[(int) vt]) + "\n"
+           "    %skip = " + cmp + " " + t + " %cur, " + src + "\n"
+           "    br i1 %skip, label %" + next + ", label %do_atomic\n\n"
+           "do_atomic:\n" + atomic;
+}
+
 static drjit::tuple<const char *, const char *, const char *, const char *>
 jitc_llvm_vector_reduce_config(VarType vt, ReduceOp op) {
     const char *name = nullptr,
@@ -153,8 +184,8 @@ static const char *jitc_llvm_append_reduce_op_direct(VarType vt, ReduceOp op, co
              val_align = type_size[(int) vt],
              val_align_vec = val_align * jitc_llvm_vector_width;
 
-    const char *op_name = reduce_op_name[(int) op],
-               *atomicrmw_name = jitc_llvm_atomicrmw_name(vt, op);
+    const char *op_name = reduce_op_name[(int) op];
+    std::string atomic = jitc_llvm_render_atomic(vt, op, "%val_i", "loop_suffix");
 
     fmt_intrinsic(
         "define internal fastcc void @reduce_$s_$h_atomic(<$w x ptr> %ptr, $T %val, i$w %active) local_unnamed_addr #0 {\n"
@@ -176,7 +207,7 @@ static const char *jitc_llvm_append_reduce_op_direct(VarType vt, ReduceOp op, co
         "    %val_p = getelementptr inbounds [$w x $t], ptr %val_a, i32 0, i32 %index\n"
         "    %ptr_i = load ptr, ptr %ptr_p, align $u\n"
         "    %val_i = load $t, ptr %val_p, align $u\n"
-        "    atomicrmw $s ptr %ptr_i, $t %val_i monotonic\n"
+        "$s"
         "    br label %loop_suffix\n\n"
         "loop_suffix:\n"
         "    %index_next = add nuw nsw i32 %index, 1\n"
@@ -192,7 +223,7 @@ static const char *jitc_llvm_append_reduce_op_direct(VarType vt, ReduceOp op, co
         v, val_align_vec,
         v, ptr_align,
         v, val_align,
-        atomicrmw_name, v
+        atomic.c_str()
     );
 
     return "atomic"; // variant name
@@ -204,8 +235,9 @@ const char *jitc_llvm_append_reduce_op_local(VarType vt, ReduceOp op, const Vari
              shiftamt = log2i_ceil(type_size[(int) vt]);
 
     const char *op_name = reduce_op_name[(int) op],
-               *atomicrmw_name = jitc_llvm_atomicrmw_name(vt, op),
                *cmp_op = jitc_is_float(v) ? "fcmp one" : "icmp ne";
+
+    std::string atomic = jitc_llvm_render_atomic(vt, op, "%red_out", "do_scatter_end");
 
     auto [vector_reduce_name, vector_reduce_modifier, vector_reduce_identity,
           vector_reduce_identity_type]
@@ -261,11 +293,13 @@ const char *jitc_llvm_append_reduce_op_local(VarType vt, ReduceOp op, const Vari
         "    %ptr_diff = icmp ne <$w x i32> %ptrlo_8, %ptrlo_3\n"
         "    %red_in = select <$w x i1> %ptr_diff, $T %identity_1, $T %value\n"
         "    %red_out = call $s$t @llvm.vector.reduce.$s.v$w$h($s$T %red_in)\n"
-        "    atomicrmw $s ptr %ptr_i, $t %red_out monotonic\n"
+        "$s"
+        "    br label %do_scatter_end\n\n"
+        "do_scatter_end:\n"
         "    %active_next = and <$w x i1> %active, %ptr_diff\n"
         "    br label %loop_suffix\n\n"
         "loop_suffix:\n"
-        "    %active_final = phi <$w x i1> [ %active, %loop_body ], [ %active_next, %do_scatter ]\n"
+        "    %active_final = phi <$w x i1> [ %active, %loop_body ], [ %active_next, %do_scatter_end ]\n"
         "    %bit_1 = bitcast <$w x i1> %bit to i$w\n"
         "    %bit_2 = shl i$w %bit_1, 1\n"
         "    %bit_next = bitcast i$w %bit_2 to <$w x i1>\n"
@@ -284,7 +318,7 @@ const char *jitc_llvm_append_reduce_op_local(VarType vt, ReduceOp op, const Vari
         shiftamt,
         v, v,
         vector_reduce_modifier, v, vector_reduce_name, v, vector_reduce_identity, v,
-        atomicrmw_name, v
+        atomic.c_str()
     );
 
     return "atomic_local"; // variant name

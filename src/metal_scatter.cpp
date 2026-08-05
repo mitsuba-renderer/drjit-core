@@ -90,9 +90,15 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
     aggregate = aggregate && jitc_metal_can_reduce_local(vt, op);
 
     // Native atomics exist for 32-bit ints (add/min/max/and/or) and float32
-    // (add). float32 min/max fall back to a CAS loop.
+    // (add). float32 min/max are emulated using integer atomics.
     bool native = vt == VarType::Int32 || vt == VarType::UInt32 ||
                   (vt == VarType::Float32 && op == ReduceOp::Add);
+
+    if (!native && (vt != VarType::Float32 ||
+                    (op != ReduceOp::Min && op != ReduceOp::Max)))
+        jitc_fail("jitc_metal_emit_reduce_block(): unsupported type/operation "
+                  "combination (%s/%s).", type_name[(int) vt], op_name);
+
     const char *atomic_t = vt == VarType::Float32 ? "atomic_float"
                          : vt == VarType::Int32   ? "atomic_int"
                                                   : "atomic_uint";
@@ -156,24 +162,20 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
                 "wval$u, memory_order_relaxed);\n",
                 op_name, atomic_t, v0, ptr, index, i, i);
         } else {
-            // CAS loop fallback (float32 min/max).
+            // Reduce to an integer atomic, exploiting that IEEE-754 bit
+            // patterns order like signed integers when non-negative, and like
+            // unsigned integers in reverse otherwise.
             fmt("{\n"
-                "    device atomic_uint *_addr = (device atomic_uint*)((device $t*) $v + ($v + $u));\n"
-                "    uint _old = atomic_load_explicit(_addr, memory_order_relaxed);\n"
-                "    while (true) {\n",
-                v0, ptr, index, i);
-            if (op == ReduceOp::Min)
-                fmt("$t _new = min(as_type<$t>(_old), wval$u);\n", v0, v0, i);
-            else if (op == ReduceOp::Max)
-                fmt("$t _new = max(as_type<$t>(_old), wval$u);\n", v0, v0, i);
-            else
-                jitc_fail("jitc_metal_emit_reduce_block(): unsupported ReduceOp "
-                          "%s for the CAS fallback.", op_name);
-            put("        uint _expected = _old;\n"
-                "        if (atomic_compare_exchange_weak_explicit(_addr, &_expected, as_type<uint>(_new), memory_order_relaxed, memory_order_relaxed)) break;\n"
-                "        _old = _expected;\n"
-                "    }\n"
-                "}\n");
+                "    device $t *_addr = (device $t*) $v + ($v + $u);\n"
+                "    int _val = as_type<int>(wval$u);\n"
+                "    if (_val >= 0)\n"
+                "        atomic_fetch_$s_explicit((device atomic_int*) _addr, _val, memory_order_relaxed);\n"
+                "    else\n"
+                "        atomic_fetch_$s_explicit((device atomic_uint*) _addr, (uint) _val, memory_order_relaxed);\n"
+                "}\n",
+                v0, v0, ptr, index, i, i,
+                op == ReduceOp::Min ? "min" : "max",
+                op == ReduceOp::Min ? "max" : "min");
         }
     }
 

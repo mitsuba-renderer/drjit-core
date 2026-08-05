@@ -70,6 +70,41 @@ static void jitc_cuda_emit_warp_match(uint32_t shiftamt) {
         shiftamt);
 }
 
+/// NVIDIA hardware lacks floating point min/max atomics, emulate them
+bool jitc_cuda_atomic_minmax_emulated(VarType vt, ReduceOp op) {
+    return (vt == VarType::Float32 || vt == VarType::Float64) &&
+           (op == ReduceOp::Min || op == ReduceOp::Max);
+}
+
+/// Declare the temporaries used by ``jitc_cuda_render_atomic_minmax``
+void jitc_cuda_declare_atomic_minmax(VarType vt) {
+    fmt("        .reg .$s %red_val;\n"
+        "        .reg .pred %red_pos, %red_neg;\n",
+        vt == VarType::Float64 ? "b64" : "b32");
+}
+
+/// Reduce the float min/max atomic ``[%rd3+offset] <op>= %red_val`` to an
+/// integer one, exploiting that IEEE-754 bit patterns order like signed
+/// integers when non-negative, and like unsigned integers in reverse
+/// otherwise. If ``leader`` is set, the reduction is predicated on ``%leader``.
+void jitc_cuda_render_atomic_minmax(VarType vt, ReduceOp op, uint32_t offset,
+                                    bool leader) {
+    bool is64 = vt == VarType::Float64;
+    const char *st  = is64 ? "s64" : "s32",
+               *ut  = is64 ? "u64" : "u32",
+               *bop = leader ? ".and" : "",
+               *arg = leader ? ", %leader" : "";
+
+    fmt("        setp.ge$s.$s %red_pos, %red_val, 0$s;\n"
+        "        setp.lt$s.$s %red_neg, %red_val, 0$s;\n"
+        "        @%red_pos red.global.$s.$s [%rd3+$u], %red_val;\n"
+        "        @%red_neg red.global.$s.$s [%rd3+$u], %red_val;\n",
+        bop, st, arg,
+        bop, st, arg,
+        op == ReduceOp::Min ? "min" : "max", st, offset,
+        op == ReduceOp::Min ? "max" : "min", ut, offset);
+}
+
 const char *jitc_cuda_reduce_tp(VarType &vt, ReduceOp op) {
     if (op == ReduceOp::Add) {
         switch (vt) {
@@ -89,6 +124,10 @@ const char *jitc_cuda_reduce_tp(VarType &vt, ReduceOp op) {
 /// ``%rd3``.  Uses packet atomics if ``use_packet_atomics`` is set.
 void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values, VarType vt,
                                   ReduceOp op, bool use_packet_atomics) {
+    // Emulated float min/max atomics have no vectorized counterpart
+    bool emulated = jitc_cuda_atomic_minmax_emulated(vt, op);
+    use_packet_atomics &= !emulated;
+
     const char *tp      = jitc_cuda_reduce_tp(vt, op);
     const char *op_name = cuda_reduce_op_name[(int) op];
     const char *op_ftz  = op_name;
@@ -105,8 +144,11 @@ void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values, VarType vt
     if (is64)
         put("        .reg .b32 %q0l, %q0h, %q1l, %q1h;\n");
     fmt("        .reg .$s %q0_<$u>, %q1;\n"
-        "        .reg .pred %leader, %partial, %done, %valid, %rank_even, %unused;\n\n",
+        "        .reg .pred %leader, %partial, %done, %valid, %rank_even, %unused;\n",
         tp, n);
+    if (emulated)
+        jitc_cuda_declare_atomic_minmax(vt);
+    put("\n");
 
     for (uint32_t i = 0; i < n; ++i)
         fmt("        mov.$s %q0_$u, $v;\n", tp, i, jitc_var(values[i]));
@@ -184,7 +226,10 @@ void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values, VarType vt
     }
 
     for (uint32_t base = 0; base < n; base += per_atomic) {
-        if (per_atomic == 1) {
+        if (emulated) {
+            fmt("        mov.$b %red_val, %q0_$u;\n", jitc_var(values[base]), base);
+            jitc_cuda_render_atomic_minmax(vt, op, base * tsize, true);
+        } else if (per_atomic == 1) {
             fmt("        @%leader red.global.$s.$s [%rd3+$u], %q0_$u;\n",
                 op_name, tp, base * tsize, base);
         } else {
@@ -293,6 +338,12 @@ void jitc_cuda_render_scatter_reduce(const Variable *v,
                       cuda_reduce_op_name[(int) op]);
         }
 
+    } else if (jitc_cuda_atomic_minmax_emulated(vt, op)) {
+        put("    {\n");
+        jitc_cuda_declare_atomic_minmax(vt);
+        fmt("        mov.$b %red_val, $v;\n", value, value);
+        jitc_cuda_render_atomic_minmax(vt, op, 0, false);
+        put("    }\n");
     } else {
         fmt("    red.global.$s.$s [%rd3], $v;\n",
             op_name, tp, value);

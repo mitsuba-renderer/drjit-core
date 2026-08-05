@@ -227,6 +227,7 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
     }
 
     if (new_vector_ops_available &&
+        !jitc_cuda_atomic_minmax_emulated((VarType) v0->type, op) &&
         (v0->type == (uint32_t) VarType::Float16 ||
          v0->type == (uint32_t) VarType::Float32)) {
         // Try to reduce to the biggest of the following PTX operations
@@ -294,6 +295,26 @@ void jitc_cuda_render_scatter_reduce_packet(const Variable *v,
 
         fmt("    mad.wide.$t %rd3, $v, $u, $v;\n",
             index, index, tsize, ptr);
+
+        if (jitc_cuda_atomic_minmax_emulated(vt, op)) {
+            uint32_t uid = v->reg_index;
+            if (is_masked)
+                fmt("    @!$v bra l_packet_red_done_$u;\n", mask, uid);
+
+            put("    {\n");
+            jitc_cuda_declare_atomic_minmax(vt);
+            for (uint32_t i = 0; i < count; i++) {
+                fmt("        mov.$b %red_val, $v;\n", jitc_var(values[i]),
+                    jitc_var(values[i]));
+                jitc_cuda_render_atomic_minmax(vt, op, i * tsize, false);
+            }
+            put("    }\n");
+
+            if (is_masked)
+                fmt("\nl_packet_red_done_$u:\n", uid);
+            return;
+        }
+
         for (uint32_t i = 0; i < count; i++){
             if (is_masked)
                 fmt("    @$v ", mask);

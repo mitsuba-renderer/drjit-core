@@ -16,6 +16,13 @@ extern const char *cuda_reduce_op_name[];
 
 extern const char *jitc_cuda_reduce_tp(VarType &vt, ReduceOp op);
 
+extern bool jitc_cuda_atomic_minmax_emulated(VarType vt, ReduceOp op);
+
+extern void jitc_cuda_declare_atomic_minmax(VarType vt);
+
+extern void jitc_cuda_render_atomic_minmax(VarType vt, ReduceOp op,
+                                           uint32_t offset, bool leader);
+
 extern void jitc_cuda_render_scatter(const Variable *v, const Variable *ptr,
                                      const Variable *value,
                                      const Variable *index,
