@@ -734,7 +734,7 @@ static void jitc_llvm_render(Variable *v) {
 
         case VarKind::Min:
             if (jitc_is_float(v))
-                stmt = "minnum";
+                stmt = "minimum";
             else if (jitc_is_uint(v))
                 stmt = "umin";
             else
@@ -745,11 +745,18 @@ static void jitc_llvm_render(Variable *v) {
 
         case VarKind::Max:
             if (jitc_is_float(v))
-                stmt = "maxnum";
+                stmt = "maximum";
             else if (jitc_is_uint(v))
                 stmt = "umax";
             else
                 stmt = "smax";
+            fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
+            fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
+            break;
+
+        case VarKind::FMin:
+        case VarKind::FMax:
+            stmt = (VarKind) v->kind == VarKind::FMin ? "minnum" : "maxnum";
             fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
             fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
             break;

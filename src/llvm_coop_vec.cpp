@@ -204,8 +204,11 @@ void jitc_llvm_render_coop_vec(const Variable *v, const Variable *a0,
                     case JitOp::Add: op = is_float ? "fadd" : "add"; break;
                     case JitOp::Mul: op = is_float ? "fmul" : "mul"; break;
                     case JitOp::Sub: op = is_float ? "fsub" : "sub"; break;
-                    case JitOp::Min: op = is_float ? "minnum" : (is_sint ? "smin" : "umin"); is_intrinsic = true; break;
-                    case JitOp::Max: op = is_float ? "maxnum" : (is_sint ? "smax" : "umax"); is_intrinsic = true; break;
+                    // Cooperative vector min/max always ignore NaNs
+                    case JitOp::Min:
+                    case JitOp::FMin: op = is_float ? "minnum" : (is_sint ? "smin" : "umin"); is_intrinsic = true; break;
+                    case JitOp::Max:
+                    case JitOp::FMax: op = is_float ? "maxnum" : (is_sint ? "smax" : "umax"); is_intrinsic = true; break;
                     case JitOp::Step: op = is_float ? "fcmp olt" : "icmp lt"; break;
                     default:
                         jitc_fail("CoopVecBinaryOp: unsupported operation!");

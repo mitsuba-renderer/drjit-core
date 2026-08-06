@@ -117,8 +117,11 @@ void jitc_metal_render_coop_vec(const Variable *v, const Variable *a0,
                 }
 
                 case JitOp::Min:
-                case JitOp::Max: {
-                    const char *fn = (op == JitOp::Min) ? "min" : "max";
+                case JitOp::Max:
+                case JitOp::FMin:
+                case JitOp::FMax: {
+                    const char *fn =
+                        (op == JitOp::Min || op == JitOp::FMin) ? "min" : "max";
                     for (uint32_t i = 0; i < v->array_length; ++i)
                         fmt("$t $v_$u = $s($v_$u, $v_$u);\n",
                             v, v, i, fn, a0, i, a1, i);

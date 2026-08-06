@@ -203,8 +203,11 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Fused multiply-add (integers & floats)
     "fma",
 
-    // Minimum, maximum
+    // Minimum, maximum (NaN-propagating)
     "min", "max",
+
+    // Minimum, maximum (NaN-ignoring, floating point only)
+    "fmin", "fmax",
 
     // Magnitude of the first operand with the sign of the second one
     "copysign",

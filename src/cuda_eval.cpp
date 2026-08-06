@@ -468,10 +468,22 @@ static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
             return UINT_MAX;
         case VarKind::Min:
         case VarKind::Max:
+        case VarKind::FMin:
+        case VarKind::FMax:
             return 80;
         default:
             return 53;
     }
+}
+
+/// Bit pattern of a quiet NaN, for use with 'selp.$b'
+static inline const char *jitc_cuda_nan_str(const Variable *v) {
+    if (jitc_is_half(v))
+        return "0x7E00";
+    else if (jitc_is_single(v))
+        return "0x7FC00000";
+    else
+        return "0x7FF8000000000000";
 }
 
 static void jitc_cuda_mov(const Variable *dst, const Variable *src) {
@@ -752,16 +764,37 @@ static void jitc_cuda_render(Variable *v) {
             break;
 
         case VarKind::Min:
-            fmt(jitc_is_single(v) ? "    min.ftz.$t $v, $v, $v;\n"
-                                  : "    min.$t $v, $v, $v;\n",
-                                    v, v, a0, a1);
-            break;
+        case VarKind::Max: {
+            const char *fn = kind == VarKind::Min ? "min" : "max";
 
-        case VarKind::Max:
-            fmt(jitc_is_single(v) ? "    max.ftz.$t $v, $v, $v;\n"
-                                  : "    max.$t $v, $v, $v;\n",
-                                    v, v, a0, a1);
+            // PTX spells the NaN-propagating form 'min.NaN', which needs
+            // sm_80. It does not exist for double precision at all, so fall
+            // back to an explicit test in those cases. 'setp.nan' sets the
+            // predicate when either operand is a NaN.
+            if (!jitc_is_float(v))
+                fmt("    $s.$t $v, $v, $v;\n", fn, v, v, a0, a1);
+            else if (jitc_is_double(v) || ts->compute_capability < 80)
+                fmt("    .reg.pred $v_nan;\n"
+                    "    setp.nan.$t $v_nan, $v, $v;\n"
+                    "    $s$s.$t $v, $v, $v;\n"
+                    "    selp.$b $v, $s, $v, $v_nan;\n",
+                    v, v, v, a0, a1, fn, jitc_is_single(v) ? ".ftz" : "", v, v,
+                    a0, a1, v, v, jitc_cuda_nan_str(v), v, v);
+            else
+                fmt(jitc_is_single(v) ? "    $s.ftz.NaN.$t $v, $v, $v;\n"
+                                      : "    $s.NaN.$t $v, $v, $v;\n",
+                                        fn, v, v, a0, a1);
             break;
+        }
+
+        case VarKind::FMin:
+        case VarKind::FMax: {
+            const char *fn = kind == VarKind::FMin ? "min" : "max";
+            fmt(jitc_is_single(v) ? "    $s.ftz.$t $v, $v, $v;\n"
+                                  : "    $s.$t $v, $v, $v;\n",
+                                    fn, v, v, a0, a1);
+            break;
+        }
 
         case VarKind::Copysign:
             // PTX only provides 'copysign' for single/double precision. Note

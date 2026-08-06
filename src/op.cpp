@@ -285,6 +285,8 @@ bool needs_f32_upcast(OpInfo info, VarKind kind) {
             case VarKind::Fma:
             case VarKind::Min:
             case VarKind::Max:
+            case VarKind::FMin:
+            case VarKind::FMax:
 #if !defined(__aarch64__)
                 return true;
 #endif
@@ -826,19 +828,31 @@ uint32_t jitc_var_fma(uint32_t a0, uint32_t a1, uint32_t a2) {
 
 // --------------------------------------------------------------------------
 
+/// IEEE-754-2019 'minimum'/'maximum': a NaN operand makes the result NaN
+template <typename T> T eval_min(T v0, T v1) { return (v0 < v1 || v0 != v0) ? v0 : v1; }
+template <typename T> T eval_max(T v0, T v1) { return (v0 > v1 || v0 != v0) ? v0 : v1; }
+
+/// IEEE-754-2008 'minNum'/'maxNum': a NaN operand is ignored unless both are NaNs
+template <typename T> T eval_fmin(T v0, T v1) { return (v0 < v1 || v1 != v1) ? v0 : v1; }
+template <typename T> T eval_fmax(T v0, T v1) { return (v0 > v1 || v1 != v1) ? v0 : v1; }
+
 uint32_t jitc_var_min(uint32_t a0, uint32_t a1) {
     auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_min", a0, a1);
+
+    bool is_float = jitc_is_float(info.type);
 
     uint32_t result = 0;
     if (info.simplify) {
         if (info.literal)
             result = jitc_eval_literal(
-                info, [](auto l0, auto l1) { return std::min(l0, l1); }, v0, v1);
-        else if (jitc_is_max(v0) || jitc_is_min(v1))
-            result = jitc_var_resize(a1, info.size);
-        else if (jitc_is_max(v1) || jitc_is_min(v0))
-            result = jitc_var_resize(a0, info.size);
+                info, [](auto l0, auto l1) { return eval_min(l0, l1); }, v0, v1);
         else if (a0 == a1)
+            result = jitc_var_resize(a0, info.size);
+        // '+inf' is a neutral element, while '-inf' only absorbs the other
+        // operand when that one cannot be a NaN
+        else if (jitc_is_max(v0) || (!is_float && jitc_is_min(v1)))
+            result = jitc_var_resize(a1, info.size);
+        else if (jitc_is_max(v1) || (!is_float && jitc_is_min(v0)))
             result = jitc_var_resize(a0, info.size);
     }
 
@@ -858,16 +872,20 @@ uint32_t jitc_var_min(uint32_t a0, uint32_t a1) {
 uint32_t jitc_var_max(uint32_t a0, uint32_t a1) {
     auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_max", a0, a1);
 
+    bool is_float = jitc_is_float(info.type);
+
     uint32_t result = 0;
     if (info.simplify) {
         if (info.literal)
             result = jitc_eval_literal(
-                info, [](auto l0, auto l1) { return std::max(l0, l1); }, v0, v1);
-        else if (jitc_is_min(v0) || jitc_is_max(v1))
-            result = jitc_var_resize(a1, info.size);
-        else if (jitc_is_min(v1) || jitc_is_max(v0))
-            result = jitc_var_resize(a0, info.size);
+                info, [](auto l0, auto l1) { return eval_max(l0, l1); }, v0, v1);
         else if (a0 == a1)
+            result = jitc_var_resize(a0, info.size);
+        // '-inf' is a neutral element, while '+inf' only absorbs the other
+        // operand when that one cannot be a NaN
+        else if (jitc_is_min(v0) || (!is_float && jitc_is_max(v1)))
+            result = jitc_var_resize(a1, info.size);
+        else if (jitc_is_min(v1) || (!is_float && jitc_is_max(v0)))
             result = jitc_var_resize(a0, info.size);
     }
 
@@ -879,6 +897,75 @@ uint32_t jitc_var_max(uint32_t a0, uint32_t a1) {
                                      info.size, info.symbolic, a0, v0, a1, v1);
 
     jitc_trace("jit_var_max(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_fmin(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_fmin", a0, a1);
+
+    // Integers have no NaNs, in which case this is an ordinary minimum
+    if (!jitc_is_float(info.type))
+        return jitc_var_min(a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_fmin(l0, l1); }, v0, v1);
+        else if (a0 == a1)
+            result = jitc_var_resize(a0, info.size);
+        // '-inf' absorbs the other operand. '+inf' is not neutral here,
+        // since 'fmin(inf, nan)' is 'inf' rather than a NaN.
+        else if (jitc_is_min(v1))
+            result = jitc_var_resize(a1, info.size);
+        else if (jitc_is_min(v0))
+            result = jitc_var_resize(a0, info.size);
+    }
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::FMin))
+        return f32_binary_op(jitc_var_fmin, a0, a1, true);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, VarKind::FMin, info.type,
+                                     info.size, info.symbolic, a0, v0, a1, v1);
+
+    jitc_trace("jit_var_fmin(r%u <- r%u, r%u)", result, a0, a1);
+    return result;
+}
+
+// --------------------------------------------------------------------------
+
+uint32_t jitc_var_fmax(uint32_t a0, uint32_t a1) {
+    auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_fmax", a0, a1);
+
+    if (!jitc_is_float(info.type))
+        return jitc_var_max(a0, a1);
+
+    uint32_t result = 0;
+    if (info.simplify) {
+        if (info.literal)
+            result = jitc_eval_literal(
+                info, [](auto l0, auto l1) { return eval_fmax(l0, l1); }, v0, v1);
+        else if (a0 == a1)
+            result = jitc_var_resize(a0, info.size);
+        // '+inf' absorbs the other operand. '-inf' is not neutral here,
+        // since 'fmax(-inf, nan)' is '-inf' rather than a NaN.
+        else if (jitc_is_max(v1))
+            result = jitc_var_resize(a1, info.size);
+        else if (jitc_is_max(v0))
+            result = jitc_var_resize(a0, info.size);
+    }
+
+    if (!result && info.size && needs_f32_upcast(info, VarKind::FMax))
+        return f32_binary_op(jitc_var_fmax, a0, a1, true);
+
+    if (!result && info.size)
+        result = jitc_var_new_node_2(info.backend, VarKind::FMax, info.type,
+                                     info.size, info.symbolic, a0, v0, a1, v1);
+
+    jitc_trace("jit_var_fmax(r%u <- r%u, r%u)", result, a0, a1);
     return result;
 }
 
@@ -3258,6 +3345,8 @@ uint32_t jitc_var_op(JitOp op, const uint32_t *dep) {
         case JitOp::Mod:     return jitc_var_mod(dep[0], dep[1]);
         case JitOp::Min:     return jitc_var_min(dep[0], dep[1]);
         case JitOp::Max:     return jitc_var_max(dep[0], dep[1]);
+        case JitOp::FMin:    return jitc_var_fmin(dep[0], dep[1]);
+        case JitOp::FMax:    return jitc_var_fmax(dep[0], dep[1]);
         case JitOp::Copysign: return jitc_var_copysign(dep[0], dep[1]);
         case JitOp::Neg:     return jitc_var_neg(dep[0]);
         case JitOp::Not:     return jitc_var_not(dep[0]);

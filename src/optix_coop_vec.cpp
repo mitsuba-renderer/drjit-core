@@ -23,8 +23,10 @@ static uint32_t jitc_optix_coop_vec_op_id(JitOp op) {
         case JitOp::Exp2: return 0x2A21;
         case JitOp::Log2: return 0x2A22;
         case JitOp::Tanh: return 0x2A23;
-        case JitOp::Max: return 0x2A24;
-        case JitOp::Min: return 0x2A25;
+        case JitOp::Max:
+        case JitOp::FMax: return 0x2A24;
+        case JitOp::Min:
+        case JitOp::FMin: return 0x2A25;
         case JitOp::Fma: return 0x2A26;
         case JitOp::Mul: return 0x2A27;
         case JitOp::Add: return 0x2A28;

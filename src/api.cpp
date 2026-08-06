@@ -1738,6 +1738,16 @@ uint32_t jit_var_max(uint32_t a0, uint32_t a1) {
     return jitc_var_max(a0, a1);
 }
 
+uint32_t jit_var_fmin(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_fmin(a0, a1);
+}
+
+uint32_t jit_var_fmax(uint32_t a0, uint32_t a1) {
+    lock_guard guard(state.lock);
+    return jitc_var_fmax(a0, a1);
+}
+
 uint32_t jit_var_copysign(uint32_t a0, uint32_t a1) {
     lock_guard guard(state.lock);
     return jitc_var_copysign(a0, a1);

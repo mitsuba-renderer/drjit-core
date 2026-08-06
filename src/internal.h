@@ -60,8 +60,11 @@ enum class VarKind : uint32_t {
     // Fused multiply-add (integers & floats)
     Fma,
 
-    // Minimum, maximum
+    // Minimum, maximum (NaN-propagating)
     Min, Max,
+
+    // Minimum, maximum (NaN-ignoring, floating point only)
+    FMin, FMax,
 
     // Magnitude of the first operand with the sign of the second one
     Copysign,

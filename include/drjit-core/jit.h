@@ -665,8 +665,11 @@ enum class JitOp : uint32_t {
     // Fused multiply-add
     Fma,
 
-    // Minimum, maximum
+    // Minimum, maximum (NaN-propagating)
     Min, Max,
+
+    // Minimum, maximum (NaN-ignoring, floating point only)
+    FMin, FMax,
 
     // Magnitude of the first operand with the sign of the second one
     Copysign,
@@ -704,7 +707,8 @@ enum class JitOp : uint32_t {
 #else
 enum JitOp {
     JitOpNeg, JitOpNot, JitOpSqrt, JitOpAbs, JitOpAdd, JitOpSub, JitOpMul,
-    JitOpDiv, JitOpMod, JitOpMulhi, JitOpFma, JitOpMin, JitOpMax, JitOpCopysign,
+    JitOpDiv, JitOpMod, JitOpMulhi, JitOpFma, JitOpMin, JitOpMax, JitOpFMin,
+    JitOpFMax, JitOpCopysign,
     JitOpCeil, JitOpFloor, JitOpRound, JitOpTrunc, JitOpEq, JitOpNeq, JitOpLt, JitOpLe,
     JitOpGt, JitOpGe, JitOpSelect, JitOpPopc, JitOpClz, JitOpCtz, JitOpAnd,
     JitOpOr, JitOpXor, JitOpShl, JitOpShr, JitOpRcp, JitOpRsqrt, JitOpSin,
@@ -777,11 +781,19 @@ extern JIT_EXPORT uint32_t jit_var_mul_wide(uint32_t a0, uint32_t a1);
 /// Compute `a0 * a1 + a2` (fused) and return a variable representing the result
 extern JIT_EXPORT uint32_t jit_var_fma(uint32_t a0, uint32_t a1, uint32_t a2);
 
-/// Compute `min(a0, a1)` and return a variable representing the result
+/// Compute `min(a0, a1)` and return a variable representing the result. A NaN
+/// operand propagates to the output.
 extern JIT_EXPORT uint32_t jit_var_min(uint32_t a0, uint32_t a1);
 
-/// Compute `max(a0, a1)` and return a variable representing the result
+/// Compute `max(a0, a1)` and return a variable representing the result. A NaN
+/// operand propagates to the output.
 extern JIT_EXPORT uint32_t jit_var_max(uint32_t a0, uint32_t a1);
+
+/// Like `jit_var_min()`, but a NaN operand is ignored unless both are NaNs
+extern JIT_EXPORT uint32_t jit_var_fmin(uint32_t a0, uint32_t a1);
+
+/// Like `jit_var_max()`, but a NaN operand is ignored unless both are NaNs
+extern JIT_EXPORT uint32_t jit_var_fmax(uint32_t a0, uint32_t a1);
 
 /// Return the magnitude of `a0` combined with the sign of `a1`
 extern JIT_EXPORT uint32_t jit_var_copysign(uint32_t a0, uint32_t a1);
