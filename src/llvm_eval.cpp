@@ -755,10 +755,32 @@ static void jitc_llvm_render(Variable *v) {
             break;
 
         case VarKind::FMin:
-        case VarKind::FMax:
-            stmt = (VarKind) v->kind == VarKind::FMin ? "minnum" : "maxnum";
-            fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
-            fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
+        case VarKind::FMax: {
+                bool is_min = (VarKind) v->kind == VarKind::FMin,
+                     expand = false;
+
+#if !defined(__aarch64__)
+                // LLVM turns the 'minnum'/'maxnum' intrinsics into
+                // 'fminf'/'fmaxf' libcalls even when upcasting to float32.
+                // Provide an alternative equivalent instruction sequence that avoids this.
+                expand = jitc_is_half(v);
+#endif
+
+                if (expand) {
+                    fmt("    $v_0 = fcmp $s $V, $v\n"
+                        "    $v_1 = fcmp uno $V, $v\n"
+                        "    $v_2 = or <$w x i1> $v_0, $v_1\n"
+                        "    $v = select <$w x i1> $v_2, $V, $V\n",
+                        v, is_min ? "olt" : "ogt", a0, a1,
+                        v, a1, a1,
+                        v, v, v,
+                        v, v, a0, a1);
+                } else {
+                    stmt = is_min ? "minnum" : "maxnum";
+                    fmt_intrinsic("declare $T @llvm.$s.v$w$h($T, $T)", v, stmt, v, a0, a1);
+                    fmt("    $v = call $T @llvm.$s.v$w$h($V, $V)\n", v, v, stmt, v, a0, a1);
+                }
+            }
             break;
 
         case VarKind::Copysign:

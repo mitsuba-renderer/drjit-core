@@ -285,8 +285,6 @@ bool needs_f32_upcast(OpInfo info, VarKind kind) {
             case VarKind::Fma:
             case VarKind::Min:
             case VarKind::Max:
-            case VarKind::FMin:
-            case VarKind::FMax:
 #if !defined(__aarch64__)
                 return true;
 #endif
