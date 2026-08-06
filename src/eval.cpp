@@ -396,11 +396,15 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
     (void) timer();
 
-    // Set while scanning the schedule below if this kernel performs any
-    // indirect call (used further down to reserve the call base pointer).
-    // 'needs_call_buffer' additionally covers getters, which read from the same
-    // shared buffer but emit no visible function table.
-    bool has_call = false, needs_call_buffer = false;
+    // Set while scanning the schedule below if this kernel reads from the
+    // shared call buffer, which covers both indirect calls and getters (used
+    // further down to reserve the call base pointer).
+    bool needs_call_buffer = false;
+
+#if defined(DRJIT_ENABLE_METAL)
+    // Metal separately tracks calls that emit a visible function table
+    bool has_call = false;
+#endif
 
     for (uint32_t group_index = group.start; group_index != group.end; ++group_index) {
         ScheduledVariable &sv = schedule[group_index];
@@ -443,8 +447,11 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         v->reg_index = n_regs++;
 
         VarKind kind = (VarKind) v->kind;
-        has_call |= (kind == VarKind::Call);
         needs_call_buffer |= (kind == VarKind::Call || kind == VarKind::CallGetter);
+
+#if defined(DRJIT_ENABLE_METAL)
+        has_call |= (kind == VarKind::Call);
+#endif
 
         if (unlikely(kind == VarKind::Array ||
                      kind == VarKind::ArrayInit ||

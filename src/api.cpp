@@ -632,6 +632,11 @@ void jit_flush_kernel_cache() {
     jitc_flush_kernel_cache();
 }
 
+const char *jit_cache_dir() {
+    lock_guard guard(state.lock);
+    return jitc_cache_dir();
+}
+
 void *jit_malloc(JitBackend backend, size_t size, int shared) {
     lock_guard guard(state.lock);
     return jitc_malloc(backend, size, shared != 0);

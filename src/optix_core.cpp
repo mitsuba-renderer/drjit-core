@@ -65,15 +65,12 @@ OptixDeviceContext jitc_optix_context() {
 
         jitc_optix_check(optixDeviceContextCreate(ts->context, &ctx_opts, &ctx));
 
-#if !defined(_WIN32)
-        jitc_optix_check(optixDeviceContextSetCacheLocation(ctx, jitc_temp_path));
-#else
-        size_t len = wcstombs(nullptr, jitc_temp_path, 0) + 1;
-        std::unique_ptr<char[]> temp(new char[len]);
-        wcstombs(temp.get(), jitc_temp_path, len);
-        jitc_optix_check(optixDeviceContextSetCacheLocation(ctx, temp.get()));
-#endif
-        jitc_optix_check(optixDeviceContextSetCacheEnabled(ctx, 1));
+        /* OptiX keeps its own cache database alongside ours. When Dr.Jit has no
+           usable directory, leave it off rather than letting OptiX pick one. */
+        const char *cache_dir = jitc_cache_dir();
+        if (cache_dir)
+            jitc_optix_check(optixDeviceContextSetCacheLocation(ctx, cache_dir));
+        jitc_optix_check(optixDeviceContextSetCacheEnabled(ctx, cache_dir != nullptr));
     }
 
     // =====================================================

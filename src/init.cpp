@@ -47,12 +47,6 @@
 
 State state;
 
-#if !defined(_WIN32)
-  char* jitc_temp_path = nullptr;
-#else
-  wchar_t* jitc_temp_path = nullptr;
-#endif
-
 #if defined(_MSC_VER)
   __declspec(thread) ThreadLocal tls;
 #else
@@ -91,38 +85,8 @@ void jitc_init(uint32_t backends) {
     if ((backends & ~state.backends) == 0)
         return;
 
-#if !defined(_WIN32)
-    char temp_path[512];
-    snprintf(temp_path, sizeof(temp_path), "%s/.drjit", getenv("HOME"));
-    struct stat st = {};
-    int rv = stat(temp_path, &st);
-    size_t temp_path_size = (strlen(temp_path) + 1) * sizeof(char);
-    jitc_temp_path = (char*) malloc(temp_path_size);
-    memcpy(jitc_temp_path, temp_path, temp_path_size);
-#else
-    wchar_t temp_path_w[512];
-    char temp_path[512];
-    if (GetTempPathW(sizeof(temp_path_w) / sizeof(wchar_t), temp_path_w) == 0)
-        jitc_fail("jit_init(): could not obtain path to temporary directory!");
-    wcsncat(temp_path_w, L"drjit", sizeof(temp_path) / sizeof(wchar_t));
-    struct _stat st = {};
-    int rv = _wstat(temp_path_w, &st);
-    size_t temp_path_size = (wcslen(temp_path_w) + 1) * sizeof(wchar_t);
-    jitc_temp_path = (wchar_t*) malloc(temp_path_size);
-    memcpy(jitc_temp_path, temp_path_w, temp_path_size);
-    wcstombs(temp_path, temp_path_w, sizeof(temp_path));
-#endif
-
-    if (rv == -1) {
-        jitc_log(Info, "jit_init(): creating directory \"%s\" ..", temp_path);
-#if !defined(_WIN32)
-        if (mkdir(temp_path, 0700) == -1 && errno != EEXIST)
-#else
-        if (_wmkdir(temp_path_w) == -1 && errno != EEXIST)
-#endif
-            jitc_fail("jit_init(): creation of directory \"%s\" failed: %s",
-                temp_path, strerror(errno));
-    }
+    jitc_cache_init();
+    jitc_cache_sweep();
 
     // Enumerate CUDA devices and collect suitable ones
     jitc_log(Info, "jit_init(): detecting devices ..");
@@ -365,8 +329,7 @@ void jitc_shutdown(int light) {
 #endif
     }
 
-    free(jitc_temp_path);
-    jitc_temp_path = nullptr;
+    jitc_cache_shutdown();
 
     state.backends = 0;
 }

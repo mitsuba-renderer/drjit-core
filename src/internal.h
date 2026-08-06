@@ -1293,12 +1293,6 @@ inline bool jitc_log_active(LogLevel level) {
     return level <= state.log_level_combined;
 }
 
-#if !defined(_WIN32)
-  extern char *jitc_temp_path;
-#else
-  extern wchar_t *jitc_temp_path;
-#endif
-
 /// Initialize core data structures of the JIT compiler
 extern void jitc_init(uint32_t backends);
 

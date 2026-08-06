@@ -108,6 +108,18 @@ struct Kernel {
     };
 };
 
+/// Locate and prepare the kernel cache directory. Never fails, never throws.
+extern void jitc_cache_init();
+
+/// Forget the cache directory
+extern void jitc_cache_shutdown();
+
+/// Return the cache directory, or NULL when the on-disk cache is unavailable
+extern const char *jitc_cache_dir();
+
+/// Occasionally prune the kernel cache on a detached background thread
+extern void jitc_cache_sweep();
+
 // LZ4 compression dictionary
 static const int jitc_lz4_dict_size = 65536;
 extern char jitc_lz4_dict[];

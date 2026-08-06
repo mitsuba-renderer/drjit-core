@@ -469,6 +469,13 @@ extern JIT_EXPORT void jit_malloc_clear_statistics();
 /// Flush internal kernel cache
 extern JIT_EXPORT void jit_flush_kernel_cache();
 
+/**
+ * \brief Return the directory holding the on-disk kernel cache
+ *
+ * Returns \c NULL when the disk cache is disabled.
+ */
+extern JIT_EXPORT const char *jit_cache_dir();
+
 /// Query the device associated with a memory allocation made using \ref jit_malloc()
 extern JIT_EXPORT int jit_malloc_device(void *ptr);
 

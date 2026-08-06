@@ -239,6 +239,7 @@ void jitc_llvm_shutdown() {
             free(jitc_llvm_ones_str[i]);
         free(jitc_llvm_ones_str);
     }
+    jitc_llvm_ones_str = nullptr;
     if (jitc_llvm_ones_bit_str) {
         for (uint32_t i = 0; i < (uint32_t) VarType::Count; ++i)
             free(jitc_llvm_ones_bit_str[i]);
