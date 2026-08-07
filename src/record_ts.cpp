@@ -2678,10 +2678,10 @@ void unset_disabled_thread_state(ThreadState **tsp) {
 }
 
 /// Remove a recording thread state from the compaction registry
-static void jitc_record_ts_forget(ThreadState *ts) {
+static void jitc_record_ts_forget(ThreadState *rts) {
     std::vector<ThreadState *> &r = state.record_tss;
     for (size_t i = 0; i < r.size(); ++i) {
-        if (r[i] == ts) {
+        if (r[i] == rts) {
             r[i] = r.back();
             r.pop_back();
             return;

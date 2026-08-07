@@ -122,12 +122,12 @@ static XXH128_hash_t jitc_cache_checksum(const CacheFileHeader &header,
                                          const char *source,
                                          uint32_t source_size,
                                          const char *compressed) {
-    XXH3_state_t state;
-    XXH3_128bits_reset_withSeed(&state, DRJIT_CACHE_CHECKSUM_SEED);
-    XXH3_128bits_update(&state, &header, offsetof(CacheFileHeader, checksum));
-    XXH3_128bits_update(&state, source, source_size);
-    XXH3_128bits_update(&state, compressed, header.compressed_size);
-    return XXH3_128bits_digest(&state);
+    XXH3_state_t xxh_state;
+    XXH3_128bits_reset_withSeed(&xxh_state, DRJIT_CACHE_CHECKSUM_SEED);
+    XXH3_128bits_update(&xxh_state, &header, offsetof(CacheFileHeader, checksum));
+    XXH3_128bits_update(&xxh_state, source, source_size);
+    XXH3_128bits_update(&xxh_state, compressed, header.compressed_size);
+    return XXH3_128bits_digest(&xxh_state);
 }
 
 /// Path of the cache file holding a given kernel
