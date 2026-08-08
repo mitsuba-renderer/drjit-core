@@ -123,6 +123,8 @@ static XXH128_hash_t jitc_cache_checksum(const CacheFileHeader &header,
                                          uint32_t source_size,
                                          const char *compressed) {
     XXH3_state_t xxh_state;
+    xxh_state.seed = 0;
+    xxh_state.extSecret = nullptr;
     XXH3_128bits_reset_withSeed(&xxh_state, DRJIT_CACHE_CHECKSUM_SEED);
     XXH3_128bits_update(&xxh_state, &header, offsetof(CacheFileHeader, checksum));
     XXH3_128bits_update(&xxh_state, source, source_size);
