@@ -106,6 +106,9 @@ enum class OptixHitObjectField: uint32_t {
     /// Instance ID of the hit object if it is an instanced object [UInt32]
     InstanceId,
 
+    /// Zero-based index of the instance in the IAS [UInt32]
+    InstanceIndex,
+
     /// Index of the primitive that was hit, i.e triangle ID [UInt32]
     PrimitiveIndex,
 
@@ -146,6 +149,7 @@ enum class OptixHitObjectField: uint32_t {
 enum OptixHitObjectField {
     OptixHitObjectFieldIsHit,
     OptixHitObjectFieldInstanceId,
+    OptixHitObjectFieldInstanceIndex,
     OptixHitObjectFieldPrimitiveIndex,
     OptixHitObjectFieldSBTDataPointer,
     OptixHitObjectFieldRayTMax,
