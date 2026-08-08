@@ -2557,6 +2557,21 @@ extern JIT_EXPORT uint32_t jit_scope(JIT_ENUM JitBackend backend);
 /// Manually sets a scope identifier (see \ref jit_new_scope())
 extern JIT_EXPORT void jit_set_scope(JIT_ENUM JitBackend backend, uint32_t domain);
 
+/**
+ * \brief Temporarily leave any enclosing symbolic region
+ *
+ * This function can be used during symbolic tracing to enter a scope where side
+ * effects and evaluation are temporarily legal. This is useful for one-time
+ * initialization steps like initializing data structures accessed by symbolic
+ * code. The function returns a token that must be given to the `_scope_leave`
+ * counterpart). Both are no-ops if Dr.Jit is not tracing symbolic code.
+ */
+extern JIT_EXPORT uint32_t jit_eval_scope_enter(JIT_ENUM JitBackend backend);
+
+/// Undo the effect of \ref jit_eval_scope_enter(). A zero scope is a no-op.
+extern JIT_EXPORT void jit_eval_scope_leave(JIT_ENUM JitBackend backend,
+                                            uint32_t scope);
+
 // ====================================================================
 //                            Kernel History
 // ====================================================================

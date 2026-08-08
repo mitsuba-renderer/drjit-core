@@ -131,9 +131,41 @@ uint32_t jit_new_scope(JitBackend backend) {
     return jitc_new_scope(backend);
 }
 
+
 uint32_t jit_advance_scope(JitBackend backend, uint32_t n) {
     lock_guard guard(state.lock);
     return jitc_advance_scope(backend, n);
+}
+
+uint32_t jit_eval_scope_enter(JitBackend backend) {
+    if (!jitc_flag(JitFlag::SymbolicScope))
+        return 0;
+
+    lock_guard guard(state.lock);
+
+    // The scope ID obtained here is always >= 0
+    uint32_t scope = thread_state(backend)->scope;
+    jitc_new_scope(backend);
+    jitc_set_flag(JitFlag::SymbolicScope, false);
+
+    uint32_t mask = jitc_var_mask_default(backend, 1);
+    jitc_var_mask_push(backend, mask);
+    jitc_var_dec_ref(mask);
+
+    jitc_trace("jit_eval_scope_enter(%u)", scope);
+    return scope;
+}
+
+void jit_eval_scope_leave(JitBackend backend, uint32_t scope) {
+    if (scope == 0)
+        return;
+
+    lock_guard guard(state.lock);
+    jitc_trace("jit_eval_scope_leave(%u)", scope);
+
+    jitc_var_mask_pop(backend);
+    thread_state(backend)->scope = scope;
+    jitc_set_flag(JitFlag::SymbolicScope, true);
 }
 
 void jit_set_log_level_stderr(LogLevel level) {
