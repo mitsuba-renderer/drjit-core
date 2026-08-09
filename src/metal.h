@@ -91,9 +91,11 @@ extern void *jitc_metal_unregister_buffer(void *ptr);
 
 // ---------------------------------------------------------------------
 
-/// Compile a piece of MSL source code into a Kernel object
+/// Compile a piece of MSL source code into a Kernel object. Returns true when
+/// the kernel could be reconstructed from the disk cache in ``~/.drjit``.
 extern bool jitc_metal_kernel_compile(const char *source, size_t source_size,
-                                      const char *kernel_name, Kernel &kernel);
+                                      const char *kernel_name,
+                                      XXH128_hash_t hash, Kernel &kernel);
 
 /// Free a previously compiled Metal kernel.
 extern void jitc_metal_kernel_free(Kernel &kernel);

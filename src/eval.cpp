@@ -757,7 +757,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         if (jitc_is_metal(ts->backend)) {
             ProfilerPhase profiler(profiler_region_backend_compile);
             cache_hit = jitc_metal_kernel_compile(buffer.get(), buffer.size(),
-                                                  kernel_name, kernel);
+                                                  kernel_name, kernel_hash,
+                                                  kernel);
         } else
 #endif
         {

@@ -1,5 +1,5 @@
 /*
-    src/io.h -- Disk cache for LLVM/CUDA kernels
+    src/io.h -- Disk cache for compiled kernels
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -10,6 +10,8 @@
 #pragma once
 
 #include "hash.h"
+
+#include <vector>
 
 using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, uint32_t thread_id, void **ptr);
 #if defined(DRJIT_ENABLE_CUDA)
@@ -117,6 +119,9 @@ extern void jitc_cache_shutdown();
 /// Return the cache directory, or NULL when the on-disk cache is unavailable
 extern const char *jitc_cache_dir();
 
+/// Can new entries be added to the kernel cache?
+extern bool jitc_cache_writable();
+
 /// Occasionally prune the kernel cache on a detached background thread
 extern void jitc_cache_sweep();
 
@@ -134,6 +139,24 @@ extern bool jitc_kernel_load(const char *source, uint32_t source_size,
 extern bool jitc_kernel_write(const char *source, uint32_t source_size,
                               JitBackend backend, XXH128_hash_t hash,
                               const Kernel &kernel);
+
+#if defined(DRJIT_ENABLE_METAL)
+/* The Metal backend caches two artifacts per kernel: the compiled library image
+   (AIR, which Metal turns back into an ``MTLLibrary``) and a binary archive
+   holding the machine code of the pipeline. Both live in the payload region of
+   an ordinary cache entry. ``archive`` may be empty, in which case only the
+   front end of the compiler is bypassed on the next load. */
+
+extern bool jitc_kernel_load_metal(const char *source, uint32_t source_size,
+                                   XXH128_hash_t hash,
+                                   std::vector<uint8_t> &library,
+                                   std::vector<uint8_t> &archive);
+
+extern bool jitc_kernel_write_metal(const char *source, uint32_t source_size,
+                                    XXH128_hash_t hash,
+                                    const std::vector<uint8_t> &library,
+                                    const std::vector<uint8_t> &archive);
+#endif
 
 extern void jitc_kernel_free(int device_id, const Kernel &kernel);
 
