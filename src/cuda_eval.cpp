@@ -796,18 +796,34 @@ static void jitc_cuda_render(Variable *v) {
             break;
         }
 
-        case VarKind::Copysign:
-            // PTX only provides 'copysign' for single/double precision. Note
-            // that its operands are reversed with respect to the C convention.
-            if (jitc_is_half(v))
-                fmt("    .reg.$b $v_m, $v_s;\n"
-                    "    and.$b $v_m, $v, 0x7fff;\n"
-                    "    and.$b $v_s, $v, 0x8000;\n"
-                    "    or.$b $v, $v_m, $v_s;\n",
-                    v, v, v, v, v, a0, v, v, a1, v, v, v, v);
-            else
+        case VarKind::Copysign: {
+            // PTX only provides 'copysign' for single/double precision.
+            // Older OptiX versions fail to process this instruction (the CUDA
+            // 13.2 check is a conservative bound). In these cases, take the
+            // sign bit from a1 and everything else from a0 using bit-level
+            // arithmetic.
+            bool intrin = !jitc_is_half(v) &&
+                          (!uses_optix || jitc_cuda_version_major > 13 ||
+                           (jitc_cuda_version_major == 13 &&
+                            jitc_cuda_version_minor >= 2));
+            if (intrin) {
                 fmt("    copysign.$t $v, $v, $v;\n", v, v, a1, a0);
+            } else {
+                const char *mask;
+                if (jitc_is_half(v))
+                    mask = "0x8000";
+                else if (jitc_is_single(v))
+                    mask = "0x80000000";
+                else
+                    mask = "0x8000000000000000";
+                fmt("    .reg.$b $v_s;\n"
+                    "    xor.$b $v_s, $v, $v;\n"
+                    "    and.$b $v_s, $v_s, $s;\n"
+                    "    xor.$b $v, $v, $v_s;\n",
+                    v, v, v, v, a0, a1, v, v, v, mask, v, v, a0, v);
+            }
             break;
+        }
 
         case VarKind::Ceil:
             fmt("    cvt.rpi.$t.$t $v, $v;\n", v, a0, v, a0);
