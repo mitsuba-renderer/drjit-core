@@ -1201,6 +1201,59 @@ static void jitc_cuda_render(Variable *v) {
                     v, v, v, v, v, a0, a1);
             break;
 
+        case VarKind::TexLookupLod:
+        case VarKind::TexLookupGrad: {
+            // dep[0] = texture object pointer, dep[1] = optional active mask;
+            // the coordinates and LOD/gradient operands live in the payload
+            TexData *td = (TexData *) v->data;
+            Variable *c0 = jitc_var(td->indices[0]),
+                     *c1 = td->ndim >= 2 ? jitc_var(td->indices[1]) : nullptr,
+                     *c2 = td->ndim == 3 ? jitc_var(td->indices[2]) : nullptr;
+
+            fmt("    .reg.$t $v_out_<4>;\n", v, v);
+
+            if (a1 && !(a1->is_literal() && a1->literal == 1)) {
+                fmt("    mov.v4.$b {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, {0, 0, 0, 0};\n"
+                    "    @$v ",
+                    v, v, v, v, v, a1);
+            } else {
+                put("    ");
+            }
+
+            if ((VarKind) v->kind == VarKind::TexLookupLod) {
+                Variable *lod = jitc_var(td->values[0]);
+                if (c2)
+                    fmt("tex.level.3d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}], $v;\n",
+                        v, v, v, v, v, a0, c0, c1, c2, c2, lod);
+                else if (c1)
+                    fmt("tex.level.2d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}], $v;\n",
+                        v, v, v, v, v, a0, c0, c1, lod);
+                else
+                    fmt("tex.level.1d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}], $v;\n",
+                        v, v, v, v, v, a0, c0, lod);
+            } else {
+                // ddx per dimension first, then ddy; the 4-component forms
+                // pad with a repeated last entry like the coordinates
+                Variable *gx0 = jitc_var(td->values[0]),
+                         *gx1 = td->ndim >= 2 ? jitc_var(td->values[1]) : nullptr,
+                         *gx2 = td->ndim == 3 ? jitc_var(td->values[2]) : nullptr,
+                         *gy0 = jitc_var(td->values[td->ndim]),
+                         *gy1 = td->ndim >= 2 ? jitc_var(td->values[td->ndim + 1]) : nullptr,
+                         *gy2 = td->ndim == 3 ? jitc_var(td->values[td->ndim + 2]) : nullptr;
+                if (c2)
+                    fmt("tex.grad.3d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v, $v, $v}], {$v, $v, $v, $v}, {$v, $v, $v, $v};\n",
+                        v, v, v, v, v, a0, c0, c1, c2, c2,
+                        gx0, gx1, gx2, gx2, gy0, gy1, gy2, gy2);
+                else if (c1)
+                    fmt("tex.grad.2d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v, $v}], {$v, $v}, {$v, $v};\n",
+                        v, v, v, v, v, a0, c0, c1, gx0, gx1, gy0, gy1);
+                else
+                    fmt("tex.grad.1d.v4.$t.f32 {$v_out_0, $v_out_1, $v_out_2, $v_out_3}, [$v, {$v}], {$v}, {$v};\n",
+                        v, v, v, v, v, a0, c0, gx0, gy0);
+            }
+            break;
+        }
+
         case VarKind::TexFetchBilerp: {
             fmt("    .reg.f32 %f$u_out_<4>;\n",
                 v->reg_index);

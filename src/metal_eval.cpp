@@ -775,6 +775,8 @@ static void jitc_metal_render(Variable *v) {
                 (VarKind) src->kind == VarKind::ScatterCAS ||
                 (VarKind) src->kind == VarKind::PacketGather ||
                 (VarKind) src->kind == VarKind::TexLookup ||
+                (VarKind) src->kind == VarKind::TexLookupLod ||
+                (VarKind) src->kind == VarKind::TexLookupGrad ||
                 (VarKind) src->kind == VarKind::TexFetchBilerp) {
                 // Extract from a multi-output op — reference the pre-declared outputs
                 fmt("$t $v = $v_out_$u;\n",
@@ -1049,11 +1051,13 @@ static void jitc_metal_render(Variable *v) {
             break;
         }
 
-        case VarKind::TexLookup: {
+        case VarKind::TexLookup:
+        case VarKind::TexLookupLod:
+        case VarKind::TexLookupGrad: {
             // dep[0] = texture handle, dep[1] = sampler handle (both
             // reconstructed as reference variables in the input loop); the
-            // coordinates are carried in a side TexData payload. dep[2] is an
-            // optional active mask.
+            // coordinates and any LOD/gradient operands are carried in a side
+            // TexData payload. dep[2] is an optional active mask.
             Variable *tex_h = jitc_var(v->dep[0]);
             Variable *smp_h = jitc_var(v->dep[1]);
             Variable *mask  = v->dep[2] ? jitc_var(v->dep[2]) : nullptr;
@@ -1074,14 +1078,34 @@ static void jitc_metal_render(Variable *v) {
             if (ndim == 1)
                 // 1D is backed by a height-1 2D texture; sample the single row
                 // at its texel center (y = 0.5).
-                fmt("$v.sample($v, float2($v, 0.5f));\n", tex_h, smp_h, p0);
+                fmt("$v.sample($v, float2($v, 0.5f)", tex_h, smp_h, p0);
             else if (ndim == 2)
-                fmt("$v.sample($v, float2($v, $v));\n",
+                fmt("$v.sample($v, float2($v, $v)",
                     tex_h, smp_h, p0, jitc_var(td->indices[1]));
             else
-                fmt("$v.sample($v, float3($v, $v, $v));\n",
+                fmt("$v.sample($v, float3($v, $v, $v)",
                     tex_h, smp_h, p0, jitc_var(td->indices[1]),
                     jitc_var(td->indices[2]));
+
+            if ((VarKind) v->kind == VarKind::TexLookupLod) {
+                fmt(", level($v)", jitc_var(td->values[0]));
+            } else if ((VarKind) v->kind == VarKind::TexLookupGrad) {
+                // ddx per dimension first, then ddy. The derivatives along
+                // the promoted second axis of a 1D texture are zero.
+                if (ndim == 1)
+                    fmt(", gradient2d(float2($v, 0.f), float2($v, 0.f))",
+                        jitc_var(td->values[0]), jitc_var(td->values[1]));
+                else if (ndim == 2)
+                    fmt(", gradient2d(float2($v, $v), float2($v, $v))",
+                        jitc_var(td->values[0]), jitc_var(td->values[1]),
+                        jitc_var(td->values[2]), jitc_var(td->values[3]));
+                else
+                    fmt(", gradient3d(float3($v, $v, $v), float3($v, $v, $v))",
+                        jitc_var(td->values[0]), jitc_var(td->values[1]),
+                        jitc_var(td->values[2]), jitc_var(td->values[3]),
+                        jitc_var(td->values[4]), jitc_var(td->values[5]));
+            }
+            put(");\n");
 
             fmt("float $v_out_0 = $v_s.x;\n"
                 "float $v_out_1 = $v_s.y;\n"

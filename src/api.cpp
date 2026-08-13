@@ -1518,17 +1518,20 @@ static void jit_tex_unavailable(JitBackend backend) {
 
 void *jit_tex_create(JitBackend backend, size_t ndim, const size_t *shape,
                      size_t n_channels, int format, int filter_mode,
-                     int wrap_mode, int writable, int srgb) {
+                     int wrap_mode, int writable, int srgb, size_t n_levels,
+                     int mip_filter, size_t max_aniso) {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_CUDA)
     if (jitc_is_cuda(backend))
         return jitc_cuda_tex_create(ndim, shape, n_channels, format,
-                                    filter_mode, wrap_mode, writable, srgb);
+                                    filter_mode, wrap_mode, writable, srgb,
+                                    n_levels, mip_filter, max_aniso);
 #endif
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(backend))
         return jitc_metal_tex_create(ndim, shape, n_channels, format,
-                                     filter_mode, wrap_mode, writable, srgb);
+                                     filter_mode, wrap_mode, writable, srgb,
+                                     n_levels, mip_filter, max_aniso);
 #endif
     jit_tex_unavailable(backend);
     return nullptr;
@@ -1564,16 +1567,16 @@ void jit_tex_get_indices(const void *handle, uint32_t *indices) {
     jit_tex_unavailable(backend);
 }
 
-void jit_tex_memcpy_d2t(const void *src_ptr, void *dst_handle) {
+void jit_tex_memcpy_d2t(const void *src_ptr, void *dst_handle, size_t level) {
     lock_guard guard(state.lock);
     JitBackend backend = ((const TextureBase *) dst_handle)->backend;
 #if defined(DRJIT_ENABLE_CUDA)
     if (jitc_is_cuda(backend))
-        return jitc_cuda_tex_memcpy_d2t(src_ptr, dst_handle);
+        return jitc_cuda_tex_memcpy_d2t(src_ptr, dst_handle, level);
 #endif
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(backend))
-        return jitc_metal_tex_memcpy_d2t(src_ptr, dst_handle);
+        return jitc_metal_tex_memcpy_d2t(src_ptr, dst_handle, level);
 #endif
     jit_tex_unavailable(backend);
 }
@@ -1603,6 +1606,37 @@ void jit_tex_lookup(const void *handle, const uint32_t *pos, uint32_t active,
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(backend))
         return jitc_metal_tex_lookup(handle, pos, active, out);
+#endif
+    jit_tex_unavailable(backend);
+}
+
+void jit_tex_lookup_lod(const void *handle, const uint32_t *pos, uint32_t lod,
+                        uint32_t active, uint32_t *out) {
+    lock_guard guard(state.lock);
+    JitBackend backend = ((const TextureBase *) handle)->backend;
+#if defined(DRJIT_ENABLE_CUDA)
+    if (jitc_is_cuda(backend))
+        return jitc_cuda_tex_lookup_lod(handle, pos, lod, active, out);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (jitc_is_metal(backend))
+        return jitc_metal_tex_lookup_lod(handle, pos, lod, active, out);
+#endif
+    jit_tex_unavailable(backend);
+}
+
+void jit_tex_lookup_grad(const void *handle, const uint32_t *pos,
+                         const uint32_t *ddx, const uint32_t *ddy,
+                         uint32_t active, uint32_t *out) {
+    lock_guard guard(state.lock);
+    JitBackend backend = ((const TextureBase *) handle)->backend;
+#if defined(DRJIT_ENABLE_CUDA)
+    if (jitc_is_cuda(backend))
+        return jitc_cuda_tex_lookup_grad(handle, pos, ddx, ddy, active, out);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (jitc_is_metal(backend))
+        return jitc_metal_tex_lookup_grad(handle, pos, ddx, ddy, active, out);
 #endif
     jit_tex_unavailable(backend);
 }

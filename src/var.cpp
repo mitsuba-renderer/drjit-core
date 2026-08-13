@@ -278,6 +278,12 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Load all texels used for bilinear interpolation (CUDA)
     "tex_fetch_bilerp",
 
+    // Texture lookup at an explicit MIP level of detail
+    "tex_lookup_lod",
+
+    // Texture lookup with explicit screen-space derivatives
+    "tex_lookup_grad",
+
     // Write to a hardware texture / surface (a side effect)
     "tex_write",
 

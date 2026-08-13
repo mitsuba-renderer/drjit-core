@@ -1055,10 +1055,13 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
         for (uint32_t index_2: td->indices)
             jitc_var_call_analyze(call, inst_id, index_2);
     } else if (kind == VarKind::TexLookup || kind == VarKind::TexFetchBilerp ||
+               kind == VarKind::TexLookupLod || kind == VarKind::TexLookupGrad ||
                kind == VarKind::TexWrite) {
-        // Texture writes always reference their coordinates and values. On
-        // Metal, reads do too, since the coordinates are passed out-of-band.
-        bool refs_coords = kind == VarKind::TexWrite ||
+        // Texture writes and the LOD/gradient lookups always reference their
+        // coordinates and extra operands. On Metal, plain reads do too, since
+        // the coordinates are passed out-of-band.
+        bool refs_coords = (kind != VarKind::TexLookup &&
+                            kind != VarKind::TexFetchBilerp) ||
                            (JitBackend) v->backend == JitBackend::Metal;
 
         if (v->data && refs_coords) {

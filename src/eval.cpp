@@ -281,13 +281,16 @@ static void jitc_var_traverse(uint32_t size, uint32_t index, uint32_t depth = 0)
 
         case VarKind::TexLookup:
         case VarKind::TexFetchBilerp:
+        case VarKind::TexLookupLod:
+        case VarKind::TexLookupGrad:
         case VarKind::TexWrite: {
-                // Texture writes always reference their coordinates and values.
-                // On Metal, reads do too, since the coordinates are passed
-                // out-of-band.
+                // Texture writes and the LOD/gradient lookups always reference
+                // their coordinates and extra operands. On Metal, plain reads
+                // do too, since the coordinates are passed out-of-band.
                 bool refs_coords =
-                    (VarKind) v->kind == VarKind::TexWrite ||
-                    (JitBackend) v->backend == JitBackend::Metal;
+                    (VarKind) v->kind != VarKind::TexLookup &&
+                    (VarKind) v->kind != VarKind::TexFetchBilerp;
+                refs_coords |= (JitBackend) v->backend == JitBackend::Metal;
 
                 if (v->data && refs_coords) {
                     TexData *td = (TexData *) v->data;

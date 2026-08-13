@@ -14,7 +14,8 @@ using StagingAreaDeleter = void (*)(void *);
 struct CUDATexture : TextureBase {
     std::unique_ptr<CUtexObject[]> textures; /// Array of CUDA texture objects
     std::unique_ptr<uint32_t[]> indices; /// Array of indices of texture object pointers for the JIT
-    std::unique_ptr<CUarray[]> arrays; /// Array of CUDA arrays
+    std::unique_ptr<CUarray[]> arrays; /// Array of CUDA arrays (the base level when MIP-mapped)
+    std::unique_ptr<CUmipmappedArray[]> mip_arrays; /// MIP pyramids (n_levels > 1 only)
     std::unique_ptr<CUsurfObject[]> surfaces; /// Surface objects (writable only)
     std::unique_ptr<uint32_t[]> surf_indices; /// JIT handles of surface objects
 
@@ -49,7 +50,11 @@ struct CUDATexture : TextureBase {
             scoped_set_context guard(ts->context);
             if (writable)
                 cuda_check(cuSurfObjectDestroy(surfaces[index]));
-            cuda_check(cuArrayDestroy(arrays[index]));
+            // A MIP pyramid owns its level arrays, including the base
+            if (mip_arrays)
+                cuda_check(cuMipmappedArrayDestroy(mip_arrays[index]));
+            else
+                cuda_check(cuArrayDestroy(arrays[index]));
             cuda_check(cuTexObjectDestroy(textures[index]));
         }
 
@@ -84,15 +89,21 @@ struct TextureReleasePayload {
     size_t index;
 };
 
-/// Build a sampling ``CUtexObject`` over \c array.
+/// Build a sampling ``CUtexObject`` over \c array (or over the MIP pyramid
+/// \c mip when non-null).
 static CUtexObject cuda_tex_make_texobject(CUarray array, int format,
                                            size_t channels, int filter_mode,
                                            int wrap_mode, int srgb, size_t width,
-                                           size_t height, size_t depth);
+                                           size_t height, size_t depth,
+                                           CUmipmappedArray mip = nullptr,
+                                           size_t n_levels = 1,
+                                           int mip_filter = 1,
+                                           size_t max_aniso = 1);
 
 void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                            int format, int filter_mode, int wrap_mode,
-                           int writable, int srgb) {
+                           int writable, int srgb, size_t n_levels,
+                           int mip_filter, size_t max_aniso) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_create(): invalid texture dimension!");
     else if (n_channels == 0)
@@ -100,6 +111,11 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     for (size_t i = 0; i < ndim; ++i)
         if (shape[i] == 0)
             jitc_raise("jit_cuda_tex_create(): texture dimensions must be nonzero!");
+    if (n_levels == 0)
+        n_levels = 1;
+    if (n_levels > 1 && writable)
+        jitc_raise("jit_cuda_tex_create(): MIP-mapped textures cannot be "
+                   "writable!");
 
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
@@ -132,16 +148,31 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         new CUDATexture(tsize, n_channels, writable != 0);
     texture->ndim = ndim;
     texture->srgb = srgb;
+    texture->n_levels = n_levels;
     for (size_t i = 0; i < ndim; ++i)
         texture->shape[i] = shape[i];
+    if (n_levels > 1)
+        texture->mip_arrays =
+            std::make_unique<CUmipmappedArray[]>(texture->n_textures);
     for (size_t tex = 0; tex < texture->n_textures; ++tex) {
         const size_t tex_channels = texture->channels_storage(tex);
 
         CUarray array = nullptr;
-        if ((ndim == 1 || ndim == 2) && !writable) {
+        CUmipmappedArray mip = nullptr;
+        if (n_levels > 1) {
+            CUDA_ARRAY3D_DESCRIPTOR array_desc{};
+            array_desc.Width = shape[0];
+            array_desc.Height = (ndim >= 2) ? shape[1] : 0;
+            array_desc.Depth = (ndim == 3) ? shape[2] : 0;
+            array_desc.Format = (CUarray_format) array_format;
+            array_desc.NumChannels = (unsigned int) tex_channels;
+            cuda_check(cuMipmappedArrayCreate(&mip, &array_desc, (unsigned int) n_levels));
+            texture->mip_arrays[tex] = mip;
+            cuda_check(cuMipmappedArrayGetLevel(&array, mip, 0));
+        } else if ((ndim == 1 || ndim == 2) && !writable) {
             CUDA_ARRAY_DESCRIPTOR array_desc{};
             array_desc.Width = shape[0];
-            array_desc.Height = (ndim == 2) ? shape[1] : 1;
+            array_desc.Height = (ndim == 2) ? shape[1] : 0;
             array_desc.Format = (CUarray_format) array_format;
             array_desc.NumChannels = (unsigned int) tex_channels;
             cuda_check(cuArrayCreate(&array, &array_desc));
@@ -159,9 +190,12 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         }
 
         texture->arrays[tex] = array;
+        // The resource view dimensions must match the array (0 = absent);
+        // a mismatch is rejected for mipmapped resources.
         texture->textures[tex] = cuda_tex_make_texobject(
             array, format, tex_channels, filter_mode, wrap_mode, srgb, shape[0],
-            (ndim >= 2) ? shape[1] : 1, (ndim == 3) ? shape[2] : 0);
+            (ndim >= 2) ? shape[1] : 0, (ndim == 3) ? shape[2] : 0,
+            mip, n_levels, mip_filter, max_aniso);
         texture->indices[tex] =
             jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,
                              (void *) texture->textures[tex], 1, false);
@@ -287,15 +321,18 @@ static void jitc_cuda_tex_stage(
  * staging area (deinterleaved before an upload, interleaved after a readback).
  */
 static void jitc_cuda_tex_memcpy(bool to_texture, const CUDATexture &tex,
-                                 const void *linear) {
+                                 const void *linear, size_t level) {
     ThreadState *ts = thread_state(JitBackend::CUDA);
     scoped_set_context guard(ts->context);
 
     if (tex.external && !tex.mapped)
         jitc_raise("jit_tex_memcpy(): map() the OpenGL-wrapped texture first.");
+    if (level >= tex.n_levels)
+        jitc_raise("jit_tex_memcpy(): MIP level %zu out of range!", level);
 
     size_t ndim = tex.ndim;
-    const size_t *shape = tex.shape;
+    size_t shape[3];
+    tex.level_shape(level, shape);
     size_t n_texels = shape[0];
     for (size_t dim = 1; dim < ndim; ++dim)
         n_texels *= shape[dim];
@@ -317,6 +354,11 @@ static void jitc_cuda_tex_memcpy(bool to_texture, const CUDATexture &tex,
         size_t pitch = shape[0] * tex.channels_storage(i) * tex.type_size;
         size_t buf_off = needs_staging ? i * n_texels * 4 * tex.type_size : 0;
 
+        CUarray array = tex.arrays[i];
+        if (level > 0)
+            cuda_check(cuMipmappedArrayGetLevel(&array, tex.mip_arrays[i],
+                                                (unsigned int) level));
+
         if (ndim == 3) {
             CUDA_MEMCPY3D op{};
             if (to_texture) {
@@ -324,10 +366,10 @@ static void jitc_cuda_tex_memcpy(bool to_texture, const CUDATexture &tex,
                 op.srcDevice = buf; op.srcXInBytes = buf_off;
                 op.srcPitch = pitch; op.srcHeight = shape[1];
                 op.dstMemoryType = CU_MEMORYTYPE_ARRAY;
-                op.dstArray = tex.arrays[i];
+                op.dstArray = array;
             } else {
                 op.srcMemoryType = CU_MEMORYTYPE_ARRAY;
-                op.srcArray = tex.arrays[i];
+                op.srcArray = array;
                 op.dstMemoryType = CU_MEMORYTYPE_DEVICE;
                 op.dstDevice = buf; op.dstXInBytes = buf_off;
                 op.dstPitch = pitch; op.dstHeight = shape[1];
@@ -342,10 +384,10 @@ static void jitc_cuda_tex_memcpy(bool to_texture, const CUDATexture &tex,
                 op.srcMemoryType = CU_MEMORYTYPE_DEVICE;
                 op.srcDevice = buf; op.srcXInBytes = buf_off; op.srcPitch = pitch;
                 op.dstMemoryType = CU_MEMORYTYPE_ARRAY;
-                op.dstArray = tex.arrays[i];
+                op.dstArray = array;
             } else {
                 op.srcMemoryType = CU_MEMORYTYPE_ARRAY;
-                op.srcArray = tex.arrays[i];
+                op.srcArray = array;
                 op.dstMemoryType = CU_MEMORYTYPE_DEVICE;
                 op.dstDevice = buf; op.dstXInBytes = buf_off; op.dstPitch = pitch;
             }
@@ -359,15 +401,18 @@ static void jitc_cuda_tex_memcpy(bool to_texture, const CUDATexture &tex,
         jitc_cuda_tex_stage(false, ts, staging, n_texels, linear, tex);
 }
 
-void jitc_cuda_tex_memcpy_d2t(const void *src_ptr, void *dst_handle) {
-    jitc_cuda_tex_memcpy(true, *(const CUDATexture *) dst_handle, src_ptr);
+void jitc_cuda_tex_memcpy_d2t(const void *src_ptr, void *dst_handle,
+                              size_t level) {
+    jitc_cuda_tex_memcpy(true, *(const CUDATexture *) dst_handle, src_ptr,
+                         level);
 }
 
 void jitc_cuda_tex_memcpy_t2d(const void *src_handle, void *dst_ptr) {
-    jitc_cuda_tex_memcpy(false, *(const CUDATexture *) src_handle, dst_ptr);
+    jitc_cuda_tex_memcpy(false, *(const CUDATexture *) src_handle, dst_ptr, 0);
 }
 
-Variable jitc_cuda_tex_check(VarType out_type, size_t ndim, const uint32_t *pos) {
+Variable jitc_cuda_tex_check(VarType out_type, size_t ndim, const uint32_t *pos,
+                             size_t n_extra = 0, const uint32_t *extra = nullptr) {
     // Validate input types, determine size of the operation
     uint32_t size = 0;
     bool dirty = false, symbolic = false;
@@ -376,8 +421,16 @@ Variable jitc_cuda_tex_check(VarType out_type, size_t ndim, const uint32_t *pos)
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_check(): invalid texture dimension!");
 
-    for (size_t i = 0; i < ndim; ++i) {
-        const Variable *v = jitc_var(pos[i]);
+    // The coordinates, followed by any further float32 operands (LOD/gradients)
+    uint32_t idx[9];
+    size_t n = 0;
+    for (size_t i = 0; i < ndim; ++i)
+        idx[n++] = pos[i];
+    for (size_t i = 0; i < n_extra; ++i)
+        idx[n++] = extra[i];
+
+    for (size_t i = 0; i < n; ++i) {
+        const Variable *v = jitc_var(idx[i]);
         if ((VarType) v->type != VarType::Float32)
             jitc_raise("jit_cuda_tex_check(): type mismatch for arg. %zu (got "
                        "%s, expected %s)", i, type_name[v->type],
@@ -388,8 +441,8 @@ Variable jitc_cuda_tex_check(VarType out_type, size_t ndim, const uint32_t *pos)
         backend = (JitBackend) v->backend;
     }
 
-    for (uint32_t i = 0; i < ndim; ++i) {
-        const Variable *v = jitc_var(pos[i]);
+    for (size_t i = 0; i < n; ++i) {
+        const Variable *v = jitc_var(idx[i]);
         if (v->size != 1 && v->size != size)
             jitc_raise("jit_cuda_tex_check(): arithmetic involving arrays of "
                        "incompatible size!");
@@ -397,9 +450,9 @@ Variable jitc_cuda_tex_check(VarType out_type, size_t ndim, const uint32_t *pos)
 
     if (dirty) {
         jitc_eval(thread_state(backend));
-        for (size_t i = 0; i < ndim; ++i) {
-            if (jitc_var(pos[i])->is_dirty())
-                jitc_raise_dirty_error(pos[i]);
+        for (size_t i = 0; i < n; ++i) {
+            if (jitc_var(idx[i])->is_dirty())
+                jitc_raise_dirty_error(idx[i]);
         }
     }
 
@@ -453,6 +506,89 @@ void jitc_cuda_tex_lookup(const void *handle, const uint32_t *pos,
             *out++ = jitc_var_new(v);
         }
     }
+}
+
+/// Shared body of the LOD/gradient sampling entry points: emit one ``kind``
+/// node per sub-texture, carrying the coordinates and ``n_extra`` further
+/// float32 operands (LOD or gradients) in the ``TexData`` payload.
+static void cuda_tex_sample_op(VarKind kind, const void *handle,
+                               const uint32_t *pos, size_t n_extra,
+                               const uint32_t *extra, uint32_t active,
+                               uint32_t *out) {
+    CUDATexture &tex = *((CUDATexture *) handle);
+    if (tex.external && !tex.mapped)
+        jitc_raise("jit_tex_lookup_lod/grad(): map() the OpenGL-wrapped "
+                   "texture before sampling it.");
+    if (tex.n_levels <= 1)
+        jitc_raise("jit_tex_lookup_lod/grad(): texture was created without "
+                   "MIP levels!");
+
+    size_t ndim = tex.ndim;
+    Variable tmpl =
+        jitc_cuda_tex_check(VarType::Float32, ndim, pos, n_extra, extra);
+
+    const Variable *active_v = jitc_var(active);
+    bool masked = !(active_v->is_literal() && active_v->literal == 1);
+
+    for (size_t ti = 0; ti < tex.n_textures; ++ti) {
+        Ref tex_ptr = steal(tex.get_jit_pointer((uint32_t) ti));
+
+        TexData *td = new TexData();
+        td->ndim = (uint32_t) ndim;
+        for (size_t i = 0; i < ndim; ++i) {
+            td->indices[i] = pos[i];
+            jitc_var_inc_ref(pos[i]);
+        }
+        td->n_values = (uint32_t) n_extra;
+        for (size_t i = 0; i < n_extra; ++i) {
+            td->values[i] = extra[i];
+            jitc_var_inc_ref(extra[i]);
+        }
+
+        uint32_t node =
+            masked ? jitc_var_new_node_2(
+                         JitBackend::CUDA, kind, VarType::Float32, tmpl.size,
+                         tmpl.symbolic, tex_ptr, jitc_var(tex_ptr), active,
+                         jitc_var(active), (uintptr_t) td)
+                   : jitc_var_new_node_1(
+                         JitBackend::CUDA, kind, VarType::Float32, tmpl.size,
+                         tmpl.symbolic, tex_ptr, jitc_var(tex_ptr),
+                         (uintptr_t) td);
+
+        jitc_var_set_callback(
+            node,
+            [](uint32_t, int free, void *ptr) {
+                if (free)
+                    delete (TexData *) ptr;
+            },
+            td, true);
+
+        Ref tex_load = steal(node);
+        for (size_t ch = 0; ch < tex.channels(ti); ++ch)
+            *out++ = jitc_var_new_node_1(
+                JitBackend::CUDA, VarKind::Extract, VarType::Float32,
+                tmpl.size, tmpl.symbolic, tex_load, jitc_var(tex_load),
+                (uint64_t) ch);
+    }
+}
+
+void jitc_cuda_tex_lookup_lod(const void *handle, const uint32_t *pos,
+                              uint32_t lod, uint32_t active, uint32_t *out) {
+    cuda_tex_sample_op(VarKind::TexLookupLod, handle, pos, 1, &lod, active,
+                       out);
+}
+
+void jitc_cuda_tex_lookup_grad(const void *handle, const uint32_t *pos,
+                               const uint32_t *ddx, const uint32_t *ddy,
+                               uint32_t active, uint32_t *out) {
+    size_t ndim = ((CUDATexture *) handle)->ndim;
+    uint32_t extra[6];
+    for (size_t i = 0; i < ndim; ++i) {
+        extra[i] = ddx[i];
+        extra[ndim + i] = ddy[i];
+    }
+    cuda_tex_sample_op(VarKind::TexLookupGrad, handle, pos, 2 * ndim, extra,
+                       active, out);
 }
 
 void jitc_cuda_tex_write(void *handle, const uint32_t *pos,
@@ -597,31 +733,48 @@ uintptr_t jitc_cuda_tex_native_handle(const void *handle,
 static CUtexObject cuda_tex_make_texobject(CUarray array, int format,
                                            size_t channels, int filter_mode,
                                            int wrap_mode, int srgb, size_t width,
-                                           size_t height, size_t depth) {
+                                           size_t height, size_t depth,
+                                           CUmipmappedArray mip,
+                                           size_t n_levels, int mip_filter,
+                                           size_t max_aniso) {
     CUDA_RESOURCE_DESC res_desc{};
-    res_desc.resType = CU_RESOURCE_TYPE_ARRAY;
-    res_desc.res.array.hArray = array;
+    if (mip) {
+        res_desc.resType = CU_RESOURCE_TYPE_MIPMAPPED_ARRAY;
+        res_desc.res.mipmap.hMipmappedArray = mip;
+    } else {
+        res_desc.resType = CU_RESOURCE_TYPE_ARRAY;
+        res_desc.res.array.hArray = array;
+    }
 
     // UInt8 storage is read back as a normalized float in [0, 1] (the default
     // read mode), optionally decoding sRGB -> linear.
     bool is_u8 = (VarType) format == VarType::UInt8;
 
     CUDA_TEXTURE_DESC tex_desc{};
-    tex_desc.filterMode = tex_desc.mipmapFilterMode =
+    tex_desc.filterMode =
         (filter_mode == 0) ? CU_TR_FILTER_MODE_POINT : CU_TR_FILTER_MODE_LINEAR;
+    tex_desc.mipmapFilterMode = (mip && mip_filter != 0)
+        ? CU_TR_FILTER_MODE_LINEAR : CU_TR_FILTER_MODE_POINT;
+    // The trilinear "optimization" degrades a MIP blend to a plain bilinear
+    // lookup whenever the LOD fraction is near 0 or 1, which makes hardware
+    // filtering visibly diverge from the other backends. Turn it off.
     tex_desc.flags = CU_TRSF_NORMALIZED_COORDINATES |
+                     CU_TRSF_DISABLE_TRILINEAR_OPTIMIZATION |
                      ((is_u8 && srgb) ? CU_TRSF_SRGB : 0);
     CUaddress_mode am = (wrap_mode == 0)   ? CU_TR_ADDRESS_MODE_WRAP
                         : (wrap_mode == 1) ? CU_TR_ADDRESS_MODE_CLAMP
                                            : CU_TR_ADDRESS_MODE_MIRROR;
     for (size_t i = 0; i < 3; ++i)
         tex_desc.addressMode[i] = am;
-    tex_desc.maxAnisotropy = 1;
+    max_aniso = max_aniso < 1 ? 1 : (max_aniso > 16 ? 16 : max_aniso);
+    tex_desc.maxAnisotropy = (unsigned int) max_aniso;
+    tex_desc.maxMipmapLevelClamp = (float) (n_levels - 1);
 
     CUDA_RESOURCE_VIEW_DESC view_desc{};
     view_desc.width = width;
     view_desc.height = height;
     view_desc.depth = depth;
+    view_desc.lastMipmapLevel = (unsigned int) (n_levels - 1);
     bool is_f32 = (VarType) format == VarType::Float32;
     if (channels == 1)
         view_desc.format = is_u8  ? CU_RES_VIEW_FORMAT_UINT_1X8
@@ -748,8 +901,7 @@ void jitc_cuda_tex_map(void *handle) {
         texture->textures[0] = cuda_tex_make_texobject(
             array, texture->storage_format, texture->n_channels,
             texture->filter_mode, texture->wrap_mode, texture->srgb,
-            texture->shape[0],
-            texture->shape[1] ? texture->shape[1] : 1, texture->shape[2]);
+            texture->shape[0], texture->shape[1], texture->shape[2]);
         texture->indices[0] =
             jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,
                              (void *) texture->textures[0], 1, false);

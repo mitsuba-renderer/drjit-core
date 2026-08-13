@@ -97,6 +97,7 @@ extern "C" {
 #  define CUDA_SUCCESS 0
 
 #define CU_RESOURCE_TYPE_ARRAY 0
+#define CU_RESOURCE_TYPE_MIPMAPPED_ARRAY 1
 #define CU_TR_FILTER_MODE_POINT 0
 #define CU_TR_FILTER_MODE_LINEAR 1
 #define CU_TRSF_NORMALIZED_COORDINATES 2
@@ -104,6 +105,7 @@ extern "C" {
 #define CU_TR_ADDRESS_MODE_CLAMP 1
 #define CU_TR_ADDRESS_MODE_MIRROR 2
 #define CU_TRSF_SRGB 0x10
+#define CU_TRSF_DISABLE_TRILINEAR_OPTIMIZATION 0x20
 #define CU_MEMORYTYPE_DEVICE 2
 #define CU_MEMORYTYPE_ARRAY 3
 
@@ -127,6 +129,7 @@ using CUlinkState  = struct CUlinkState_st *;
 using CUstream     = struct CUstream_st *;
 using CUevent      = struct CUevent_st *;
 using CUarray      = struct CUarray_st *;
+using CUmipmappedArray = struct CUmipmappedArray_st *;
 using CUtexObject  = struct CUtexObject_st *;
 using CUsurfObject = struct CUsurfObject_st *;
 using CUgreenCtx   = struct CUgreenCtx_st *;
@@ -185,6 +188,7 @@ struct CUDA_RESOURCE_DESC {
     int resType;
     union {
         struct { CUarray hArray; } array;
+        struct { CUmipmappedArray hMipmappedArray; } mipmap;
         struct { int reserved[32]; } reserved;
     } res;
     unsigned int flags;
@@ -332,6 +336,12 @@ DR_CUDA_SYM(CUresult (*cuArrayCreate)(CUarray *, const CUDA_ARRAY_DESCRIPTOR *))
 DR_CUDA_SYM(CUresult (*cuArray3DCreate)(CUarray *, const CUDA_ARRAY3D_DESCRIPTOR *));
 DR_CUDA_SYM(CUresult (*cuArray3DGetDescriptor)(CUDA_ARRAY3D_DESCRIPTOR *, CUarray));
 DR_CUDA_SYM(CUresult (*cuArrayDestroy)(CUarray));
+DR_CUDA_SYM(CUresult (*cuMipmappedArrayCreate)(CUmipmappedArray *,
+                                               const CUDA_ARRAY3D_DESCRIPTOR *,
+                                               unsigned int));
+DR_CUDA_SYM(CUresult (*cuMipmappedArrayGetLevel)(CUarray *, CUmipmappedArray,
+                                                 unsigned int));
+DR_CUDA_SYM(CUresult (*cuMipmappedArrayDestroy)(CUmipmappedArray));
 DR_CUDA_SYM(CUresult (*cuTexObjectCreate)(CUtexObject *, const CUDA_RESOURCE_DESC *,
                                           const CUDA_TEXTURE_DESC *,
                                           const CUDA_RESOURCE_VIEW_DESC *));

@@ -53,6 +53,18 @@ extern "C" {
  * \param srgb
  *     If nonzero (<tt>UInt8</tt> textures only), samples are decoded from sRGB
  *     to linear by the hardware.
+ *
+ * \param n_levels
+ *     Number of MIP levels, including the base level.
+ *     MIP-mapped textures cannot be \c writable.
+ *
+ * \param mip_filter
+ *     Filtering between MIP levels: 0 = nearest level, 1 = linear blend.
+ *     Only meaningful when <tt>n_levels > 1</tt>.
+ *
+ * \param max_aniso
+ *     Anisotropy bound of \ref jit_tex_lookup_grad(), clamped by the hardware
+ *     to <tt>[1, 16]</tt>. The value 1 selects isotropic filtering.
  */
 extern JIT_EXPORT void *jit_tex_create(JitBackend backend,
                                        size_t ndim,
@@ -62,7 +74,10 @@ extern JIT_EXPORT void *jit_tex_create(JitBackend backend,
                                        int filter_mode JIT_DEF(1),
                                        int wrap_mode JIT_DEF(0),
                                        int writable JIT_DEF(0),
-                                       int srgb JIT_DEF(0));
+                                       int srgb JIT_DEF(0),
+                                       size_t n_levels JIT_DEF(1),
+                                       int mip_filter JIT_DEF(1),
+                                       size_t max_aniso JIT_DEF(1));
 
 /**
  * \brief Wrap an existing native texture object as a Dr.Jit texture
@@ -168,9 +183,13 @@ extern JIT_EXPORT void jit_tex_get_indices(const void *handle,
  *
  * \param dst_handle
  *     Destination texture handle from \ref jit_tex_create().
+ *
+ * \param level
+ *     Destination MIP level.
  */
 extern JIT_EXPORT void jit_tex_memcpy_d2t(const void *src_ptr,
-                                          void *dst_handle);
+                                          void *dst_handle,
+                                          size_t level JIT_DEF(0));
 
 /**
  * \brief Copy from a texture into linear device memory
@@ -209,6 +228,35 @@ extern JIT_EXPORT void jit_tex_lookup(const void *handle,
                                       const uint32_t *pos,
                                       uint32_t active,
                                       uint32_t *out);
+
+/**
+ * \brief Perform a hardware texture lookup at an explicit MIP level
+ *
+ * Like \ref jit_tex_lookup(), but samples the MIP pyramid at the level of
+ * detail \c lod (a float32 variable). The texture must have been created with
+ * <tt>n_levels > 1</tt>.
+ */
+extern JIT_EXPORT void jit_tex_lookup_lod(const void *handle,
+                                          const uint32_t *pos,
+                                          uint32_t lod,
+                                          uint32_t active,
+                                          uint32_t *out);
+
+/**
+ * \brief Perform a filtered hardware texture lookup driven by derivatives
+ *
+ * Like \ref jit_tex_lookup(), but the hardware derives the MIP level (and, for
+ * <tt>max_aniso > 1</tt>, an anisotropic tap pattern) from the screen-space
+ * derivatives \c ddx and \c ddy of the texture coordinate (one float32
+ * variable index per dimension each). The texture must have been created with
+ * <tt>n_levels > 1</tt>.
+ */
+extern JIT_EXPORT void jit_tex_lookup_grad(const void *handle,
+                                           const uint32_t *pos,
+                                           const uint32_t *ddx,
+                                           const uint32_t *ddy,
+                                           uint32_t active,
+                                           uint32_t *out);
 
 /**
  * \brief Fetches the four texels that would be referenced in a texture lookup

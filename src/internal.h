@@ -135,6 +135,12 @@ enum class VarKind : uint32_t {
     // Load all texels used for bilinear interpolation (CUDA)
     TexFetchBilerp,
 
+    // Texture lookup at an explicit MIP level of detail
+    TexLookupLod,
+
+    // Texture lookup with explicit screen-space derivatives
+    TexLookupGrad,
+
     // Write to a hardware texture / surface (a side effect)
     TexWrite,
 

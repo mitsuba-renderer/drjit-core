@@ -90,11 +90,18 @@ static void metal_tex_sampler_modes(int filter_mode, int wrap_mode,
 /// resource record (index ``n_textures``).
 static void metal_tex_make_sampler(id<MTLDevice> device, MetalTexture *tex,
                                    MTLSamplerMinMagFilter filter,
-                                   MTLSamplerAddressMode wrap) {
+                                   MTLSamplerAddressMode wrap,
+                                   size_t n_levels = 1, int mip_filter = 1,
+                                   size_t max_aniso = 1) {
     MTLSamplerDescriptor *sd = [[MTLSamplerDescriptor alloc] init];
     sd.minFilter = filter;
     sd.magFilter = filter;
-    sd.mipFilter = MTLSamplerMipFilterNotMipmapped;
+    if (n_levels > 1)
+        sd.mipFilter = mip_filter == 0 ? MTLSamplerMipFilterNearest
+                                       : MTLSamplerMipFilterLinear;
+    else
+        sd.mipFilter = MTLSamplerMipFilterNotMipmapped;
+    sd.maxAnisotropy = std::min(std::max(max_aniso, (size_t) 1), (size_t) 16);
     sd.sAddressMode = wrap;
     sd.tAddressMode = wrap;
     sd.rAddressMode = wrap;
@@ -145,7 +152,8 @@ static void metal_tex_install_release(MetalTexture *tex, size_t i) {
 
 void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                             int format, int filter_mode, int wrap_mode,
-                            int writable, int srgb) {
+                            int writable, int srgb, size_t n_levels,
+                            int mip_filter, size_t max_aniso) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_metal_tex_create(): invalid texture dimension!");
     else if (n_channels == 0)
@@ -153,6 +161,11 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     for (size_t i = 0; i < ndim; ++i)
         if (shape[i] == 0)
             jitc_raise("jit_metal_tex_create(): texture dimensions must be nonzero!");
+    if (n_levels == 0)
+        n_levels = 1;
+    if (n_levels > 1 && writable)
+        jitc_raise("jit_metal_tex_create(): MIP-mapped textures cannot be "
+                   "writable!");
 
     ThreadState *ts = thread_state(JitBackend::Metal);
     id<MTLDevice> device = (__bridge id<MTLDevice>) ts->metal_device;
@@ -171,6 +184,7 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
 
     MetalTexture *tex = new MetalTexture(type_size, n_channels, writable != 0);
     tex->ndim = ndim;
+    tex->n_levels = n_levels;
     for (size_t i = 0; i < ndim; ++i)
         tex->shape[i] = shape[i];
 
@@ -189,7 +203,7 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             desc.width = width;
             desc.height = height;
             desc.depth = depth;
-            desc.mipmapLevelCount = 1;
+            desc.mipmapLevelCount = n_levels;
             desc.usage = MTLTextureUsageShaderRead |
                          (tex->writable ? MTLTextureUsageShaderWrite : 0);
             desc.storageMode = MTLStorageModePrivate;
@@ -209,7 +223,8 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             metal_tex_install_release(tex, i);
         }
 
-        metal_tex_make_sampler(device, tex, filter, wrap);
+        metal_tex_make_sampler(device, tex, filter, wrap, n_levels, mip_filter,
+                               max_aniso);
     }
 
     jitc_log(LogLevel::Debug, "jitc_metal_tex_create(): " DRJIT_PTR,
@@ -384,13 +399,18 @@ static void metal_channel_pack(MetalThreadState *mts, MetalKernel kern,
                            n_threads);
 }
 
-void jitc_metal_tex_memcpy_d2t(const void *src_ptr, void *dst_handle) {
+void jitc_metal_tex_memcpy_d2t(const void *src_ptr, void *dst_handle,
+                               size_t level) {
     MetalTexture &tex = *((MetalTexture *) dst_handle);
     ThreadState *ts = thread_state(JitBackend::Metal);
     MetalThreadState *mts = (MetalThreadState *) ts->actual_state();
 
+    if (level >= tex.n_levels)
+        jitc_raise("jit_tex_memcpy_d2t(): MIP level %zu out of range!", level);
+
     size_t ndim = tex.ndim;
-    const size_t *shape = tex.shape;
+    size_t shape[3];
+    tex.level_shape(level, shape);
     size_t n_texels = metal_tex_n_texels(ndim, shape);
     size_t type_size = tex.type_size;
     size_t width  = shape[0];
@@ -436,7 +456,7 @@ void jitc_metal_tex_memcpy_d2t(const void *src_ptr, void *dst_handle) {
                       sourceSize:MTLSizeMake(width, height, depth)
                        toTexture:(__bridge id<MTLTexture>) tex.textures[i]
                 destinationSlice:0
-                destinationLevel:0
+                destinationLevel:level
                destinationOrigin:MTLOriginMake(0, 0, 0)];
         }
     }
@@ -525,15 +545,24 @@ void jitc_metal_tex_memcpy_t2d(const void *src_handle, void *dst_ptr) {
 // ============================================================================
 
 static Variable jitc_metal_tex_check(VarType out_type, size_t ndim,
-                                     const uint32_t *pos) {
+                                     const uint32_t *pos, size_t n_extra = 0,
+                                     const uint32_t *extra = nullptr) {
     uint32_t size = 0;
     bool dirty = false, symbolic = false;
 
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_metal_tex_check(): invalid texture dimension!");
 
-    for (size_t i = 0; i < ndim; ++i) {
-        const Variable *v = jitc_var(pos[i]);
+    // The coordinates, followed by any further float32 operands (LOD/gradients)
+    uint32_t idx[9];
+    size_t n = 0;
+    for (size_t i = 0; i < ndim; ++i)
+        idx[n++] = pos[i];
+    for (size_t i = 0; i < n_extra; ++i)
+        idx[n++] = extra[i];
+
+    for (size_t i = 0; i < n; ++i) {
+        const Variable *v = jitc_var(idx[i]);
         if ((VarType) v->type != VarType::Float32)
             jitc_raise("jit_metal_tex_check(): type mismatch for arg. %zu (got "
                        "%s, expected %s)", i, type_name[v->type],
@@ -543,8 +572,8 @@ static Variable jitc_metal_tex_check(VarType out_type, size_t ndim,
         symbolic |= (bool) v->symbolic;
     }
 
-    for (size_t i = 0; i < ndim; ++i) {
-        const Variable *v = jitc_var(pos[i]);
+    for (size_t i = 0; i < n; ++i) {
+        const Variable *v = jitc_var(idx[i]);
         if (v->size != 1 && v->size != size)
             jitc_raise("jit_metal_tex_check(): arithmetic involving arrays of "
                        "incompatible size!");
@@ -552,9 +581,9 @@ static Variable jitc_metal_tex_check(VarType out_type, size_t ndim,
 
     if (dirty) {
         jitc_eval(thread_state(JitBackend::Metal));
-        for (size_t i = 0; i < ndim; ++i) {
-            if (jitc_var(pos[i])->is_dirty())
-                jitc_raise_dirty_error(pos[i]);
+        for (size_t i = 0; i < n; ++i) {
+            if (jitc_var(idx[i])->is_dirty())
+                jitc_raise_dirty_error(idx[i]);
         }
     }
 
@@ -602,11 +631,20 @@ static uint32_t metal_tex_node(VarKind kind, const Variable &tmpl,
     return node;
 }
 
-void jitc_metal_tex_lookup(const void *handle,
-                           const uint32_t *pos, uint32_t active, uint32_t *out) {
+/// Shared body of the three sampling entry points: emit one ``kind`` node per
+/// sub-texture, carrying the coordinates and ``n_extra`` further float32
+/// operands (LOD or gradients) in the ``TexData`` payload.
+static void metal_tex_sample_op(VarKind kind, const void *handle,
+                                const uint32_t *pos, size_t n_extra,
+                                const uint32_t *extra, uint32_t active,
+                                uint32_t *out) {
     MetalTexture &tex = *((MetalTexture *) handle);
     size_t ndim = tex.ndim;
-    Variable tmpl = jitc_metal_tex_check(VarType::Float32, ndim, pos);
+    if (kind != VarKind::TexLookup && tex.n_levels <= 1)
+        jitc_raise("jit_tex_lookup_lod/grad(): texture was created without "
+                   "MIP levels!");
+    Variable tmpl =
+        jitc_metal_tex_check(VarType::Float32, ndim, pos, n_extra, extra);
 
     const Variable *active_v = jitc_var(active);
     bool masked = !(active_v->is_literal() && active_v->literal == 1);
@@ -617,8 +655,13 @@ void jitc_metal_tex_lookup(const void *handle,
         Ref smp_h = steal(jitc_var_resource_pointer(tex.sampler_index,
                                                     ResourceKind::Sampler));
         TexData *td = metal_tex_coord_data(ndim, pos);
+        td->n_values = (uint32_t) n_extra;
+        for (size_t i = 0; i < n_extra; ++i) {
+            td->values[i] = extra[i];
+            jitc_var_inc_ref(extra[i]);
+        }
 
-        Ref tex_load = steal(metal_tex_node(VarKind::TexLookup, tmpl, tex_h,
+        Ref tex_load = steal(metal_tex_node(kind, tmpl, tex_h,
                                             smp_h, active, masked, td));
 
         for (size_t ch = 0; ch < tex.channels(ti); ++ch)
@@ -627,6 +670,31 @@ void jitc_metal_tex_lookup(const void *handle,
                 tmpl.size, tmpl.symbolic, tex_load, jitc_var(tex_load),
                 (uint64_t) ch);
     }
+}
+
+void jitc_metal_tex_lookup(const void *handle,
+                           const uint32_t *pos, uint32_t active, uint32_t *out) {
+    metal_tex_sample_op(VarKind::TexLookup, handle, pos, 0, nullptr, active,
+                        out);
+}
+
+void jitc_metal_tex_lookup_lod(const void *handle, const uint32_t *pos,
+                               uint32_t lod, uint32_t active, uint32_t *out) {
+    metal_tex_sample_op(VarKind::TexLookupLod, handle, pos, 1, &lod, active,
+                        out);
+}
+
+void jitc_metal_tex_lookup_grad(const void *handle, const uint32_t *pos,
+                                const uint32_t *ddx, const uint32_t *ddy,
+                                uint32_t active, uint32_t *out) {
+    size_t ndim = ((MetalTexture *) handle)->ndim;
+    uint32_t extra[6];
+    for (size_t i = 0; i < ndim; ++i) {
+        extra[i] = ddx[i];
+        extra[ndim + i] = ddy[i];
+    }
+    metal_tex_sample_op(VarKind::TexLookupGrad, handle, pos, 2 * ndim, extra,
+                        active, out);
 }
 
 void jitc_metal_tex_write(void *handle, const uint32_t *pos,

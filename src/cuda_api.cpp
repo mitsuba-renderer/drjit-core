@@ -130,6 +130,9 @@ bool jitc_cuda_api_init() {
         LOAD(cuArray3DCreate, "v2");
         LOAD(cuArray3DGetDescriptor, "v2");
         LOAD(cuArrayDestroy);
+        LOAD(cuMipmappedArrayCreate);
+        LOAD(cuMipmappedArrayGetLevel);
+        LOAD(cuMipmappedArrayDestroy);
         LOAD(cuTexObjectCreate);
         LOAD(cuTexObjectGetResourceDesc);
         LOAD(cuTexObjectDestroy);
@@ -209,7 +212,8 @@ void jitc_cuda_api_shutdown() {
     Z(cuCtxPopCurrent); Z(cuStreamCreate); Z(cuStreamDestroy);
     Z(cuStreamSynchronize); Z(cuStreamWaitEvent); Z(cuStreamWaitEvent_ptsz); Z(cuPointerGetAttribute);
     Z(cuArrayCreate); Z(cuArray3DCreate); Z(cuArray3DGetDescriptor);
-    Z(cuArrayDestroy); Z(cuTexObjectCreate); Z(cuTexObjectGetResourceDesc);
+    Z(cuArrayDestroy); Z(cuMipmappedArrayCreate); Z(cuMipmappedArrayGetLevel);
+    Z(cuMipmappedArrayDestroy); Z(cuTexObjectCreate); Z(cuTexObjectGetResourceDesc);
     Z(cuTexObjectDestroy); Z(cuSurfObjectCreate); Z(cuSurfObjectDestroy);
     Z(cuMemcpy2DAsync); Z(cuMemcpy3DAsync);
     Z(cuProfilerStart); Z(cuProfilerStop);

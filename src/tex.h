@@ -26,6 +26,7 @@ struct TextureBase {
     size_t type_size = 0;  // Storage element size in bytes (2 or 4)
     bool writable = false; // Created/wrapped for kernel stores?
     size_t shape[3] = { 0, 0, 0 }; // Per-dimension texel counts (0 past ndim)
+    size_t n_levels = 1;   // Number of MIP levels, including the base
     std::atomic_size_t n_referenced_textures{ 0 }; // Outstanding sub-texture refs
 
     TextureBase() = default;
@@ -51,9 +52,19 @@ struct TextureBase {
         size_t c = channels(index);
         return (c == 3) ? 4 : c;
     }
+
+    /// Texel counts of MIP level ``level`` (halved per level, floored at one;
+    /// entries past ``ndim`` stay zero)
+    void level_shape(size_t level, size_t *out) const {
+        for (size_t i = 0; i < 3; ++i) {
+            size_t r = shape[i] >> level;
+            out[i] = shape[i] ? (r > 0 ? r : 1) : 0;
+        }
+    }
 };
 
-// Payload for ``TexLookup`` / ``TexFetchBilerp`` / ``TexWrite`` nodes
+// Payload for ``TexLookup`` / ``TexFetchBilerp`` / ``TexLookupLod`` /
+// ``TexLookupGrad`` / ``TexWrite`` nodes
 struct TexData {
     /// Coordinate variable indices, one per dimension.
     uint32_t indices[3] { };
@@ -62,9 +73,10 @@ struct TexData {
     /// Gathered channel (bilerp fetch only).
     uint32_t component = 0;
 
-    // --- TexWrite only ---
-    /// Per-channel value variable indices (up to 4).
-    uint32_t values[4] { };
+    /// Further per-lane operand variable indices: the per-channel values of a
+    /// ``TexWrite`` (up to 4), the level of detail of a ``TexLookupLod``, or
+    /// the two per-dimension gradients of a ``TexLookupGrad`` (``ddx`` first).
+    uint32_t values[6] { };
     /// Number of valid entries in ``values``.
     uint32_t n_values = 0;
     /// Per-channel storage bytes (CUDA: scales the surface coord, picks ``sust`` b16/b32).
