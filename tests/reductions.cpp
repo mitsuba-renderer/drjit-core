@@ -266,6 +266,51 @@ TEST_ALL_FLOAT_AGNOSTIC(11_block_prefix_reduce_u64_exc_bwd) {
     }
 }
 
+template <typename Float_, typename Scalar>
+static void block_prefix_repeatability(uint32_t size, uint32_t repeats) {
+    const double pattern[] = {
+        1.0,
+        0x1p-10,
+        0x1p-20,
+        1.0e-5,
+        3.0,
+        0x1p-15,
+        7.0e-4
+    };
+
+    std::vector<Scalar> host(size);
+    for (uint32_t i = 0; i < size; ++i)
+        host[i] = (Scalar) pattern[
+            i % (sizeof(pattern) / sizeof(pattern[0]))
+        ];
+
+    Float_ reference;
+
+    for (uint32_t repeat = 0; repeat < repeats; ++repeat) {
+        Float_ input = Float_::copy(host.data(), size);
+        Float_ current =
+            block_prefix_sum(input, size, false, false);
+
+        jit_var_eval(current.index());
+
+        if (repeat == 0)
+            reference = current;
+        else
+            jit_assert(current == reference);
+    }
+}
+
+TEST_CUDA_FP32(12a_block_prefix_reduce_fp_repeatability) {
+    constexpr uint32_t size = 164738;
+    constexpr uint32_t repeats = 20;
+
+    block_prefix_repeatability<Float, float>(
+        size, repeats);
+
+    block_prefix_repeatability<Array<double>, double>(
+        size, repeats);
+}
+
 TEST_ALL_FLOAT_AGNOSTIC(12_compress) {
     for (uint32_t i = 0; i < 30; ++i) {
         uint32_t size = 23*i*i*i + 1;
