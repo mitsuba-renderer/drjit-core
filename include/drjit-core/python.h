@@ -25,9 +25,10 @@ template <typename... Ts> struct type_caster<drjit::tuple<Ts...>> {
     using Value = drjit::tuple<Ts...>;
     using Indices = std::make_index_sequence<N>;
 
-    static constexpr auto Name = const_name("tuple[") +
-                                 concat(make_caster<Ts>::Name...) +
-                                 const_name("]");
+    static constexpr auto Name =
+        const_name("tuple[") +
+        const_name<N == 0>(const_name("()"), concat(make_caster<Ts>::Name...)) +
+        const_name("]");
 
     /// This caster constructs instances on the fly (otherwise it would not be
     /// able to handle tuples containing references_). Because of this, only the
@@ -48,13 +49,11 @@ template <typename... Ts> struct type_caster<drjit::tuple<Ts...>> {
         PyObject *temp; // always initialized by the following line
         PyObject **o = NB_CALL(seq_get_with_size)(src.ptr(), N, &temp);
 
-        bool success =
-            (o && ... &&
-             drjit::get<Is>(casters).from_python(o[Is], flags, cleanup));
+        temp_ref = steal(temp);
 
-        Py_XDECREF(temp);
-
-        return success;
+        return (o && ... &&
+                drjit::get<Is>(casters).from_python(
+                    o[Is], flags_for_local_caster<Ts>(flags), cleanup));
     }
 
     template <typename T>
@@ -64,7 +63,8 @@ template <typename... Ts> struct type_caster<drjit::tuple<Ts...>> {
     }
 
     template <typename T>
-    static handle from_cpp(T *value, rv_policy policy, cleanup_list *cleanup) {
+    static handle from_cpp(T *value, rv_policy policy,
+                           cleanup_list *cleanup) noexcept {
         if (!value)
             return none().release();
         return from_cpp_impl(*value, policy, cleanup, Indices{});
@@ -75,35 +75,38 @@ template <typename... Ts> struct type_caster<drjit::tuple<Ts...>> {
                                 cleanup_list *cleanup,
                                 std::index_sequence<Is...>) noexcept {
         (void) value; (void) policy; (void) cleanup;
-        object o[N1];
 
-        bool success =
-            (... &&
-             ((o[Is] = steal(make_caster<Ts>::from_cpp(
-                   forward_like_<T>(drjit::get<Is>(value)), policy, cleanup))),
-              o[Is].is_valid()));
+        PyObject *items[N1] { };
 
-        if (!success)
-            return handle();
+        (void) (... && ((items[Is] = make_caster<Ts>::from_cpp(
+                             forward_like_<T>(drjit::get<Is>(value)), policy,
+                             cleanup).ptr()) != nullptr));
 
-        PyObject *r = PyTuple_New(N);
-        (NB_TUPLE_SET_ITEM(r, Is, o[Is].release().ptr()), ...);
-        return r;
+        return NB_CALL(tuple_new)(items, N);
     }
 
+    template <typename T>
+    bool can_cast() const noexcept { return can_cast_impl(Indices{}); }
+
     explicit operator Value() { return cast_impl(Indices{}); }
+
+    template <size_t... Is>
+    bool can_cast_impl(std::index_sequence<Is...>) const noexcept {
+        return (drjit::get<Is>(casters).template can_cast<Ts>() && ...);
+    }
 
     template <size_t... Is> Value cast_impl(std::index_sequence<Is...>) {
         return Value(drjit::get<Is>(casters).operator cast_t<Ts>()...);
     }
 
     drjit::tuple<make_caster<Ts>...> casters;
+    object temp_ref;
 };
 
 template <> struct type_caster<drjit::half> {
     bool from_python(handle src, uint32_t flags, cleanup_list *) noexcept {
         float f;
-        bool success = NB_CALL(load_f32)(src.ptr(), flags, &f);
+        bool success = NB_CALL(load_f32)(NB_CTX, src.ptr(), flags, &f);
         value = drjit::half(f);
         return success;
     }
@@ -118,7 +121,9 @@ template <> struct type_caster<drjit::half> {
 template <> struct type_caster<drjit::string> {
     NB_TYPE_CASTER(drjit::string, const_name("str"))
 
-    bool from_python(handle src, uint8_t, cleanup_list *) noexcept {
+    bool from_python(handle src, uint32_t, cleanup_list *) noexcept {
+        if (!PyUnicode_Check(src.ptr()))
+            return false;
         Py_ssize_t size;
         const char *str = PyUnicode_AsUTF8AndSize(src.ptr(), &size);
         if (!str) {
