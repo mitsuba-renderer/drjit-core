@@ -35,18 +35,18 @@ template <typename... Ts> struct type_caster<drjit::tuple<Ts...>> {
     /// alias below informs users of this class of this fact.
     template <typename T> using Cast = Value;
 
-    bool from_python(handle src, uint8_t flags,
+    bool from_python(handle src, uint32_t flags,
                      cleanup_list *cleanup) noexcept {
         return from_python_impl(src, flags, cleanup, Indices{});
     }
 
     template <size_t... Is>
-    bool from_python_impl(handle src, uint8_t flags, cleanup_list *cleanup,
+    bool from_python_impl(handle src, uint32_t flags, cleanup_list *cleanup,
                           std::index_sequence<Is...>) noexcept {
         (void) src; (void) flags; (void) cleanup;
 
         PyObject *temp; // always initialized by the following line
-        PyObject **o = seq_get_with_size(src.ptr(), N, &temp);
+        PyObject **o = NB_CALL(seq_get_with_size)(src.ptr(), N, &temp);
 
         bool success =
             (o && ... &&
@@ -101,9 +101,9 @@ template <typename... Ts> struct type_caster<drjit::tuple<Ts...>> {
 };
 
 template <> struct type_caster<drjit::half> {
-    bool from_python(handle src, uint8_t flags, cleanup_list *) noexcept {
+    bool from_python(handle src, uint32_t flags, cleanup_list *) noexcept {
         float f;
-        bool success = detail::load_f32(src.ptr(), flags, &f);
+        bool success = NB_CALL(load_f32)(src.ptr(), flags, &f);
         value = drjit::half(f);
         return success;
     }
