@@ -46,46 +46,39 @@ static bool mask_safe_to_ignore (const Variable *mask) {
 extern void jitc_llvm_render_array_init(Variable *v, Variable *pred, Variable *value) {
     v->reg_index = pred->reg_index;
 
-    if (value->is_literal() && value->literal == 0) {
-        fmt_intrinsic("declare void @llvm.memset.inline.p0.i32(ptr, i8, i32, i1)");
-        fmt("    call void @llvm.memset.inline.p0.i32(ptr %arr_$u, i8 0, i32 $u, i1 0)\n",
-            v->reg_index,
-            v->array_length * type_size[v->type] * jitc_llvm_vector_width);
-    } else {
-        const char *ext = "";
-        const Variable *src = value;
-        if (value->type == (uint32_t) VarType::Bool) {
-            fmt("    $v_e = zext $V to $M\n", v, value, value);
-            ext = "_e";
-            src = v;
-        }
-        fmt("    br label %l_$u_pre\n\n"
-            "l_$u_pre:\n"
-            "    br label %l_$u_loop\n\n"
-            "l_$u_loop:\n"
-            "    $v_cur = phi i64 [ 0, %l_$u_pre ], [ $v_next, %l_$u_loop ]\n"
-            "    $v_ptr = getelementptr inbounds $M, ptr %arr_$u, i64 $v_cur\n"
-            "    store $M $v$s, ptr $v_ptr, align $A\n"
-            "    $v_next = add i64 $v_cur, 1\n"
-            "    $v_cont = icmp ult i64 $v_next, $u\n"
-            "    br i1 $v_cont, label %l_$u_loop, label %l_$u_done\n\n"
-            "l_$u_done:\n",
-            v->reg_index,
-            v->reg_index,
-            v->reg_index,
-            v->reg_index,
-            // phi
-            v, v->reg_index, v, v->reg_index,
-            // gep
-            v, v, v->reg_index, v,
-            // store
-            value, src, ext, v, v,
-            v, v,
-            v, v, v->array_length,
-            v, v->reg_index, v->reg_index,
-            v->reg_index
-        );
+    const char *ext = "";
+    const Variable *src = value;
+    if (value->type == (uint32_t) VarType::Bool) {
+        fmt("    $v_e = zext $V to $M\n", v, value, value);
+        ext = "_e";
+        src = v;
     }
+    fmt("    br label %l_$u_pre\n\n"
+        "l_$u_pre:\n"
+        "    br label %l_$u_loop\n\n"
+        "l_$u_loop:\n"
+        "    $v_cur = phi i64 [ 0, %l_$u_pre ], [ $v_next, %l_$u_loop ]\n"
+        "    $v_ptr = getelementptr inbounds $M, ptr %arr_$u, i64 $v_cur\n"
+        "    store $M $v$s, ptr $v_ptr, align $A\n"
+        "    $v_next = add i64 $v_cur, 1\n"
+        "    $v_cont = icmp ult i64 $v_next, $u\n"
+        "    br i1 $v_cont, label %l_$u_loop, label %l_$u_done\n\n"
+        "l_$u_done:\n",
+        v->reg_index,
+        v->reg_index,
+        v->reg_index,
+        v->reg_index,
+        // phi
+        v, v->reg_index, v, v->reg_index,
+        // gep
+        v, v, v->reg_index, v,
+        // store
+        value, src, ext, v, v,
+        v, v,
+        v, v, v->array_length,
+        v, v->reg_index, v->reg_index,
+        v->reg_index
+    );
 }
 
 void jitc_llvm_render_array_read(Variable *v, Variable *source, Variable *mask,
