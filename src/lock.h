@@ -35,15 +35,17 @@
 
 /*
  * The recursive locks below have a fast path that skips the atomic transaction
- * when the current thread already holds the lock. This reads `lock.owner`
- * without holding the lock, racing with other threads' stores.
+ * when the current thread already holds the lock. It reads `lock.owner`
+ * without holding the lock and races with other threads' stores.
  *
- * The code below uses a relaxed atomic to make this race-free in the C++ memory
- * model. Relaxed ordering suffices because `owner` is only a same-thread
- * recursion hint; all synchronization comes from the underlying lock. The only
- * value that affects control flow is "equal to my own id", which can only be
- * observed if this thread wrote it while holding the lock. `recursion_count`
- * needs no atomic: it is only touched by the owning thread under the lock.
+ * The code uses a relaxed atomic to make this race-free in the C++ memory
+ * model. Relaxed ordering suffices because the load only decides whether to
+ * take the fast path. The actual synchronization comes from the following
+ * compare-exchange operations. The only value that affects control flow is
+ * whether or not the stored ID matches the current thread's ID, which can
+ * only be observed if this thread wrote it while holding the lock. The
+ * ``recursion_count`` fields needs no atomic because it is only touched by the
+ * owning thread under the lock.
  */
 
 // Fast unique (non-zero) token identifying the current thread.
@@ -146,13 +148,12 @@ extern JIT_EXPORT void lock_release_pending(Lock &lock) noexcept;
 // primitives, which cost a cross-library call on both acquire and release
 // (pthread_spin_lock on Linux, os_unfair_lock on macOS, SRWLOCK on Windows).
 struct Lock {
-    std::atomic<uint32_t> lock;
+    // Zero while the lock is free, otherwise the thread_id() of the owner.
     std::atomic<uintptr_t> owner;
     size_t recursion_count;
 };
 
 inline void lock_init(Lock &lock) {
-    lock.lock.store(0, std::memory_order_relaxed);
     lock.owner.store(0, std::memory_order_relaxed);
     lock.recursion_count = 0;
     __tsan_mutex_create(&lock, 0);
@@ -166,8 +167,19 @@ inline void lock_destroy(Lock &lock) {
 // Only the outermost acquire/release is annotated: recursive acquisitions are
 // pure bookkeeping in this wrapper, so TSAN sees a plain non-recursive mutex.
 inline void lock_acquire(Lock &lock) {
-    uintptr_t self = thread_id();
-    if (lock.owner.load(std::memory_order_relaxed) == self) {
+    uintptr_t self = thread_id(),
+              prev = lock.owner.load(std::memory_order_relaxed);
+
+    // Recursive locking is the rarer of the two cases
+    if (LOCK_UNLIKELY(prev == self)) {
+#if !defined(NDEBUG)
+        // The locking system is designed around the property that thread_id()
+        // can never return zero. Debug builds verify that this holds true.
+        if (LOCK_UNLIKELY(prev == 0)) {
+            fprintf(stderr, "lock_acquire(): thread_id() returned zero!\n");
+            abort();
+        }
+#endif
         lock.recursion_count++;
         return;
     }
@@ -176,18 +188,18 @@ inline void lock_acquire(Lock &lock) {
 
     // Mirrors glibc's pthread_spin_lock (sysdeps/nptl/pthread_spin_lock.c):
     // spin on plain loads and retry with a CAS.
-    if (lock.lock.exchange(1, std::memory_order_acquire) != 0) {
-        uint32_t expected;
+    if (prev != 0 || !lock.owner.compare_exchange_strong(
+                          prev, self, std::memory_order_acquire,
+                          std::memory_order_relaxed)) {
         do {
-            while (lock.lock.load(std::memory_order_relaxed) != 0)
+            while (lock.owner.load(std::memory_order_relaxed) != 0)
                 lock_pause();
-            expected = 0;
-        } while (!lock.lock.compare_exchange_weak(expected, 1,
-                                                  std::memory_order_acquire,
-                                                  std::memory_order_relaxed));
+            prev = 0;
+        } while (!lock.owner.compare_exchange_weak(prev, self,
+                                                   std::memory_order_acquire,
+                                                   std::memory_order_relaxed));
     }
 
-    lock.owner.store(self, std::memory_order_relaxed);
     // Also clears LOCK_PENDING, which cannot be set while the lock is free
     lock.recursion_count = 1;
     __tsan_mutex_post_lock(&lock, 0, 0);
@@ -210,8 +222,7 @@ inline void lock_release(Lock &lock) {
     lock.recursion_count--;
     if (lock.recursion_count == 0) {
         __tsan_mutex_pre_unlock(&lock, 0);
-        lock.owner.store(0, std::memory_order_relaxed);
-        lock.lock.store(0, std::memory_order_release);
+        lock.owner.store(0, std::memory_order_release);
         __tsan_mutex_post_unlock(&lock, 0);
     } else if (LOCK_UNLIKELY(lock.recursion_count == LOCK_PENDING)) {
         lock_release_pending(lock); // Outermost release, log messages waiting
