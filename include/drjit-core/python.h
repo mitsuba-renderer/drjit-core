@@ -143,14 +143,12 @@ template <> struct type_caster<drjit::string> {
 template <typename Type>
 struct type_caster<drjit::vector<Type>> : list_caster<drjit::vector<Type>, Type> { };
 
-NAMESPACE_END(detail)
-
-template <> struct ndarray_traits <drjit::half> {
-    static constexpr bool is_complex = false;
-    static constexpr bool is_float   = true;
-    static constexpr bool is_bool    = false;
-    static constexpr bool is_int     = false;
-    static constexpr bool is_signed  = true;
+template <> struct dtype_traits<drjit::half> {
+    static constexpr dlpack::dtype value{
+        (uint8_t) dlpack::dtype_code::Float, 16, 1
+    };
+    static constexpr auto name = const_name("float16");
 };
 
+NAMESPACE_END(detail)
 NAMESPACE_END(NB_NAMESPACE)
