@@ -1,10 +1,16 @@
 #pragma once
 
+#include <drjit-core/macros.h>
 #include <atomic>
 #include <cstdint>
+#include <cstdio>   // The assertions below report through stderr and abort()
+#include <cstdlib>
 
 #if defined(_MSC_VER)
 #  include <intrin.h>
+#  define LOCK_UNLIKELY(x) (x)
+#else
+#  define LOCK_UNLIKELY(x) __builtin_expect(!!(x), 0)
 #endif
 
 // Annotations so that TSAN handles the lock below like a system lock
@@ -107,6 +113,32 @@ inline void lock_pause() {
     #endif
 }
 
+struct Lock;
+
+/**
+ * \brief Flag to request postponed delivery of log message
+ *
+ * Mixed Dr.Jit+Python workloads use both the Dr.Jit lock and the GIL. To avoid
+ * deadlocks when delivering log messages to Python via callbacks, we postpone
+ * these callbacks and deliver them after leaving the outermost critical
+ * section.
+ *
+ * The flag below, stored in the topmost bit of ``Lock::recursion_count``,
+ * indicates the need to perform this postponed delivery.
+ */
+static constexpr size_t LOCK_PENDING = (size_t) 1 << (8 * sizeof(size_t) - 1);
+
+/// Indicate that `lock`, which the caller holds, owes deferred work
+inline void lock_set_pending(Lock &lock);
+
+/**
+ * \brief Fully release `lock` and carry out the deferred work
+ *
+ * Invoked by \ref lock_release() following the last release of a lock marked
+ * by \ref lock_set_pending(). Implemented in src/log.cpp.
+ */
+extern JIT_EXPORT void lock_release_pending(Lock &lock) noexcept;
+
 #if !defined(DRJIT_USE_STD_MUTEX)
 
 // The drjit-core locks are held for an extremely short amount of time and are
@@ -156,6 +188,7 @@ inline void lock_acquire(Lock &lock) {
     }
 
     lock.owner.store(self, std::memory_order_relaxed);
+    // Also clears LOCK_PENDING, which cannot be set while the lock is free
     lock.recursion_count = 1;
     __tsan_mutex_post_lock(&lock, 0, 0);
 }
@@ -167,10 +200,10 @@ inline void lock_release(Lock &lock) {
        silently unlock another thread's critical section -- a bug that later
        manifests as a hard-to-debug deadlock. Catch it at the source. */
     if (lock.owner.load(std::memory_order_relaxed) != thread_id() ||
-        lock.recursion_count == 0) {
+        (lock.recursion_count & ~LOCK_PENDING) == 0) {
         fprintf(stderr, "lock_release(): unmatched release (owner=%p, self=%p, "
                 "count=%zu)!\n", (void *) lock.owner.load(),
-                (void *) thread_id(), lock.recursion_count);
+                (void *) thread_id(), lock.recursion_count & ~LOCK_PENDING);
         abort();
     }
 #endif
@@ -180,6 +213,8 @@ inline void lock_release(Lock &lock) {
         lock.owner.store(0, std::memory_order_relaxed);
         lock.lock.store(0, std::memory_order_release);
         __tsan_mutex_post_unlock(&lock, 0);
+    } else if (LOCK_UNLIKELY(lock.recursion_count == LOCK_PENDING)) {
+        lock_release_pending(lock); // Outermost release, log messages waiting
     }
 }
 
@@ -223,10 +258,16 @@ inline void lock_release(Lock &lock) {
     if (lock.recursion_count == 0) {
         lock.owner.store(0, std::memory_order_relaxed);
         lock.lock.unlock();
+    } else if (LOCK_UNLIKELY(lock.recursion_count == LOCK_PENDING)) {
+        lock_release_pending(lock); // Outermost release, log messages waiting
     }
 }
 
 #endif
+
+inline void lock_set_pending(Lock &lock) {
+    lock.recursion_count |= LOCK_PENDING;
+}
 
 extern void jitc_sanitation_checkpoint();
 
@@ -242,18 +283,33 @@ private:
     Lock &m_lock;
 };
 
-/// RAII helper for scoped lock release
+/**
+ * \brief RAII helper for scoped lock release
+ *
+ * Temporarily release the Dr.Jit lock.
+ *
+ * This is just a temporary release. We still delay postponed log delivery
+ * until leaving the outer lock scope.
+ */
 class unlock_guard {
 public:
-    unlock_guard(Lock &lock) : m_lock(lock) { lock_release(m_lock); }
+    unlock_guard(Lock &lock) : m_lock(lock) {
+        m_pending = lock.recursion_count & LOCK_PENDING;
+        lock.recursion_count &= ~LOCK_PENDING;
+        lock_release(m_lock);
+    }
+
     ~unlock_guard() {
         lock_acquire(m_lock);
+        m_lock.recursion_count |= m_pending;
         #if defined(DRJIT_SANITIZE_INTENSE)
             jitc_sanitation_checkpoint();
         #endif
     }
+
     unlock_guard(const unlock_guard &) = delete;
     unlock_guard &operator=(const unlock_guard &) = delete;
 private:
     Lock &m_lock;
+    size_t m_pending;
 };

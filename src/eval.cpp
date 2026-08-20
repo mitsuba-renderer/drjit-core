@@ -670,12 +670,7 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         if (jitc_is_metal(backend))
             ir = jitc_metal_format();
 #endif
-        if (state.log_callback)
-            state.log_callback(LogLevel::Info, ir);
-        else {
-            fputs(ir, stderr);
-            fputc('\n', stderr);
-        }
+        jitc_log_msg(LogLevel::Info, ir);
     }
 
     float codegen_time = timer();

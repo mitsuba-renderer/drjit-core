@@ -371,7 +371,8 @@ if (UNIX)
 endif()
 
 if (DRJIT_USE_STD_MUTEX)
-  target_compile_definitions(drjit-core PRIVATE -DDRJIT_USE_STD_MUTEX)
+  # Public: the Dr.Jit AD layer includes lock.h and must agree on the layout
+  target_compile_definitions(drjit-core PUBLIC -DDRJIT_USE_STD_MUTEX)
 endif()
 
 if (DRJIT_SANITIZE_UBSAN)

@@ -388,6 +388,17 @@ extern JIT_EXPORT void jit_set_log_level_callback(JIT_ENUM LogLevel level,
 /// Return the currently set minimum log level for output to a callback
 extern JIT_EXPORT JIT_ENUM LogLevel jit_log_level_callback();
 
+/**
+ * \brief Register a callback that can postpone log message delivery
+ *
+ * Dr.Jit delivers log message callback upon leaving its internal lock. Users
+ * of Dr.Jit which add further locking may wish to further postpone delivery.
+ * This function provides the means to install a callback to request
+ * postponement.
+ */
+typedef int (*LogDeferCallback)(void);
+extern JIT_EXPORT void jit_set_log_defer_callback(LogDeferCallback callback);
+
 /// Print a log message with the specified log level and message
 extern JIT_EXPORT void jit_log(JIT_ENUM LogLevel level, const char* fmt, ...);
 

@@ -192,8 +192,9 @@ LogLevel jit_log_level_callback() {
     return state.log_level_callback;
 }
 
+// jit_log/jit_raise/jit_fail() intentionally do not acquire the Dr.Jit lock.
+
 void jit_log(LogLevel level, const char* fmt, ...) {
-    lock_guard guard(state.lock);
     va_list args;
     va_start(args, fmt);
     jitc_vlog(level, fmt, args);
@@ -201,7 +202,6 @@ void jit_log(LogLevel level, const char* fmt, ...) {
 }
 
 void jit_raise(const char* fmt, ...) {
-    lock_guard guard(state.lock);
     va_list args;
     va_start(args, fmt);
     jitc_vraise(fmt, args);
@@ -209,7 +209,6 @@ void jit_raise(const char* fmt, ...) {
 }
 
 void jit_fail(const char* fmt, ...) noexcept {
-    lock_guard guard(state.lock);
     va_list args;
     va_start(args, fmt);
     jitc_vfail(fmt, args);

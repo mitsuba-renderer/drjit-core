@@ -10,16 +10,31 @@
 #include <cstdio>
 #include <stdexcept>
 #include <ctime>
+#include <mutex>
+#include <string>
+#include <vector>
 #include "internal.h"
 #include "log.h"
-#include "strbuf.h"
 
 #if defined(_WIN32)
 #  include <windows.h>
 #endif
 
-static StringBuffer log_buffer;
-static char jitc_string_buf[64];
+/// Holds a postponed log message
+struct LogMessage {
+    LogLevel level;
+    std::string msg;
+};
+
+// Log messages waiting to be handed to ``state.log_callback``
+static std::mutex log_mutex;
+static std::vector<LogMessage> log_postponed;
+
+/// Client hook registered via \ref jit_set_log_defer_callback(), if any
+static LogDeferCallback log_defer_callback = nullptr;
+
+static char jitc_mem_buf[64];
+static char jitc_time_buf[64];
 
 static const char *fatal_error_msg =
     "\nDr.Jit encountered an unrecoverable error and will now shut\n"
@@ -37,109 +52,154 @@ static const char *fatal_error_msg =
     "\n"
     "The error message of this specific failure is as follows:\n>>> ";
 
+/// Render a printf-style message into a string
+static std::string jitc_vformat(const char *fmt, va_list args) {
+    va_list args_2;
+    va_copy(args_2, args);
+    int size = vsnprintf(nullptr, 0, fmt, args_2);
+    va_end(args_2);
+
+    if (size < 0) {
+        fprintf(stderr, "jitc_vformat(): vsnprintf failed!\n");
+        abort();
+    }
+
+    std::string result((size_t) size, '\0');
+    vsnprintf(result.data(), (size_t) size + 1, fmt, args);
+    return result;
+}
+
+/// Hand queued messages to the log callback. No Dr.Jit lock may be held.
+static void jitc_log_deliver() noexcept {
+    std::vector<LogMessage> todo;
+
+    {
+        std::lock_guard<std::mutex> guard(log_mutex);
+        todo.swap(log_postponed);
+    }
+
+    LogCallback callback = state.log_callback;
+    for (LogMessage &message : todo) {
+        if (unlikely(!callback))
+            break;
+
+        // The callback runs user code, which may fail in arbitrary ways
+        try {
+            callback(message.level, message.msg.c_str());
+        } catch (...) {
+            fputs(message.msg.c_str(), stderr);
+            fputc('\n', stderr);
+        }
+    }
+}
+
+void jit_log_flush() {
+    // A client may still be inside a critical section of its own
+    if (log_defer_callback && log_defer_callback())
+        return;
+
+    jitc_log_deliver();
+}
+
+void jit_set_log_defer_callback(LogDeferCallback callback) {
+    log_defer_callback = callback;
+}
+
+void lock_release_pending(Lock &lock) noexcept {
+    lock.recursion_count = 1; // Clears LOCK_PENDING
+    lock_release(lock);       // Takes the fast path and fully unlocks
+    jit_log_flush();
+}
+
+/// Queue `msg`, and arrange for it to be delivered at a safe moment
+static void jitc_log_postpone(LogLevel log_level, std::string &&msg) {
+    {
+        std::lock_guard<std::mutex> guard(log_mutex);
+        log_postponed.push_back({ log_level, std::move(msg) });
+    }
+
+    if (likely(state.lock.owner.load(std::memory_order_relaxed) == thread_id()))
+        lock_set_pending(state.lock); // Deliver once this thread lets go
+    else
+        jit_log_flush();
+}
+
+void jitc_vlog(LogLevel log_level, const char* fmt, va_list args) {
+    if (likely(!jitc_log_active(log_level)))
+        return;
+
+    if (log_level <= state.log_level_stderr) {
+        va_list args_2;
+        va_copy(args_2, args);
+        vfprintf(stderr, fmt, args_2);
+        fputc('\n', stderr);
+        va_end(args_2);
+    }
+
+    if (log_level > state.log_level_callback || !state.log_callback)
+        return;
+
+    jitc_log_postpone(log_level, jitc_vformat(fmt, args));
+}
+
+void jitc_log_msg(LogLevel log_level, const char *msg) {
+    if (unlikely(!state.log_callback)) {
+        fputs(msg, stderr);
+        fputc('\n', stderr);
+        return;
+    }
+
+    jitc_log_postpone(log_level, msg);
+}
+
 void jitc_log(LogLevel log_level, const char* fmt, ...) {
     if (likely(!jitc_log_active(log_level)))
         return;
 
-    if (unlikely(log_level <= state.log_level_stderr)) {
-        va_list args;
-        va_start(args, fmt);
-        vfprintf(stderr, fmt, args);
-        fputc('\n', stderr);
-        va_end(args);
-    }
-
-    if (unlikely(log_level <= state.log_level_callback && state.log_callback)) {
-        va_list args;
-        va_start(args, fmt);
-        log_buffer.clear();
-        log_buffer.vfmt(fmt, args);
-        va_end(args);
-        state.log_callback(log_level, log_buffer.get());
-    }
+    va_list args;
+    va_start(args, fmt);
+    jitc_vlog(log_level, fmt, args);
+    va_end(args);
 }
 
-void jitc_vlog(LogLevel log_level, const char* fmt, va_list args_) {
-    if (likely(!jitc_log_active(log_level)))
-        return;
-
-    if (unlikely(log_level <= state.log_level_stderr)) {
-        va_list args;
-        va_copy(args, args_);
-        vfprintf(stderr, fmt, args);
-        fputc('\n', stderr);
-        va_end(args);
-    }
-
-    if (unlikely(log_level <= state.log_level_callback && state.log_callback)) {
-        va_list args;
-        va_copy(args, args_);
-        log_buffer.clear();
-        log_buffer.vfmt(fmt, args);
-        va_end(args);
-        state.log_callback(log_level, log_buffer.get());
-    }
+void jitc_vraise(const char* fmt, va_list args) {
+    throw std::runtime_error(jitc_vformat(fmt, args));
 }
 
 void jitc_raise(const char* fmt, ...) {
     va_list args;
     va_start(args, fmt);
-    log_buffer.clear();
-    log_buffer.vfmt(fmt, args);
-    va_end(args);
-
-    throw std::runtime_error(log_buffer.get());
+    jitc_vraise(fmt, args);
+    // va_end(args); (dead code)
 }
 
-void jitc_vraise(const char* fmt, va_list args) {
-    log_buffer.clear();
-    log_buffer.vfmt(fmt, args);
+void jitc_vfail(const char* fmt, va_list args) noexcept {
+    std::string msg = fatal_error_msg + jitc_vformat(fmt, args);
 
-    throw std::runtime_error(log_buffer.get());
+    // Release the lock and deliver the messages leading up to the failure. The
+    // report below can then no longer hang while the callback waits for a
+    // resource owned by a thread that is itself stuck on the lock.
+    if (state.lock.owner.load(std::memory_order_relaxed) == thread_id()) {
+        state.lock.recursion_count = 1;
+        lock_release(state.lock);
+    }
+    jitc_log_deliver(); // Unconditional: we are about to abort
+
+    if (state.log_callback) {
+        state.log_callback(Error, msg.c_str());
+    } else {
+        fputs(msg.c_str(), stderr);
+        fputc('\n', stderr);
+    }
+
+    abort();
 }
 
 void jitc_fail(const char* fmt, ...) noexcept {
-    if (state.log_callback) {
-        va_list args;
-        va_start(args, fmt);
-        log_buffer.clear();
-        log_buffer.put(fatal_error_msg, strlen(fatal_error_msg));
-        log_buffer.vfmt(fmt, args);
-        va_end(args);
-        state.log_callback(Error, log_buffer.get());
-    } else {
-        va_list args;
-        va_start(args, fmt);
-        fputs(fatal_error_msg, stderr);
-        vfprintf(stderr, fmt, args);
-        fputc('\n', stderr);
-        va_end(args);
-    }
-
-    lock_release(state.lock);
-    abort();
-}
-
-void jitc_vfail(const char* fmt, va_list args_) noexcept {
-    if (state.log_callback) {
-        va_list args;
-        va_copy(args, args_);
-        log_buffer.clear();
-        log_buffer.put(fatal_error_msg, strlen(fatal_error_msg));
-        log_buffer.vfmt(fmt, args);
-        va_end(args);
-        state.log_callback(Error, log_buffer.get());
-    } else {
-        va_list args;
-        va_copy(args, args_);
-        fputs(fatal_error_msg, stderr);
-        vfprintf(stderr, fmt, args);
-        fputc('\n', stderr);
-        va_end(args);
-    }
-
-    lock_release(state.lock);
-    abort();
+    va_list args;
+    va_start(args, fmt);
+    jitc_vfail(fmt, args);
+    // va_end(args); (dead code)
 }
 
 /// Generate a string representing a floating point followed by a unit
@@ -158,7 +218,7 @@ static void print_float_with_unit(char *buf, size_t bufsize, double value,
     // Remove trailing zeros
     char c;
     pos--;
-    while (c = jitc_string_buf[pos], pos > 0 && (c == '0' || c == '.'))
+    while (c = buf[pos], pos > 0 && (c == '0' || c == '.'))
         pos--;
     pos++;
 
@@ -185,10 +245,10 @@ const char *jitc_mem_string(size_t size) {
     for (i = 0; i < 6 && value > 1024.0; ++i)
         value /= 1024.0;
 
-    print_float_with_unit(jitc_string_buf, sizeof(jitc_string_buf),
+    print_float_with_unit(jitc_mem_buf, sizeof(jitc_mem_buf),
                           value, false, orders[i]);
 
-    return jitc_string_buf;
+    return jitc_mem_buf;
 }
 
 const char *jitc_time_string(float value_) {
@@ -204,10 +264,10 @@ const char *jitc_time_string(float value_) {
     for (i = 0; i < 7 && value > orders[i+1].factor; ++i)
         value /= orders[i+1].factor;
 
-    print_float_with_unit(jitc_string_buf, sizeof(jitc_string_buf),
+    print_float_with_unit(jitc_time_buf, sizeof(jitc_time_buf),
                           value, true, orders[i].suffix);
 
-    return jitc_string_buf;
+    return jitc_time_buf;
 }
 
 #if !defined(_WIN32)

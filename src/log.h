@@ -41,6 +41,9 @@ extern void jitc_log(LogLevel level, const char* fmt, ...);
 /// Print a log message with the specified log level and message
 extern void jitc_vlog(LogLevel level, const char* fmt, va_list args);
 
+/// Print a log message that has already been formatted
+extern void jitc_log_msg(LogLevel level, const char *msg);
+
 /// Raise a std::runtime_error with the given message
 #if defined(__GNUC__)
     __attribute__((noreturn, __format__ (__printf__, 1, 2)))
@@ -62,9 +65,6 @@ extern void jitc_fail(const char* fmt, ...) noexcept;
 
 /// Immediately terminate the application due to a fatal internal error
 [[noreturn]] extern void jitc_vfail(const char* fmt, va_list args) noexcept;
-
-/// Return and clear the log buffer
-extern char *jitc_log_buffer();
 
 /// Convert a number of bytes into a human-readable string (returns static buffer!)
 extern const char *jitc_mem_string(size_t size);
