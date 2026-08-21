@@ -645,7 +645,7 @@ void jitc_cuda_event_wait(JitEvent event) {
     CUevent cuda_event = e->cuda_event;
     // Release the lock while waiting
     unlock_guard guard_2(state.lock);
-    cukda_check(cuEventSynchronize(cuda_event));
+    cuda_check(cuEventSynchronize(cuda_event));
 }
 
 float jitc_cuda_event_elapsed_time(JitEvent start, JitEvent end) {

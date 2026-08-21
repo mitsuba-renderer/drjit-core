@@ -427,7 +427,13 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
 
         opts.libraryType = MTLLibraryTypeExecutable;
 
-        id<MTLLibrary> lib = [dev newLibraryWithSource:src options:opts error:&err];
+        // Drop the central Dr.Jit lock while performing the expensive MSL
+        // compilation and pipeline build steps.
+        id<MTLLibrary> lib;
+        {
+            unlock_guard guard(state.lock);
+            lib = [dev newLibraryWithSource:src options:opts error:&err];
+        }
 
         if (!lib) {
             const char *desc = err ? err.localizedDescription.UTF8String
@@ -502,21 +508,24 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
             [linked_fns addObject:f];
         }
 
-        if (linked_fns.count > 0) {
-            MTLLinkedFunctions *lf = [MTLLinkedFunctions new];
-            lf.functions = linked_fns;
+        {
+            unlock_guard guard(state.lock);
+            if (linked_fns.count > 0) {
+                MTLLinkedFunctions *lf = [MTLLinkedFunctions new];
+                lf.functions = linked_fns;
 
-            MTLComputePipelineDescriptor *desc =
-                [MTLComputePipelineDescriptor new];
-            desc.computeFunction = func;
-            desc.linkedFunctions = lf;
+                MTLComputePipelineDescriptor *desc =
+                    [MTLComputePipelineDescriptor new];
+                desc.computeFunction = func;
+                desc.linkedFunctions = lf;
 
-            pso = [dev newComputePipelineStateWithDescriptor:desc
-                                                     options:MTLPipelineOptionNone
-                                                  reflection:nil
-                                                       error:&err];
-        } else {
-            pso = [dev newComputePipelineStateWithFunction:func error:&err];
+                pso = [dev newComputePipelineStateWithDescriptor:desc
+                                                         options:MTLPipelineOptionNone
+                                                      reflection:nil
+                                                           error:&err];
+            } else {
+                pso = [dev newComputePipelineStateWithFunction:func error:&err];
+            }
         }
 
         if (!pso) {
