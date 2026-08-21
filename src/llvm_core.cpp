@@ -422,8 +422,18 @@ void jitc_llvm_compile(Kernel &kernel) {
 
     jitc_llvm_memmgr_prepare(buffer.size());
 
+    // Copy the kernel IR into a private buffer so that we can safely release
+    // the central Dr.Jit lock below.
+    size_t ir_size = buffer.size();
+    std::unique_ptr<char[]> ir(new char[ir_size + 1]);
+    memcpy(ir.get(), buffer.get(), ir_size + 1);
+    std::string name = kernel_name;
+
+    // Release the lock
+    unlock_guard guard(state.lock);
+
     LLVMMemoryBufferRef llvm_buf = LLVMCreateMemoryBufferWithMemoryRange(
-        buffer.get(), buffer.size(), kernel_name, 0);
+        ir.get(), ir_size, name.c_str(), 0);
     if (unlikely(!llvm_buf))
         jitc_fail("jit_run_compile(): could not create memory buffer!");
 
@@ -433,17 +443,15 @@ void jitc_llvm_compile(Kernel &kernel) {
     LLVMParseIRInContext(jitc_llvm_context, llvm_buf, &llvm_module, &error);
     if (unlikely(error))
         jitc_fail("jit_llvm_compile(): parsing failed. Please see the LLVM "
-                  "IR and error message below:\n\n%s\n\n%s", buffer.get(), error);
+                  "IR and error message below:\n\n%s\n\n%s", ir.get(), error);
     LLVMDisposeMessage(error);
 
-// Always validate for now -- at least, until this Dr.Jit version has stabilized a bit more
-// #if !defined(NDEBUG)
+    // Check that the kernel IR is valid
     bool status = LLVMVerifyModule(llvm_module, LLVMReturnStatusAction, &error);
     if (unlikely(status))
         jitc_fail("jit_llvm_compile(): module could not be verified! Please "
                   "see the LLVM IR and error message below:\n\n%s\n\n%s",
-                  buffer.get(), error);
-// #endif
+                  ir.get(), error);
     LLVMDisposeMessage(error);
 
     #define DRJIT_RUN_LEGACY_PASS_MANAGER()                                   \
@@ -502,7 +510,7 @@ void jitc_llvm_compile(Kernel &kernel) {
             "by the target architecture. DrJit cannot handle this case "
             "and will terminate the application now. For reference, the "
             "following kernel code was responsible for this problem:\n\n%s",
-            buffer.get());
+            ir.get());
 
 #if !defined(_WIN32)
     void *ptr = mmap(nullptr, jitc_llvm_memmgr_offset, PROT_READ | PROT_WRITE,
@@ -532,7 +540,7 @@ void jitc_llvm_compile(Kernel &kernel) {
         *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 1;
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
-    kernel.llvm.itt = __itt_string_handle_create(kernel_name);
+    kernel.llvm.itt = __itt_string_handle_create(name.c_str());
 #endif
 
 #if !defined(_WIN32)
