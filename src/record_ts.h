@@ -30,10 +30,6 @@ void jitc_freeze_replay(Recording *recording, const uint32_t *inputs,
 
 int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs);
 
-void jitc_freeze_discard(JitBackend backend, const char *message);
-
-int jitc_freeze_discarded(const Recording *recording);
-
 /// HashMap, mapping an allocation to a recorded variable
 using PtrToSlot = tsl::robin_map<const void *, uint32_t, PointerHasher>;
 
@@ -291,12 +287,6 @@ struct Recording {
 
     /// The backend, which was used while recording.
     JitBackend backend;
-
-    /// Indicates if this frozen function recording should be discarded.
-    /// Some functions can generate recordings that cannot be replayed. These
-    /// functions can call `jit_freeze_discard` to mark the recording as such.
-    /// Dr.Jit will then not add it to the recording cache.
-    bool discarded = false;
 
     /// Value of \ref State::kernel_cache_generation when \ref
     /// check_kernel_cache() last succeeded. As long as the kernel cache is not

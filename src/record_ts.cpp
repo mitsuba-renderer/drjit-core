@@ -2943,18 +2943,3 @@ int jitc_freeze_dry_run(Recording *recording, const uint32_t *inputs) {
 
     return result;
 }
-
-void jitc_freeze_discard(JitBackend backend, const char *message) {
-    if (RecordThreadState *rts =
-            dynamic_cast<RecordThreadState *>(thread_state(backend));
-        rts != nullptr) {
-        // The reason is the only clue about why a frozen function re-traces
-        jitc_log(LogLevel::Info, "jit_freeze_discard(): %s",
-                 message ? message : "no reason given");
-        rts->m_recording.discarded = true;
-    }
-}
-
-int jitc_freeze_discarded(const Recording *recording) {
-    return recording->discarded;
-}

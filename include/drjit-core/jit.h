@@ -1754,9 +1754,6 @@ enum class JitFlag : uint32_t {
     /// Set to \c true when Dr.Jit is recording a frozen function
     FreezingScope = 1 << 21,
 
-    /// Set to \c true when traversing inputs or outputs of a frozen function
-    EnableObjectTraversal = 1 << 22,
-
     /// Reorder threads in OptiX after a ray-intersection
     ShaderExecutionReordering = 1 << 23,
 
@@ -1805,7 +1802,6 @@ enum JitFlag {
     JitFlagSymbolic = 1 << 19,
     JitFlagKernelFreezing = 1 << 20,
     JitFlagFreezingScope = 1 << 21,
-    JitFlagEnableObjectTraversal = 1 << 22,
     JitFlagShaderExecutionReordering = 1 << 23,
     JitFlagSpillToSharedMemory = 1 << 24
 };
@@ -3039,29 +3035,6 @@ extern JIT_EXPORT void jit_freeze_replay(Recording *recording,
  */
 extern JIT_EXPORT int jit_freeze_dry_run(Recording *recording,
                                          const uint32_t *inputs);
-
-/**
- * \brief Some function result in recordings that cannot be replayed. This
- *     function marks such recordings, so that Dr.Jit can discard them. If no
- *     function is in the progress of being recorded this function has no
- *     effect.
- *
- * \param backend
- *     Backend for which the current recording should be discarded.
- *
- * \param message
- *     This function accepts an optional message.
- */
-extern JIT_EXPORT void jit_freeze_discard(JitBackend backend, const char *message);
-
-/**
- * \brief This function returns if the frozen function recording should be
- *     discarded or not.
- *
- * \param recording
- *     Recording for which this function should querry if it should be discarded.
- */
-extern JIT_EXPORT int jit_freeze_discarded(const Recording *recording);
 
 /**
  * \brief Pause recording the ThreadState for this backend.
