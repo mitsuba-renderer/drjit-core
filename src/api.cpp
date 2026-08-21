@@ -2416,7 +2416,8 @@ void jit_event_record(JitEvent event) {
 }
 
 int jit_event_query(JitEvent event) {
-    lock_guard guard(state.lock);
+    // This operation is used for non-blocking pooling and is deliberately
+    // lock-free across all backends.
 
     if (jit_flag(JitFlag::FreezingScope))
         jitc_raise("jit_event_query(): events cannot be used while recording a frozen function");

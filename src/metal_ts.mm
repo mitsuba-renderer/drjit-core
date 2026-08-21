@@ -1478,7 +1478,9 @@ void jitc_metal_event_record(JitEvent event) {
         id<MTLCommandBuffer> cb =
             (__bridge id<MTLCommandBuffer>) ts->ensure_cmdbuf();
         id<MTLSharedEvent> ev = (__bridge id<MTLSharedEvent>) e->metal_event;
-        [cb encodeSignalEvent:ev value:++e->metal_value];
+        // The counter is read without the state lock by jit_event_query()
+        uint64_t value = __atomic_add_fetch(&e->metal_value, 1, __ATOMIC_RELEASE);
+        [cb encodeSignalEvent:ev value:value];
     }
 
     ts->flush(/* wait = */ false);
@@ -1487,7 +1489,8 @@ void jitc_metal_event_record(JitEvent event) {
 int jitc_metal_event_query(JitEvent event) {
     EventData *e = (EventData *) event;
     id<MTLSharedEvent> ev = (__bridge id<MTLSharedEvent>) e->metal_event;
-    return ev.signaledValue >= e->metal_value ? 1 : 0;
+    uint64_t value = __atomic_load_n(&e->metal_value, __ATOMIC_ACQUIRE);
+    return ev.signaledValue >= value ? 1 : 0;
 }
 
 void jitc_metal_event_wait(JitEvent event) {
@@ -1500,7 +1503,9 @@ void jitc_metal_event_wait(JitEvent event) {
     @autoreleasepool {
         id<MTLSharedEvent> ev = (__bridge id<MTLSharedEvent>) e->metal_event;
         uint64_t value = e->metal_value;
-        // waitUntilSignaledValue returns false on timeout; loop to be unbounded.
+        // Release the lock lock while waiting
+        unlock_guard guard(state.lock);
+        // waitUntilSignaledValue returns false on timeout
         while (ev.signaledValue < value)
             [ev waitUntilSignaledValue:value timeoutMS:1000];
     }

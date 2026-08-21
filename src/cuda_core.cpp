@@ -621,6 +621,7 @@ void jitc_cuda_event_destroy(JitEvent event) {
 
 void jitc_cuda_event_record(JitEvent event) {
     EventData* e = (EventData*)event;
+    scoped_set_context guard(e->ts->context);
     cuda_check(cuEventRecord(e->cuda_event, e->ts->stream));
 }
 
@@ -641,7 +642,10 @@ int jitc_cuda_event_query(JitEvent event) {
 void jitc_cuda_event_wait(JitEvent event) {
     EventData* e = (EventData*)event;
     scoped_set_context guard(e->ts->context);
-    cuda_check(cuEventSynchronize(e->cuda_event));
+    CUevent cuda_event = e->cuda_event;
+    // Release the lock while waiting
+    unlock_guard guard_2(state.lock);
+    cukda_check(cuEventSynchronize(cuda_event));
 }
 
 float jitc_cuda_event_elapsed_time(JitEvent start, JitEvent end) {

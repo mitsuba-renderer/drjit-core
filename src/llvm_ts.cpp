@@ -1204,7 +1204,13 @@ int jitc_llvm_event_query(JitEvent event) {
 
 void jitc_llvm_event_wait(JitEvent event) {
     EventData* e = (EventData*)event;
-    task_wait(e->llvm_task);
+    Task *task = e->llvm_task;
+    if (!task)
+        return;
+    // Release the lock while waiting
+    task_retain(task);
+    unlock_guard guard(state.lock);
+    task_wait_and_release(task);
 }
 
 float jitc_llvm_event_elapsed_time(JitEvent start, JitEvent end) {
