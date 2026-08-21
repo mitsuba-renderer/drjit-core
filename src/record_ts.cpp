@@ -567,13 +567,19 @@ void RecordThreadState::notify_free(const void *ptr) {
     if (it != ptr_to_slot.end()) {
         jitc_log(LogLevel::Debug, "record(): jitc_free(ptr=%p)", ptr);
 
-        uint32_t start = (uint32_t) m_recording.dependencies.size();
-        add_in_param(ptr, VarType::Void, false);
-        uint32_t end = (uint32_t) m_recording.dependencies.size();
+        // Inputs are owned by the caller and must never be freed by a replay.
+        uint32_t slot = it->second;
+        if (m_recording.recorded_variables[slot].init !=
+            RecordedVarInit::Input) {
+            uint32_t start = (uint32_t) m_recording.dependencies.size();
+            add_in_param(ptr, VarType::Void, false);
+            uint32_t end = (uint32_t) m_recording.dependencies.size();
 
-        Operation op;
-        op.type             = OpType::Free;
-        op.dependency_range = std::pair(start, end);
+            Operation op;
+            op.type             = OpType::Free;
+            op.dependency_range = std::pair(start, end);
+            m_recording.operations.push_back(op);
+        }
 
         /// Removes the pointer from the \c ptr_to_slot mapping. The next
         /// operation using this memory region will have to add it using \c

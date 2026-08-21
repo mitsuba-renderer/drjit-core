@@ -2908,10 +2908,11 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
     dst = steal(jitc_var_literal(backend, vt, &identity, new_size, 0));
     dst = steal(jitc_var_data(dst, false, &dst_addr));
 
+    Ref src;
     v = jitc_var(index);
     if (!v->is_literal() || v->literal != identity) {
         void *src_addr = nullptr;
-        Ref src = steal(jitc_var_data(index, false, &src_addr));
+        src = steal(jitc_var_data(index, false, &src_addr));
         jitc_memcpy_async(backend, dst_addr, src_addr,
                           size * tsize);
     }
