@@ -1742,12 +1742,21 @@ void jitc_var_read(uint32_t index, size_t offset, void *dst) {
     if (v->is_literal() || v->is_undefined()) {
         memcpy(dst, &v->literal, isize);
     } else if (v->is_evaluated()) {
-        if (jitc_flags() & (uint32_t) JitFlag::FreezingScope)
+        if (jitc_flags() & (uint32_t) JitFlag::FreezingScope) {
+            const char *hint = "";
+            if (!(jitc_flags() & (uint32_t) JitFlag::SymbolicLoops))
+                hint = " This could also be caused by an evaluated loop, whose "
+                       "loop condition is read in the same way. In that case, "
+                       "setting ``JitFlag::SymbolicLoops`` to true might solve "
+                       "the issue.";
+
             jitc_raise(
-                "jit_var_read(): reading from evaluated variables while "
-                "recording a frozen function is not supported! This could also "
-                "be caused by non-symbolic loops. In that case, setting "
-                "``JitFlag::SymbolicLoops`` to true might solve the issue.");
+                "jit_var_read(): reading the contents of an evaluated variable "
+                "while recording a frozen function is not permitted, as this "
+                "operation cannot be recorded. See "
+                "https://drjit.readthedocs.io/en/latest/freeze.html for "
+                "details.%s", hint);
+        }
 
         jitc_memcpy((JitBackend) v->backend, dst,
                     (const uint8_t *) v->data + offset * isize, isize);
