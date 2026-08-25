@@ -1391,13 +1391,11 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
         id<MTLBuffer> dst_buf =
             (__bridge id<MTLBuffer>) jitc_metal_find_buffer(dst, &dst_off);
 
-        // Stage entries through a shared buffer
-        id<MTLDevice> dev = (__bridge id<MTLDevice>) metal_device;
-        size_t entries_bytes = sizeof(AggregationEntry) * (size_t) size;
+        // The caller allocates ``agg`` via jitc_malloc(shared=true), so the
+        // GPU can read the entries in place.
+        size_t agg_off = 0;
         id<MTLBuffer> entries_buf =
-            [dev newBufferWithBytes:agg
-                             length:entries_bytes
-                            options:MTLResourceStorageModeShared];
+            (__bridge id<MTLBuffer>) jitc_metal_find_buffer(agg, &agg_off);
 
         id<MTLComputePipelineState> pso =
             metal_pipeline(this, MetalKernel::Aggregate);
@@ -1407,12 +1405,12 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
                 ensure_compute_encoder();
         [enc setComputePipelineState:pso];
         [enc setBuffer:dst_buf offset:dst_off atIndex:0];
-        [enc setBuffer:entries_buf offset:0 atIndex:1];
+        [enc setBuffer:entries_buf offset:agg_off atIndex:1];
         [enc useResource:dst_buf usage:MTLResourceUsageWrite];
+        [enc useResource:entries_buf usage:MTLResourceUsageRead];
 
         // Mark each src buffer (negative-size entries: src is a device pointer)
-        // as resident so the GPU can dereference it. Read from the host ``agg``
-        // array directly (``entries_buf`` is just a copy of it).
+        // as resident so the GPU can dereference it.
         for (uint32_t i = 0; i < size; ++i) {
             const AggregationEntry &e = agg[i];
             if (e.size < 0 && e.src) {
