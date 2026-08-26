@@ -1468,7 +1468,8 @@ void jitc_metal_event_destroy(JitEvent event) {
 
 void jitc_metal_event_record(JitEvent event) {
     EventData *e = (EventData *) event;
-    MetalThreadState *ts = (MetalThreadState *) e->ts;
+    MetalThreadState *ts = (MetalThreadState *)
+        thread_state(JitBackend::Metal)->actual_state();
 
     @autoreleasepool {
         // encodeSignalEvent requires that the buffer has no open command encoder
@@ -1493,7 +1494,8 @@ int jitc_metal_event_query(JitEvent event) {
 
 void jitc_metal_event_wait(JitEvent event) {
     EventData *e = (EventData *) event;
-    MetalThreadState *ts = (MetalThreadState *) e->ts;
+    MetalThreadState *ts = (MetalThreadState *)
+        thread_state(JitBackend::Metal)->actual_state();
 
     // Commit before blocking, else a same-thread record()/wait() self-deadlocks.
     ts->flush(/* wait = */ false);
