@@ -521,7 +521,7 @@ int Recording::replay_opaque_width(Operation &op) {
     uint32_t size = in_var.size(in_info.vtype);
 
     if (!dry_run)
-        jitc_memcpy(backend, out_var.data, &size, sizeof(uint32_t));
+        jitc_poke(backend, out_var.data, &size, sizeof(uint32_t));
 
     return true;
 }

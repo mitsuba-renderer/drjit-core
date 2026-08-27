@@ -9,6 +9,7 @@
 
 #include <cstdlib>
 #include <cstring>
+#include <algorithm>
 
 // Carbon (deprecated) defines a ThreadState type that conflicts with Dr.Jit.
 // The following definition suppresses this.
@@ -383,53 +384,48 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
             jitc_free(staging);
         }
 
-        // Make every resource this kernel touches resident on the encoder
+        // Collect resources for batch assignment via ``useResources:``.
+        std::vector<void *> &ro = metal_resources_ro, &rw = metal_resources_rw;
+        ro.clear(); rw.clear();
+
         for (const CallResource &res : metal_call_resources) {
             switch (res.kind) {
                 case ResourceKind::Buffer: {
                     size_t off = 0;
-                    id<MTLBuffer> buf = (__bridge id<MTLBuffer>)
-                        jitc_metal_find_buffer(res.ptr, &off);
-                    [enc useResource:buf
-                               usage:MTLResourceUsageRead |
-                                     (res.write ? MTLResourceUsageWrite : 0)];
+                    void *buf = jitc_metal_find_buffer(res.ptr, &off);
+                    if (buf)
+                        (res.write ? rw : ro).push_back(buf);
                     break;
                 }
                 case ResourceKind::Accel:
                 case ResourceKind::IFT: {
-                    // Make the scene's TLAS, its BLAS / vertex / index buffers,
+                    // The scene's TLAS, its BLAS / vertex / index buffers,
                     // and (for custom-primitive scenes) its IFT + per-entry
-                    // buffers resident.
+                    // buffers.
                     auto *scene = (MetalScene *) res.ptr;
-                    [enc useResource:(__bridge id<MTLAccelerationStructure>) scene->tlas
-                               usage:MTLResourceUsageRead];
+                    ro.push_back(scene->tlas);
                     for (void *r : scene->resources)
                         if (r)
-                            [enc useResource:(__bridge id<MTLResource>) r
-                                       usage:MTLResourceUsageRead];
+                            ro.push_back(r);
                     if (!scene->intersection_fn_library)
                         break;
 
-                    id<MTLIntersectionFunctionTable> ift =
-                        (__bridge id<MTLIntersectionFunctionTable>)
-                            jitc_metal_get_or_create_ift_for_scene(
-                                scene, (__bridge void *) pso);
+                    void *ift = jitc_metal_get_or_create_ift_for_scene(
+                        scene, (__bridge void *) pso);
                     if (!ift)
                         break;
 
-                    [enc useResource:ift usage:MTLResourceUsageRead];
+                    ro.push_back(ift);
                     for (const IFTBinding &b : scene->ift_bindings)
-                        if (id<MTLBuffer> buf = (__bridge id<MTLBuffer>) b.buffer)
-                            [enc useResource:buf usage:MTLResourceUsageRead];
+                        if (b.buffer)
+                            ro.push_back(b.buffer);
                     break;
                 }
 
                 case ResourceKind::Texture: {
-                    id<MTLTexture> t = (__bridge id<MTLTexture>)
-                        ((MetalTexResource *) res.ptr)->object;
-                    [enc useResource:t
-                               usage:MTLResourceUsageRead |
-                                     (res.write ? MTLResourceUsageWrite : 0)];
+                    void *t = ((MetalTexResource *) res.ptr)->object;
+                    if (t)
+                        (res.write ? rw : ro).push_back(t);
                     break;
                 }
 
@@ -438,6 +434,22 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
             }
         }
         metal_call_resources.clear();
+
+        // Deduplicate: vcall tables reference the same buffers many times
+        auto dedupe = [](std::vector<void *> &v) {
+            std::sort(v.begin(), v.end());
+            v.erase(std::unique(v.begin(), v.end()), v.end());
+        };
+        dedupe(ro); dedupe(rw);
+
+        if (!ro.empty())
+            [enc useResources:(__unsafe_unretained id<MTLResource> const *)(void *) ro.data()
+                        count:ro.size()
+                        usage:MTLResourceUsageRead];
+        if (!rw.empty())
+            [enc useResources:(__unsafe_unretained id<MTLResource> const *)(void *) rw.data()
+                        count:rw.size()
+                        usage:MTLResourceUsageRead | MTLResourceUsageWrite];
 
         uint32_t threads_per_group = std::min<uint32_t>(
             (uint32_t) pso.maxTotalThreadsPerThreadgroup, metal_max_threads);
@@ -1410,17 +1422,25 @@ void MetalThreadState::aggregate(void *dst, AggregationEntry *agg,
         [enc useResource:entries_buf usage:MTLResourceUsageRead];
 
         // Mark each src buffer (negative-size entries: src is a device pointer)
-        // as resident so the GPU can dereference it.
+        // as resident so the GPU can dereference it. Batched and unretained
+        // as in launch().
+        std::vector<void *> &ro = metal_resources_ro;
+        ro.clear();
         for (uint32_t i = 0; i < size; ++i) {
             const AggregationEntry &e = agg[i];
             if (e.size < 0 && e.src) {
                 size_t off = 0;
-                id<MTLBuffer> src_buf = (__bridge id<MTLBuffer>)
-                    jitc_metal_find_buffer((void *) e.src, &off);
+                void *src_buf = jitc_metal_find_buffer((void *) e.src, &off);
                 if (src_buf)
-                    [enc useResource:src_buf usage:MTLResourceUsageRead];
+                    ro.push_back(src_buf);
             }
         }
+        std::sort(ro.begin(), ro.end());
+        ro.erase(std::unique(ro.begin(), ro.end()), ro.end());
+        if (!ro.empty())
+            [enc useResources:(__unsafe_unretained id<MTLResource> const *)(void *) ro.data()
+                        count:ro.size()
+                        usage:MTLResourceUsageRead];
 
         // One thread per entry.
         uint32_t threads_per_group = std::min<uint32_t>(

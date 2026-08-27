@@ -27,6 +27,10 @@ struct MetalTexture;
 struct MetalTexResource {
     MetalTexture *parent = nullptr;
     void *object = nullptr; // owned by ``parent``
+
+    /// Cached gpuResourceID of ``object``
+    void *rid_for = nullptr;
+    uint64_t rid = 0;
 };
 
 /// Host-side state for one Metal hardware texture

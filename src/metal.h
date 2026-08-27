@@ -130,6 +130,10 @@ struct MetalScene {
     /// lifetime.
     void *tlas = nullptr;
 
+    /// Cached gpuResourceID of ``tlas``
+    void *tlas_rid_for = nullptr;
+    uint64_t tlas_rid = 0;
+
     /// Resources referenced by the TLAS (BLAS handles, vertex/index
     /// buffers, etc.). useResource()'d at every launch. Not retained.
     std::vector<void *> resources;

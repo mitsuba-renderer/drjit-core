@@ -47,22 +47,34 @@
 // ============================================================================
 
 bool jitc_metal_resource_id(void *owner, ResourceKind kind, void **value_out) {
+    uint64_t v64;
     MTLResourceID rid;
     switch (kind) {
-        case ResourceKind::Accel:
-            rid = ((__bridge id<MTLAccelerationStructure>)
-                       ((MetalScene *) owner)->tlas).gpuResourceID;
+        case ResourceKind::Accel: {
+            MetalScene *scene = (MetalScene *) owner;
+            if (unlikely(scene->tlas_rid_for != scene->tlas)) {
+                rid = ((__bridge id<MTLAccelerationStructure>) scene->tlas).gpuResourceID;
+                std::memcpy(&scene->tlas_rid, &rid, sizeof(uint64_t));
+                scene->tlas_rid_for = scene->tlas;
+            }
+            v64 = scene->tlas_rid;
             break;
+        }
 
         case ResourceKind::Texture:
-            rid = ((__bridge id<MTLTexture>)
-                       ((MetalTexResource *) owner)->object).gpuResourceID;
+        case ResourceKind::Sampler: {
+            MetalTexResource *res = (MetalTexResource *) owner;
+            if (unlikely(res->rid_for != res->object)) {
+                if (kind == ResourceKind::Texture)
+                    rid = ((__bridge id<MTLTexture>) res->object).gpuResourceID;
+                else
+                    rid = ((__bridge id<MTLSamplerState>) res->object).gpuResourceID;
+                std::memcpy(&res->rid, &rid, sizeof(uint64_t));
+                res->rid_for = res->object;
+            }
+            v64 = res->rid;
             break;
-
-        case ResourceKind::Sampler:
-            rid = ((__bridge id<MTLSamplerState>)
-                       ((MetalTexResource *) owner)->object).gpuResourceID;
-            break;
+        }
 
         default:
             // A buffer is an ordinary pointer; an IFT is PSO-dependent and is
@@ -70,8 +82,6 @@ bool jitc_metal_resource_id(void *owner, ResourceKind kind, void **value_out) {
             return false;
     }
 
-    uint64_t v64;
-    std::memcpy(&v64, &rid, sizeof(v64));
     *value_out = (void *) (uintptr_t) v64;
     return true;
 }
@@ -110,6 +120,9 @@ struct BufferEntry {
 static std::vector<BufferEntry> metal_buffer_map;
 static bool metal_buffer_map_sorted = true;
 
+/// Hash table mapping pointer addresses to id<MTLBuffer>
+static tsl::robin_map<uintptr_t, BufferEntry, UInt64Hasher> metal_buffer_lut;
+
 static void jitc_metal_ensure_sorted() {
     if (likely(metal_buffer_map_sorted))
         return;
@@ -127,20 +140,30 @@ static void jitc_metal_ensure_sorted() {
 void jitc_metal_register_buffer(void *ptr, void *metal_buffer, size_t size) {
     metal_buffer_map.push_back({ (uintptr_t) ptr, metal_buffer, size });
     metal_buffer_map_sorted = false;
+    metal_buffer_lut.insert_or_assign(
+        (uintptr_t) ptr, BufferEntry { (uintptr_t) ptr, metal_buffer, size });
 }
 
 /// Look up a buffer that *contains* the given pointer and return the offset
 void *jitc_metal_find_buffer(void *ptr, size_t *offset_out) {
+    uintptr_t addr = (uintptr_t) ptr;
+
+    // Fast path: the pointer references the start of an allocation
+    auto it_lut = metal_buffer_lut.find(addr);
+    if (likely(it_lut != metal_buffer_lut.end())) {
+        *offset_out = 0;
+        return it_lut->second.buf;
+    }
+
     jitc_metal_ensure_sorted();
 
-    uintptr_t addr = (uintptr_t) ptr;
     auto it = std::upper_bound(
         metal_buffer_map.begin(), metal_buffer_map.end(), addr,
         [](uintptr_t a, const BufferEntry &b) { return a < b.base; });
 
     if (it != metal_buffer_map.begin()) {
         --it;
-        if (addr < it->base + it->length) {
+        if (it->buf && addr < it->base + it->length) {
             *offset_out = (size_t) (addr - it->base);
             return it->buf;
         }
@@ -154,6 +177,8 @@ void *jitc_metal_unregister_buffer(void *ptr) {
     jitc_metal_ensure_sorted();
 
     uintptr_t addr = (uintptr_t) ptr;
+    metal_buffer_lut.erase(addr);
+
     auto it = std::lower_bound(
         metal_buffer_map.begin(), metal_buffer_map.end(), addr,
         [](const BufferEntry &e, uintptr_t a) { return e.base < a; });
@@ -387,6 +412,7 @@ void jitc_metal_shutdown() {
         }
         state.metal_devices.clear();
         metal_buffer_map.clear();
+        metal_buffer_lut.clear();
     }
 }
 

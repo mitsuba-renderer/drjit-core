@@ -145,6 +145,10 @@ public:
     struct CallResource { void *ptr; ResourceKind kind; bool write; };
     std::vector<CallResource> metal_call_resources;
 
+    /// Scratch arrays of unretained ``id<MTLResource>`` pointers used to
+    /// batch residency declarations into ``useResources:count:usage:`` calls
+    std::vector<void *> metal_resources_ro, metal_resources_rw;
+
     /// Re-entrancy depth for kernel-history recording
     uint32_t metal_history_depth = 0;
 };
