@@ -110,12 +110,6 @@ static std::vector<uint32_t> call_base_vars;
 /// Metadata for kernel parameters
 std::vector<KernelParamInfo> kernel_param_info;
 
-/// Ensure uniqueness of globals/callables arrays
-GlobalsMap globals_map;
-
-/// StringBuffer for global definitions (intrinsics, callables, etc.)
-StringBuffer globals { 1000 };
-
 /// Hash code of the last generated kernel
 XXH128_hash_t kernel_hash { 0, 0 };
 
@@ -136,9 +130,6 @@ int32_t alloca_align = -1;
 
 /// Number of tentative indirect callables that were assembled in the kernel being compiled
 uint32_t indirect_callable_count = 0;
-
-/// Number of unique indirect callables in the kernel being compiled
-uint32_t indirect_callable_count_unique = 0;
 
 /// Specifies the nesting level of virtual calls being compiled
 uint32_t callable_depth = 0;
@@ -352,12 +343,11 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     kernel_params.clear();
     kernel_param_ids.clear();
     kernel_param_info.clear();
-    globals.clear();
-    globals_map.clear();
+    jitc_unit_reset();
     alloca_size = alloca_align = -1;
     indirect_callable_count = 0;
-    indirect_callable_count_unique = 0;
     call_buffer.reset();
+
     uses_metal4 = false;
 #if defined(DRJIT_ENABLE_METAL)
     jitc_metal_assemble_reset();
@@ -391,8 +381,9 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         // via [[thread_position_in_grid]] (r0), so locals can start at r1.
         n_regs = jitc_is_metal(backend) ? 1 : 4;
     } else {
-        // First 3 parameters reserved for: kernel ptr, size, ITT identifier
-        for (int i = 0; i < 3; ++i)
+        // First 4 parameters reserved for: kernel ptr, size, ITT identifier,
+        // callable table. All are bound in LLVMThreadState::launch().
+        for (int i = 0; i < 4; ++i)
             add_param(nullptr);
         n_regs = 1;
     }
@@ -595,6 +586,22 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
                   group.size, buffer.get());
     }
 
+    // Render the backend prologue/epilogue shared by all units of this kernel
+    buffer.clear();
+#if defined(DRJIT_ENABLE_CUDA)
+    if (jitc_is_cuda(backend))
+        jitc_cuda_render_prologue(ts);
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+    if (jitc_is_metal(backend))
+        jitc_metal_render_prologue();
+#endif
+    unit_prologue.put(buffer.get(), buffer.size());
+    buffer.clear();
+    if (jitc_is_llvm(backend))
+        jitc_llvm_render_epilogue();
+    unit_epilogue.put(buffer.get(), buffer.size());
+
     buffer.clear();
 #if defined(DRJIT_ENABLE_CUDA)
     if (jitc_is_cuda(backend))
@@ -608,71 +615,58 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 #endif
         jitc_llvm_assemble(ts, group);
 
-    // Bind the call-data buffer (built by jitc_call_upload() above and stored in
-    // the base pointer variable) into its reserved parameter slot.
+    // Assign callable indices (determines the dispatch table/VFT/SBT layout)
+    jitc_unit_finalize(backend);
+
+    // Lay out, allocate, and fill the call-data buffer
+    jitc_call_upload(ts);
+
+    // Bind the call-data buffer into its reserved parameter slot.
     if (call_buffer.base_v)
         kernel_params[call_buffer.base_param_index] =
             (void *) (uintptr_t) jitc_var(call_buffer.base_v)->literal;
 
-    // Replace '^'s in '__raygen__^^^..' or 'drjit_^^^..' with hash.
-    // Search for the kernel-name marker rather than the first '^', because
-    // injected preamble code may contain '^' in comments that must not be
-    // overwritten.
-    kernel_hash = hash_kernel(buffer.get(), buffer.size(), backend);
+    // Digest of the entry unit and every callable unit, in callable order.
+    // This also composes the entry unit's source.
+    kernel_hash = jitc_unit_finish_kernel();
 
+    // Replace '^'s in '__raygen__^^^..' or 'drjit_^^^..' with the
+    // kernel entry point's hash.
+    StringBuffer &entry_src = unit_entry->src;
     const char *needle =
         (uses_optix && jitc_is_cuda(backend)) ? "__raygen__^"
                                               : "drjit_^";
-    const char *marker = strstr(buffer.get(), needle);
+    const char *marker = strstr(entry_src.get(), needle);
     if (!marker)
         jitc_fail("jitc_eval(): could not locate kernel-name placeholder "
                   "(needle=\"%s\") in generated source.", needle);
 
-    size_t hash_offset = (marker - buffer.get()) + (strlen(needle) - 1),
-           end_offset = buffer.size(),
+    size_t hash_offset = (marker - entry_src.get()) + (strlen(needle) - 1),
+           end_offset = entry_src.size(),
            prefix_len = (uses_optix && jitc_is_cuda(backend)) ? 10 : 6;
 
-    buffer.rewind_to(hash_offset);
-    buffer.put_q64_unchecked(kernel_hash.high64);
-    buffer.put_q64_unchecked(kernel_hash.low64);
-    buffer.rewind_to(end_offset);
+    entry_src.rewind_to(hash_offset);
+    entry_src.put_q64_unchecked(unit_entry->unit_hash.high64);
+    entry_src.put_q64_unchecked(unit_entry->unit_hash.low64);
+    entry_src.rewind_to(end_offset);
     memset(kernel_name, 0, sizeof(kernel_name));
-    memcpy(kernel_name, buffer.get() + hash_offset - prefix_len,
+    memcpy(kernel_name, entry_src.get() + hash_offset - prefix_len,
            prefix_len + 32);
-
-#if defined(DRJIT_ENABLE_OPTIX)
-    if (uses_optix && indirect_callable_count > 0) {
-        // Work around a bug in OptiX with driver version 570. When a two
-        // pipelines share the same set of direct callables, the driver shares the
-        // compiled result. This caching contaminates the second pipeline with
-        // globals from the first, which causes a linker issue when the 'params'
-        // buffer has a different size. We work around the issue by inserting a
-        // unique callable that prevents this optimization.
-
-        const char *id_fmt =
-            "\n.visible .func (.param .align 8 .b8 result[16]) __direct_callable__id() {\n"
-            "    st.param.u64 [result+0], 0x$Q;\n"
-            "    st.param.u64 [result+8], 0x$Q;\n"
-            "}";
-        buffer.fmt_cuda(2, fmt_strlen(id_fmt), id_fmt,
-            kernel_hash.low64,
-            kernel_hash.high64
-        );
-    }
-#endif
 
     // PrintIR / high log levels dump the generated IR to the console.
     // In the case of Metal, properly indent the generated MSL so that it is
     // easier to read.
     if (unlikely(trace || (jitc_flags() & (uint32_t) JitFlag::PrintIR))) {
+        size_t ir_size;
+        const char *ir = jitc_unit_materialize_print(&ir_size);
 #if defined(DRJIT_ENABLE_METAL)
         if (jitc_is_metal(backend)) {
-            StringBuffer tmp(buffer.size() + 1024);
-            jitc_metal_format(buffer.get(), buffer.size(), tmp);
+            StringBuffer tmp(ir_size + 1024);
+            jitc_metal_format(ir, ir_size, tmp);
             jitc_log_msg(LogLevel::Info, tmp.get());
         } else
 #endif
-        jitc_log_msg(LogLevel::Info, buffer.get());
+        jitc_log_msg(LogLevel::Info, ir);
     }
 
     float codegen_time = timer();
@@ -707,6 +701,14 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
 
 static ProfilerRegion profiler_region_backend_compile("jit_eval: compiling");
 
+/// Copy the composed source of the just-assembled kernel into ``kernel``,
+/// from which jitc_kernel_history_source() serves lazy queries
+static void jitc_kernel_attach_source(Kernel &kernel) {
+    const char *src = jitc_unit_materialize_print(&kernel.src_size);
+    kernel.src = (char *) malloc_check(kernel.src_size + 1);
+    memcpy(kernel.src, src, kernel.src_size + 1);
+}
+
 Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     uint64_t flags = 0;
 
@@ -736,12 +738,10 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
             ProfilerPhase profiler(profiler_region_backend_compile);
             if (!uses_optix) {
                 kernel.size = 1; // dummy size value to distinguish between OptiX and CUDA kernels
-                kernel.data = nullptr;
-                std::tie(kernel.cuda.mod, cache_hit) = jitc_cuda_compile(buffer.get());
+                cache_hit = jitc_cuda_kernel_compile(ts, kernel);
             } else {
                 #if defined(DRJIT_ENABLE_OPTIX)
-                    cache_hit = jitc_optix_compile(
-                        ts, buffer.get(), buffer.size(), kernel_name, kernel);
+                    cache_hit = jitc_optix_compile(ts, kernel);
                 #endif
             }
         } else
@@ -749,21 +749,12 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 #if defined(DRJIT_ENABLE_METAL)
         if (jitc_is_metal(ts->backend)) {
             ProfilerPhase profiler(profiler_region_backend_compile);
-            cache_hit = jitc_metal_kernel_compile(buffer.get(), buffer.size(),
-                                                  kernel_name, kernel);
+            cache_hit = jitc_metal_kernel_compile(ts, kernel);
         } else
 #endif
         {
-            cache_hit = jitc_kernel_load(buffer.get(), (uint32_t) buffer.size(),
-                                         ts->backend, kernel_hash, kernel);
-
-            if (!cache_hit) {
-                ProfilerPhase profiler(profiler_region_backend_compile);
-                jitc_llvm_compile(kernel);
-                jitc_kernel_write(buffer.get(), (uint32_t) buffer.size(),
-                                  ts->backend, kernel_hash, kernel);
-                jitc_llvm_disasm(kernel);
-            }
+            ProfilerPhase profiler(profiler_region_backend_compile);
+            cache_hit = jitc_llvm_kernel_compile(kernel);
         }
 
         // Persist per-slot parameter metadata (writability + resource kind)
@@ -776,13 +767,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
 #if defined(DRJIT_ENABLE_CUDA)
         if (jitc_is_cuda(ts->backend) && !uses_optix) {
             // Locate the kernel entry point
-            size_t offset = buffer.size();
-            const char *name_fmt = "drjit_$Q$Q";
-            buffer.fmt_cuda(2, fmt_strlen(name_fmt), name_fmt,
-                            kernel_hash.high64, kernel_hash.low64);
             cuda_check(cuModuleGetFunction(&kernel.cuda.func, kernel.cuda.mod,
-                                           buffer.get() + offset));
-            buffer.rewind_to(offset);
+                                           kernel_name));
 
             // Determine a suitable thread count to maximize occupancy
             int unused, block_size;
@@ -807,9 +793,10 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
                 std::string(jitc_time_string(link_time)).c_str(),
                 std::string(jitc_mem_string(kernel.size)).c_str());
 
-        kernel.src_size = buffer.size();
-        kernel.src = (char *) malloc_check(kernel.src_size + 1);
-        memcpy(kernel.src, buffer.get(), kernel.src_size + 1);
+        // The kernel source is only needed when the kernel history is active
+        if (unlikely(jit_flag(JitFlag::KernelHistory)))
+            jitc_kernel_attach_source(kernel);
+
         state.kernel_cache.emplace(kernel_key, kernel);
 
         if (cache_hit)
@@ -825,6 +812,13 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         }
     } else {
         kernel_history_entry.cache_hit = true;
+
+        // A cached kernel may predate the activation of the kernel history
+        // and then lacks source code. The units of this trace hold the
+        // identical source, which permits attaching it retroactively.
+        if (unlikely(jit_flag(JitFlag::KernelHistory)) && !it.value().src)
+            jitc_kernel_attach_source(it.value());
+
         kernel = it.value();
         state.kernel_hits++;
     }
@@ -1266,6 +1260,11 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         v->reg_index = n_regs++;
     }
 
+    // A callable with one target becomes part of the same compilation unit,
+    // while true indirection involves separate compilation.
+    bool indirect = call->n_inst != 1;
+    UnitBuilder *unit = indirect ? jitc_unit_push() : nullptr;
+
     size_t kernel_offset = buffer.size();
 
     switch (call->backend) {
@@ -1293,35 +1292,45 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
 
     size_t kernel_length = buffer.size() - kernel_offset;
 
-    if (jit_flag(JitFlag::MergeFunctions)) {
-        kernel_hash = XXH128(buffer.get() + kernel_offset, kernel_length, 0);
+    // With MergeFunctions disabled, each indirect callable keeps its own
+    // dispatch-table entry, identified by a per-kernel counter.
+    XXH128_hash_t hash;
+    if (!indirect || jit_flag(JitFlag::MergeFunctions)) {
+        hash = XXH128(buffer.get() + kernel_offset, kernel_length, 0);
     } else {
-        kernel_hash.low64 = indirect_callable_count;
-        kernel_hash.high64 = 0;
+        hash.low64 = indirect_callable_count;
+        hash.high64 = 0;
     }
 
-    if (globals_map.emplace(GlobalKey(kernel_hash, call->n_inst != 1 ? GlobalType::IndirectCallable : GlobalType::Callable),
-                            GlobalValue(globals.size(), kernel_length)).second) {
-        // Replace '^'s in 'func_^^^..' or '__direct_callable__^^^..' with hash
+    // Replace '^'s in 'func_^^^..' or '__direct_callable__^^^..' with hash
+    auto substitute_name = [&]() {
         size_t hash_offset = strchr(buffer.get() + kernel_offset, '^') - buffer.get(),
                end_offset = buffer.size();
 
         buffer.rewind_to(hash_offset);
-        buffer.put_q64_unchecked(kernel_hash.high64);
-        buffer.put_q64_unchecked(kernel_hash.low64);
+        buffer.put_q64_unchecked(hash.high64);
+        buffer.put_q64_unchecked(hash.low64);
         buffer.rewind_to(end_offset);
+    };
 
-        n_ops_total += n_regs;
-        globals.put(buffer.get() + kernel_offset, kernel_length);
-
-        if (call->n_inst != 1)
-            indirect_callable_count_unique++;
-    }
-
-    if (call->n_inst != 1)
+    if (indirect) {
+        if (!jitc_unit_callable_known(hash)) {
+            substitute_name();
+#if defined(DRJIT_ENABLE_CUDA)
+            if (jitc_is_cuda(call->backend) && !uses_optix)
+                jitc_cuda_render_callable_export(hash);
+#endif
+            n_ops_total += n_regs;
+            jitc_unit_pop_keep(unit, hash, kernel_offset);
+        } else {
+            jitc_unit_pop_discard(unit, kernel_offset);
+        }
         indirect_callable_count++;
-
-    buffer.rewind_to(kernel_offset);
+    } else {
+        substitute_name();
+        if (jitc_unit_capture_preamble(hash, kernel_offset))
+            n_ops_total += n_regs;
+    }
 
     for (ScheduledVariable &sv: schedule) {
         Variable *v = jitc_var(sv.index);
@@ -1341,13 +1350,5 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
     // unwind path of jitc_var_call_assemble() releases any still present)
     schedule.clear();
 
-    return kernel_hash;
-}
-
-/// Register a global declaration that will be included in the final program
-void jitc_register_global(const char *str, GlobalType type) {
-    size_t length = strlen(str);
-    if (globals_map.emplace(GlobalKey(XXH128(str, length, 0), type),
-                            GlobalValue(globals.size(), length)).second)
-        globals.put(str, length);
+    return hash;
 }

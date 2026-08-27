@@ -6,9 +6,24 @@
 #include "io.h"
 #include "optix.h"
 #include "strbuf.h"
+#include "unit.h"
+#include "profile.h"
 #include "resources/kernels.h"
 #include <lz4.h>
 #include <string>
+
+/// One named PTX input of a driver JIT compilation
+struct CUDALinkInput {
+    const char *name;
+    const char *ptx;
+    size_t size;
+};
+
+/// Compile and link one or more PTX inputs into a module. The optional
+/// 'cache_hit_out' receives whether the driver's cache served the result.
+static CUmodule jitc_cuda_compile(const CUDALinkInput *in, size_t n,
+                                  bool release_state_lock = false,
+                                  bool *cache_hit_out = nullptr);
 
 CUresult jitc_cuda_cuinit_result = CUDA_ERROR_NOT_INITIALIZED;
 
@@ -85,9 +100,9 @@ static CUfunction jitc_cuda_compile_kernel(int device, const char *name) {
     jitc_cuda_ptx_buf.put(entry, strlen(entry));
 
     scoped_set_context guard(dev.context);
-    CUmodule m = jitc_cuda_compile(jitc_cuda_ptx_buf.get(),
-                                   /* release_state_lock */ false)
-                     .first;
+    CUDALinkInput input { name, jitc_cuda_ptx_buf.get(),
+                          jitc_cuda_ptx_buf.size() };
+    CUmodule m = jitc_cuda_compile(&input, 1);
     dev.modules.push_back(m);
 
     CUfunction func = nullptr;
@@ -170,76 +185,272 @@ CUfunction jitc_cuda_gemm_function(int device, VarType vt, int tile,
     return slot;
 }
 
-std::pair<CUmodule, bool> jitc_cuda_compile(const char *buf, bool release_state_lock) {
-    const uintptr_t log_size = 16384;
-    char error_log[log_size], info_log[log_size];
-    info_log[0] = '\0';
-    error_log[0] = '\0';
+/// Option list and log buffers of one driver JIT compilation
+struct CUDAJitOptions {
+    static constexpr size_t log_size = 16384;
 
-    CUjit_option arg[] = {
-        CU_JIT_OPTIMIZATION_LEVEL,
-        CU_JIT_LOG_VERBOSE,
-        CU_JIT_INFO_LOG_BUFFER,
-        CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES,
-        CU_JIT_ERROR_LOG_BUFFER,
-        CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES,
-        CU_JIT_GENERATE_LINE_INFO,
-        CU_JIT_GENERATE_DEBUG_INFO
-    };
+    static constexpr uint32_t nargs = 8;
 
-    /// Generate debug ine information when this code is run within NSight Compute
-    const bool have_line_info =
-        getenv("NV_NSIGHT_INJECTION_TRANSPORT_TYPE") != nullptr;
+    char info_log[log_size];
+    char error_log[log_size];
+    CUjit_option arg[nargs];
+    void *argv[nargs];
 
-    void *argv[] = {
-        (void *) 4,
-        (void *) 1,
-        (void *) info_log,
-        (void *) log_size,
-        (void *) error_log,
-        (void *) log_size,
-        (void *) (uintptr_t) have_line_info,
-        (void *) 0
-    };
+    CUDAJitOptions() {
+        // Potentially generate line-info. The presence of this environment
+        // variable indicates that Nsight Compute is attached.
+        const bool have_line_info =
+            getenv("CUDA_INJECTION64_PATH") != nullptr;
 
-    uint32_t nargs = (uint32_t) (sizeof(arg) / sizeof(CUjit_option));
+        info_log[0] = '\0';
+        error_log[0] = '\0';
 
-    CUmodule mod = nullptr;
-    CUresult rv = (CUresult) 0;
+        arg[0] = CU_JIT_OPTIMIZATION_LEVEL;          argv[0] = (void *) 4;
+        arg[1] = CU_JIT_LOG_VERBOSE;                 argv[1] = (void *) 1;
+        arg[2] = CU_JIT_INFO_LOG_BUFFER;             argv[2] = info_log;
+        arg[3] = CU_JIT_INFO_LOG_BUFFER_SIZE_BYTES;  argv[3] = (void *) log_size;
+        arg[4] = CU_JIT_ERROR_LOG_BUFFER;            argv[4] = error_log;
+        arg[5] = CU_JIT_ERROR_LOG_BUFFER_SIZE_BYTES; argv[5] = (void *) log_size;
+        arg[6] = CU_JIT_GENERATE_LINE_INFO;          argv[6] = (void *) (uintptr_t) have_line_info;
+        arg[7] = CU_JIT_GENERATE_DEBUG_INFO;         argv[7] = (void *) 0;
+    }
+};
+
+/// Load a linked cubin, optionally without the central Dr.Jit lock
+static CUresult jitc_cuda_load_module(CUmodule *mod, const void *cubin,
+                                      bool release_state_lock) {
+    CUresult rv = CUDA_SUCCESS;
 
     for (int i = 0; i < 2; ++i) {
         if (release_state_lock) {
             unlock_guard guard(state.lock);
-            rv = cuModuleLoadDataEx(&mod, buf, nargs, arg, argv);
+            rv = cuModuleLoadData(mod, cubin);
         } else {
-            rv = cuModuleLoadDataEx(&mod, buf, nargs, arg, argv);
+            rv = cuModuleLoadData(mod, cubin);
         }
 
-        if (rv == CUDA_ERROR_OUT_OF_MEMORY) {
-            if (i == 0)
-                jitc_flush_malloc_cache(true);
-            else
-                cuda_check(rv);
-        } else {
+        if (rv != CUDA_ERROR_OUT_OF_MEMORY)
             break;
-        }
+        if (i == 0)
+            jitc_flush_malloc_cache(true);
+        else
+            cuda_check(rv);
     }
+
+    return rv;
+}
+
+static CUmodule jitc_cuda_compile(const CUDALinkInput *in, size_t n,
+                                  bool release_state_lock,
+                                  bool *cache_hit_out) {
+    CUDAJitOptions opt;
+    CUlinkState ls = nullptr;
+    void *cubin = nullptr;
+    size_t cubin_size = 0;
+    CUmodule mod = nullptr;
+    CUresult rv = CUDA_SUCCESS;
+
+    auto link = [&] {
+        rv = cuLinkCreate(opt.nargs, opt.arg, opt.argv, &ls);
+        for (size_t i = 0; i < n && rv == CUDA_SUCCESS; ++i)
+            rv = cuLinkAddData(ls, CU_JIT_INPUT_PTX, (void *) in[i].ptx,
+                               in[i].size + 1, in[i].name, 0, nullptr,
+                               nullptr);
+        if (rv == CUDA_SUCCESS)
+            rv = cuLinkComplete(ls, &cubin, &cubin_size);
+    };
+
+    if (release_state_lock) {
+        unlock_guard guard(state.lock);
+        link();
+    } else {
+        link();
+    }
+
+    if (cache_hit_out)
+        *cache_hit_out = opt.info_log[0] == '\0';
+
+    if (rv == CUDA_SUCCESS)
+        rv = jitc_cuda_load_module(&mod, cubin, release_state_lock);
 
     if (rv == CUDA_ERROR_INVALID_PTX ||
         rv == CUDA_ERROR_UNSUPPORTED_PTX_VERSION ||
-        rv == CUDA_ERROR_INVALID_VALUE)
-        jitc_fail(
-            "jit_cuda_compile(): compilation failed. Please see the PTX "
-            "assembly listing and error message below:\n\n%s\n\n%s",
-            buf, error_log);
-    else
-        cuda_check(rv);
+        rv == CUDA_ERROR_INVALID_VALUE) {
+        if (n == 1)
+            jitc_fail(
+                "jit_cuda_compile(): compilation failed. Please see the PTX "
+                "assembly listing and error message below:\n\n%s\n\n%s",
+                in[0].ptx, opt.error_log);
+        jitc_fail("jit_cuda_compile(): linking failed. Error message:\n\n%s",
+                  opt.error_log);
+    }
+    cuda_check(rv);
 
-    bool cache_hit = info_log[0] == '\0';
-    if (!cache_hit)
-        jitc_log(Trace, "Detailed linker output:\n%s", info_log);
+    cuda_check(cuLinkDestroy(ls));
 
-    return { mod, cache_hit };
+    if (opt.info_log[0] != '\0')
+        jitc_log(Trace, "Detailed linker output:\n%s", opt.info_log);
+
+    return mod;
+}
+
+// ============================================================================
+//  Per-unit kernel compilation
+// ============================================================================
+
+/// Dr.Jit parallelizes the compilation of kernels with callable subroutines.
+/// There isn't a great API for this. Dr.Jit does it by first compiling all the
+/// callables individually in parallel (to warm the cache) and then performing
+/// one combined compile+link step to produce the final kernel.
+
+struct CUDACompileJob : UnitCompileJob {
+    std::string error;     // error log text when the compilation failed
+    CUresult rv = CUDA_SUCCESS;
+    bool cache_hit = false; // served by the driver's cache (its JIT did not run)
+};
+
+/// Warm the driver cache with one unit. The 'resolver' slot satisfies any extern
+/// references to the callable table.
+static void jitc_cuda_compile_unit(CUcontext ctx, CUDACompileJob &job,
+                                   const StringBuffer &resolver) {
+    scoped_set_context guard(ctx);
+
+    CUDAJitOptions opt;
+    CUlinkState ls = nullptr;
+    void *cubin = nullptr;
+    size_t cubin_size = 0;
+
+    CUresult rv = cuLinkCreate(opt.nargs, opt.arg, opt.argv, &ls);
+    if (rv == CUDA_SUCCESS)
+        rv = cuLinkAddData(ls, CU_JIT_INPUT_PTX, (void *) job.source,
+                           job.source_size + 1, job.symbol, 0, nullptr,
+                           nullptr);
+    if (rv == CUDA_SUCCESS)
+        rv = cuLinkAddData(ls, CU_JIT_INPUT_PTX, (void *) resolver.get(),
+                           resolver.size() + 1, "callables", 0, nullptr,
+                           nullptr);
+    if (rv == CUDA_SUCCESS)
+        rv = cuLinkComplete(ls, &cubin, &cubin_size);
+
+    job.cache_hit = opt.info_log[0] == '\0';
+    if (rv != CUDA_SUCCESS) {
+        job.rv = rv;
+        job.error = opt.error_log;
+    }
+
+    if (ls)
+        cuLinkDestroy(ls);
+}
+
+/// Render the callable table declaration
+static void jitc_cuda_append_table_def(StringBuffer &out, size_t slots) {
+    out.fmt(".visible .global .align 8 .u64 callables[%zu];\n", slots);
+}
+
+/// Fill the callable table with resolved addresses for each callable
+static void jitc_cuda_fill_table(CUmodule mod) {
+    if (callable_units.empty())
+        return;
+
+    CUdeviceptr table = 0;
+    size_t size = 0;
+    cuda_check(cuModuleGetGlobal(&table, &size, mod, "callables"));
+
+    for (size_t i = 0; i < callable_units.size(); ++i) {
+        char name[40];
+        snprintf(name, sizeof(name), "addr_%016llx%016llx",
+                 (unsigned long long) callable_units[i].hash.high64,
+                 (unsigned long long) callable_units[i].hash.low64);
+        CUdeviceptr ptr = 0;
+        size_t unused = 0;
+        cuda_check(cuModuleGetGlobal(&ptr, &unused, mod, name));
+
+        // The null slot (0) is left as-is. Module-globals are zero-initialized
+        cuda_check(cuMemcpy((uint8_t *) table + (1 + i) * sizeof(uint64_t),
+                            ptr, sizeof(uint64_t)));
+    }
+}
+
+static ProfilerRegion profiler_region_cuda_compile("jit_cuda_compile");
+
+bool jitc_cuda_kernel_compile(ThreadState *ts, Kernel &kernel) {
+    ProfilerPhase phase(profiler_region_cuda_compile);
+
+    size_t n_units = 1 + callable_units.size();
+    int device = ts->device;
+
+    std::vector<CUDACompileJob> jobs(n_units);
+    std::vector<uint32_t> misses;
+    StringBuffer table_src, resolver_src;
+
+    for (size_t i = 0; i < n_units; ++i)
+        jitc_unit_job_init(i, jobs[i]);
+
+    // Precompile each unit in parallel to warm the CUDA driver cache so that
+    // the code below only needs to link. Skip for single-unit kernels.
+    if (n_units > 1) {
+        for (size_t i = 0; i < n_units; ++i) {
+            UnitArtifact unused;
+            if (!jitc_unit_cache_lookup(JitBackend::CUDA, jobs[i].unit_hash,
+                                        (uint64_t) device, unused))
+                misses.push_back((uint32_t) i);
+        }
+
+        // The per-kernel definition of the callable table, and its single-slot
+        // variant that resolves the units' extern references during prewarming
+        table_src.put(unit_prologue.get(), unit_prologue.size());
+        resolver_src.put(unit_prologue.get(), unit_prologue.size());
+        jitc_cuda_append_table_def(table_src, n_units);
+        jitc_cuda_append_table_def(resolver_src, 1);
+    }
+
+    // Release the lock while prewarming
+    if (!misses.empty()) {
+        unlock_guard guard(state.lock);
+        CUcontext ctx = ts->context;
+        jitc_unit_compile_parallel(
+            misses, [&](uint32_t i) { return jobs[i].source_size; },
+            [&](uint32_t i) {
+                jitc_cuda_compile_unit(ctx, jobs[i], resolver_src);
+            });
+    }
+
+    for (uint32_t i : misses) {
+        const CUDACompileJob &job = jobs[i];
+        if (job.rv != CUDA_SUCCESS)
+            jitc_fail("jit_cuda_kernel_compile(): compilation of unit "
+                      "\"%s\" failed. Please see the PTX assembly "
+                      "listing and error message below:\n\n%s\n\n%s",
+                      job.symbol, job.source, job.error.c_str());
+    }
+
+    // Link the kernel from its units, resolving the per-unit compilations
+    // above through the driver's cache
+    std::vector<CUDALinkInput> inputs;
+    inputs.reserve(n_units + 1);
+    for (size_t i = 0; i < n_units; ++i)
+        inputs.push_back({ jobs[i].symbol, jobs[i].source,
+                           jobs[i].source_size });
+    if (table_src.size() > 0)
+        inputs.push_back({ "callables", table_src.get(), table_src.size() });
+
+    bool link_cached = false;
+    kernel.cuda.mod = jitc_cuda_compile(inputs.data(), inputs.size(),
+                                        /* release_state_lock = */ true,
+                                        &link_cached);
+    jitc_cuda_fill_table(kernel.cuda.mod);
+
+    for (uint32_t i : misses) {
+        UnitArtifact empty { };
+        jitc_unit_cache_insert(JitBackend::CUDA, jobs[i].unit_hash,
+                               (uint64_t) device, empty, nullptr);
+    }
+
+    // Soft hit: every prewarmed unit was cached, or the link logged nothing
+    bool all_cached = n_units > 1 || link_cached;
+    for (uint32_t i : misses)
+        all_cached &= jobs[i].cache_hit;
+    return all_cached;
 }
 
 void jitc_cuda_sync_stream(uintptr_t stream) {
@@ -427,9 +638,9 @@ bool jitc_cuda_init() {
             jitc_cuda_ptx_buf.put(entry, strlen(entry));
         }
 
-        CUmodule m =
-            jitc_cuda_compile(jitc_cuda_ptx_buf.get(),
-                              /* release_state_lock */ false).first;
+        CUDALinkInput input { "drjit", jitc_cuda_ptx_buf.get(),
+                              jitc_cuda_ptx_buf.size() };
+        CUmodule m = jitc_cuda_compile(&input, 1);
 
         #define LOAD(name)                                                       \
             if (i == 0)                                                          \
@@ -540,6 +751,8 @@ bool jitc_cuda_init() {
 
 void jitc_cuda_shutdown() {
     jitc_log(Info, "jit_cuda_shutdown()");
+
+    jitc_unit_cache_flush((int) JitBackend::CUDA);
 
     for (auto &dev : state.devices) {
         {

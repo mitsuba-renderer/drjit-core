@@ -1097,7 +1097,7 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
 
 /// Build the shared call-data buffer (offset tables + data blocks) for every
 /// call assembled in the current kernel and bind it to the base pointer
-/// parameter. Runs at the end of jitc_{cuda,llvm,metal}_assemble.
+/// parameter. Runs at the end of jitc_assemble().
 void jitc_call_upload(ThreadState *ts) {
     JitBackend backend = (JitBackend) ts->backend;
 
@@ -1114,8 +1114,7 @@ void jitc_call_upload(ThreadState *ts) {
     // Align the start of the data region so each call's slice lands at an
     // absolute address suitable for the widest packet load.
     uint32_t align = call_data_align(ts, uses_optix);
-    const uint32_t off_size = call_buffer.fused_offset_size,
-                   data_start = align_up(off_size, align),
+    const uint32_t data_start = align_up(call_buffer.fused_offset_size, align),
                    total      = data_start + call_buffer.fused_data_size;
 
     // One aggregation entry per data slot, two per offset-table slot (lo + hi),
@@ -1131,19 +1130,32 @@ void jitc_call_upload(ThreadState *ts) {
         backend, sizeof(AggregationEntry) * n_entries, /*shared=*/true);
     AggregationEntry *p = agg;
 
-    // Part 1: offset tables. We deliberately store 64-bit offsets via two
-    // 32-bit writes so that ``record_ts.cpp`` wont try to to interpret the
-    // pointer address as a variable reference.
+    // Offset-table slots are deliberately written as two 32-bit halves so
+    // that ``record_ts.cpp`` records them as opaque values rather than
+    // variable references.
+    auto put_u64 = [&p](uint32_t offset, uint64_t value) {
+        p->offset = offset;
+        p->size = 4;
+        p->resource_kind = 0;
+        p->src = (const void *) (uintptr_t) (uint32_t) value;
+        p++;
+
+        p->offset = offset + 4;
+        p->size = 4;
+        p->resource_kind = 0;
+        p->src = (const void *) (uintptr_t) (uint32_t) (value >> 32);
+        p++;
+    };
+
+    // Part 1: offset tables
     for (CallData *call : calls_assembled) {
         offset_entries.assign(call->offset_count, 0);
 
         for (uint32_t i = 0; i < call->n_inst; ++i) {
-            auto it = globals_map.find(GlobalKey(
-                call->inst_hash[i], call->n_inst != 1 ? GlobalType::IndirectCallable
-                                                      : GlobalType::Callable));
-            if (it == globals_map.end())
-                jitc_fail("jitc_call_upload(): could not find callable!");
-            uint32_t callable_index = it->second.callable_index;
+            // Direct calls dispatch by name; their table entries carry index 0
+            uint32_t callable_index =
+                call->n_inst != 1 ? jitc_unit_callable_index(call->inst_hash[i])
+                                  : 0;
 
             // entry.hi = absolute byte offset of the instance's data block (from
             // the start of the buffer); entry.lo = callable index.
@@ -1153,22 +1165,8 @@ void jitc_call_upload(ThreadState *ts) {
             offset_entries[call->inst_id[i]] = (data_off << 32) | callable_index;
         }
 
-        for (uint32_t i = 0; i < call->offset_count; ++i) {
-            uint64_t e = offset_entries[i];
-            uint32_t pos = call->offset_base + i * (uint32_t) sizeof(uint64_t);
-
-            p->offset = pos;
-            p->size = 4;
-            p->resource_kind = 0;
-            p->src = (const void *) (uintptr_t) (uint32_t) e;
-            p++;
-
-            p->offset = pos + 4;
-            p->size = 4;
-            p->resource_kind = 0;
-            p->src = (const void *) (uintptr_t) (uint32_t) (e >> 32);
-            p++;
-        }
+        for (uint32_t i = 0; i < call->offset_count; ++i)
+            put_u64(call->offset_base + i * (uint32_t) sizeof(uint64_t), offset_entries[i]);
     }
 
     // Part 2: capture slots

@@ -35,9 +35,7 @@
 bool jitc_llvm_api_init() { return LLVM_VERSION_MAJOR >= 11; }
 void jitc_llvm_api_shutdown() {}
 bool jitc_llvm_api_has_core() { return true; }
-bool jitc_llvm_api_has_mcjit() { return true; }
 bool jitc_llvm_api_has_orcv2() { return LLVM_VERSION_MAJOR >= 16; }
-bool jitc_llvm_api_has_pb_legacy() { return LLVM_VERSION_MAJOR < 17; }
 bool jitc_llvm_api_has_pb_new() { return LLVM_VERSION_MAJOR >= 15; }
 int jitc_llvm_version_major = LLVM_VERSION_MAJOR;
 int jitc_llvm_version_minor = LLVM_VERSION_MINOR;
@@ -49,9 +47,7 @@ int jitc_llvm_version_patch = LLVM_VERSION_PATCH;
 static void *jitc_llvm_handle = nullptr;
 static bool jitc_llvm_has_core = false;
 static bool jitc_llvm_has_version = false;
-static bool jitc_llvm_has_mcjit = false;
 static bool jitc_llvm_has_orcv2 = false;
-static bool jitc_llvm_has_pb_legacy = false;
 static bool jitc_llvm_has_pb_new = false;
 
 int jitc_llvm_version_major = -1;
@@ -90,9 +86,7 @@ bool jitc_llvm_api_init() {
 
     jitc_llvm_has_core = true;
     jitc_llvm_has_version = true;
-    jitc_llvm_has_mcjit = true;
     jitc_llvm_has_orcv2 = true;
-    jitc_llvm_has_pb_legacy = true;
     jitc_llvm_has_pb_new = true;
     jitc_llvm_version_major = -1;
     jitc_llvm_version_minor = -1;
@@ -100,7 +94,6 @@ bool jitc_llvm_api_init() {
 
     void *handle = jitc_llvm_handle;
     LOAD(core, LLVMInitializeDrJitAsmPrinter);
-    LOAD(core, LLVMInitializeDrJitDisassembler);
     LOAD(core, LLVMInitializeDrJitTarget);
     LOAD(core, LLVMInitializeDrJitTargetInfo);
     LOAD(core, LLVMInitializeDrJitTargetMC);
@@ -109,27 +102,14 @@ bool jitc_llvm_api_init() {
     LOAD(core, LLVMGetDefaultTargetTriple);
     LOAD(core, LLVMGetHostCPUName);
     LOAD(core, LLVMGetHostCPUFeatures);
-    LOAD(core, LLVMGetGlobalContext);
-    LOAD(core, LLVMCreateDisasm);
-    LOAD(core, LLVMDisasmDispose);
-    LOAD(core, LLVMSetDisasmOptions);
-    LOAD(core, LLVMAddModule);
-    LOAD(core, LLVMDisposeModule);
+    LOAD(core, LLVMContextCreate);
+    LOAD(core, LLVMContextDispose);
     LOAD(core, LLVMCreateMemoryBufferWithMemoryRange);
     LOAD(core, LLVMParseIRInContext);
-    LOAD(core, LLVMPrintModuleToString);
-    LOAD(core, LLVMGetGlobalValueAddress);
-    LOAD(core, LLVMRemoveModule);
-    LOAD(core, LLVMDisasmInstruction);
     LOAD(core, LLVMVerifyModule);
     LOAD(core, LLVMDisposeTargetMachine);
 
     LOAD(version, LLVMGetVersion);
-
-    LOAD(pb_legacy, LLVMCreatePassManager);
-    LOAD(pb_legacy, LLVMRunPassManager);
-    LOAD(pb_legacy, LLVMDisposePassManager);
-    LOAD(pb_legacy, LLVMAddLICMPass);
 
     LOAD(pb_new, LLVMCreatePassBuilderOptions);
     LOAD(pb_new, LLVMPassBuilderOptionsSetLoopVectorization);
@@ -137,14 +117,6 @@ bool jitc_llvm_api_init() {
     LOAD(pb_new, LLVMPassBuilderOptionsSetSLPVectorization);
     LOAD(pb_new, LLVMDisposePassBuilderOptions);
     LOAD(pb_new, LLVMRunPasses);
-
-    LOAD(mcjit, LLVMLinkInMCJIT);
-    LOAD(mcjit, LLVMModuleCreateWithName);
-    LOAD(mcjit, LLVMGetExecutionEngineTargetMachine);
-    LOAD(mcjit, LLVMCreateMCJITCompilerForModule);
-    LOAD(mcjit, LLVMCreateSimpleMCJITMemoryManager);
-    LOAD(mcjit, LLVMDisposeExecutionEngine);
-    LOAD(mcjit, LLVMGetFunctionAddress);
 
     LOAD(orcv2, LLVMCreateTargetMachine);
     LOAD(orcv2, LLVMGetTargetFromTriple);
@@ -235,7 +207,6 @@ void jitc_llvm_api_shutdown() {
         return;
 
     CLEAR(LLVMInitializeDrJitAsmPrinter);
-    CLEAR(LLVMInitializeDrJitDisassembler);
     CLEAR(LLVMInitializeDrJitTarget);
     CLEAR(LLVMInitializeDrJitTargetInfo);
     CLEAR(LLVMInitializeDrJitTargetMC);
@@ -244,29 +215,15 @@ void jitc_llvm_api_shutdown() {
     CLEAR(LLVMGetDefaultTargetTriple);
     CLEAR(LLVMGetHostCPUName);
     CLEAR(LLVMGetHostCPUFeatures);
-    CLEAR(LLVMGetGlobalContext);
-    CLEAR(LLVMCreateDisasm);
-    CLEAR(LLVMDisasmDispose);
-    CLEAR(LLVMSetDisasmOptions);
-    CLEAR(LLVMAddModule);
-    CLEAR(LLVMDisposeModule);
+    CLEAR(LLVMContextCreate);
+    CLEAR(LLVMContextDispose);
     CLEAR(LLVMCreateMemoryBufferWithMemoryRange);
     CLEAR(LLVMParseIRInContext);
-    CLEAR(LLVMPrintModuleToString);
-    CLEAR(LLVMGetGlobalValueAddress);
-    CLEAR(LLVMRemoveModule);
-    CLEAR(LLVMDisasmInstruction);
     CLEAR(LLVMVerifyModule);
     CLEAR(LLVMDisposeTargetMachine);
 
     // Version
     CLEAR(LLVMGetVersion);
-
-    // Legacy pass manager
-    CLEAR(LLVMCreatePassManager);
-    CLEAR(LLVMRunPassManager);
-    CLEAR(LLVMDisposePassManager);
-    CLEAR(LLVMAddLICMPass);
 
     // New pass manager
     CLEAR(LLVMCreatePassBuilderOptions);
@@ -275,15 +232,6 @@ void jitc_llvm_api_shutdown() {
     CLEAR(LLVMPassBuilderOptionsSetSLPVectorization);
     CLEAR(LLVMDisposePassBuilderOptions);
     CLEAR(LLVMRunPasses);
-
-    // MCJIT
-    CLEAR(LLVMLinkInMCJIT);
-    CLEAR(LLVMModuleCreateWithName);
-    CLEAR(LLVMGetExecutionEngineTargetMachine);
-    CLEAR(LLVMCreateMCJITCompilerForModule);
-    CLEAR(LLVMCreateSimpleMCJITMemoryManager);
-    CLEAR(LLVMDisposeExecutionEngine);
-    CLEAR(LLVMGetFunctionAddress);
 
     // ORCv2
     CLEAR(LLVMGetTargetFromTriple);
@@ -314,9 +262,7 @@ void jitc_llvm_api_shutdown() {
     jitc_llvm_handle = nullptr;
     jitc_llvm_has_core = false;
     jitc_llvm_has_version = false;
-    jitc_llvm_has_mcjit = false;
     jitc_llvm_has_orcv2 = false;
-    jitc_llvm_has_pb_legacy = false;
     jitc_llvm_has_pb_new = false;
     jitc_llvm_version_major = -1;
     jitc_llvm_version_minor = -1;
@@ -324,9 +270,7 @@ void jitc_llvm_api_shutdown() {
 }
 
 bool jitc_llvm_api_has_core() { return jitc_llvm_has_core; }
-bool jitc_llvm_api_has_mcjit() { return jitc_llvm_has_mcjit; }
 bool jitc_llvm_api_has_orcv2() { return jitc_llvm_has_orcv2; }
-bool jitc_llvm_api_has_pb_legacy() { return jitc_llvm_has_pb_legacy; }
 bool jitc_llvm_api_has_pb_new() { return jitc_llvm_has_pb_new; }
 
 #endif

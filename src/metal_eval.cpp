@@ -50,16 +50,12 @@ static void jitc_metal_render(Variable *v);
 // Keep track of scenes discovered during code generation
 std::vector<MetalScene *> metal_kernel_scenes;
 
-// Names of the kernel's indirect-callable functions, ordered by callable index.
-std::vector<XXH128_hash_t> metal_kernel_callables;
-
 // Index into ``params.args[]`` when the kernel receives a
 // visible-function-table handle, or -1 otherwise.
 int metal_vft_arg_index = -1;
 
 void jitc_metal_assemble_reset() {
     metal_kernel_scenes.clear();
-    metal_kernel_callables.clear();
     metal_vft_arg_index = -1;
 }
 
@@ -152,13 +148,17 @@ static bool jitc_metal_render_resource_handle(const Variable *v,
 }
 
 
-void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
-                         uint32_t /*n_regs*/, uint32_t n_params) {
 
+void jitc_metal_render_prologue() {
     put("#pragma clang diagnostic ignored \"-Wunused-variable\"\n"
         "#include <metal_stdlib>\n"
         "using namespace metal;\n"
         "\n");
+}
+
+void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
+                         uint32_t /*n_regs*/, uint32_t n_params) {
+    (void) ts;
 
     // ``args`` covers every real kernel parameter, plus a trailing slot for the
     // visible function table (appended at launch) when the kernel has calls.
@@ -258,86 +258,6 @@ void jitc_metal_assemble(ThreadState *ts, ScheduledGroup group,
     put("}\n");
 
     jitc_metal_render_scene_configuration();
-
-    // -------------------------------------------------------------------
-    //   5. Emit callable functions and globals
-    // -------------------------------------------------------------------
-
-    // Assign callable_index for jitc_call_upload() and record the matching
-    // function hash so jitc_metal_kernel_compile() can populate the visible
-    // function table in the same order.
-    {
-        metal_kernel_callables.reserve(indirect_callable_count_unique);
-        uint32_t ctr = 0;
-        for (auto &it : globals_map) {
-            if (it.first.type != GlobalType::IndirectCallable)
-                continue;
-            it.second.callable_index = ctr++;
-            metal_kernel_callables.push_back(it.first.hash);
-        }
-    }
-
-    // Emit Callable / IndirectCallable bodies after the kernel — MSL
-    // accepts forward-declared callables defined later in the TU.
-    // GlobalType::Global entries (DD helpers and other fmt_intrinsic
-    // output) are emitted SEPARATELY into the chunk that gets moved
-    // before the kernel: each one is a full inline definition, not a
-    // forward-declarable callable, so it must precede every use.
-    for (auto &it : globals_map) {
-        if (it.first.type == GlobalType::Global)
-            continue;
-        put('\n');
-        put(globals.get() + it.second.start, it.second.length);
-        put('\n');
-    }
-
-    // Move callable forward declarations + Global bodies to before the
-    // kernel. MSL needs functions defined or declared before use.
-    if (!globals_map.empty()) {
-        size_t suffix_start = buffer.size();
-        // Find the insertion point: just after "using namespace metal;\n".
-        const char *marker = strstr(buffer.get(), "using namespace metal;\n");
-        if (marker) {
-            const char *eol = strchr(marker, '\n');
-            size_t suffix_target = (eol - buffer.get()) + 1;
-
-            // Emit Global bodies in full (DD helpers, fmt_intrinsic output).
-            for (auto &it : globals_map) {
-                if (it.first.type != GlobalType::Global)
-                    continue;
-                put('\n');
-                put(globals.get() + it.second.start, it.second.length);
-                put('\n');
-            }
-
-            // Emit forward declarations only for single-target callables: they
-            // are invoked by name (in the kernel's direct-call fast path or a
-            // nested direct call) and may appear before their definition.
-            // Multi-target callables are reached only through the visible
-            // function table, never named in MSL, so they need no declaration.
-            for (auto &it : globals_map) {
-                if (it.first.type != GlobalType::Callable)
-                    continue;
-                const char *sig = globals.get() + it.second.start;
-                const char *brace = (const char *) memchr(sig, '{', it.second.length);
-                if (brace) {
-                    // Emit everything before the opening brace as a forward decl
-                    size_t sig_len = brace - sig;
-                    // Trim trailing whitespace
-                    while (sig_len > 0 && (sig[sig_len-1] == ' ' || sig[sig_len-1] == '\n'))
-                        sig_len--;
-                    put(sig, sig_len);
-                    put(";\n");
-                }
-            }
-
-            if (suffix_start != buffer.size())
-                buffer.move_suffix(suffix_start, suffix_target);
-        }
-    }
-
-    // Upload offset tables to device memory
-    jitc_call_upload(ts);
 }
 
 static void jitc_metal_render_unary(Variable *v, const char *op) {
@@ -1186,48 +1106,81 @@ static bool jitc_metal_call_has_out(const CallData *call) {
 }
 
 /// Emit the callables' return type into the code buffer: ``void`` if the call
-/// has no live outputs, otherwise the mangled struct name ``Ret_<codes>`` (one
-/// ``type_mangle`` code per active output, in order).
+/// has no live outputs, otherwise the mangled struct name ``Tuple_<codes>``.
 static void jitc_metal_put_ret_type(const CallData *call) {
     if (!jitc_metal_call_has_out(call)) {
         put("void");
         return;
     }
-    put("Ret_");
+    put("Tuple_");
     for (uint32_t i = 0; i < call->n_out; ++i)
         if (call->out_offset[i] != (uint32_t) -1)
             put(type_mangle[jitc_var(call->inner_out[i])->type]);
 }
 
-/// Register the return struct's definition (one field ``r<k>`` per active
-/// output). Registered as a global, so it precedes the callables and kernel;
-/// keyed by content, so repeated registration dedups.
-static void jitc_metal_emit_ret_struct(const CallData *call) {
-    if (!jitc_metal_call_has_out(call))
+/// Size of a call's live argument list in 32-bit words (sub-word types count
+/// as one word, 64-bit types as two).
+static uint32_t jitc_metal_call_arg_words(const CallData *call) {
+    uint32_t n = 0;
+    for (uint32_t i = 0; i < call->n_in; ++i)
+        if (call->in_active[i])
+            n += (type_size[jitc_var(call->outer_in[i])->type] + 3u) / 4u;
+    return n;
+}
+
+/// Calls whose argument list exceeds this many words bundle their inputs into
+/// a ``Tuple_`` struct passed via ``thread const &``. This works around a
+/// miscompilation that was separately communicated to Apple.
+static const uint32_t metal_arg_struct_threshold = 32;
+
+static bool jitc_metal_call_args_by_ref(const CallData *call) {
+    return jitc_metal_call_arg_words(call) > metal_arg_struct_threshold;
+}
+
+/// Emit the mangled name ``Tuple_<codes>`` of the argument struct (one
+/// ``type_mangle`` code per active input, in argument order).
+static void jitc_metal_put_arg_type(const CallData *call) {
+    put("Tuple_");
+    for (uint32_t i = 0; i < call->n_in; ++i)
+        if (call->in_active[i])
+            put(type_mangle[jitc_var(call->outer_in[i])->type]);
+}
+
+/// Register the definition of a call's argument (``inputs=true``) or return
+/// struct: ``Tuple_<codes>`` with one field ``r<k>`` per active input resp.
+/// output.
+static void jitc_metal_emit_tuple_struct(const CallData *call, bool inputs) {
+    if (inputs ? !jitc_metal_call_args_by_ref(call)
+               : !jitc_metal_call_has_out(call))
         return;
     size_t off = buffer.size();
     put("struct ");
-    jitc_metal_put_ret_type(call);
-    put(" {\n");
     uint32_t k = 0;
-    for (uint32_t i = 0; i < call->n_out; ++i) {
-        if (call->out_offset[i] == (uint32_t) -1)
-            continue;
-        fmt("$t r$u;\n", jitc_var(call->inner_out[i]), k);
-        k++;
+    if (inputs) {
+        jitc_metal_put_arg_type(call);
+        put(" {\n");
+        for (uint32_t i = 0; i < call->n_in; ++i) {
+            if (!call->in_active[i])
+                continue;
+            fmt("$t r$u;\n", jitc_var(call->outer_in[i]), k);
+            k++;
+        }
+    } else {
+        jitc_metal_put_ret_type(call);
+        put(" {\n");
+        for (uint32_t i = 0; i < call->n_out; ++i) {
+            if (call->out_offset[i] == (uint32_t) -1)
+                continue;
+            fmt("$t r$u;\n", jitc_var(call->inner_out[i]), k);
+            k++;
+        }
     }
     put("};");
-    jitc_register_global(buffer.get() + off);
-    buffer.rewind_to(off);
+    jitc_unit_capture_preamble(off);
 }
 
 /// Emit the typed parameter list shared by a call's callable definition and the
-/// ``visible_function_table`` type used at its dispatch site: a fixed prefix
-/// (index, self, data, call_table) followed by one by-value parameter per live
-/// input (call->in_active), in argument order. Outputs are returned
-/// by value (see jitc_metal_put_ret_type), not passed here. ``with_names``
-/// selects a definition signature ("type name") vs. a bare type list (the table
-/// element type).
+/// ``visible_function_table`` type used at its dispatch site.
 static void jitc_metal_callable_signature(const CallData *call, bool with_names) {
     if (with_names)
         put("uint index, uint self, device uint8_t* data, "
@@ -1241,6 +1194,16 @@ static void jitc_metal_callable_signature(const CallData *call, bool with_names)
             put(", device uint8_t* base");
         else
             put(", device uint8_t*");
+    }
+
+    if (jitc_metal_call_args_by_ref(call)) {
+        put(", thread const ");
+        jitc_metal_put_arg_type(call);
+        if (with_names)
+            put(" &args");
+        else
+            put(" &");
+        return;
     }
 
     for (uint32_t i = 0; i < call->n_in; ++i) {
@@ -1258,7 +1221,8 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
                               uint32_t /*in_size*/, uint32_t /*in_align*/,
                               uint32_t /*out_size*/, uint32_t /*out_align*/,
                               uint32_t /*n_regs*/) {
-    jitc_metal_emit_ret_struct(call);
+    jitc_metal_emit_tuple_struct(call, /*inputs=*/true);
+    jitc_metal_emit_tuple_struct(call, /*inputs=*/false);
 
     if (call->n_inst != 1)
         put("[[visible]] ");
@@ -1366,13 +1330,18 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
         if (kind == VarKind::Counter) {
             fmt("$t $v = ($t) index;\n", v, v, v);
         } else if (kind == VarKind::CallInput) {
-            // Read the typed by-value parameter named after the input index
-            // (this node is call->inner_in[i]).
-            uint32_t in_i = 0;
-            for (; in_i < call->n_in; ++in_i)
+            // Locate this input (this node is call->inner_in[i]) and its
+            // ordinal among the active inputs (the Tuple_ field index).
+            uint32_t in_i = 0, k = 0;
+            for (; in_i < call->n_in; ++in_i) {
                 if (call->inner_in[in_i] == sv.index)
                     break;
-            fmt("$t $v = a$u;\n", v, v, in_i);
+                k += (uint32_t) call->in_active[in_i];
+            }
+            if (jitc_metal_call_args_by_ref(call))
+                fmt("$t $v = args.r$u;\n", v, v, k);
+            else
+                fmt("$t $v = a$u;\n", v, v, in_i);
         } else if (kind == VarKind::CallSelf) {
             fmt("uint $v = self;\n", v);
         } else if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
@@ -1430,18 +1399,19 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
 
     // Collect outputs into the return struct and return it by value.
     if (jitc_metal_call_has_out(call)) {
-        put("    ");
+        put("    return ");
         jitc_metal_put_ret_type(call);
-        put(" ret;\n");
-        uint32_t k = 0;
+        put(" {");
+        bool first = true;
         for (uint32_t i = 0; i < call->n_out; ++i) {
             if (call->out_offset[i] == (uint32_t) -1)
                 continue;
-            const Variable *v = jitc_var(call->inner_out[inst * call->n_out + i]);
-            fmt("ret.r$u = $v;\n", k, v);
-            k++;
+            if (!first)
+                put(", ");
+            first = false;
+            fmt("$v", jitc_var(call->inner_out[inst * call->n_out + i]));
         }
-        put("return ret;\n");
+        put("};\n");
     }
 
     put("}\n");
@@ -1484,12 +1454,14 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
 
     fmt("\n// VCall: $s\n", call->name.c_str());
 
-    // The return struct is registered while assembling the callable bodies,
-    // which precede this dispatch, so it is not (re)emitted here.
+    // Register the argument/return structs in the unit containing this
+    // dispatch site (the callable units hold their own copies)
+    jitc_metal_emit_tuple_struct(call, /*inputs=*/true);
+    jitc_metal_emit_tuple_struct(call, /*inputs=*/false);
 
     // The outputs the kernel actually consumes, paired with their return-struct
     // field index (``r<k>``, k running over *all* active outputs to match
-    // jitc_metal_emit_ret_struct). Drives the declaration, unpacking, and
+    // jitc_metal_emit_tuple_struct). Drives the declaration, unpacking, and
     // masked-off zeroing below.
     std::vector<std::pair<Variable *, uint32_t>> out_regs;
     out_regs.reserve(call->n_out);
@@ -1557,8 +1529,27 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
     // `call_table`. Use those for nested vcalls.
     const char *index_name = (callable_depth > 0) ? "index" : "r0";
 
+    // Materialize the argument struct read by the callee (see
+    // jitc_metal_callable_signature).
+    bool args_by_ref = jitc_metal_call_args_by_ref(call);
+    if (args_by_ref) {
+        fmt("$s", indent);
+        jitc_metal_put_arg_type(call);
+        fmt(" in_$u {", call_reg);
+        bool first = true;
+        for (uint32_t i = 0; i < call->n_in; ++i) {
+            if (!call->in_active[i])
+                continue;
+            if (!first)
+                put(", ");
+            first = false;
+            fmt("r$u", jitc_var(call->outer_in[i])->reg_index);
+        }
+        put("};\n");
+    }
+
     // Emit the typed argument list, matching jitc_metal_callable_signature():
-    // index, self, data, call_table, live inputs (by value).
+    // index, self, data, call_table, live inputs (by value or bundled).
     auto put_args = [&]() {
         fmt("$s, r$u, ", index_name, self_reg);
         if (has_slots)
@@ -1573,6 +1564,10 @@ void jitc_var_call_assemble_metal(CallData *call, uint32_t call_reg,
         // Callables containing a nested call receive the base pointer.
         if (call->use_nested)
             fmt(", $s", base);
+        if (args_by_ref) {
+            fmt(", in_$u", call_reg);
+            return;
+        }
         // Live inputs always have a register: in_active mirrors the packing
         // predicate, which excludes !reg_index inputs.
         for (uint32_t i = 0; i < call->n_in; ++i)

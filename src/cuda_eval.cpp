@@ -66,6 +66,19 @@ static void jitc_cuda_render_trace(const Variable *v,
 static void jitc_cuda_render_reorder(const Variable *, const Variable *);
 #endif
 
+void jitc_cuda_render_prologue(ThreadState *ts) {
+    fmt(".version $u.$u\n"
+        ".target sm_$u\n"
+        ".address_size 64\n\n",
+        ts->ptx_version / 10, ts->ptx_version % 10,
+        ts->compute_capability);
+}
+
+void jitc_cuda_render_callable_export(XXH128_hash_t hash) {
+    fmt("\n.visible .global .align 8 .u64 addr_$Q$Q = func_$Q$Q;\n",
+        hash.high64, hash.low64, hash.high64, hash.low64);
+}
+
 void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
                         uint32_t n_regs, uint32_t n_params) {
     uint32_t flags = jitc_flags();
@@ -98,19 +111,17 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
          statements that must write a temporary result to a register.
     */
 
-    fmt(".version $u.$u\n"
-        ".target sm_$u\n"
-        ".address_size 64\n\n",
-        ts->ptx_version / 10, ts->ptx_version % 10,
-        ts->compute_capability);
-
     if (!uses_optix) {
         fmt(".entry drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
             ".param .align 8 .b8 params[$u]) {\n",
             params_global ? 8u : (n_params * (uint32_t) sizeof(void *)));
 
+        // ptxas rejects this pragma in the per-function compilation mode used
+        // for kernels with indirect callables. Use the presence of the
+        // call-data buffer as a conservative proxy
         if ((flags & (uint32_t) JitFlag::SpillToSharedMemory) &&
-           ts->compute_capability >= 75 && ts->ptx_version >= 87)
+           ts->compute_capability >= 75 && ts->ptx_version >= 87 &&
+           !call_buffer.base_v)
             fmt("    .pragma \"enable_smem_spilling\";\n\n");
     } else {
         fmt(".const .align 8 .b8 params[$u];\n\n"
@@ -224,54 +235,6 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
 
     put("    ret;\n"
         "}\n");
-
-    uint32_t ctr = 0;
-    for (auto &it : globals_map) {
-        put('\n');
-        put(globals.get() + it.second.start, it.second.length);
-        put('\n');
-        if (it.first.type != GlobalType::IndirectCallable)
-            continue;
-        it.second.callable_index = ctr++;
-    }
-
-    // Callable forward declarations
-    size_t suffix_start = buffer.size(),
-           suffix_target =
-               (char *) strstr(buffer.get(), ".address_size 64\n\n") -
-               buffer.get() + 18;
-
-    if (indirect_callable_count > 0 && !uses_optix)
-        fmt(".extern .global .u64 callables[$u];\n\n", indirect_callable_count_unique);
-
-    for (auto &it : globals_map) {
-        if (it.first.type == GlobalType::Callable) {
-            const char *sig = globals.get() + it.second.start;
-            const char *eol = (const char *) memchr(sig, '\n', it.second.length);
-            put(sig, eol - 1 - sig);
-            put(";\n");
-        }
-    }
-
-    if (suffix_start != buffer.size())
-        buffer.move_suffix(suffix_start, suffix_target);
-
-    if (indirect_callable_count > 0 && !uses_optix) {
-        fmt("\n.visible .global .align 8 .u64 callables[$u] = {\n",
-            indirect_callable_count_unique);
-        for (auto const &it : globals_map) {
-            if (it.first.type != GlobalType::IndirectCallable)
-                continue;
-
-            fmt("    func_$Q$Q$s\n",
-                it.first.hash.high64, it.first.hash.low64,
-                it.second.callable_index + 1 < indirect_callable_count_unique ? "," : "");
-        }
-
-        put("};\n\n");
-    }
-
-    jitc_call_upload(ts);
 }
 
 void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
@@ -1824,7 +1787,10 @@ void jitc_var_call_assemble_cuda(CallData *call, uint32_t call_reg,
         // We'll directly call into the function, no indirection needed
     }
     else if (!uses_optix) {
-        put("        ld.global.u64 %rd2, callables[%r3];\n");
+        fmt_intrinsic(".extern .global .align 8 .u64 callables[];");
+        put("        mov.u64 %rd2, callables;\n"
+            "        mad.wide.u32 %rd2, %r3, 8, %rd2;\n"
+            "        ld.global.u64 %rd2, [%rd2];\n");
     } else {
         fmt("        call (%rd2), _optix_call_$s_callable, (%r3);\n",
             jitc_optix_use_continuation_callables() ? "continuation"

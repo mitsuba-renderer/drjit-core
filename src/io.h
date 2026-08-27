@@ -1,5 +1,5 @@
 /*
-    src/io.h -- Disk cache for LLVM/CUDA kernels
+    src/io.h -- Disk cache for compiled kernel artifacts
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -10,6 +10,7 @@
 #pragma once
 
 #include "hash.h"
+#include <vector>
 
 using LLVMKernelFunction = void (*)(uint64_t start, uint64_t end, uint32_t thread_id, void **ptr);
 #if defined(DRJIT_ENABLE_CUDA)
@@ -36,7 +37,6 @@ struct KernelParamInfo {
 
 /// Represents a compiled kernel for the different backends
 struct Kernel {
-    void *data;
     uint32_t size;
     uint32_t operation_count;
 
@@ -51,11 +51,9 @@ struct Kernel {
     union {
         /// 1. LLVM
         struct {
-            /// Relocation table, the first element is the kernel entry point
+            /// Entry points of the kernel's units: the kernel entry at index
+            /// 0, followed by the indirect callables in callable-index order.
             void **reloc;
-
-            /// Length of the 'reloc' table
-            uint32_t n_reloc;
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
             void *itt;
@@ -79,7 +77,8 @@ struct Kernel {
 #if defined(DRJIT_ENABLE_OPTIX)
         /// 3. OptiX
         struct {
-            OptixModule mod;
+            /// Program groups referencing the kernel's unit modules (which
+            /// are owned by the OptiX unit cache)
             OptixProgramGroup *pg;
             OptixPipeline pipeline;
             uint8_t *sbt_record;
@@ -117,6 +116,21 @@ extern void jitc_cache_shutdown();
 /// Return the cache directory, or NULL when the on-disk cache is unavailable
 extern const char *jitc_cache_dir();
 
+/// Can new entries be added to the kernel cache?
+extern bool jitc_cache_writable();
+
+/// Typed cache entries holding a single binary artifact (e.g. a Metal AIR
+/// library image or a serialized binary archive). 'kind' becomes part of the
+/// file name; 'check' is an arbitrary value validated on load to guard
+/// against hash collisions (by convention, the size of the generating
+/// source). Stores with 'replace' overwrite an existing entry.
+extern bool jitc_cache_blob_load(const char *kind, XXH128_hash_t hash,
+                                 uint32_t check, std::vector<uint8_t> &data);
+
+extern bool jitc_cache_blob_store(const char *kind, XXH128_hash_t hash,
+                                  uint32_t check, const uint8_t *data,
+                                  size_t size, bool replace);
+
 /// Occasionally prune the kernel cache on a detached background thread
 extern void jitc_cache_sweep();
 
@@ -126,14 +140,6 @@ extern char jitc_lz4_dict[];
 
 /// Initialize dictionary
 extern void jitc_lz4_init();
-
-extern bool jitc_kernel_load(const char *source, uint32_t source_size,
-                             JitBackend backend, XXH128_hash_t hash,
-                             Kernel &kernel);
-
-extern bool jitc_kernel_write(const char *source, uint32_t source_size,
-                              JitBackend backend, XXH128_hash_t hash,
-                              const Kernel &kernel);
 
 extern void jitc_kernel_free(int device_id, const Kernel &kernel);
 

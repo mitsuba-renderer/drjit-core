@@ -11,7 +11,7 @@
 
 #include "internal.h"
 #include "strbuf.h"
-#include <map>
+#include "unit.h"
 #include <vector>
 
 /// A single variable that is scheduled to execute for a launch with 'size' entries
@@ -37,48 +37,8 @@ struct ScheduledGroup {
         : size(size), start(start), end(end) { }
 };
 
-enum class GlobalType : uint32_t {
-    IndirectCallable = 0, // Multi-target vcalls, assembled first
-    Callable = 1,         // Single-target vcalls, assembled second
-    Global = 2,           // Other globals (intrinsics, etc.), assembled last
-    Type = 3              // Type definitions, hoisted before everything else
-};
-
-struct GlobalKey {
-    XXH128_hash_t hash;
-    GlobalType type;
-
-    GlobalKey(XXH128_hash_t hash, GlobalType type)
-        : hash(hash), type(type) { }
-
-    /* Order so that callables are defined before other globals, but don't use
-       the callable ID itself for ordering (it can be non-deterministic in
-       programs that use Dr.Jit with parallelization) */
-    bool operator<(const GlobalKey &v) const {
-        return std::tie(type, hash.high64, hash.low64) <
-               std::tie(v.type, v.hash.high64, v.hash.low64);
-    }
-};
-
-struct GlobalValue {
-    /// Offset and length for the 'globals' buffer
-    size_t start, length;
-
-    /// Index within the callable list, if applicable
-    uint32_t callable_index;
-
-    GlobalValue(size_t start, size_t length)
-        : start(start), length(length), callable_index(0) { }
-};
-
-/// Cache data structure for global declarations
-using GlobalsMap = std::map<GlobalKey, GlobalValue>;
-
-/// StringBuffer for global definitions (intrinsics, callables, etc.)
-extern StringBuffer globals;
-
-/// Mapping that describes the contents of the 'globals' buffer
-extern GlobalsMap globals_map;
+/// Hash code of the last generated kernel
+extern XXH128_hash_t kernel_hash;
 
 /// Name of the last generated kernel
 extern char kernel_name[52];
@@ -95,9 +55,6 @@ extern int32_t alloca_align;
 
 /// Number of tentative callables that were assembled in the kernel being compiled
 extern uint32_t indirect_callable_count;
-
-/// Number of unique callables in the kernel being compiled
-extern uint32_t indirect_callable_count_unique;
 
 /// Specifies the nesting level of virtual calls being compiled
 extern uint32_t callable_depth;
@@ -167,8 +124,18 @@ extern void jitc_metal_format(const char *src, size_t size, StringBuffer &out);
 /// Args index of the bindless slot reserved for the kernel's visible function
 /// table, or -1 if the kernel performs no calls. Set by jitc_assemble().
 extern int metal_vft_arg_index;
+
+/// Emit the shared Metal unit prologue (#include etc.) into 'buffer'
+extern void jitc_metal_render_prologue();
 #endif
 
-/// Register a global declaration that will be included in the final program
-extern void jitc_register_global(const char *str,
-                                 GlobalType type = GlobalType::Global);
+#if defined(DRJIT_ENABLE_CUDA)
+/// Emit the shared PTX unit prologue (.version/.target) into 'buffer'
+extern void jitc_cuda_render_prologue(ThreadState *ts);
+
+/// Emit a global declaration for the callable function table
+extern void jitc_cuda_render_callable_export(XXH128_hash_t hash);
+#endif
+
+/// Emit the shared LLVM unit epilogue (attributes, metadata) into 'buffer'
+extern void jitc_llvm_render_epilogue();

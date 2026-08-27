@@ -176,6 +176,8 @@ LLVMThreadState::launch(Kernel kernel, KernelKey & /*key*/,
     kernel_params[2] = kernel.llvm.itt;
 #endif
 
+    kernel_params[3] = (void *) kernel.llvm.reloc;
+
     jitc_trace("jit_run(): launching %u %u-wide packet%s in %u block%s of size %u ..",
                packets, packet_size, packets == 1 ? "" : "s", blocks,
                blocks == 1 ? "" : "s", block_size);

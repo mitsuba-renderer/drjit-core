@@ -97,9 +97,10 @@ extern void *jitc_metal_unregister_buffer(void *ptr);
 
 // ---------------------------------------------------------------------
 
-/// Compile a piece of MSL source code into a Kernel object
-extern bool jitc_metal_kernel_compile(const char *source, size_t source_size,
-                                      const char *kernel_name, Kernel &kernel);
+/// Compile the just-assembled kernel (one unit per indirect callable plus the
+/// entry point, see unit.h) into a Kernel object. Units are compiled
+/// concurrently, cached by content hash, and linked into a pipeline state.
+extern bool jitc_metal_kernel_compile(ThreadState *ts, Kernel &kernel);
 
 /// Free a previously compiled Metal kernel.
 extern void jitc_metal_kernel_free(Kernel &kernel);
@@ -214,11 +215,6 @@ extern std::vector<MetalScene *> metal_kernel_scenes;
 /// Append ``scene`` to ``metal_kernel_scenes`` if not already present (linear
 /// dedup; at most a handful of scenes per kernel). ``nullptr`` is ignored.
 extern void metal_register_kernel_scene(MetalScene *scene);
-
-/// Hashes of this kernel's indirect-callable functions (named ``func_<hash>``),
-/// ordered by callable index. Populated during code generation and consumed to
-/// build the kernel's visible function table.
-extern std::vector<XXH128_hash_t> metal_kernel_callables;
 
 /// Lazily build (and cache) an ``MTLIntersectionFunctionTable`` for the
 /// given scene + compute pipeline. The function handles are derived from

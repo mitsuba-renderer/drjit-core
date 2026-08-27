@@ -98,7 +98,7 @@ public:
     size_t capacity() const { return m_end - m_start; }
 
     /// Provide access to the C-style string
-    const char *get() { return m_start; }
+    const char *get() const { return m_start; }
 
     /* ================================================================== */
 
@@ -146,9 +146,6 @@ public:
 
     // Append a 64 bit hex number
     void put_x64(uint64_t value);
-
-    // Append a zero-filled 64 bit hex number
-    void put_q64(uint64_t value);
 
     /* ================================================================== */
 
