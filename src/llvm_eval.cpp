@@ -74,6 +74,7 @@ static void jitc_llvm_render_trace(const Variable *v,
                                    const Variable *scene);
 
 void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
+    (void) ts;
     bool print_labels = jitc_log_active(LogLevel::Trace) ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
@@ -204,20 +205,20 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         "    ret void\n"
         "}\n");
 
-    /* The program requires extra memory or uses callables. Insert
-       setup code the top of the function to accomplish this */
-    if (indirect_callable_count > 0 || alloca_size >= 0 || call_buffer.base_v) {
+    // The program requires extra memory or performs calls. Insert setup
+    // code at the top of the function to accomplish this
+    if (alloca_size >= 0 || call_buffer.base_v) {
         size_t suffix_start = buffer.size(),
                suffix_target = (char *) strchr(buffer.get(), ':') - buffer.get() + 2;
 
-        if (indirect_callable_count > 0)
-            fmt("    %callables = load ptr, ptr @callables, align 8\n");
-
-        // Load the call-data base pointer once, shared by every call's
-        // dispatch in this kernel.
+        // Load the call-data base pointer and the callable table
+        // ('kernel.llvm.reloc', bound to the reserved parameter slot 3 at
+        // every launch) once, shared by every call in this kernel.
         if (call_buffer.base_v)
             fmt("    %rd$u_basep = getelementptr inbounds ptr, ptr %params, i32 $u\n"
-                "    %rd$u = load ptr, ptr %rd$u_basep, align 8, !alias.scope !2, !noalias !2, !invariant.load !4\n",
+                "    %rd$u = load ptr, ptr %rd$u_basep, align 8, !alias.scope !2, !noalias !2, !invariant.load !4\n"
+                "    %callables_p = getelementptr inbounds ptr, ptr %params, i32 3\n"
+                "    %callables = load ptr, ptr %callables_p, align 8, !alias.scope !2, !noalias !2, !invariant.load !4\n",
                 call_buffer.base_reg, call_buffer.base_param_index,
                 call_buffer.base_reg, call_buffer.base_reg);
 
@@ -228,19 +229,10 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         buffer.move_suffix(suffix_start, suffix_target);
     }
 
-    uint32_t ctr = 0;
-    for (auto &it : globals_map) {
-        // Type definitions are hoisted before the kernel further below
-        if (it.first.type == GlobalType::Type)
-            continue;
-        put('\n');
-        put(globals.get() + it.second.start, it.second.length);
-        put('\n');
-        if (it.first.type != GlobalType::IndirectCallable)
-            continue;
-        it.second.callable_index = 1 + ctr++;
-    }
+}
 
+/// Render the metadata and attribute groups shared by every unit of a kernel
+void jitc_llvm_render_epilogue() {
     put("\n"
         "!0 = !{!0}\n"
         "!1 = !{!1, !0}\n"
@@ -285,21 +277,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         put("\"");
     }
 
-    put(" }");
-
-    // Hoist type definitions ahead of the kernel
-    size_t types_start = buffer.size();
-    for (auto &it : globals_map) {
-        if (it.first.type != GlobalType::Type)
-            continue;
-        put(globals.get() + it.second.start, it.second.length);
-        put('\n');
-    }
-
-    if (buffer.size() != types_start)
-        buffer.move_suffix(types_start, 0);
-
-    jitc_call_upload(ts);
+    put(" }\n");
 }
 
 /// Return/create the LLVM struct type used for a callable's return value
@@ -326,15 +304,13 @@ static std::string jitc_llvm_call_ret_type(const CallData *call) {
         first = false;
     }
     fmt(" }");
-    jitc_register_global(buffer.get() + off, GlobalType::Type);
-    buffer.rewind_to(off);
+    jitc_unit_capture_preamble(off);
     return name;
 }
 
 void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     bool print_labels = jitc_log_active(LogLevel::Trace) ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
-    uint32_t callables_local = indirect_callable_count;
 
     std::string ret_ty = jitc_llvm_call_ret_type(call);
 
@@ -350,15 +326,15 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     if (call->use_thread_id)
         put(", i32 %thread_id");
 
-    // Base pointer holding the kernel's combined call data
-    // The base pointer is kernel-uniform at every nesting level, hence always a
-    // single uniform pointer. A callable receives it if it reads its own
-    // captured data (then also the per-lane offsets) or if it contains a nested
-    // call (then only the base pointer, to forward downward).
+    // %data (the kernel's combined call data) and %callables (the dispatch
+    // table) are kernel-uniform and therefore passed as scalar pointers. A
+    // callable that reads captured data additionally needs the per-lane
+    // %offsets, while one that merely contains a nested call only forwards
+    // the two pointers.
     if (!call->slots.empty())
-        fmt(", ptr noalias %data, <$w x i32> %offsets");
+        fmt(", ptr noalias %data, ptr noalias %callables, <$w x i32> %offsets");
     else if (call->use_nested)
-        fmt(", ptr noalias %data");
+        fmt(", ptr noalias %data, ptr noalias %callables");
 
     // Name each input argument by slot index
     for (uint32_t i = 0; i < (uint32_t) call->outer_in.size(); ++i) {
@@ -481,17 +457,14 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     else
         fmt("    ret $s %ret_$u\n", ret_ty.c_str(), slot);
 
-    /* The function requires extra memory or uses callables. Insert
-       setup code the top of the function to accomplish this */
-    if (alloca_size >= 0 || callables_local != indirect_callable_count) {
+    // The function requires extra memory. Insert setup code at the top of
+    // the function to accomplish this. (Nested dispatch needs no setup: the
+    // callable table arrives as the '%callables' argument.)
+    if (alloca_size >= 0) {
         size_t suffix_start = buffer.size();
 
-        if (callables_local != indirect_callable_count)
-            fmt("    %callables = load ptr, ptr @callables, align 8\n");
-
-        if (alloca_size >= 0)
-            fmt("    %buffer = alloca i8, i32 $u, align $u\n",
-                (uint32_t) alloca_size, (uint32_t) alloca_align);
+        fmt("    %buffer = alloca i8, i32 $u, align $u\n",
+            (uint32_t) alloca_size, (uint32_t) alloca_align);
 
         buffer.move_suffix(suffix_start, alloca_target);
     }
@@ -1716,19 +1689,8 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
     // 1. Declare a few intrinsics that we will use
     // =====================================================
 
-    if (call->n_inst != 1) {
-        fmt_intrinsic("@callables = dso_local local_unnamed_addr global ptr null, align 8");
-
-        /* How to prevent @callables from being optimized away as a constant, while
-           at the same time not turning it an external variable that would require a
-           global offset table (GOT)? Let's make a dummy function that writes to it.. */
-        fmt_intrinsic("define void @set_callables(ptr %ptr) local_unnamed_addr #0 {\n"
-                      "    store ptr %ptr, ptr @callables\n"
-                      "    ret void\n"
-                      "}");
-
+    if (call->n_inst != 1)
         fmt_intrinsic("declare i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32>)");
-    }
 
     fmt("\n    ; Call: $s\n", call->name.c_str());
 
@@ -1786,9 +1748,10 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         if (call->use_thread_id)
             fmt(", i32 %thread_id");
         if (has_data)
-            fmt(", ptr $s, <$w x i32> %u$u_offset", base, call_reg);
+            fmt(", ptr $s, ptr %callables, <$w x i32> %u$u_offset", base,
+                call_reg);
         else if (call->use_nested)
-            fmt(", ptr $s", base);
+            fmt(", ptr $s, ptr %callables", base);
         for (uint32_t i = 0; i < call->n_in; ++i) {
             if (!call->in_active[i])
                 continue;

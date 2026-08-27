@@ -679,8 +679,9 @@ void RecordThreadState::record_launch(
     Kernel kernel, KernelKey &key, XXH128_hash_t hash, uint32_t size,
     std::vector<void *> &params,
     const std::vector<uint32_t> &kernel_param_ids) {
+    // Number of leading reserved parameter slots (see jitc_assemble())
     uint32_t kernel_param_offset =
-        jitc_is_gpu(backend) ? 1 : 3;
+        jitc_is_gpu(backend) ? 1 : 4;
 
     // The size of the largest variable used by the kernel directly.
     size_t input_size = 0;
@@ -889,8 +890,9 @@ int Recording::replay_launch(Operation &op) {
         // First parameter contains kernel size. Assigned later.
         kernel_params.push_back(nullptr);
     } else {
-        // First 3 parameters reserved for: kernel ptr, size, ITT identifier
-        for (int i = 0; i < 3; ++i)
+        // First 4 parameters reserved for: kernel ptr, size, ITT identifier,
+        // callable table (all bound in LLVMThreadState::launch())
+        for (int i = 0; i < 4; ++i)
             kernel_params.push_back(nullptr);
     }
 

@@ -49,6 +49,17 @@ struct XXH128Cmp {
     }
 };
 
+/// Hash and equality functors for hash tables keyed by XXH128_hash_t
+struct XXH128Hasher {
+    size_t operator()(XXH128_hash_t h) const { return (size_t) h.low64; }
+};
+
+struct XXH128Eq {
+    bool operator()(XXH128_hash_t a, XXH128_hash_t b) const {
+        return a.low64 == b.low64 && a.high64 == b.high64;
+    }
+};
+
 inline void hash_combine(size_t& seed, size_t value) {
     /// From CityHash (https://github.com/google/cityhash)
     const size_t mult = 0x9ddfea08eb382d69ull;
@@ -75,17 +86,3 @@ inline size_t hash_str(const char *str) {
     return hash(str, strlen(str));
 }
 
-/// Hash the IR of a just-generated kernel, starting at its body. CUDA and LLVM
-/// unconditionally emit a "body:" label; Metal has no such label, and hashing
-/// starts at the first '{' (of its ``struct Params`` declaration) instead.
-inline XXH128_hash_t hash_kernel(const char *str, size_t size,
-                                 JitBackend backend) {
-    const char *offset = backend == JitBackend::Metal
-                             ? strchr(str, '{')
-                             : strstr(str, "body:");
-
-    if (unlikely(!offset))
-        jitc_fail("hash_kernel(): could not locate the start of the kernel body!");
-
-    return XXH128(offset, size - (size_t) (offset - str), 0);
-}

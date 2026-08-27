@@ -62,10 +62,9 @@ extern void jitc_optix_ray_trace(
 extern uint32_t jitc_optix_sbt_data_load(uint32_t sbt_data_ptr, VarType type,
                                          uint32_t offset, uint32_t mask);
 
-/// Compile an OptiX kernel
-extern bool jitc_optix_compile(ThreadState *ts, const char *buffer,
-                               size_t buffer_size, const char *kernel_name,
-                               Kernel &kernel);
+/// Compile the current kernel per unit and link its OptiX pipeline. Returns
+/// whether every unit was served from the in-memory or driver caches.
+extern bool jitc_optix_compile(ThreadState *ts, Kernel &kernel);
 
 /// Free a compiled OptiX kernel
 extern void jitc_optix_free(const Kernel &kernel);
@@ -73,10 +72,6 @@ extern void jitc_optix_free(const Kernel &kernel);
 /// Perform an OptiX kernel launch
 extern void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
                               uint32_t size, const void *args, uint32_t n_args);
-
-/// Optional: set the desired launch size
-extern void jitc_optix_set_launch_size(uint32_t width, uint32_t height,
-                                       uint32_t samples);
 
 /// Convert a Dr.Jit variable type into an OptiX CoopVec variable type
 extern uint32_t jitc_optix_coop_vec_type_id(VarType vt);

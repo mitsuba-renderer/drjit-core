@@ -29,12 +29,10 @@ extern void jitc_llvm_api_shutdown();
 /// Are the core parts of LLVM available
 extern bool jitc_llvm_api_has_core();
 
-/// Is the MCJIT/ORCv2-based backend available
-extern bool jitc_llvm_api_has_mcjit();
+/// Is the ORCv2-based backend available
 extern bool jitc_llvm_api_has_orcv2();
 
-// Which pass builder interface is available?
-extern bool jitc_llvm_api_has_pb_legacy();
+/// Is the (new) pass builder interface available?
 extern bool jitc_llvm_api_has_pb_new();
 
 /// String describing the LLVM target
@@ -84,25 +82,20 @@ extern bool jitc_llvm_init();
 /// Shut down the LLVM backend
 extern void jitc_llvm_shutdown();
 
-/// Initialize the MCJIT/ORCv2-specific parts of the LLVM backend
-extern bool jitc_llvm_mcjit_init();
+/// Initialize / shut down the ORCv2-specific parts of the LLVM backend
 extern bool jitc_llvm_orcv2_init();
-
-/// Shut down the MCJIT/ORCv2-specific parts of the LLVM backend
-extern void jitc_llvm_mcjit_shutdown();
 extern void jitc_llvm_orcv2_shutdown();
 
-/// Run the MCJIT/ORCv2-based compiler on the given module
-extern void jitc_llvm_mcjit_compile(void *llvm_module,
-                                    std::vector<uint8_t *> &symbols);
-extern void jitc_llvm_orcv2_compile(void *llvm_module,
-                                    std::vector<uint8_t *> &symbols);
+/// A self-contained LLVM compiler instance (defined in llvm_memmgr.h)
+struct LLVMCompiler;
 
-/// Compile the current IR string and store the resulting kernel into `kernel`
-extern void jitc_llvm_compile(Kernel &kernel);
+/// Check a compiler instance out of / back into the shared pool
+extern LLVMCompiler *jitc_llvm_compiler_acquire();
+extern void jitc_llvm_compiler_release(LLVMCompiler *c);
 
-/// Dump disassembly for the given kernel
-extern void jitc_llvm_disasm(const Kernel &kernel);
+/// Compile the just-assembled kernel  into `kernel`. Returns true when every
+/// artifact came from a cache.
+extern bool jitc_llvm_kernel_compile(Kernel &kernel);
 
 /// Override the target architecture
 extern void jitc_llvm_set_target(const char *target_cpu,

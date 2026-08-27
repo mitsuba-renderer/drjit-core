@@ -176,6 +176,8 @@ LLVMThreadState::launch(Kernel kernel, KernelKey & /*key*/,
     kernel_params[2] = kernel.llvm.itt;
 #endif
 
+    kernel_params[3] = (void *) kernel.llvm.reloc;
+
     jitc_trace("jit_run(): launching %u %u-wide packet%s in %u block%s of size %u ..",
                packets, packet_size, packets == 1 ? "" : "s", blocks,
                blocks == 1 ? "" : "s", block_size);
@@ -1225,9 +1227,22 @@ float jitc_llvm_event_elapsed_time(JitEvent start, JitEvent end) {
     if (!s->llvm_task || !e->llvm_task)
         jitc_raise("jit_event_elapsed_time(): events must be recorded");
 
-    // Ensure both tasks are complete
-    task_wait(s->llvm_task);
-    task_wait(e->llvm_task);
+    // Ensure both tasks are complete. Hold references and release the lock
+    // while waiting, as in jitc_llvm_event_wait(). The tasks carry no callback
+    // and can therefore not raise an exception.
+    Task *task_s = s->llvm_task, *task_e = e->llvm_task;
+    task_retain(task_s);
+    task_retain(task_e);
 
-    return (float) task_time_rel(s->llvm_task, e->llvm_task);
+    {
+        unlock_guard guard(state.lock);
+        task_wait(task_s);
+        task_wait(task_e);
+    }
+
+    float result = (float) task_time_rel(task_s, task_e);
+    task_release(task_s);
+    task_release(task_e);
+
+    return result;
 }

@@ -9,6 +9,7 @@
 #include "op.h"
 #include "util.h"
 #include "trace.h"
+#include "unit.h"
 
 static bool jitc_optix_cache_hit = false;
 static bool jitc_optix_cache_global_disable = false;
@@ -227,16 +228,49 @@ uint32_t jitc_optix_sbt_owner_handle(uint32_t sbt_index) {
                             /* free = */ 0);
 }
 
-bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
-                        const char *kern_name, Kernel &kernel) {
-    char error_log[16384];
+// ============================================================================
+//  Per-unit kernel compilation
+// ============================================================================
 
+/// Compiled per-unit OptiX modules are held by the unit cache as
+/// { ptr[0] = module }, filed under JitBackend::CUDA so that
+/// jitc_cuda_shutdown() releases them ahead of the OptiX context.
+static void jitc_optix_unit_release(UnitArtifact &a) {
+    jitc_optix_check(optixModuleDestroy((OptixModule) a.ptr[0]));
+}
+
+/// Every module of a pipeline must be compiled with matching pipeline/module
+/// compile options, so they enter the unit cache key alongside the device.
+static uint64_t jitc_optix_config_salt(int device,
+                                       const OptixPipelineCompileOptions &pco,
+                                       const OptixModuleCompileOptions &mco) {
+    uint32_t data[] = { (uint32_t) device,
+                        (uint32_t) pco.numAttributeValues,
+                        (uint32_t) pco.numPayloadValues,
+                        (uint32_t) pco.usesMotionBlur,
+                        (uint32_t) pco.traversableGraphFlags,
+                        (uint32_t) pco.usesPrimitiveTypeFlags,
+                        (uint32_t) pco.exceptionFlags,
+                        (uint32_t) mco.debugLevel,
+                        (uint32_t) mco.optLevel,
+                        (uint32_t) mco.maxRegisterCount };
+    return XXH3_64bits(data, sizeof(data));
+}
+
+struct OptixCompileJob : UnitCompileJob {
+    OptixModule mod = nullptr;
+    OptixTask task = nullptr;
+    char error_log[2048];
+    size_t log_size = sizeof(error_log);
+};
+
+bool jitc_optix_compile(ThreadState *ts, Kernel &kernel) {
     if (!optixModuleCreateWithTasks)
         jitc_fail("jit_optix_compile(): OptiX not initialized, make sure "
                   "evaluation happens before Optix shutdown!");
 
     // =====================================================
-    // 2. Compile an OptiX module
+    // 1. Compile the kernel's units into OptiX modules
     // =====================================================
 
     OptixModuleCompileOptions mco { };
@@ -255,68 +289,115 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     }
 
     jitc_optix_cache_hit = !jitc_optix_cache_global_disable;
-    size_t log_size = sizeof(error_log);
     OptixDeviceContext &optix_context = state.devices[ts->device].optix_context;
     OptixPipelineData &pipeline = *ts->optix_pipeline;
+    uint64_t salt =
+        jitc_optix_config_salt(ts->device, pipeline.compile_options, mco);
 
-#if 1 // Parallel compilation
-    OptixTask task;
-    error_log[0] = '\0';
-    int rv = optixModuleCreateWithTasks(
-        optix_context, &mco, &pipeline.compile_options, buf, buf_size,
-        error_log, &log_size, &kernel.optix.mod, &task);
+    size_t n_units = 1 + callable_units.size();
+    std::vector<OptixCompileJob> jobs(n_units);
+    std::vector<uint32_t> misses;
 
-    if (rv) {
-        jitc_log(Error, "jit_optix_compile(): "
-                 "optixModuleCreateWithTasks() failed. Please see the "
-                 "PTX assembly listing and error message below:\n\n%s\n\n%s",
-                 buf, error_log);
-        jitc_optix_check(rv);
+    for (size_t i = 0; i < n_units; ++i) {
+        OptixCompileJob &job = jobs[i];
+        jitc_unit_job_init(i, job);
+        job.error_log[0] = '\0';
+
+        UnitArtifact artifact;
+        if (jitc_unit_cache_lookup(JitBackend::CUDA, job.unit_hash, salt,
+                                   artifact)) {
+            job.mod = (OptixModule) artifact.ptr[0];
+            continue;
+        }
+
+        misses.push_back((uint32_t) i);
     }
 
-    std::function<void(OptixTask)> execute_task = [&](OptixTask task) {
-        unsigned int max_new_tasks = pool_size();
+    // Release the lock while compiling. The job sources stay valid
+    // throughout (see UnitCompileJob in unit.h)
+    if (!misses.empty()) {
+        unlock_guard guard(state.lock);
 
-        std::unique_ptr<OptixTask[]> new_tasks =
-            std::make_unique<OptixTask[]>(max_new_tasks);
-        unsigned int new_task_count = 0;
-        optixTaskExecute(task, new_tasks.get(), max_new_tasks, &new_task_count);
+        // Issue one deferred module build per miss (cheap), then execute the
+        // resulting task graphs of all units together through nanothread,
+        // which balances the heavy work across the pool.
+        for (uint32_t i : misses) {
+            OptixCompileJob &job = jobs[i];
+            int rv = optixModuleCreateWithTasks(
+                optix_context, &mco, &pipeline.compile_options,
+                job.source, job.source_size, job.error_log,
+                &job.log_size, &job.mod, &job.task);
+            if (rv) {
+                jitc_log(Error,
+                         "jit_optix_compile(): optixModuleCreateWithTasks() "
+                         "failed for unit \"%s\". Please see the PTX assembly "
+                         "listing and error message below:\n\n%s\n\n%s",
+                         job.symbol, job.source, job.error_log);
+                jitc_optix_check(rv);
+            }
+        }
+
+        std::function<void(OptixTask)> execute_task = [&](OptixTask task) {
+            unsigned int max_new_tasks = std::max(pool_size(), 1u);
+
+            std::unique_ptr<OptixTask[]> new_tasks =
+                std::make_unique<OptixTask[]>(max_new_tasks);
+            unsigned int new_task_count = 0;
+            optixTaskExecute(task, new_tasks.get(), max_new_tasks,
+                             &new_task_count);
+
+            parallel_for(
+                drjit::blocked_range<size_t>(0, new_task_count, 1),
+                [&](const drjit::blocked_range<size_t> &range) {
+                    for (auto i = range.begin(); i != range.end(); ++i) {
+                        OptixTask new_task = new_tasks[i];
+                        execute_task(new_task);
+                    }
+                }
+            );
+        };
 
         parallel_for(
-            drjit::blocked_range<size_t>(0, new_task_count, 1),
+            drjit::blocked_range<size_t>(0, misses.size(), 1),
             [&](const drjit::blocked_range<size_t> &range) {
-                for (auto i = range.begin(); i != range.end(); ++i) {
-                    OptixTask new_task = new_tasks[i];
-                    execute_task(new_task);
-                }
+                for (auto i = range.begin(); i != range.end(); ++i)
+                    execute_task(jobs[misses[i]].task);
             }
         );
-    };
-    execute_task(task);
-#else // Fallback for internal debugging: serial compilation
-    int rv = optixModuleCreate(
-        optix_context, &mco, &pipeline.compile_options, buf, buf_size,
-        error_log, &log_size, &kernel.optix.mod);
-#endif
 
-    int compilation_state = 0;
-    jitc_optix_check(
-        optixModuleGetCompilationState(kernel.optix.mod, &compilation_state));
-    if (compilation_state != OPTIX_MODULE_COMPILE_STATE_COMPLETED) {
-        jitc_fail("jit_optix_compile(): optixModuleGetCompilationState() "
-                  "indicates that the compilation did not complete "
-                  "succesfully. The module's compilation state is: %#06x\n"
-                  "Please see the PTX assembly listing and error message "
-                  "below:\n\n%s\n\n%s", compilation_state, buf, error_log);
-    } else if (error_log[0]) {
-        jitc_log(Trace, "Detailed pipeline compile output:\n%s", error_log);
+        for (uint32_t i : misses) {
+            OptixCompileJob &job = jobs[i];
+            int compilation_state = 0;
+            jitc_optix_check(
+                optixModuleGetCompilationState(job.mod, &compilation_state));
+            if (compilation_state != OPTIX_MODULE_COMPILE_STATE_COMPLETED)
+                jitc_fail("jit_optix_compile(): compilation of unit \"%s\" "
+                          "did not complete succesfully (state: %#06x).\n"
+                          "Please see the PTX assembly listing and error "
+                          "message below:\n\n%s\n\n%s",
+                          job.symbol, compilation_state, job.source,
+                          job.error_log);
+            else if (job.error_log[0])
+                jitc_log(Trace, "Detailed compile output of unit \"%s\":\n%s",
+                         job.symbol, job.error_log);
+        }
+
+        // Publish the new modules; the cache pins them
+        for (uint32_t i : misses) {
+            OptixCompileJob &job = jobs[i];
+            UnitArtifact artifact { };
+            artifact.ptr[0] = job.mod;
+            jitc_unit_cache_insert(JitBackend::CUDA, job.unit_hash, salt,
+                                   artifact, jitc_optix_unit_release);
+            job.mod = (OptixModule) artifact.ptr[0];
+        }
     }
 
     // =====================================================
-    // 3. Create an OptiX program group
+    // 2. Create an OptiX program group
     // =====================================================
 
-    size_t n_programs = 1 + indirect_callable_count_unique;
+    size_t n_programs = n_units;
 
     OptixProgramGroupOptions pgo { };
     std::unique_ptr<OptixProgramGroupDesc[]> pgd(
@@ -324,45 +405,47 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     memset(pgd.get(), 0, n_programs * sizeof(OptixProgramGroupDesc));
 
     pgd[0].kind = OPTIX_PROGRAM_GROUP_KIND_RAYGEN;
-    pgd[0].raygen.module = kernel.optix.mod;
-    pgd[0].raygen.entryFunctionName = strdup(kern_name);
+    pgd[0].raygen.module = jobs[0].mod;
+    pgd[0].raygen.entryFunctionName = strdup(kernel_name);
 
     bool continuation_callables = jitc_optix_use_continuation_callables();
 
-    for (auto const &it : globals_map) {
-        if (it.first.type != GlobalType::IndirectCallable)
-            continue;
+    for (uint32_t i = 0; i < (uint32_t) callable_units.size(); ++i) {
+        XXH128_hash_t ch = callable_units[i].hash;
 
         char *name = (char *) malloc_check(58);
         snprintf(name, 58, "__%s_callable__%016llx%016llx",
                  continuation_callables ? "continuation" : "direct",
-                 (unsigned long long) it.first.hash.high64,
-                 (unsigned long long) it.first.hash.low64);
+                 (unsigned long long) ch.high64,
+                 (unsigned long long) ch.low64);
 
-        uint32_t index = 1 + it.second.callable_index;
+        uint32_t index = 1 + i;
         pgd[index].kind = OPTIX_PROGRAM_GROUP_KIND_CALLABLES;
 
         if (continuation_callables) {
-            pgd[index].callables.moduleCC = kernel.optix.mod;
+            pgd[index].callables.moduleCC = jobs[index].mod;
             pgd[index].callables.entryFunctionNameCC = name;
         } else {
-            pgd[index].callables.moduleDC = kernel.optix.mod;
+            pgd[index].callables.moduleDC = jobs[index].mod;
             pgd[index].callables.entryFunctionNameDC = name;
         }
     }
+
+    char error_log[16384];
+    size_t log_size;
 
     kernel.optix.pg = new OptixProgramGroup[n_programs];
     kernel.optix.pg_count = (uint32_t) n_programs;
 
     log_size = sizeof(error_log);
     error_log[0] = '\0';
-    rv = optixProgramGroupCreate(optix_context, pgd.get(),
-                                 (unsigned int) n_programs, &pgo, error_log,
-                                 &log_size, kernel.optix.pg);
+    int rv = optixProgramGroupCreate(optix_context, pgd.get(),
+                                     (unsigned int) n_programs, &pgo, error_log,
+                                     &log_size, kernel.optix.pg);
     if (rv) {
         jitc_log(Error, "jit_optix_compile(): optixProgramGroupCreate() "
-                 "failed. Please see the PTX assembly listing and error "
-                 "message below:\n\n%s\n\n%s", buf, error_log);
+                 "failed. Please see the error message below:\n\n%s",
+                 error_log);
         jitc_optix_check(rv);
     } else if (error_log[0]) {
         jitc_log(Trace, "Detailed program group creation output:\n%s", error_log);
@@ -380,7 +463,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
         jitc_malloc_migrate(sbt_record, JitBackend::CUDA);
 
     // =====================================================
-    // 4. Create an OptiX pipeline
+    // 3. Create an OptiX pipeline
     // =====================================================
 
     OptixPipelineLinkOptions link_options {};
@@ -406,8 +489,7 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
                              error_log, &log_size, &kernel.optix.pipeline);
     if (rv) {
         jitc_log(Error, "jit_optix_compile(): optixPipelineCreate() failed. "
-                 "Please see the PTX assembly listing and error message "
-                 "below:\n\n%s\n\n%s", buf, error_log);
+                 "Please see the error message below:\n\n%s", error_log);
         jitc_optix_check(rv);
     } else if (error_log[0]) {
         jitc_log(Trace, "Detailed pipeline link output:\n%s", error_log);
@@ -457,7 +539,6 @@ bool jitc_optix_compile(ThreadState *ts, const char *buf, size_t buf_size,
     }
 
     kernel.size = 0;
-    kernel.data = nullptr;
     pipeline.program_groups.resize(size_before);
     return jitc_optix_cache_hit;
 }
@@ -467,7 +548,8 @@ void jitc_optix_free(const Kernel &kernel) {
     for (uint32_t i = 0; i < kernel.optix.pg_count; ++i)
         jitc_optix_check(optixProgramGroupDestroy(kernel.optix.pg[i]));
     delete[] kernel.optix.pg;
-    jitc_optix_check(optixModuleDestroy(kernel.optix.mod));
+    // The modules referenced by the program groups are owned by the unit
+    // cache and released in jitc_unit_cache_flush()
     jitc_free(kernel.optix.sbt_record);
 }
 

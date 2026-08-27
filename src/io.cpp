@@ -1,5 +1,5 @@
 /*
-    src/io.cpp -- Disk cache for LLVM kernels
+    src/io.cpp -- Disk cache for compiled kernel artifacts
 
     Copyright (c) 2021 Wenzel Jakob <wenzel.jakob@epfl.ch>
 
@@ -13,6 +13,7 @@
 #include "profile.h"
 #include "cuda.h"
 #include "optix.h"
+#include "unit.h"
 #include "resources/kernels.h"
 #include <stdio.h>
 #include <stdlib.h>
@@ -23,27 +24,27 @@
 #include <filesystem>
 #include <fstream>
 #include <thread>
+#include <mutex>
 
 #if defined(_WIN32)
 #  include <windows.h>
 #  define jitc_getpid() GetCurrentProcessId()
 #else
 #  include <unistd.h>
-#  include <sys/mman.h>
 #  define jitc_getpid() getpid()
 #endif
 
 namespace fs = std::filesystem;
 
 /// Version number for cache files
-#define DRJIT_CACHE_VERSION 6
+#define DRJIT_CACHE_VERSION 1
 
-// Uncomment to write out training data for creating a compression dictionary
-// #define DRJIT_CACHE_TRAIN 1
+/// Also write each payload in uncompressed form to a sibling ".trn" file
+/// (set via DRJIT_CACHE_TRAIN) that can be used to train the LZ4 dictionary.
+static bool jitc_cache_train = false;
 
-/* Seed of the cache file checksum. Must differ from the seed used by
-   hash_kernel(), so that the two cannot coincide if the kernel body happens to
-   start at offset zero. */
+/// Seed of the cache file checksum. Must differ from the (zero) seed of the
+/// unit content hashes, so that the two cannot coincide.
 #define DRJIT_CACHE_CHECKSUM_SEED 1
 
 /// Records when the last sweep began. Must not end in ".bin".
@@ -78,71 +79,48 @@ static constexpr auto jitc_cache_touch_interval = std::chrono::hours(24);
 struct CacheFileHeader {
     uint8_t version;
     uint32_t compressed_size;
-    uint32_t source_size;
-    uint32_t kernel_size;
-    uint32_t reloc_size;
+    uint32_t check;
+    uint32_t payload_size;
     XXH128_hash_t checksum;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CacheFileHeader) == 33, "CacheFileHeader is not packed!");
+static_assert(sizeof(CacheFileHeader) == 29, "CacheFileHeader is not packed!");
 
 char jitc_lz4_dict[jitc_lz4_dict_size];
-static bool jitc_lz4_dict_ready = false;
+static std::once_flag jitc_lz4_dict_once;
 
 void jitc_lz4_init() {
-    if (jitc_lz4_dict_ready)
-        return;
+    std::call_once(jitc_lz4_dict_once, []() {
+        if (jitc_lz4_dict_size != kernels_dict_size_uncompressed)
+            jitc_fail("jit_init_lz4(): dictionary has invalid size!");
 
-    if (jitc_lz4_dict_size != kernels_dict_size_uncompressed)
-        jitc_fail("jit_init_lz4(): dictionary has invalid size!");
-
-    if (LZ4_decompress_safe(kernels_dict, jitc_lz4_dict,
-                            kernels_dict_size_compressed,
-                            kernels_dict_size_uncompressed) !=
-        (int) kernels_dict_size_uncompressed)
-        jitc_fail("jit_init_lz4(): decompression of dictionary failed!");
-
-    jitc_lz4_dict_ready = true;
+        if (LZ4_decompress_safe(kernels_dict, jitc_lz4_dict,
+                                kernels_dict_size_compressed,
+                                kernels_dict_size_uncompressed) !=
+            (int) kernels_dict_size_uncompressed)
+            jitc_fail("jit_init_lz4(): decompression of dictionary failed!");
+    });
 }
 
-/* Computes padding to align the relocation table to a multiple of
-   sizeof(void*). This prevents undefined behavior due to misaligned reads. */
-static uint32_t compute_padding(const CacheFileHeader &header) {
-    uint32_t padding_size = header.kernel_size % sizeof(void *);
-    if (padding_size)
-        padding_size = (uint32_t) sizeof(void *) - padding_size;
-    return padding_size;
-}
-
-/* Checksum over the header (up to the checksum itself), the kernel source, and
-   the payload in compressed form. This serves as extra validation that a cache
-   file has the expected contents. */
+/// Checksum over the header (up to the checksum itself) and the payload in
+/// compressed form. This serves as extra validation that a cache file has the
+/// expected contents.
 static XXH128_hash_t jitc_cache_checksum(const CacheFileHeader &header,
-                                         const char *source,
-                                         uint32_t source_size,
                                          const char *compressed) {
     XXH3_state_t xxh_state;
     XXH3_128bits_reset_withSeed(&xxh_state, DRJIT_CACHE_CHECKSUM_SEED);
     XXH3_128bits_update(&xxh_state, &header, offsetof(CacheFileHeader, checksum));
-    XXH3_128bits_update(&xxh_state, source, source_size);
     XXH3_128bits_update(&xxh_state, compressed, header.compressed_size);
     return XXH3_128bits_digest(&xxh_state);
 }
 
-/// Path of the cache file holding a given kernel
-static fs::path jitc_cache_entry(XXH128_hash_t hash, JitBackend backend) {
-    const char *suffix;
-    switch (backend) {
-        case JitBackend::CUDA:  suffix = "cuda"; break;
-        case JitBackend::Metal: suffix = "metal"; break;
-        default:                suffix = "llvm"; break;
-    }
-
-    char name[64];
+/// Path of the cache file holding an entry of the given kind
+static fs::path jitc_cache_entry(XXH128_hash_t hash, const char *kind) {
+    char name[80];
     snprintf(name, sizeof(name), "%016llx%016llx.%s.v%i.bin",
              (unsigned long long) hash.high64, (unsigned long long) hash.low64,
-             suffix, DRJIT_CACHE_VERSION);
+             kind, DRJIT_CACHE_VERSION);
 
     return jitc_cache_path / name;
 }
@@ -217,6 +195,10 @@ void jitc_cache_init() {
     jitc_cache_verbose =
         verbose_str && *verbose_str && strcmp(verbose_str, "0") != 0;
 
+    const char *train_str = getenv("DRJIT_CACHE_TRAIN");
+    jitc_cache_train =
+        train_str && *train_str && strcmp(train_str, "0") != 0;
+
     jitc_cache_max_size = jitc_cache_default_max_size;
     const char *max_size_str = getenv("DRJIT_CACHE_MAXSIZE");
     if (max_size_str && *max_size_str) {
@@ -279,6 +261,10 @@ const char *jitc_cache_dir() {
     return jitc_cache_path.empty() ? nullptr : jitc_cache_path_str.c_str();
 }
 
+bool jitc_cache_writable() {
+    return !jitc_cache_path.empty() && !jitc_cache_read_only;
+}
+
 // ============================================================================
 //  Loading and storing kernels
 // ============================================================================
@@ -289,12 +275,24 @@ struct ScopedBuffer {
     ~ScopedBuffer() { free(ptr); }
 };
 
-bool jitc_kernel_load(const char *source, uint32_t source_size,
-                      JitBackend backend, XXH128_hash_t hash, Kernel &kernel) {
+/// A content error means the entry is unusable, so delete it. An I/O error says
+/// nothing about the content and must never delete anything.
+static bool jitc_cache_reject(const fs::path &path, const char *reason) {
+    jitc_log(Debug, "jit_cache_blob_load(): discarding cache file \"%s\": %s.",
+             path.string().c_str(), reason);
+    if (!jitc_cache_read_only) {
+        std::error_code ec;
+        fs::remove(path, ec);
+    }
+    return false;
+}
+
+bool jitc_cache_blob_load(const char *kind, XXH128_hash_t hash,
+                          uint32_t check, std::vector<uint8_t> &data) {
     if (jitc_cache_path.empty())
         return false;
 
-    fs::path path = jitc_cache_entry(hash, backend);
+    fs::path path = jitc_cache_entry(hash, kind);
     std::error_code ec;
 
     // A missing entry is an ordinary miss; anything odd is left well alone
@@ -307,21 +305,8 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 
     jitc_lz4_init();
 
-    std::string filename = path.string();
-
-    // A content error means the entry is unusable, so delete it. An I/O error
-    // says nothing about the content and must never delete anything: a
-    // transient EIO on a network file system would destroy a valid entry.
-    auto reject = [&](const char *reason) {
-        jitc_log(Debug, "jit_kernel_load(): discarding cache file \"%s\": %s.",
-                 filename.c_str(), reason);
-        if (!jitc_cache_read_only)
-            fs::remove(path, ec);
-        return false;
-    };
-
     if (file_size < sizeof(CacheFileHeader))
-        return reject("truncated");
+        return jitc_cache_reject(path, "truncated");
 
     // A stream that failed to open reports every subsequent read as an error
     std::ifstream file(path, std::ios::binary);
@@ -331,16 +316,16 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
         return false;
 
     if (header.version != DRJIT_CACHE_VERSION)
-        return reject("incompatible format version");
+        return jitc_cache_reject(path, "incompatible format version");
 
     // Bounds the allocation below, which precedes the checksum test
     if (file_size != sizeof(CacheFileHeader) + (uintmax_t) header.compressed_size)
-        return reject("size disagrees with the header");
+        return jitc_cache_reject(path, "size disagrees with the header");
 
-    if (header.source_size != source_size)
-        return reject("hash collision");
+    if (header.check != check)
+        return jitc_cache_reject(path, "hash collision");
 
-    ScopedBuffer compressed, uncompressed;
+    ScopedBuffer compressed, buf;
     compressed.ptr = (char *) malloc_check(header.compressed_size);
 
     if (!file.read(compressed.ptr, header.compressed_size))
@@ -348,78 +333,25 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
 
     file.close();
 
-    if (!XXH128_isEqual(header.checksum, jitc_cache_checksum(header, source,
-                                                             source_size,
-                                                             compressed.ptr)))
-        return reject("checksum mismatch");
+    if (!XXH128_isEqual(header.checksum,
+                        jitc_cache_checksum(header, compressed.ptr)))
+        return jitc_cache_reject(path, "checksum mismatch");
 
-    uint32_t padding_size = compute_padding(header),
-             uncompressed_size = header.kernel_size + padding_size +
-                                 header.reloc_size;
-
-    uncompressed.ptr = (char *) malloc_check(size_t(uncompressed_size) + jitc_lz4_dict_size);
-    memcpy(uncompressed.ptr, jitc_lz4_dict, jitc_lz4_dict_size);
+    // Decompress with the shared dictionary, which must precede the payload
+    // in memory
+    buf.ptr = (char *) malloc_check(size_t(header.payload_size) +
+                                    jitc_lz4_dict_size);
+    memcpy(buf.ptr, jitc_lz4_dict, jitc_lz4_dict_size);
 
     uint32_t rv = (uint32_t) LZ4_decompress_safe_usingDict(
-        compressed.ptr, uncompressed.ptr + jitc_lz4_dict_size,
-        (int) header.compressed_size, (int) uncompressed_size,
-        uncompressed.ptr, jitc_lz4_dict_size);
+        compressed.ptr, buf.ptr + jitc_lz4_dict_size,
+        (int) header.compressed_size, (int) header.payload_size,
+        buf.ptr, jitc_lz4_dict_size);
 
-    if (rv != uncompressed_size)
-        return reject("malformed");
+    if (rv != header.payload_size)
+        return jitc_cache_reject(path, "malformed");
 
-    jitc_log(Trace, "jit_kernel_load(\"%s\")", filename.c_str());
-
-    char *data = uncompressed.ptr + jitc_lz4_dict_size;
-    kernel.size = header.kernel_size;
-
-    if (jitc_is_cuda(backend)) {
-        kernel.data = malloc_check(header.kernel_size);
-        memcpy(kernel.data, data, header.kernel_size);
-    } else {
-#if !defined(_WIN32)
-        kernel.data = mmap(nullptr, header.kernel_size, PROT_READ | PROT_WRITE,
-                           MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        if (kernel.data == MAP_FAILED)
-            jitc_fail("jit_llvm_load(): could not mmap() memory: %s",
-                     strerror(errno));
-#else
-        kernel.data = VirtualAlloc(nullptr, header.kernel_size, MEM_RESERVE | MEM_COMMIT, PAGE_READWRITE);
-        if (!kernel.data)
-            jitc_fail("jit_llvm_load(): could not VirtualAlloc() memory: %u", GetLastError());
-#endif
-        memcpy(kernel.data, data, header.kernel_size);
-
-        uintptr_t *reloc = (uintptr_t *) (data + header.kernel_size + padding_size);
-        jitc_assert((uintptr_t) reloc % sizeof(void *) == 0,
-                    "jit_kernel_load(): misaligned relocation table!");
-
-        kernel.llvm.n_reloc = header.reloc_size / sizeof(void *);
-        kernel.llvm.reloc = (void **) malloc(header.reloc_size);
-        for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
-            kernel.llvm.reloc[i] = (uint8_t *) kernel.data + reloc[i];
-
-        // Write address of @call_table
-        if (kernel.llvm.n_reloc > 1)
-            *((void **) kernel.llvm.reloc[1]) = kernel.llvm.reloc + 1;
-
-#if !defined(_WIN32)
-        if (mprotect(kernel.data, header.kernel_size, PROT_READ | PROT_EXEC) == -1)
-            jitc_fail("jit_llvm_load(): mprotect() failed: %s", strerror(errno));
-#else
-        DWORD unused;
-        if (VirtualProtect(kernel.data, header.kernel_size, PAGE_EXECUTE_READ, &unused) == 0)
-            jitc_fail("jit_llvm_load(): VirtualProtect() failed: %u", GetLastError());
-#endif
-
-#if defined(DRJIT_ENABLE_ITTNOTIFY)
-        char name[39];
-        snprintf(name, sizeof(name), "drjit_%016llx%016llx",
-                 (unsigned long long) hash.high64,
-                 (unsigned long long) hash.low64);
-        kernel.llvm.itt = __itt_string_handle_create(name);
-#endif
-    }
+    jitc_log(Trace, "jit_cache_blob_load(\"%s\")", path.string().c_str());
 
     // Refresh the timestamp so that the sweep evicts in least-recently-used
     // rather than first-in-first-out order. The day-long threshold is
@@ -430,23 +362,37 @@ bool jitc_kernel_load(const char *source, uint32_t source_size,
             fs::last_write_time(path, now, ec);
     }
 
+    const uint8_t *payload = (const uint8_t *) buf.ptr + jitc_lz4_dict_size;
+    data.assign(payload, payload + header.payload_size);
     return true;
 }
 
-bool jitc_kernel_write(const char *source, uint32_t source_size,
-                       JitBackend backend, XXH128_hash_t hash,
-                       const Kernel &kernel) {
-    if (jitc_cache_path.empty() || jitc_cache_read_only)
+bool jitc_cache_blob_store(const char *kind, XXH128_hash_t hash,
+                           uint32_t check, const uint8_t *data, size_t size,
+                           bool replace) {
+    if (!jitc_cache_writable())
         return false;
+
+    // LZ4 tops out at INT32_MAX, well below the range of 'payload_size'
+    if (size > (size_t) INT32_MAX) {
+        jitc_log(Warn, "jit_cache_blob_store(): the compiled artifact is too "
+                       "large to be cached (%zu bytes).", size);
+        return false;
+    }
 
     jitc_lz4_init();
 
+    CacheFileHeader header;
+    header.version = DRJIT_CACHE_VERSION;
+    header.check = check;
+    header.payload_size = (uint32_t) size;
+
     // The temporary name carries the pid: a process that dies before the
-    // cleanup below must not poison this kernel for every future process.
+    // cleanup below must not poison this entry for every future process.
     char tmp_suffix[24];
     snprintf(tmp_suffix, sizeof(tmp_suffix), ".%u.tmp", (unsigned) jitc_getpid());
 
-    fs::path path = jitc_cache_entry(hash, backend), path_tmp = path;
+    fs::path path = jitc_cache_entry(hash, kind), path_tmp = path;
     path_tmp += tmp_suffix;
 
     std::string filename = path.string();
@@ -455,36 +401,14 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     if (!file) {
         if (errno == EACCES || errno == EPERM || errno == EROFS)
             jitc_cache_read_only = true;
-        jitc_log(Warn, "jit_kernel_write(): could not write compiled kernel to "
-                       "cache file \"%s\": %s",
+        jitc_log(Warn, "jit_cache_blob_store(): could not write compiled "
+                       "artifact to cache file \"%s\": %s",
                  path_tmp.string().c_str(), strerror(errno));
         return false;
     }
 
-    CacheFileHeader header;
-    header.version = DRJIT_CACHE_VERSION;
-    header.source_size = source_size;
-    header.kernel_size = kernel.size;
-    header.reloc_size = 0;
-
-    if (jitc_is_llvm(backend))
-        header.reloc_size = kernel.llvm.n_reloc * sizeof(void *);
-
-    uint32_t padding_size = compute_padding(header);
-    uint32_t in_size = header.kernel_size + padding_size + header.reloc_size,
-             out_size = LZ4_compressBound(in_size);
-
-    uint8_t *temp_in  = (uint8_t *) malloc_check(in_size),
-            *temp_out = (uint8_t *) malloc_check(out_size);
-
-    memcpy(temp_in, kernel.data, header.kernel_size);
-    memset(temp_in + header.kernel_size, 0, padding_size);
-
-    if (jitc_is_llvm(backend)) {
-        uintptr_t *reloc_out = (uintptr_t *) (temp_in + header.kernel_size + padding_size);
-        for (uint32_t i = 0; i < kernel.llvm.n_reloc; ++i)
-            reloc_out[i] = (uintptr_t) kernel.llvm.reloc[i] - (uintptr_t) kernel.data;
-    }
+    uint32_t out_size = LZ4_compressBound((int) size);
+    uint8_t *temp_out = (uint8_t *) malloc_check(out_size);
 
     LZ4_stream_t stream;
     memset(&stream, 0, sizeof(LZ4_stream_t));
@@ -492,12 +416,11 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     LZ4_loadDict(&stream, jitc_lz4_dict, jitc_lz4_dict_size);
 
     header.compressed_size = (uint32_t) LZ4_compress_fast_continue(
-        &stream, (const char *) temp_in, (char *) temp_out, (int) in_size,
+        &stream, (const char *) data, (char *) temp_out, (int) size,
         (int) out_size, 1);
 
     // Every other header field must be final by this point
-    header.checksum = jitc_cache_checksum(header, source, source_size,
-                                          (const char *) temp_out);
+    header.checksum = jitc_cache_checksum(header, (const char *) temp_out);
 
     file.write((const char *) &header, sizeof(CacheFileHeader));
     file.write((const char *) temp_out, header.compressed_size);
@@ -507,42 +430,48 @@ bool jitc_kernel_write(const char *source, uint32_t source_size,
     bool success = file.good();
 
     if (!success)
-        jitc_log(Warn, "jit_kernel_write(): I/O error while writing compiled "
-                       "kernel to cache file \"%s\".", path_tmp.string().c_str());
+        jitc_log(Warn, "jit_cache_blob_store(): I/O error while writing "
+                       "cache file \"%s\".", path_tmp.string().c_str());
     else if (jitc_log_active(LogLevel::Trace))
-        jitc_trace("jit_kernel_write(\"%s\"): compressed %s to %s", filename.c_str(),
-                  std::string(jitc_mem_string(in_size)).c_str(),
+        jitc_trace("jit_cache_blob_store(\"%s\"): compressed %s to %s",
+                  filename.c_str(),
+                  std::string(jitc_mem_string(size)).c_str(),
                   std::string(jitc_mem_string(header.compressed_size)).c_str());
 
     std::error_code ec;
     if (success) {
-        // Prevent writes, as entries end up mmap()-ed as executable code
+        // Prevent tampering with these files
         fs::permissions(path_tmp, fs::perms::owner_read | fs::perms::owner_write |
                                   fs::perms::group_read | fs::perms::others_read, ec);
 
         // Publish atomically
-        fs::create_hard_link(path_tmp, path, ec);
-        if (ec && ec != std::errc::file_exists) {
-            jitc_log(Warn, "jit_kernel_write(): could not link the cache file "
-                           "\"%s\" into the file system: %s", filename.c_str(),
-                     ec.message().c_str());
+        if (replace) {
+            fs::rename(path_tmp, path, ec);
+        } else {
+            fs::create_hard_link(path_tmp, path, ec);
+            // A pre-existing entry is equivalent, so leave it in place
+            if (ec == std::errc::file_exists)
+                ec.clear();
+        }
+
+        if (ec) {
+            jitc_log(Warn, "jit_cache_blob_store(): could not link the cache "
+                           "file \"%s\" into the file system: %s",
+                     filename.c_str(), ec.message().c_str());
             success = false;
         }
     }
 
     fs::remove(path_tmp, ec);
 
-#if DRJIT_CACHE_TRAIN == 1
-    {
+    if (unlikely(jitc_cache_train)) {
         // Uncompressed payload, for retraining the LZ4 dictionary
         fs::path path_trn = path;
         path_trn.replace_extension("trn");
-        std::ofstream(path_trn, std::ios::binary).write((const char *) temp_in, in_size);
+        std::ofstream(path_trn, std::ios::binary).write((const char *) data, size);
     }
-#endif
 
     free(temp_out);
-    free(temp_in);
 
     return success;
 }
@@ -646,15 +575,9 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
     free(kernel.src);
 
     if (device_id == -1) {
-        if (kernel.llvm.n_reloc)
-            free(kernel.llvm.reloc);
-#if !defined(_WIN32)
-        if (munmap((void *) kernel.data, kernel.size) == -1)
-            jitc_fail("jit_kernel_free(): munmap() failed!");
-#else
-        if (VirtualFree((void*) kernel.data, 0, MEM_RELEASE) == 0)
-            jitc_fail("jit_kernel_free(): VirtualFree() failed!");
-#endif
+        // The per-unit images referenced by 'reloc' are owned by the unit
+        // cache and released in jitc_unit_cache_flush()
+        free(kernel.llvm.reloc);
     } else {
 #if defined(DRJIT_ENABLE_METAL)
         if ((state.backends & (1u << (uint32_t) JitBackend::CUDA)) == 0 &&
@@ -670,7 +593,6 @@ void jitc_kernel_free(int device_id, const Kernel &kernel) {
         scoped_set_context guard(device.context);
         if (kernel.size) {
             cuda_check(cuModuleUnload(kernel.cuda.mod));
-            free(kernel.data);
         } else {
 #if defined(DRJIT_ENABLE_OPTIX)
             jitc_optix_free(kernel);
@@ -699,4 +621,7 @@ void jitc_flush_kernel_cache() {
 
     state.kernel_cache.clear();
     state.kernel_cache_generation++;
+
+    // Kernels referencing the per-unit artifacts are gone; now evict those
+    jitc_unit_cache_flush();
 }

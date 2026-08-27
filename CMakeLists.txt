@@ -210,7 +210,6 @@ add_library(
   src/llvm_memmgr.h
   src/llvm_memmgr.cpp
   src/llvm_core.cpp
-  src/llvm_mcjit.cpp
   src/llvm_orcv2.cpp
   src/llvm_eval.h
   src/llvm_eval.cpp
@@ -229,6 +228,7 @@ add_library(
 
   src/io.h       src/io.cpp
   src/history.h  src/history.cpp
+  src/unit.h     src/unit.cpp
   src/eval.h     src/eval.cpp
   src/call.h     src/call.cpp
   src/loop.h     src/loop.cpp

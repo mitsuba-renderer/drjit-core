@@ -27,13 +27,16 @@
 // Suppress the obsolete Carbon <CarbonCore/Threads.h>, whose ThreadState collides with Dr.Jit
 #define __THREADS__
 #import <Metal/Metal.h>
+#import <objc/message.h>
 
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include <cstring>
 #include <cstdlib>
 #include <cstdio>
 #include <algorithm>
+#include <unistd.h>
 
 // Metal 4 symbols (MTLGPUFamilyMetal4, MTLLanguageVersion4_0) only exist in the
 // macOS 26 SDK. When present they are compiled in but gated at runtime via
@@ -324,6 +327,10 @@ bool jitc_metal_init() {
                 continue;
             }
 
+            // Lift the default cap of 2 concurrent shader-compilation tasks
+            if ([dev respondsToSelector:@selector(setShouldMaximizeConcurrentCompilation:)])
+                dev.shouldMaximizeConcurrentCompilation = YES;
+
             MetalDevice md {};
             md.device = (__bridge_retained void *) dev;
             md.queue  = (__bridge_retained void *) [dev newCommandQueue];
@@ -386,6 +393,7 @@ bool jitc_metal_init() {
 }
 
 void jitc_metal_shutdown() {
+    jitc_unit_cache_flush((int) JitBackend::Metal);
     @autoreleasepool {
         for (MetalDevice &d : state.metal_devices) {
             for (void *&pso : d.pipelines) {
@@ -420,18 +428,373 @@ void jitc_metal_shutdown() {
 //  Kernel compilation
 // ============================================================================
 
-bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
-                               const char *kernel_name, Kernel &kernel) {
+/// Metal unit artifacts store a retained id<MTLLibrary> in ptr[0] and
+/// id<MTLFunction> in ptr[1]. The device index serves as the cache salt.
+static void jitc_metal_unit_release(UnitArtifact &a) {
+    @autoreleasepool {
+        (void) (__bridge_transfer id<MTLLibrary>) a.ptr[0];
+        (void) (__bridge_transfer id<MTLFunction>) a.ptr[1];
+    }
+}
+
+// ----------------------------------------------------------------------------
+//  Disk cache
+// ----------------------------------------------------------------------------
+//
+// Metal caches compiled shaders in ``$DARWIN_USER_CACHE_DIR/com.apple.metal``,
+// but that cache saturates at around a gigabyte and then drops its largest
+// entries after a handful of unrelated insertions. Dr.Jit therefore maintains
+// its own cache in ``~/.drjit``, at three granularities:
+//
+//  - "mair":  a library image produced by the MSL front end, per unit
+//  - "mbfn":  a binary archive holding one callable's device-specialized
+//             machine code (the back-end result), per unit
+//  - "mpso":  a binary archive holding a kernel's pipeline machine code
+
+/// Cleared once the library image cannot be exported, which disables AIR
+/// caching for the remainder of the process (archives still work).
+static bool metal_library_export_available = true;
+
+/// Extract the compiled image of ``lib`` via private API. Returns false when
+/// the accessor is unavailable or misbehaves, which disables AIR caching.
+static bool jitc_metal_library_data(id<MTLLibrary> lib,
+                                    std::vector<uint8_t> &out) {
+    static SEL selector = nullptr;
+    static bool initialized = false, reported = false;
+    static std::mutex export_mutex;
+    std::lock_guard<std::mutex> guard(export_mutex);
+
+    auto disable = [](const char *reason) {
+        jitc_log(Info, "jit_metal_kernel_compile(): %s, the Metal AIR cache "
+                       "is disabled.", reason);
+        metal_library_export_available = false;
+        return false;
+    };
+
+    if (!initialized) {
+        initialized = true;
+        const char *env = getenv("DRJIT_DISABLE_AIR_CACHE");
+        if (env && *env && strcmp(env, "0") != 0)
+            return disable("DRJIT_DISABLE_AIR_CACHE is set");
+        selector = NSSelectorFromString(@"libraryDataContents");
+    }
+
+    if (!metal_library_export_available)
+        return false;
+
+    if (!selector || ![lib respondsToSelector:selector])
+        return disable("-[MTLLibrary libraryDataContents] is unavailable");
+
+    // An explicit cast keeps the compiler from inferring a wrong signature
+    id result = ((id (*)(id, SEL)) objc_msgSend)(lib, selector);
+
+    if (![result isKindOfClass:[NSData class]] || ((NSData *) result).length == 0)
+        return disable("-[MTLLibrary libraryDataContents] returned an "
+                       "unexpected value");
+
+    NSData *data = (NSData *) result;
+    out.resize(data.length);
+    std::memcpy(out.data(), data.bytes, data.length);
+
+    if (!reported) {
+        reported = true;
+        jitc_log(Info, "jit_metal_kernel_compile(): caching compiled kernels via "
+                       "-[MTLLibrary libraryDataContents].");
+    }
+
+    return true;
+}
+
+/// Load a ``MTLLibrary`` or return nil upon failure
+static id<MTLLibrary> jitc_metal_library_from_data(id<MTLDevice> dev,
+                                                   const std::vector<uint8_t> &data) {
+    NSError *err = nil;
+    dispatch_data_t dd = dispatch_data_create(data.data(), data.size(), nullptr,
+                                              DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+    id<MTLLibrary> lib = [dev newLibraryWithData:dd error:&err];
+
+    if (!lib)
+        jitc_log(Debug, "jit_metal_kernel_compile(): could not instantiate a "
+                        "cached library image: %s",
+                 err ? err.localizedDescription.UTF8String : "<unknown>");
+
+    return lib;
+}
+
+/// Removes a scratch file when it goes out of scope
+struct ScopedFile {
+    NSURL *url = nil;
+    ~ScopedFile() {
+        if (url)
+            [[NSFileManager defaultManager] removeItemAtURL:url error:nil];
+    }
+};
+
+/// Metal reads and writes binary archives through a URL, so both directions
+/// detour via a scratch file in the temporary directory.
+static NSURL *jitc_metal_scratch_url() {
+    static std::atomic<uint32_t> counter { 0 };
+    NSString *name = [NSString stringWithFormat:@"drjit-%u-%u.metalar",
+                                                (unsigned) getpid(),
+                                                counter.fetch_add(1)];
+    return [NSURL fileURLWithPath:[NSTemporaryDirectory()
+                                      stringByAppendingPathComponent:name]];
+}
+
+/// Load a ``MTLBinaryArchive`` or return nil upon failure
+static id<MTLBinaryArchive>
+jitc_metal_archive_from_data(id<MTLDevice> dev,
+                             const std::vector<uint8_t> &data) {
+    ScopedFile scratch;
+    scratch.url = jitc_metal_scratch_url();
+
+    NSData *nsdata = [NSData dataWithBytesNoCopy:(void *) data.data()
+                                          length:data.size()
+                                    freeWhenDone:NO];
+
+    NSError *err = nil;
+    id<MTLBinaryArchive> archive = nil;
+
+    if ([nsdata writeToURL:scratch.url options:0 error:&err]) {
+        MTLBinaryArchiveDescriptor *bad = [MTLBinaryArchiveDescriptor new];
+        bad.url = scratch.url;
+        archive = [dev newBinaryArchiveWithDescriptor:bad error:&err];
+    }
+
+    if (!archive)
+        jitc_log(Debug, "jit_metal_kernel_compile(): could not load a cached "
+                        "binary archive: %s",
+                 err ? err.localizedDescription.UTF8String : "<unknown>");
+
+    return archive;
+}
+
+/// Serialize ``archive`` into ``out``. Returns false on failure.
+static bool jitc_metal_archive_data(id<MTLBinaryArchive> archive,
+                                    std::vector<uint8_t> &out) {
+    ScopedFile scratch;
+    scratch.url = jitc_metal_scratch_url();
+
+    NSError *err = nil;
+    if (![archive serializeToURL:scratch.url error:&err]) {
+        jitc_log(Debug, "jit_metal_kernel_compile(): could not serialize a "
+                        "binary archive: %s",
+                 err ? err.localizedDescription.UTF8String : "<unknown>");
+        return false;
+    }
+
+    NSData *data = [NSData dataWithContentsOfURL:scratch.url
+                                         options:0
+                                           error:&err];
+    if (!data || data.length == 0) {
+        jitc_log(Debug, "jit_metal_kernel_compile(): could not read back a "
+                        "serialized binary archive: %s",
+                 err ? err.localizedDescription.UTF8String : "<unknown>");
+        return false;
+    }
+
+    out.resize(data.length);
+    std::memcpy(out.data(), data.bytes, data.length);
+
+    return true;
+}
+
+/// Fold device identity and OS build into a disk-cache key.
+static XXH128_hash_t jitc_metal_disk_key(id<MTLDevice> dev,
+                                         XXH128_hash_t hash) {
+    XXH3_state_t xs;
+    XXH3_128bits_reset(&xs);
+    XXH3_128bits_update(&xs, &hash, sizeof(XXH128_hash_t));
+
+    uint64_t registry_id = dev.registryID;
+    XXH3_128bits_update(&xs, &registry_id, sizeof(uint64_t));
+
+    const char *name = dev.name.UTF8String;
+    XXH3_128bits_update(&xs, name, std::strlen(name));
+
+    const char *os =
+        NSProcessInfo.processInfo.operatingSystemVersionString.UTF8String;
+    XXH3_128bits_update(&xs, os, std::strlen(os));
+
+    return XXH3_128bits_digest(&xs);
+}
+
+/// State of one per-unit compilation (see jitc_metal_kernel_compile())
+struct MetalCompileJob : UnitCompileJob {
+    XXH128_hash_t disk_key;        // device/OS-salted unit hash
+    uint32_t check = 0;            // collision-check value for disk entries
+    std::vector<uint8_t> bfn_data; // serialized binary-function archive
+    id<MTLLibrary> library = nil;
+    id<MTLFunction> function = nil;
+    NSError *error = nil;
+    bool hit = false;              // served by the in-memory unit cache
+    bool from_disk = false;        // library came from a disk entry
+    bool bfn_hit = false;          // binary function came from a disk archive
+};
+
+/// Instantiate the function described by ``fd`` with machine code required
+/// to come from ``ar`` (``FailOnBinaryArchiveMiss`` makes a hit provable)
+static id<MTLFunction> jitc_metal_function_from_archive(id<MTLLibrary> lib,
+                                                        MTLFunctionDescriptor *fd,
+                                                        id<MTLBinaryArchive> ar,
+                                                        NSError **e) {
+    MTLFunctionDescriptor *fd2 = [fd copy];
+    fd2.binaryArchives = @[ ar ];
+    if (@available(macOS 15.0, *))
+        fd2.options = MTLFunctionOptionCompileToBinary |
+                      MTLFunctionOptionFailOnBinaryArchiveMiss;
+    return [lib newFunctionWithDescriptor:fd2 error:e];
+}
+
+/// Produce the device-specialized binary function of one callable unit from
+/// its (compiled or cached) library. Prefers a previously serialized archive;
+/// otherwise compiles once into a fresh archive so the result can be stored
+/// without a second back-end pass. Runs concurrently on the nanothread pool.
+static void jitc_metal_build_binary_function(id<MTLDevice> dev,
+                                             MetalCompileJob *jp) {
+    id<MTLLibrary> lib = jp->library;
+
+    MTLFunctionDescriptor *fd = [MTLFunctionDescriptor functionDescriptor];
+    fd.name = @(jp->symbol);
+    fd.options = MTLFunctionOptionCompileToBinary;
+
+    // 1. Reuse a previously serialized binary-function archive
+    if (!jp->bfn_data.empty()) {
+        id<MTLBinaryArchive> ar = jitc_metal_archive_from_data(dev, jp->bfn_data);
+        if (ar) {
+            NSError *e = nil;
+            id<MTLFunction> f = jitc_metal_function_from_archive(lib, fd, ar, &e);
+            if (f) {
+                jp->function = f;
+                jp->bfn_hit = true;
+                return;
+            }
+            jitc_log(Debug, "jit_metal_kernel_compile(): binary-function "
+                            "archive did not apply to \"%s\": %s",
+                     jp->symbol,
+                     e ? e.localizedDescription.UTF8String : "<unknown>");
+        }
+    }
+
+    // 2. Compile into a fresh archive, then instantiate from it (one back-end
+    //    pass total), and persist the archive
+    if (jitc_cache_writable()) {
+        NSError *e = nil;
+        id<MTLBinaryArchive> ar = [dev
+            newBinaryArchiveWithDescriptor:[MTLBinaryArchiveDescriptor new]
+                                     error:&e];
+        if (ar && [ar addFunctionWithDescriptor:fd library:lib error:&e]) {
+            id<MTLFunction> f = jitc_metal_function_from_archive(lib, fd, ar, &e);
+            if (f) {
+                jp->function = f;
+                std::vector<uint8_t> data;
+                if (jitc_metal_archive_data(ar, data))
+                    jitc_cache_blob_store("mbfn", jp->disk_key, jp->check,
+                                          data.data(), data.size(),
+                                          /* replace = */ false);
+                return;
+            }
+        }
+        jitc_log(Debug, "jit_metal_kernel_compile(): could not archive the "
+                        "binary function \"%s\" (%s), compiling directly.",
+                 jp->symbol, e ? e.localizedDescription.UTF8String : "<unknown>");
+    }
+
+    // 3. Plain compile (nothing persisted)
+    NSError *e = nil;
+    jp->function = [lib newFunctionWithDescriptor:fd error:&e];
+    if (!jp->function)
+        jp->error = e;
+}
+
+/// Compile a compilation unit (if not loaded from disk), then
+/// fetch its entry point or build a device-specialized binary function
+static void jitc_metal_compile_unit(id<MTLDevice> dev, MTLCompileOptions *opts,
+                                    MetalCompileJob *jp, bool entry) {
+    @autoreleasepool {
+        if (!jp->from_disk) {
+            NSString *src =
+                [[NSString alloc] initWithBytes:jp->source
+                                         length:jp->source_size
+                                       encoding:NSUTF8StringEncoding];
+            NSError *e = nil;
+            id<MTLLibrary> l = [dev newLibraryWithSource:src
+                                                 options:opts
+                                                   error:&e];
+            if (!l) {
+                jp->error = e;
+                return;
+            }
+            jp->library = l;
+        }
+
+        if (entry)
+            jp->function = [jp->library newFunctionWithName:@(jp->symbol)];
+        else
+            jitc_metal_build_binary_function(dev, jp);
+    }
+}
+
+bool jitc_metal_kernel_compile(ThreadState *ts, Kernel &kernel) {
     @autoreleasepool {
         if (state.metal_devices.empty())
             jitc_fail("jitc_metal_kernel_compile(): no Metal devices initialized.");
 
-        // Compile against the device of the calling thread
-        auto *ts = thread_state(JitBackend::Metal);
         id<MTLDevice> dev = (__bridge id<MTLDevice>) ts->metal_device;
+        int device_id = ts->device;
 
-        NSError *err = nil;
-        NSString *src = @(source);
+        XXH128_hash_t khash = kernel_hash;
+
+        size_t n_call = callable_units.size(),
+               n_units = 1 + n_call,
+               source_bytes = 0,
+               n_misses = 0;
+
+        std::vector<MetalCompileJob> jobs(n_units);
+
+        for (size_t i = 0; i < n_units; ++i) {
+            MetalCompileJob &job = jobs[i];
+            jitc_unit_job_init(i, job);
+            source_bytes += job.source_size;
+
+            UnitArtifact artifact;
+            if (jitc_unit_cache_lookup(JitBackend::Metal, job.unit_hash,
+                                       (uint64_t) device_id, artifact)) {
+                job.library = (__bridge id<MTLLibrary>) artifact.ptr[0];
+                job.function = (__bridge id<MTLFunction>) artifact.ptr[1];
+                job.hit = true;
+                continue;
+            }
+
+            job.disk_key = jitc_metal_disk_key(dev, job.unit_hash);
+            job.check = (uint32_t) job.source_size;
+            n_misses++;
+        }
+
+        // Resolve the union of custom intersection functions across every
+        // scene registered with this kernel
+        NSMutableArray<id<MTLFunction>> *isect_fns = [NSMutableArray array];
+        std::vector<std::string> seen;
+        for (MetalScene *scene : metal_kernel_scenes) {
+            id<MTLLibrary> isect_lib =
+                scene ? (__bridge id<MTLLibrary>) scene->intersection_fn_library
+                      : nil;
+            if (!isect_lib)
+                continue;
+            for (const std::string &name : scene->intersection_fns) {
+                if (std::find(seen.begin(), seen.end(), name) != seen.end())
+                    continue;
+                seen.push_back(name);
+                id<MTLFunction> f = [isect_lib newFunctionWithName:@(name.c_str())];
+                if (!f)
+                    jitc_fail("jitc_metal_kernel_compile(): intersection function "
+                              "\"%s\" not found in user-supplied library.",
+                              name.c_str());
+                [isect_fns addObject:f];
+            }
+        }
+
+        bool has_call_table = metal_vft_arg_index >= 0;
 
         MTLCompileOptions *opts = [MTLCompileOptions new];
 
@@ -453,137 +816,232 @@ bool jitc_metal_kernel_compile(const char *source, size_t /*source_size*/,
 
         opts.libraryType = MTLLibraryTypeExecutable;
 
-        // Drop the central Dr.Jit lock while performing the expensive MSL
-        // compilation and pipeline build steps.
-        id<MTLLibrary> lib;
-        {
-            unlock_guard guard(state.lock);
-            lib = [dev newLibraryWithSource:src options:opts error:&err];
-        }
-
-        if (!lib) {
-            const char *desc = err ? err.localizedDescription.UTF8String
-                                   : "<unknown>";
-            jitc_fail("jitc_metal_kernel_compile(): MSL compilation failed:\n%s\n\n"
-                      "--- Source code ---\n%s",
-                      desc, source);
-        }
-
-        id<MTLFunction> func = [lib newFunctionWithName:@(kernel_name)];
-        if (!func) {
-            // Metal sometimes returns a (non-null) library that omits the
-            // entry point when the source has diagnostics. Generate useful errors
-            // also in this case.
-            NSMutableString *names = [NSMutableString string];
-            for (NSString *fn in lib.functionNames)
-                [names appendFormat:@"%s%@", names.length ? ", " : "", fn];
-            jitc_fail("jitc_metal_kernel_compile(): kernel function \"%s\" not "
-                      "found in the compiled library.\nCompiler diagnostics: %s\n"
-                      "Functions in library: [%s]\n\n--- Source code ---\n%s",
-                      kernel_name,
-                      err ? err.localizedDescription.UTF8String : "<none>",
-                      names.UTF8String, source);
-        }
-
-        // ---- Pipeline creation ---------------------------------------------
-        // Link the union of custom intersection functions across every scene
-        // registered with this kernel (collected into ``metal_kernel_scenes``
-        // during code generation). LinkedFunctions applies to the entire PSO,
-        // not per-IFT, so scenes with disjoint function name sets must all
-        // contribute. Per-scene IFTs are built lazily at launch time in
-        // ``jitc_metal_get_or_create_ift_for_scene``.
-        err = nil;
         id<MTLComputePipelineState> pso = nil;
-
-        NSMutableArray<id<MTLFunction>> *linked_fns = [NSMutableArray array];
-        std::vector<std::string> seen;
-        for (MetalScene *scene : metal_kernel_scenes) {
-            id<MTLLibrary> isect_lib =
-                scene ? (__bridge id<MTLLibrary>) scene->intersection_fn_library
-                      : nil;
-            if (!isect_lib)
-                continue;
-            for (const std::string &name : scene->intersection_fns) {
-                if (std::find(seen.begin(), seen.end(), name) != seen.end())
-                    continue;
-                seen.push_back(name);
-                id<MTLFunction> f = [isect_lib newFunctionWithName:@(name.c_str())];
-                if (!f)
-                    jitc_fail("jitc_metal_kernel_compile(): intersection function "
-                              "\"%s\" not found in user-supplied library.",
-                              name.c_str());
-                [linked_fns addObject:f];
-            }
-        }
-
-        // Resolve the kernel's own [[visible]] callable functions (in callable-
-        // index order) and link them into the pipeline so they can be reached
-        // indirectly through a visible function table.
+        id<MTLVisibleFunctionTable> vft = nil;
+        bool pso_from_archive = false;
         NSMutableArray<id<MTLFunction>> *callable_fns =
-            [NSMutableArray arrayWithCapacity:metal_kernel_callables.size()];
-        for (XXH128_hash_t hash : metal_kernel_callables) {
-            char name[64];
-            snprintf(name, sizeof(name), "func_%016llx%016llx",
-                     (unsigned long long) hash.high64,
-                     (unsigned long long) hash.low64);
-            id<MTLFunction> f = [lib newFunctionWithName:@(name)];
-            if (!f)
-                jitc_fail("jitc_metal_kernel_compile(): callable function \"%s\" "
-                          "not found in the compiled library.", name);
-            [callable_fns addObject:f];
-            [linked_fns addObject:f];
-        }
+            [NSMutableArray arrayWithCapacity:n_call];
 
+        // Release the lock while compiling and linking. The job sources stay
+        // valid throughout (see UnitCompileJob in unit.h)
         {
             unlock_guard guard(state.lock);
-            if (linked_fns.count > 0) {
+
+            // Compile the unit-cache misses concurrently
+            if (n_misses > 0) {
+                // Disk cache probes: per-unit AIR images, and the binary-
+                // function archives of the callables
+                for (size_t i = 0; i < n_units; ++i) {
+                    MetalCompileJob &job = jobs[i];
+                    if (job.hit)
+                        continue;
+
+                    std::vector<uint8_t> data;
+                    if (jitc_cache_blob_load("mair", job.disk_key, job.check,
+                                             data)) {
+                        id<MTLLibrary> l = jitc_metal_library_from_data(dev, data);
+                        if (l && (i != 0 ||
+                                  (job.function =
+                                       [l newFunctionWithName:@(job.symbol)]))) {
+                            job.library = l;
+                            job.from_disk = true;
+                        }
+                    }
+
+                    if (i != 0)
+                        jitc_cache_blob_load("mbfn", job.disk_key, job.check,
+                                             job.bfn_data);
+                }
+
+                // The entry unit only needs its plain function (the PSO
+                // compute function); callables continue into a binary-
+                // function build even when the library came from disk.
+                std::vector<uint32_t> pending;
+                for (size_t i = 0; i < n_units; ++i) {
+                    const MetalCompileJob &job = jobs[i];
+                    if (job.hit || (i == 0 && job.from_disk))
+                        continue;
+                    pending.push_back((uint32_t) i);
+                }
+
+                if (!pending.empty()) {
+                    MetalCompileJob *jobs_p = jobs.data();
+                    jitc_unit_compile_parallel(
+                        pending,
+                        [&](uint32_t i) { return jobs_p[i].source_size; },
+                        [&](uint32_t i) {
+                            jitc_metal_compile_unit(dev, opts, &jobs_p[i],
+                                                    i == 0);
+                        });
+                }
+
+                for (size_t i = 0; i < n_units; ++i) {
+                    MetalCompileJob &job = jobs[i];
+                    if (job.hit || job.function)
+                        continue;
+                    jitc_fail("jitc_metal_kernel_compile(): compilation of "
+                              "%s\"%s\" failed: %s\n\n--- Source code ---\n%s",
+                              i == 0 ? "" : "callable ", job.symbol,
+                              job.error
+                                  ? job.error.localizedDescription.UTF8String
+                                  : "<unknown>",
+                              job.source);
+                }
+
+                // Persist newly compiled AIR images
+                if (jitc_cache_writable() && metal_library_export_available) {
+                    std::vector<uint8_t> data;
+                    for (const MetalCompileJob &job : jobs) {
+                        if (job.hit || job.from_disk)
+                            continue;
+                        if (jitc_metal_library_data(job.library, data))
+                            jitc_cache_blob_store("mair", job.disk_key,
+                                                  job.check, data.data(),
+                                                  data.size(),
+                                                  /* replace = */ false);
+                    }
+                }
+
+                // Publish the new artifacts; the cache pins them (+1 each)
+                for (MetalCompileJob &job : jobs) {
+                    if (job.hit)
+                        continue;
+                    UnitArtifact artifact {
+                        { (__bridge_retained void *) job.library,
+                          (__bridge_retained void *) job.function }, 0, 0 };
+                    jitc_unit_cache_insert(JitBackend::Metal, job.unit_hash,
+                                           (uint64_t) device_id, artifact,
+                                           jitc_metal_unit_release);
+                }
+            }
+
+            // ---- Link: pipeline state + visible function table -------------
+
+            for (size_t i = 1; i < n_units; ++i)
+                [callable_fns addObject:jobs[i].function];
+
+            MTLComputePipelineDescriptor *desc =
+                [MTLComputePipelineDescriptor new];
+            desc.computeFunction = jobs[0].function;
+
+            if (isect_fns.count > 0 || callable_fns.count > 0) {
                 MTLLinkedFunctions *lf = [MTLLinkedFunctions new];
-                lf.functions = linked_fns;
-
-                MTLComputePipelineDescriptor *desc =
-                    [MTLComputePipelineDescriptor new];
-                desc.computeFunction = func;
+                if (isect_fns.count > 0)
+                    lf.functions = isect_fns;
+                if (callable_fns.count > 0)
+                    lf.binaryFunctions = callable_fns;
                 desc.linkedFunctions = lf;
+            }
 
+            // Pipeline machine code is cached in a per-kernel binary archive.
+            // ``FailOnBinaryArchiveMiss`` ensures that pipeline creation
+            // reuses the archived code or fails instead of recompiling.
+            XXH128_hash_t pso_key = jitc_metal_disk_key(dev, khash);
+            uint32_t pso_check = (uint32_t) source_bytes;
+
+            {
+                std::vector<uint8_t> data;
+                if (jitc_cache_blob_load("mpso", pso_key, pso_check, data)) {
+                    id<MTLBinaryArchive> ar =
+                        jitc_metal_archive_from_data(dev, data);
+                    if (ar) {
+                        MTLComputePipelineDescriptor *desc_a = [desc copy];
+                        desc_a.binaryArchives = @[ ar ];
+                        NSError *e = nil;
+                        pso = [dev newComputePipelineStateWithDescriptor:desc_a
+                                       options:MTLPipelineOptionFailOnBinaryArchiveMiss
+                                    reflection:nil
+                                         error:&e];
+                        pso_from_archive = pso != nil;
+                        if (!pso)
+                            jitc_log(Debug,
+                                     "jit_metal_kernel_compile(): the cached "
+                                     "binary archive does not contain this "
+                                     "pipeline: %s",
+                                     e ? e.localizedDescription.UTF8String
+                                       : "<unknown>");
+                    }
+                }
+            }
+
+            if (!pso && jitc_cache_writable()) {
+                NSError *e = nil;
+                id<MTLBinaryArchive> ar = [dev
+                    newBinaryArchiveWithDescriptor:[MTLBinaryArchiveDescriptor new]
+                                             error:&e];
+                if (ar &&
+                    [ar addComputePipelineFunctionsWithDescriptor:desc error:&e]) {
+                    MTLComputePipelineDescriptor *desc_a = [desc copy];
+                    desc_a.binaryArchives = @[ ar ];
+                    pso = [dev newComputePipelineStateWithDescriptor:desc_a
+                                   options:MTLPipelineOptionFailOnBinaryArchiveMiss
+                                reflection:nil
+                                     error:&e];
+                    if (pso) {
+                        std::vector<uint8_t> data;
+                        if (jitc_metal_archive_data(ar, data))
+                            jitc_cache_blob_store("mpso", pso_key, pso_check,
+                                                  data.data(), data.size(),
+                                                  /* replace = */ false);
+                    }
+                }
+                if (!pso)
+                    jitc_log(Debug, "jit_metal_kernel_compile(): could not "
+                                    "archive the pipeline (%s), compiling "
+                                    "directly.",
+                             e ? e.localizedDescription.UTF8String
+                               : "<unknown>");
+            }
+
+            if (!pso) {
+                NSError *err = nil;
                 pso = [dev newComputePipelineStateWithDescriptor:desc
                                                          options:MTLPipelineOptionNone
                                                       reflection:nil
                                                            error:&err];
-            } else {
-                pso = [dev newComputePipelineStateWithFunction:func error:&err];
+                if (!pso)
+                    jitc_fail("jitc_metal_kernel_compile(): pipeline creation "
+                              "failed: %s",
+                              err ? err.localizedDescription.UTF8String
+                                  : "<unknown>");
             }
-        }
 
-        if (!pso) {
-            const char *desc = err ? err.localizedDescription.UTF8String
-                                   : "<unknown>";
-            jitc_fail("jitc_metal_kernel_compile(): pipeline creation failed: %s", desc);
-        }
-
-        // Build the visible function table used to dispatch indirect calls.
-        // Function handles are derived from the pipeline, so the table is
-        // PSO-specific; it is built once here and reused for every launch.
-        id<MTLVisibleFunctionTable> vft = nil;
-        if (callable_fns.count > 0) {
-            MTLVisibleFunctionTableDescriptor *vftd =
-                [MTLVisibleFunctionTableDescriptor new];
-            vftd.functionCount = callable_fns.count;
-            vft = [pso newVisibleFunctionTableWithDescriptor:vftd];
-            for (NSUInteger i = 0; i < callable_fns.count; ++i) {
-                id<MTLFunctionHandle> h =
-                    [pso functionHandleWithFunction:callable_fns[i]];
-                [vft setFunction:h atIndex:i];
+            // Build the visible function table used to dispatch indirect
+            // calls. Function handles derive from the pipeline, which makes
+            // the table PSO-specific.
+            if (callable_fns.count > 0) {
+                MTLVisibleFunctionTableDescriptor *vftd =
+                    [MTLVisibleFunctionTableDescriptor new];
+                vftd.functionCount = callable_fns.count;
+                vft = [pso newVisibleFunctionTableWithDescriptor:vftd];
+                for (NSUInteger i = 0; i < callable_fns.count; ++i) {
+                    id<MTLFunctionHandle> h =
+                        [pso functionHandleWithFunction:callable_fns[i]];
+                    if (!h)
+                        jitc_fail("jitc_metal_kernel_compile(): could not "
+                                  "obtain a function handle for callable %u.",
+                                  (uint32_t) i);
+                    [vft setFunction:h atIndex:i];
+                }
             }
         }
 
         kernel.metal.pipeline       = (__bridge_retained void *) pso;
-        kernel.metal.library        = (__bridge_retained void *) lib;
+        kernel.metal.library        = (__bridge_retained void *) jobs[0].library;
         kernel.metal.call_table_vft = vft ? (__bridge_retained void *) vft
                                           : nullptr;
         // Check if kernels must be launched with a call table slot
-        kernel.metal.has_call_table = metal_vft_arg_index >= 0;
-        kernel.size = (uint32_t) std::strlen(source);
-        return false;
+        kernel.metal.has_call_table = has_call_table;
+        kernel.size = (uint32_t) source_bytes;
+
+        // Report a soft miss when every unit and the pipeline were
+        // reconstructed from the in-memory or disk caches
+        bool all_cached = pso_from_archive &&
+                          (jobs[0].hit || jobs[0].from_disk);
+        for (size_t i = 1; i < n_units; ++i)
+            all_cached &= jobs[i].hit ||
+                          (jobs[i].from_disk && jobs[i].bfn_hit);
+        return all_cached;
     }
 }
 

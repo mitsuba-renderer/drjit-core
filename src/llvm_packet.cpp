@@ -150,8 +150,7 @@ void jitc_llvm_gather_packet_define(const Variable *v, uint32_t n) {
         "}",
         n, v, n - 1);
 
-    jitc_register_global(buffer.get() + offset);
-    buffer.rewind_to(offset);
+    jitc_unit_capture_preamble(offset);
 }
 
 void jitc_llvm_render_gather_packet(const Variable *v, const Variable *ptr,
@@ -427,8 +426,7 @@ void jitc_llvm_scatter_packet_render_function(const Variable *v0, uint32_t n,
     fmt("    ret void\n"
         "}");
 
-    jitc_register_global(buffer.get() + offset);
-    buffer.rewind_to(offset);
+    jitc_unit_capture_preamble(offset);
 }
 
 void jitc_llvm_render_scatter_packet(const Variable *v, const Variable *ptr,
