@@ -744,16 +744,14 @@ TEST_ALL(09_test_multiple_scatter_loop) {
 
     size_t kernel_launches = 0;
     {
-        KernelHistoryEntry *data = jit_kernel_history();
-        KernelHistoryEntry *e = data;
-        while (e && (uint32_t) e->backend) {
-            if (e->type == KernelType::JIT) {
+        KernelHistory *h = jit_kernel_history_view(0);
+        for (size_t i = 0; i < jit_kernel_history_size(h); ++i) {
+            KernelType type = (KernelType) (uint32_t) jit_kernel_history_query(
+                h, i, KernelHistoryField::Type);
+            if (type == KernelType::JIT)
                 kernel_launches++;
-            }
-
-            free(e->ir);
-            e++;
         }
+        jit_kernel_history_free(h);
     }
 
     jit_kernel_history_clear();

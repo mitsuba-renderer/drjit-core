@@ -16,14 +16,13 @@ static void submit_gpu(KernelType type, KernelRecordingMode recording_mode,
                        uint32_t width, uint32_t block_count_y = 1,
                        uint32_t block_count_z = 1) {
 
-    KernelHistoryEntry entry = {};
-
     uint32_t flags = jit_flags();
+    CUevent event_start = nullptr, event_end = nullptr;
 
     if (unlikely(flags & (uint32_t) JitFlag::KernelHistory)) {
-        cuda_check(cuEventCreate((CUevent *) &entry.event_start, CU_EVENT_DEFAULT));
-        cuda_check(cuEventCreate((CUevent *) &entry.event_end, CU_EVENT_DEFAULT));
-        cuda_check(cuEventRecord((CUevent) entry.event_start, stream));
+        cuda_check(cuEventCreate(&event_start, CU_EVENT_DEFAULT));
+        cuda_check(cuEventCreate(&event_end, CU_EVENT_DEFAULT));
+        cuda_check(cuEventRecord(event_start, stream));
     }
 
     cuda_check(cuLaunchKernel(kernel, block_count_x, block_count_y,
@@ -34,15 +33,20 @@ static void submit_gpu(KernelType type, KernelRecordingMode recording_mode,
         cuda_check(cuStreamSynchronize(stream));
 
     if (unlikely(flags & (uint32_t) JitFlag::KernelHistory)) {
-        entry.backend = JitBackend::CUDA;
-        entry.type = type;
-        entry.recording_mode = recording_mode;
-        entry.size = width;
-        entry.input_count = 1;
-        entry.output_count = 1;
-        cuda_check(cuEventRecord((CUevent) entry.event_end, stream));
+        cuda_check(cuEventRecord(event_end, stream));
 
-        state.kernel_history.append(entry);
+        KernelHistoryEntry meta = {};
+        meta.backend = JitBackend::CUDA;
+        meta.type = type;
+        meta.recording_mode = recording_mode;
+        meta.size = width;
+        meta.input_count = 1;
+        meta.output_count = 1;
+
+        KernelHistoryEntryImpl *e = jitc_kernel_history_append(meta);
+        e->event_start = event_start;
+        e->event_end = event_end;
+        e->cuda_context = thread_state_cuda->context;
     }
 }
 
@@ -52,11 +56,11 @@ CUDAThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                         std::vector<void *> &kernel_params,
                         const std::vector<uint32_t> & /*kernel_param_ids*/,
                         KernelHistoryEntry *kernel_history_entry) {
+    CUevent event_start = nullptr, event_end = nullptr;
     if (kernel_history_entry) {
-        auto &e = *kernel_history_entry;
-        cuda_check(cuEventCreate((CUevent *) &e.event_start, CU_EVENT_DEFAULT));
-        cuda_check(cuEventCreate((CUevent *) &e.event_end, CU_EVENT_DEFAULT));
-        cuda_check(cuEventRecord((CUevent) e.event_start, this->stream));
+        cuda_check(cuEventCreate(&event_start, CU_EVENT_DEFAULT));
+        cuda_check(cuEventCreate(&event_end, CU_EVENT_DEFAULT));
+        cuda_check(cuEventRecord(event_start, this->stream));
     }
 
     uint32_t kernel_param_count = (uint32_t) kernel_params.size();
@@ -116,10 +120,14 @@ CUDAThreadState::launch(Kernel kernel, KernelKey & /*key*/,
     jitc_free(kernel_params_global);
     kernel_params_global = nullptr;
 
-    if (kernel_history_entry){
-        cuda_check(cuEventRecord((CUevent) kernel_history_entry->event_end,
-                                 this->stream));
-        state.kernel_history.append(*kernel_history_entry);
+    if (kernel_history_entry) {
+        cuda_check(cuEventRecord(event_end, this->stream));
+
+        KernelHistoryEntryImpl *e =
+            jitc_kernel_history_append(*kernel_history_entry);
+        e->event_start = event_start;
+        e->event_end = event_end;
+        e->cuda_context = this->context;
     }
 
     return nullptr;

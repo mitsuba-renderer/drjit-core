@@ -59,9 +59,15 @@ extern void jitc_metal_event_record(JitEvent event);
 extern int jitc_metal_event_query(JitEvent event);
 extern void jitc_metal_event_wait(JitEvent event);
 
-/// Resolve a Metal kernel-history entry's execution_time. The entry's task
-/// slot holds an owned id<MTLCommandBuffer>: wait for it and release it.
-extern float jitc_metal_finalize_kernel_history_entry(void *task);
+/// Retain an extra reference to a kernel-history command buffer
+extern void jitc_metal_history_retain(void *cb);
+
+/// Wait for a kernel-history command buffer and return its GPU time (ms).
+/// Borrows the reference (i.e. does not release it).
+extern float jitc_metal_history_wait(void *cb);
+
+/// Release a kernel-history command buffer without waiting for it
+extern void jitc_metal_history_release(void *cb);
 
 // ---------------------------------------------------------------------
 

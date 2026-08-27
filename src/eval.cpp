@@ -665,12 +665,14 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     // In the case of Metal, properly indent the generated MSL so that it is
     // easier to read.
     if (unlikely(trace || (jitc_flags() & (uint32_t) JitFlag::PrintIR))) {
-        const char *ir = buffer.get();
 #if defined(DRJIT_ENABLE_METAL)
-        if (jitc_is_metal(backend))
-            ir = jitc_metal_format();
+        if (jitc_is_metal(backend)) {
+            StringBuffer tmp(buffer.size() + 1024);
+            jitc_metal_format(buffer.get(), buffer.size(), tmp);
+            jitc_log_msg(LogLevel::Info, tmp.get());
+        } else
 #endif
-        jitc_log_msg(LogLevel::Info, ir);
+        jitc_log_msg(LogLevel::Info, buffer.get());
     }
 
     float codegen_time = timer();
@@ -694,15 +696,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
         kernel_history_entry.recording_mode = ts->recording_mode;
         kernel_history_entry.hash[0] = kernel_hash.low64;
         kernel_history_entry.hash[1] = kernel_hash.high64;
-        // Store syntax-formatted MSL for Metal (see jitc_metal_format()).
-        const char *ir = buffer.get();
-        size_t ir_size = buffer.size();
-#if defined(DRJIT_ENABLE_METAL)
-        if (jitc_is_metal(backend))
-            ir = jitc_metal_format(&ir_size);
-#endif
-        kernel_history_entry.ir = (char *) malloc_check(ir_size + 1);
-        memcpy(kernel_history_entry.ir, ir, ir_size + 1);
         kernel_history_entry.uses_optix = uses_optix;
         kernel_history_entry.size = group.size;
         kernel_history_entry.input_count = n_params_in;
@@ -838,17 +831,14 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
     state.kernel_launches++;
 
     KernelHistoryEntry *e = nullptr;
-    if(unlikely(jit_flag(JitFlag::KernelHistory)))
+    if (unlikely(jit_flag(JitFlag::KernelHistory))) {
+        kernel_history_entry.cache_device = kernel_key.device;
+        kernel_history_entry.cache_flags = kernel_key.flags;
         e = &kernel_history_entry;
+    }
 
-    Task *task = ts->launch(kernel, kernel_key, kernel_hash, group.size,
-                            kernel_params, kernel_param_ids, e);
-
-    // The kernel history now owns the entry's 'ir' string (if enabled);
-    // jitc_eval_rollback() frees this pointer when it is still non-null
-    kernel_history_entry.ir = nullptr;
-
-    return task;
+    return ts->launch(kernel, kernel_key, kernel_hash, group.size,
+                      kernel_params, kernel_param_ids, e);
 }
 
 static ProfilerRegion profiler_region_eval("jit_eval");
@@ -972,10 +962,6 @@ static void jitc_eval_rollback(size_t callbacks_baseline) {
     for (GetterData *gd : call_buffer.getters)
         jitc_var_dec_ref(gd->id);
     call_buffer.getters.clear();
-
-    // IR string of a kernel history entry that no launch consumed
-    free(kernel_history_entry.ir);
-    kernel_history_entry.ir = nullptr;
 }
 
 /// Evaluate all computation that is queued on the given ThreadState

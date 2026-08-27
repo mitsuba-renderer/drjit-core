@@ -228,6 +228,7 @@ add_library(
   src/llvm_coop_vec.cpp
 
   src/io.h       src/io.cpp
+  src/history.h  src/history.cpp
   src/eval.h     src/eval.cpp
   src/call.h     src/call.cpp
   src/loop.h     src/loop.cpp

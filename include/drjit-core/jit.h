@@ -2647,89 +2647,161 @@ enum KernelRecordingMode : uint32_t {
     Replayed,
 };
 
-/// Data structure for preserving kernel launch information (debugging, testing)
-struct KernelHistoryEntry {
-    /// Jit backend, for which the kernel was compiled
-    JitBackend backend;
+/// Identifies a field of a kernel history entry, to be read via
+/// \ref jit_kernel_history_query()
+enum class KernelHistoryField : uint32_t {
+    /// Backend that executed the operation (a \ref JitBackend value)
+    Backend,
 
-    /// Kernel type
-    KernelType type;
+    /// Type of the operation (a \ref KernelType value)
+    Type,
 
-    /// Was this kernel recorded or replayed by a frozen function?
-    KernelRecordingMode recording_mode;
+    /// Was the operation recorded or replayed by a frozen function?
+    /// (a \ref KernelRecordingMode value)
+    RecordingMode,
 
-    /// Stores the low/high 64 bits of the 128-bit hash kernel identifier
-    uint64_t hash[2];
-
-    /// Copy of the kernel IR string buffer
-    char *ir;
-
-    /// Does the kernel contain any OptiX (ray tracing) operations?
-    int uses_optix;
-
-    /// Whether the kernel was reused from the kernel cache
-    int cache_hit;
-
-    /// Whether the kernel was loaded from the cache on disk
-    int cache_disk;
+    /// Low/high 64 bits of the 128-bit hash identifying a JIT-compiled
+    /// kernel (zero for other operation types). The hash appears in
+    /// hexadecimal form (high word first) in the log output at higher
+    /// log levels.
+    HashLow,
+    HashHigh,
 
     /// Launch width / number of array entries that were processed
-    uint32_t size;
+    Size,
 
     /// Number of input arrays
-    uint32_t input_count;
+    InputCount,
 
     /// Number of output arrays + side effects
-    uint32_t output_count;
+    OutputCount,
 
-    /// Number of IR operations
-    uint32_t operation_count;
+    /// Number of IR operations (JIT-compiled kernels only, zero otherwise)
+    OperationCount,
 
-    /// Time (ms) spent generating the kernel intermediate representation
-    float codegen_time;
+    /// Does the kernel contain any OptiX (ray tracing) operations? (0/1)
+    UsesOptix,
 
-    /// Time (ms) spent compiling the kernel (\c 0 if \c cache_hit is \c true)
-    float backend_time;
+    /// Was the kernel reused from the kernel cache? (0/1)
+    CacheHit,
 
-    /// Time (ms) spent executing the kernel
-    float execution_time;
+    /// Was the kernel loaded from the cache on disk? (0/1)
+    CacheDisk,
 
-    // Dr.Jit internal portion, will be cleared by jit_kernel_history()
-    // ================================================================
+    /// Time (ns) spent generating the kernel intermediate representation
+    CodegenTime,
 
-    /// CUDA events for measuring the runtime of the kernel
-    void *event_start, *event_end;
+    /// Time (ns) spent compiling the kernel (zero in case of a cache hit)
+    BackendTime,
 
-    /// nanothread task handle
-    void *task;
+    /// Device-side execution time (ns), resolved lazily on first query
+    ExecutionTime
 };
 
-/// Clear the kernel history
-extern JIT_EXPORT void jit_kernel_history_clear();
+/**
+ * \brief Opaque snapshot of a set of kernel history entries
+ *
+ * While \c JitFlag.KernelHistory is set, every kernel launch appends an entry
+ * to a global log. The functions below delimit capture regions within this
+ * log and extract the recorded entries as snapshot objects.
+ *
+ * A typical capture looks as follows:
+ *
+ *     jit_set_flag(JitFlag::KernelHistory, 1);
+ *     uint64_t start = jit_kernel_history_begin();
+ *     // ... computation to be analyzed ...
+ *     KernelHistory *h = jit_kernel_history_end(start);
+ *     jit_set_flag(JitFlag::KernelHistory, 0);
+ *
+ *     for (size_t i = 0; i < jit_kernel_history_size(h); ++i) {
+ *         uint64_t time_ns = jit_kernel_history_query(
+ *             h, i, KernelHistoryField::ExecutionTime);
+ *         // ...
+ *     }
+ *
+ *     jit_kernel_history_free(h);
+ *
+ * Region boundaries are identified by sequence numbers, which makes
+ * overlapping capture regions (nesting, multiple threads) well-defined: each
+ * region observes exactly the launches that occur between its begin and end
+ * points, and regions sharing a launch share the underlying entry.
+ *
+ * The entries themselves are opaque as well: \ref jit_kernel_history_query()
+ * provides access to their fields, while \ref jit_kernel_history_source()
+ * exposes the source code of JIT-compiled kernels.
+ */
+struct KernelHistory;
 
 /**
- * \brief Return a pointer to the first entry of the kernel history
+ * \brief Open a kernel history capture region
  *
- * When \c JitFlag.KernelHistory is set to \c true, every kernel launch will add
- * and entry in the history which can be accessed via this function.
- *
- * The caller is responsible for freeing the returned data structure via the
- * following construction:
- *
- *     KernelHistoryEntry *data = jit_kernel_history();
- *     KernelHistoryEntry *e = data;
- *     while (e->backend) {
- *         free(e->ir);
- *         e++;
- *     }
- *     free(data);
- *
- * When the kernel history is empty, the function will return a null pointer.
- * Otherwise, the size of the kernel history can be inferred by iterating over
- * the entries until one reaches a entry with an invalid \c backend (e.g.
- * initialized to \c 0).
+ * Returns a sequence number identifying the start of the region, to be passed
+ * to \ref jit_kernel_history_end(). Note that this function does not set \ref
+ * JitFlag.KernelHistory, which remains the caller's responsibility.
  */
-extern JIT_EXPORT struct KernelHistoryEntry *jit_kernel_history();
+extern JIT_EXPORT uint64_t jit_kernel_history_begin();
+
+/**
+ * \brief Close a kernel history capture region
+ *
+ * Returns a snapshot with the entries recorded since the matching \ref
+ * jit_kernel_history_begin() call. The caller must eventually release the
+ * snapshot via \ref jit_kernel_history_free(). Once the last open region has
+ * been closed, the global log is emptied.
+ */
+extern JIT_EXPORT struct KernelHistory *jit_kernel_history_end(uint64_t start);
+
+/**
+ * \brief Snapshot a capture region without closing it
+ *
+ * Returns the entries recorded so far in the region that started at sequence
+ * number \c start. Sequence numbers preceding the oldest retained entry clamp
+ * to it, hence a \c start of \c 0 snapshots the entire log, which is useful
+ * when launches were captured without an enclosing region. The caller must
+ * release the result via \ref jit_kernel_history_free().
+ */
+extern JIT_EXPORT struct KernelHistory *jit_kernel_history_view(uint64_t start);
+
+/// Release a kernel history snapshot
+extern JIT_EXPORT void jit_kernel_history_free(struct KernelHistory *h);
+
+/// Return the number of entries of a kernel history snapshot
+extern JIT_EXPORT size_t jit_kernel_history_size(const struct KernelHistory *h);
+
+/**
+ * \brief Query a field of entry \c i of a kernel history snapshot
+ *
+ * All fields are reported as unsigned 64-bit integers. Time-valued fields are
+ * expressed in nanoseconds, and the 128-bit kernel hash is split into the
+ * \ref KernelHistoryField.HashLow and \ref KernelHistoryField.HashHigh words.
+ *
+ * The \ref KernelHistoryField.ExecutionTime field is resolved lazily: the
+ * first query waits for the associated operation to finish and then reads the
+ * backend's timing facility (CUDA events, Metal command buffer timestamps, or
+ * nanothread task timers on the LLVM backend). The result is cached, and
+ * entries shared by several snapshots resolve it only once.
+ */
+extern JIT_EXPORT uint64_t jit_kernel_history_query(struct KernelHistory *h,
+                                                    size_t i,
+                                                    KernelHistoryField field);
+
+/**
+ * \brief Return the source code of the kernel behind entry \c i
+ *
+ * The kernel history does not store source code itself. Instead, this function
+ * looks up the kernel in the in-memory kernel cache and returns a copy of its
+ * source code, which remains valid while the snapshot exists. On the Metal
+ * backend, the source is additionally indented for readability.
+ *
+ * Returns \c NULL for entries that do not correspond to JIT-compiled kernels,
+ * and for kernels that were evicted from the cache in the meantime (e.g. by
+ * \ref jit_flush_kernel_cache()).
+ */
+extern JIT_EXPORT const char *
+jit_kernel_history_source(struct KernelHistory *h, size_t i);
+
+/// Clear the global kernel history log (a no-op while regions are open)
+extern JIT_EXPORT void jit_kernel_history_clear();
 
 /// Get kernel launch statistics (launches, soft misses, hard misses)
 extern JIT_EXPORT void jit_launch_stats(size_t *launches, size_t *soft_misses, size_t *hard_misses);

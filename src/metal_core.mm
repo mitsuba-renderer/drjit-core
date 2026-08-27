@@ -603,16 +603,110 @@ void jitc_metal_kernel_free(Kernel &kernel) {
     }
 }
 
-/// Resolve a Metal kernel-history entry's execution_time
-float jitc_metal_finalize_kernel_history_entry(void *task_ptr) {
+/// Retain an extra reference to a kernel-history command buffer
+void jitc_metal_history_retain(void *cb_ptr) {
+    (void) (__bridge_retained void *) (__bridge id<MTLCommandBuffer>) cb_ptr;
+}
+
+/// Wait for a kernel-history command buffer and return its GPU time (ms)
+float jitc_metal_history_wait(void *cb_ptr) {
     @autoreleasepool {
-        if (!task_ptr)
-            return 0.f;
-        id<MTLCommandBuffer> cb =
-            (__bridge_transfer id<MTLCommandBuffer>) task_ptr;
+        id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) cb_ptr;
         [cb waitUntilCompleted];
         return (float) ((cb.GPUEndTime - cb.GPUStartTime) * 1000);
     }
+}
+
+/// Release a kernel-history command buffer without waiting for it
+void jitc_metal_history_release(void *cb_ptr) {
+    @autoreleasepool {
+        if (cb_ptr)
+            (void) (__bridge_transfer id<MTLCommandBuffer>) cb_ptr;
+    }
+}
+
+/// The Metal backend generates unformatted MSL since indentation tracking is
+/// costly during code generation. This function appends an indented copy of
+/// the MSL in ``src`` to ``out``.
+///
+/// The function relies on three properties of the emitted MSL:
+///   1. Every ``{``/``}`` is related to control flow (i.e. braces don't occur
+///      in strings, initializer lists, etc.)
+///   2. The only comments are ``//`` line comments
+///   3. No statement is split across lines by a blank or comment line, which
+///      would reset the continuation state mid-statement.
+///
+/// These are currently satisfied. Violating them degrades indentation quality
+/// but never changes semantics.
+void jitc_metal_format(const char *src, size_t n, StringBuffer &out) {
+    int depth = 0;
+    bool stmt_open = false; // previous code line left a statement unterminated
+
+    for (size_t i = 0; i < n; ) {
+        // Carve out one line and trim its horizontal whitespace.
+        size_t b = i;
+        while (i < n && src[i] != '\n')
+            i++;
+        size_t e = i;
+        if (i < n)
+            i++; // consume '\n'
+        while (b < e && (src[b] == ' ' || src[b] == '\t'))
+            b++;
+        while (e > b && (src[e - 1] == ' ' || src[e - 1] == '\t'))
+            e--;
+
+        if (b == e) { // blank line
+            out.put('\n');
+            stmt_open = false;
+            continue;
+        }
+
+        bool is_comment = src[b] == '/' && b + 1 < e && src[b + 1] == '/';
+        bool is_preproc = src[b] == '#';
+
+        // Scan for brace deltas and the last significant character, stopping at
+        // a trailing ``//`` comment.
+        int opens = 0, closes = 0, leading_close = 0;
+        bool seen = false;
+        char last = 0;
+        for (size_t k = b; k < e; k++) {
+            char c = src[k];
+            if (c == '/' && k + 1 < e && src[k + 1] == '/')
+                break;
+            if (c == '{') {
+                opens++;
+                seen = true;
+            } else if (c == '}') {
+                closes++;
+                if (!seen)
+                    leading_close++;
+            } else if (c != ' ' && c != '\t') {
+                seen = true;
+            }
+            if (c != ' ' && c != '\t')
+                last = c;
+        }
+
+        int indent = depth - leading_close;
+        if (indent < 0)
+            indent = 0;
+        if (stmt_open && !is_preproc && !is_comment)
+            indent++; // hanging indent for continuation lines
+
+        if (indent > 0)
+            out.put(' ', (size_t) indent * 4);
+        out.put(src + b, e - b);
+        out.put('\n');
+
+        depth += opens - closes;
+        if (depth < 0)
+            depth = 0;
+
+        stmt_open = !(is_comment || is_preproc || last == ';' || last == '{' ||
+                      last == '}');
+    }
+
+    jitc_assert(depth == 0, "jitc_metal_format(): mismatched braces!");
 }
 
 /// Flush the thread's pending command buffer and wait for the GPU to finish

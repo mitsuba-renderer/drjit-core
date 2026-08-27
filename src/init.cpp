@@ -174,7 +174,7 @@ void jitc_shutdown(int light) {
         state.kernel_cache_generation++;
     }
 
-    state.kernel_history.clear();
+    jitc_kernel_history_shutdown();
 
 #if defined(DRJIT_ENABLE_CUDA)
     // CUDA: Try to already free some memory asynchronously (faster)
@@ -770,97 +770,6 @@ void jitc_set_flag(JitFlag flag, int enable) {
 
 int jitc_flag(JitFlag flag) {
     return (jitc_flags() & (uint32_t) flag) ? 1 : 0;
-}
-
-/// ==========================================================================
-
-KernelHistory::KernelHistory() : m_data(nullptr), m_size(0), m_capacity(0) { }
-
-KernelHistory::~KernelHistory() {
-    clear();
-}
-
-void KernelHistory::append(const KernelHistoryEntry &value) {
-    /* Expand kernel history buffer if necessary. There should always be
-       enough memory for an additional end-of-list marker at the end */
-
-    if (m_size + 2 > m_capacity) {
-        m_capacity = (m_size + 2) * 2;
-        void *tmp = malloc_check(m_capacity * sizeof(KernelHistoryEntry));
-        memcpy(tmp, m_data, m_size * sizeof(KernelHistoryEntry));
-        free(m_data);
-        m_data = (KernelHistoryEntry *) tmp;
-    }
-
-    m_data[m_size++] = value;
-    memset(m_data + m_size, 0, sizeof(KernelHistoryEntry));
-}
-
-KernelHistoryEntry *KernelHistory::get() {
-    KernelHistoryEntry *data = m_data;
-
-    for (size_t i = 0; i < m_size; i++) {
-        KernelHistoryEntry &k = data[i];
-#if defined(DRJIT_ENABLE_CUDA)
-        if (jitc_is_cuda(k.backend)) {
-            cuEventElapsedTime(&k.execution_time,
-                               (CUevent) k.event_start,
-                               (CUevent) k.event_end);
-            cuEventDestroy((CUevent) k.event_start);
-            cuEventDestroy((CUevent) k.event_end);
-            k.event_start = k.event_end = 0;
-        } else
-#endif
-#if defined(DRJIT_ENABLE_METAL)
-        if (jitc_is_metal(k.backend)) {
-            k.execution_time =
-                jitc_metal_finalize_kernel_history_entry(k.task);
-            k.task = nullptr;
-        } else
-#endif
-        {
-            task_wait((Task *) k.task);
-            k.execution_time = (float) task_time((Task *) k.task);
-            task_release((Task *) k.task);
-            k.task = nullptr;
-        }
-    }
-
-    m_data = nullptr;
-    m_size = m_capacity = 0;
-
-    return data;
-}
-
-void KernelHistory::clear() {
-    if (m_size == 0)
-        return;
-
-    for (size_t i = 0; i < m_size; i++) {
-        KernelHistoryEntry &k = m_data[i];
-#if defined(DRJIT_ENABLE_CUDA)
-        if (jitc_is_cuda(k.backend)) {
-            cuEventDestroy((CUevent) k.event_start);
-            cuEventDestroy((CUevent) k.event_end);
-        } else
-#endif
-#if defined(DRJIT_ENABLE_METAL)
-        if (jitc_is_metal(k.backend)) {
-            // The Metal `task` slot holds an id<MTLCommandBuffer>, not a
-            // nanothread Task. Reuse the finalize helper to wait + release.
-            jitc_metal_finalize_kernel_history_entry(k.task);
-            k.task = nullptr;
-        } else
-#endif
-        {
-            task_release((Task *) k.task);
-        }
-        free(k.ir);
-    }
-
-    free(m_data);
-    m_data = nullptr;
-    m_size = m_capacity = 0;
 }
 
 /// Default implementations of ThreadState functions

@@ -1426,15 +1426,44 @@ struct CallBucket *jit_var_call_reduce(JitBackend backend, const char *variant,
                                 bucket_count_inout);
 }
 
-void jit_kernel_history_clear() {
+uint64_t jit_kernel_history_begin() {
     lock_guard guard(state.lock);
-    state.kernel_history.clear();
+    return jitc_kernel_history_begin();
 }
 
-struct KernelHistoryEntry *jit_kernel_history() {
+KernelHistory *jit_kernel_history_end(uint64_t start) {
     lock_guard guard(state.lock);
-    jitc_sync_thread();
-    return state.kernel_history.get();
+    return jitc_kernel_history_end(start);
+}
+
+KernelHistory *jit_kernel_history_view(uint64_t start) {
+    lock_guard guard(state.lock);
+    return jitc_kernel_history_view(start);
+}
+
+void jit_kernel_history_free(KernelHistory *h) {
+    lock_guard guard(state.lock);
+    jitc_kernel_history_free(h);
+}
+
+size_t jit_kernel_history_size(const KernelHistory *h) {
+    return h ? h->entries.size() : 0;
+}
+
+uint64_t jit_kernel_history_query(KernelHistory *h, size_t i,
+                                  KernelHistoryField field) {
+    lock_guard guard(state.lock);
+    return jitc_kernel_history_query(h, i, field);
+}
+
+const char *jit_kernel_history_source(KernelHistory *h, size_t i) {
+    lock_guard guard(state.lock);
+    return jitc_kernel_history_source(h, i);
+}
+
+void jit_kernel_history_clear() {
+    lock_guard guard(state.lock);
+    jitc_kernel_history_clear();
 }
 
 void jit_launch_stats(size_t *launches, size_t *soft_misses, size_t *hard_misses) {

@@ -1031,9 +1031,8 @@ int Recording::replay_launch(Operation &op) {
             kernel_history_entry.recording_mode = KernelRecordingMode::Replayed;
             kernel_history_entry.hash[0] = op.kernel.hash.low64;
             kernel_history_entry.hash[1] = op.kernel.hash.high64;
-            const Kernel &k = op.kernel.kernel;
-            kernel_history_entry.ir = (char *) malloc_check(k.src_size + 1);
-            std::memcpy(kernel_history_entry.ir, k.src, k.src_size + 1);
+            kernel_history_entry.cache_device = op.kernel.device;
+            kernel_history_entry.cache_flags = op.kernel.flags;
             kernel_history_entry.uses_optix   = uses_optix;
             kernel_history_entry.size = launch_size;
             kernel_history_entry.cache_hit = true;

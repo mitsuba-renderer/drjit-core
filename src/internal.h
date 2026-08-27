@@ -18,6 +18,7 @@
 #include "llvm.h"
 #include "alloc.h"
 #include "io.h"
+#include "history.h"
 #include <string.h>
 #include <new>
 #include <nanothread/nanothread.h>
@@ -1074,21 +1075,6 @@ using KernelCache =
                    std::allocator<std::pair<KernelKey, Kernel>>,
                    /* StoreHash = */ true>;
 
-/// Data structure to store a history of the launched kernels
-struct KernelHistory {
-    KernelHistory();
-    ~KernelHistory();
-
-    void append(const KernelHistoryEntry &entry);
-    KernelHistoryEntry *get();
-    void clear();
-
-private:
-    KernelHistoryEntry *m_data;
-    size_t m_size;
-    size_t m_capacity;
-};
-
 using PointerMap = tsl::robin_map<const void *, uint32_t, PointerHasher>;
 
 /// Records the full JIT compiler state (most frequently two used entries at top)
@@ -1179,8 +1165,8 @@ struct State {
     /// Generation counter, incremented whenever the kernel cache is cleared.
     uint32_t kernel_cache_generation = 0;
 
-    /// Kernel launch history
-    KernelHistory kernel_history = KernelHistory();
+    /// Kernel launch history (see history.h)
+    KernelHistoryLog kernel_history;
 
     /// Print variable leak warnings?
     bool leak_warnings = true;

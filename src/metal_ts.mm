@@ -159,17 +159,17 @@ struct MetalHistoryScope {
             return;
         recorded = true;
 
-        KernelHistoryEntry entry = {};
-        entry.backend = JitBackend::Metal;
-        entry.type = type;
-        entry.recording_mode = ts->recording_mode;
-        entry.size = size;
-        entry.input_count = 1;
-        entry.output_count = 1;
+        KernelHistoryEntry meta = {};
+        meta.backend = JitBackend::Metal;
+        meta.type = type;
+        meta.recording_mode = ts->recording_mode;
+        meta.size = size;
+        meta.input_count = 1;
+        meta.output_count = 1;
 
+        KernelHistoryEntryImpl *e = jitc_kernel_history_append(meta);
         id<MTLCommandBuffer> cb = (__bridge id<MTLCommandBuffer>) ts->metal_cb;
-        entry.task = (__bridge_retained void *) cb;
-        state.kernel_history.append(entry);
+        e->command_buffer = (__bridge_retained void *) cb;
     }
 
     ~MetalHistoryScope() {
@@ -464,12 +464,13 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
         if (kernel_history_entry) {
             kernel_history_entry->size = size;
 
+            KernelHistoryEntryImpl *e =
+                jitc_kernel_history_append(*kernel_history_entry);
             if (metal_cb) {
                 id<MTLCommandBuffer> cb =
                     (__bridge id<MTLCommandBuffer>) metal_cb;
-                kernel_history_entry->task = (__bridge_retained void *) cb;
+                e->command_buffer = (__bridge_retained void *) cb;
             }
-            state.kernel_history.append(*kernel_history_entry);
 
             // Commit this kernel's command buffer so it is timed in isolation.
             flush(/* wait = */ false);

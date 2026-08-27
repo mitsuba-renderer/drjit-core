@@ -30,16 +30,17 @@ static void submit_cpu(KernelType type, KernelRecordingMode recording_mode,
     }
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
-        KernelHistoryEntry entry = {};
-        entry.backend = JitBackend::LLVM;
-        entry.type = type;
-        entry.recording_mode = recording_mode;
-        entry.size = width;
-        entry.input_count = 1;
-        entry.output_count = 1;
+        KernelHistoryEntry meta = {};
+        meta.backend = JitBackend::LLVM;
+        meta.type = type;
+        meta.recording_mode = recording_mode;
+        meta.size = width;
+        meta.input_count = 1;
+        meta.output_count = 1;
+
+        KernelHistoryEntryImpl *e = jitc_kernel_history_append(meta);
         task_retain(new_task);
-        entry.task = new_task;
-        state.kernel_history.append(entry);
+        e->task = new_task;
     }
 
     task_release(jitc_task);
@@ -192,9 +193,10 @@ LLVMThreadState::launch(Kernel kernel, KernelKey & /*key*/,
     scheduled_tasks.push_back(ret_task);
 
     if (kernel_history_entry) {
+        KernelHistoryEntryImpl *e =
+            jitc_kernel_history_append(*kernel_history_entry);
         task_retain(ret_task);
-        kernel_history_entry->task = ret_task;
-        state.kernel_history.append(*kernel_history_entry);
+        e->task = ret_task;
     }
 
     return ret_task;
