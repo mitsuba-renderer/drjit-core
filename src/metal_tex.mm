@@ -192,6 +192,7 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     size_t width  = shape[0];
     size_t height = (ndim >= 2) ? shape[1] : 1;
     size_t depth  = (ndim == 3) ? shape[2] : 1;
+    size_t total_bytes = 0;
 
     @autoreleasepool {
         for (size_t i = 0; i < tex->n_textures; ++i) {
@@ -211,6 +212,7 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             id<MTLTexture> mtl_tex = [device newTextureWithDescriptor:desc];
             if (!mtl_tex)
                 jitc_raise("jit_metal_tex_create(): texture allocation failed!");
+            total_bytes += (size_t) mtl_tex.allocatedSize;
             tex->textures[i] = (__bridge_retained void *) mtl_tex;
 
             tex->records[i].parent = tex;
@@ -226,6 +228,9 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         metal_tex_make_sampler(device, tex, filter, wrap, n_levels, mip_filter,
                                max_aniso);
     }
+
+    tex->device_bytes = total_bytes;
+    jitc_tex_track_usage(JitBackend::Metal, (int64_t) total_bytes, 1);
 
     jitc_log(LogLevel::Debug, "jitc_metal_tex_create(): " DRJIT_PTR,
              (uintptr_t) tex);

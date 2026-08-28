@@ -10,6 +10,7 @@
 #pragma once
 
 #include "common.h"
+#include "malloc.h"
 #include <drjit-core/jit.h>
 #include <atomic>
 #include <cstddef>
@@ -27,6 +28,7 @@ struct TextureBase {
     bool writable = false; // Created/wrapped for kernel stores?
     size_t shape[3] = { 0, 0, 0 }; // Per-dimension texel counts (0 past ndim)
     size_t n_levels = 1;   // Number of MIP levels, including the base
+    size_t device_bytes = 0; // GPU memory of all sub-textures (0 when wrapped)
     std::atomic_size_t n_referenced_textures{ 0 }; // Outstanding sub-texture refs
 
     TextureBase() = default;
@@ -35,6 +37,11 @@ struct TextureBase {
         : backend(backend), n_channels(n_channels),
           n_textures(1 + ((n_channels - 1) / 4)), type_size(type_size),
           writable(writable), n_referenced_textures(n_textures) { }
+
+    ~TextureBase() {
+        if (device_bytes)
+            jitc_tex_track_usage(backend, -(int64_t) device_bytes, -1);
+    }
 
     /// Number of logical channels in sub-texture ``index``
     size_t channels(size_t index) const {
@@ -60,6 +67,22 @@ struct TextureBase {
             size_t r = shape[i] >> level;
             out[i] = shape[i] ? (r > 0 ? r : 1) : 0;
         }
+    }
+
+    /// Storage of all sub-textures and MIP levels, excluding driver padding
+    size_t storage_bytes() const {
+        size_t texels = 0, sh[3];
+        for (size_t l = 0; l < n_levels; ++l) {
+            level_shape(l, sh);
+            size_t t = 1;
+            for (size_t i = 0; i < ndim; ++i)
+                t *= sh[i];
+            texels += t;
+        }
+        size_t chans = 0;
+        for (size_t i = 0; i < n_textures; ++i)
+            chans += channels_storage(i);
+        return texels * chans * type_size;
     }
 };
 

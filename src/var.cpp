@@ -3141,16 +3141,22 @@ const char *jitc_var_whos() {
                state.kernel_launches, state.kernel_hits,
                state.kernel_soft_misses, state.kernel_hard_misses);
 
-    var_buffer.put("  Memory allocator\n");
-    var_buffer.put("  ================\n");
+    var_buffer.put("  Backend memory\n");
+    var_buffer.put("  ==============\n");
     for (int i = 0; i < (int) JitBackend::Count; ++i) {
-        if (state.alloc_allocated[i] == 0 && state.alloc_watermark[i] == 0)
-            continue;
-        var_buffer.fmt("   - %-5s   : %s/%s used (peak: %s).\n",
-                   jitc_backend_name((JitBackend) i),
-                   std::string(jitc_mem_string(state.alloc_usage[i])).c_str(),
-                   std::string(jitc_mem_string(state.alloc_allocated[i])).c_str(),
-                   std::string(jitc_mem_string(state.alloc_watermark[i])).c_str());
+        if (state.alloc_allocated[i] != 0 || state.alloc_watermark[i] != 0)
+            var_buffer.fmt("   - %-5s buffers  : %s/%s used (peak: %s).\n",
+                       jitc_backend_name((JitBackend) i),
+                       std::string(jitc_mem_string(state.alloc_usage[i])).c_str(),
+                       std::string(jitc_mem_string(state.alloc_allocated[i])).c_str(),
+                       std::string(jitc_mem_string(state.alloc_watermark[i])).c_str());
+        if (state.texture_watermark[i] != 0)
+            var_buffer.fmt("   - %-5s textures : %s in %zu texture%s (peak: %s).\n",
+                       jitc_backend_name((JitBackend) i),
+                       std::string(jitc_mem_string(state.texture_usage[i])).c_str(),
+                       state.texture_count[i],
+                       state.texture_count[i] == 1 ? "" : "s",
+                       std::string(jitc_mem_string(state.texture_watermark[i])).c_str());
     }
 
     return var_buffer.get();

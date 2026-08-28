@@ -1150,6 +1150,11 @@ struct State {
            alloc_allocated[(int) JitBackend::Count] { 0 },
            alloc_watermark[(int) JitBackend::Count] { 0 };
 
+    /// Keep track of hardware texture memory usage and a maximum watermark
+    size_t texture_usage    [(int) JitBackend::Count] { 0 },
+           texture_watermark[(int) JitBackend::Count] { 0 },
+           texture_count    [(int) JitBackend::Count] { 0 };
+
     /// Limit the output of jit_var_str()?
     uint32_t print_limit = 20;
 

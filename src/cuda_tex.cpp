@@ -236,6 +236,9 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         );
     }
 
+    texture->device_bytes = texture->storage_bytes();
+    jitc_tex_track_usage(JitBackend::CUDA, (int64_t) texture->device_bytes, 1);
+
     jitc_log(LogLevel::Debug, "jitc_cuda_tex_create(): " DRJIT_PTR,
              (uintptr_t) texture);
 

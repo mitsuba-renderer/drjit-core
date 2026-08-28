@@ -306,8 +306,18 @@ void jitc_free(void *ptr) {
 }
 
 void jitc_malloc_clear_statistics() {
-    for (int i = 0; i < (int) JitBackend::Count; ++i)
+    for (int i = 0; i < (int) JitBackend::Count; ++i) {
         state.alloc_watermark[i] = state.alloc_allocated[i];
+        state.texture_watermark[i] = state.texture_usage[i];
+    }
+}
+
+void jitc_tex_track_usage(JitBackend backend, int64_t bytes, int64_t count) {
+    int i = (int) backend;
+    state.texture_usage[i] = (size_t) ((int64_t) state.texture_usage[i] + bytes);
+    state.texture_count[i] = (size_t) ((int64_t) state.texture_count[i] + count);
+    if (state.texture_usage[i] > state.texture_watermark[i])
+        state.texture_watermark[i] = state.texture_usage[i];
 }
 
 

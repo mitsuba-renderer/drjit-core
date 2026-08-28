@@ -83,3 +83,7 @@ extern size_t jitc_malloc_watermark(JitBackend backend);
 
 /// Clear the peak memory usage statistics
 extern void jitc_malloc_clear_statistics();
+
+/// Update the hardware texture memory statistics by a signed byte/texture delta
+extern void jitc_tex_track_usage(JitBackend backend, int64_t bytes,
+                                 int64_t count);
