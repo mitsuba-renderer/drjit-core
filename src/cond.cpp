@@ -106,7 +106,6 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
 
     Variable v2;
     v2.kind = (uint32_t) VarKind::CondOutput;
-    v2.size = size;
     v2.backend = (uint32_t) backend;
     cd->indices_out.reserve(cd->indices_f.size());
 
@@ -168,6 +167,8 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
                        i_cond, i_t, i_f, l1, l2, l3);
         }
 
+        // The branch values may be wider than the (broadcast) condition
+        v2.size = lm;
         v2.dep[0] = i_t;
         v2.dep[1] = i_f;
         v2.dep[2] = pred;
