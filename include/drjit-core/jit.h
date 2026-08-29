@@ -2532,7 +2532,9 @@ jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *variant,
  * - hit_inst
  *
  * Missed and inactive lanes set \c valid and \c hit_inst to false and \c t to
- * +infinity.
+ * +infinity. \c geomID and \c instID are pre-initialized to <tt>-1</tt>;
+ * \c instID keeps that value unless an instanced hit occurs, and \c hit_inst
+ * equals <tt>instID != -1</tt>.
  */
 extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
                                           int shadow_ray, const uint32_t *in,

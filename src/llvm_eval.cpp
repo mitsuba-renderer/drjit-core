@@ -1471,12 +1471,18 @@ static void jitc_llvm_render_trace(const Variable *v,
         offset += type_size[v2->type] * width;
     }
 
-    // Reset geomID field to ones as required
+    // Initialize the geomID and instID hit fields to RTC_INVALID_GEOMETRY_ID
+    // so that missed, inactive, and (for instID) non-instanced lanes read
+    // back as -1 (see the contract in jit.h).
     if (!shadow_ray) {
         fmt("    $v_in_geomid_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
-            "    store <$w x i32> $s, ptr $v_in_geomid_1, align $u\n",
+            "    store <$w x i32> $s, ptr $v_in_geomid_1, align $u\n"
+            "    $v_in_instid_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
+            "    store <$w x i32> $s, ptr $v_in_instid_1, align $u\n",
             v, (14 * float_size + 5 * 4) * width,
-            jitc_llvm_ones_bit_str[(int) VarType::Int32], v, float_size * width);
+            jitc_llvm_ones_bit_str[(int) VarType::Int32], v, 4 * width,
+            v, (14 * float_size + 6 * 4) * width,
+            jitc_llvm_ones_bit_str[(int) VarType::Int32], v, 4 * width);
     }
 
     // Determine whether to mark the rays as coherent or incoherent
@@ -1632,14 +1638,12 @@ static void jitc_llvm_render_trace(const Variable *v,
         }
 
         fmt("    $v_out_0 = icmp ne <$w x i32> $v_out_5, $s\n"
-            "    $v_out_7_raw = icmp ne <$w x i32> $v_out_6, $s\n"
-            "    $v_out_7 = and <$w x i1> $v_out_0, $v_out_7_raw\n"
+            "    $v_out_7 = icmp ne <$w x i32> $v_out_6, $s\n"
             "    $v_inf_0 = insertelement <$w x $s> undef, $s 0x7ff0000000000000, i32 0\n"
             "    $v_inf = shufflevector <$w x $s> $v_inf_0, <$w x $s> undef, <$w x i32> $z\n"
             "    $v_out_1 = select <$w x i1> $v_out_0, <$w x $s> $v_out_tfar, <$w x $s> $v_inf\n",
             v, v, jitc_llvm_ones_bit_str[(int) VarType::Int32],
             v, v, jitc_llvm_ones_bit_str[(int) VarType::Int32],
-            v, v, v,
             v, tname, tname,
             v, tname, v, tname,
             v, v, tname, v, tname, v);
