@@ -9,6 +9,7 @@
 #include "util.h"
 #include "op.h"
 #include "array.h"
+#include "tex.h"
 #if defined(DRJIT_ENABLE_METAL)
 #  include "metal.h"
 #endif
@@ -1929,12 +1930,36 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
     if (map.size() > 200)
         return 0; // this is a large expression, give up
 
-    if (v->is_evaluated() || (VarType) v->type == VarType::Void)
-        return 0; // evaluated variable, give up
+    if ((VarType) v->type == VarType::Void)
+        return 0;
+
+    if (v->is_evaluated()) {
+        // Uniform (size-1) evaluated variables can be referenced as is
+        if (v->size != 1)
+            return 0;
+        jitc_var_inc_ref(var_index, v);
+        map[var_index] = borrow(var_index);
+        return var_index;
+    }
+
+    VarKind v_kind = (VarKind) v->kind;
+
+    // Texture sample nodes may store operands in a ``TexData`` payload (freed
+    // by a callback). The rebuild below reproduces both, so they are exempt
+    // from the callback bail-out.
+    TexData *td_old = nullptr;
+    if (v_kind == VarKind::TexLookup || v_kind == VarKind::TexFetchBilerp ||
+        v_kind == VarKind::TexLookupLod || v_kind == VarKind::TexLookupGrad) {
+        bool refs_coords = v_kind != VarKind::TexLookup &&
+                           v_kind != VarKind::TexFetchBilerp;
+        refs_coords |= (JitBackend) v->backend == JitBackend::Metal;
+        if (refs_coords)
+            td_old = (TexData *) v->data;
+    }
 
     if (v->extra) {
         VariableExtra *e = jitc_var_extra(v);
-        if (e->callback)
+        if (e->callback && !td_old)
             return 0; // "complicated" variable, give up
     }
 
@@ -1950,8 +1975,6 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             return var_index;
         }
     }
-
-    VarKind v_kind = (VarKind) v->kind;
 
     if (!v->is_literal()) {
         for (uint32_t i = 0; i < 4; ++i) {
@@ -1975,6 +1998,26 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
         }
     }
 
+    // Reindex the coordinates/operands in the payload of a texture sample node
+    Ref pl_coords[3], pl_values[6];
+    if (td_old) {
+        for (uint32_t i = 0; i < td_old->ndim; ++i) {
+            pl_coords[i] = steal(
+                jitc_var_reindex(td_old->indices[i], new_index, mask, size, map));
+            if (!pl_coords[i])
+                return 0;
+            rebuild |= pl_coords[i] != td_old->indices[i];
+        }
+        for (uint32_t i = 0; i < td_old->n_values; ++i) {
+            pl_values[i] = steal(
+                jitc_var_reindex(td_old->values[i], new_index, mask, size, map));
+            if (!pl_values[i])
+                return 0;
+            rebuild |= pl_values[i] != td_old->values[i];
+        }
+        v = jitc_var(var_index);
+    }
+
     uint32_t result;
     if (v->kind == (uint32_t) VarKind::Counter) {
         result = jitc_var_new_ref(new_index);
@@ -1991,7 +2034,30 @@ static uint32_t jitc_var_reindex(uint32_t var_index, uint32_t new_index,
             v2.dep[i] = dep[i];
             jitc_var_inc_ref(dep[i]);
         }
-        result = jitc_var_new(v2);
+        if (td_old) {
+            // Give the rebuilt node its own payload holding the reindexed
+            // coordinate/operand variables
+            TexData *td = new TexData();
+            td->ndim = td_old->ndim;
+            td->component = td_old->component;
+            td->n_values = td_old->n_values;
+            td->comp_bytes = td_old->comp_bytes;
+            for (uint32_t i = 0; i < td->ndim; ++i)
+                td->indices[i] = pl_coords[i].release();
+            for (uint32_t i = 0; i < td->n_values; ++i)
+                td->values[i] = pl_values[i].release();
+            v2.literal = (uint64_t) (uintptr_t) td;
+            result = jitc_var_new(v2);
+            jitc_var_set_callback(
+                result,
+                [](uint32_t, int free, void *ptr) {
+                    if (free)
+                        delete (TexData *) ptr;
+                },
+                td, true);
+        } else {
+            result = jitc_var_new(v2);
+        }
     } else {
         jitc_var_inc_ref(var_index, v);
         result = var_index;
@@ -2343,6 +2409,40 @@ void jitc_var_gather_packet(size_t n, uint32_t src_, uint32_t index, uint32_t ma
             jitc_raise_dirty_error(index);
         if (jitc_var(src)->is_dirty())
             jitc_raise_dirty_error(src);
+    }
+
+    // Don't perform the packet gather if the source can be re-indexed (see
+    // the analogous optimization in jitc_var_gather())
+    if (jitc_var(src)->is_node()) {
+        Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size));
+        size_t i = 0;
+        for (; i < n; ++i) {
+            Ref index2 = steal(jitc_var_u32(var_info.backend, (uint32_t) i)),
+                index3 = steal(jitc_var_fma(index, scale, index2)),
+                index4 = steal(jitc_var_cast(index3, VarType::UInt32, 0));
+            tsl::robin_map<uint32_t, Ref, UInt32Hasher> map;
+            Ref reindexed = steal(jitc_var_reindex(src, index4, mask_2,
+                                                   var_info.size, map));
+            if (!reindexed)
+                break;
+            // Temporarily hold an extra reference to prevent
+            // 'jitc_var_resize' from changing 'reindexed'
+            Ref unused = borrow(reindexed);
+            Ref tmp = steal(jitc_var_resize(reindexed, var_info.size));
+            out[i] = jitc_var_and(tmp, mask_2);
+        }
+        if (i == n) {
+            jitc_log(Debug,
+                     "jit_var_gather_packet(): %s <base r%u>[%u] = r%u[r%u] "
+                     "(mask=r%u) [elided, reindexed]",
+                     type_name[(int) src_info.type], out[0], var_info.size,
+                     (uint32_t) src, index, mask);
+            return;
+        }
+        for (size_t j = 0; j < i; ++j) {
+            jitc_var_dec_ref(out[j]);
+            out[j] = 0;
+        }
     }
 
     // At this point, we *will* have to evalute the source, if not done already.
