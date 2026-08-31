@@ -876,6 +876,11 @@ static void jitc_metal_render(Variable *v) {
             Variable *tmin = jitc_var(td->indices[6]);
             Variable *tmax = jitc_var(td->indices[7]);
 
+            // Optional per-lane visibility mask, tested against the
+            // per-instance mask of the TLAS entries
+            Variable *rmask =
+                td->indices.size() > 8 ? jitc_var(td->indices[8]) : nullptr;
+
             bool has_ift_local = ift_h != nullptr;
             bool has_curves_local =
                 scene_local && (scene_local->geometry_types_mask & 0x4u) != 0;
@@ -904,12 +909,21 @@ static void jitc_metal_render(Variable *v) {
 
             // Route the intersect call to this trace's reconstructed accel
             // (+ IFT) reference variables.
-            if (has_ift_local)
-                fmt("auto _hit = _inter.intersect(_r, $v, $v);\n",
-                    accel_h, ift_h);
-            else
-                fmt("auto _hit = _inter.intersect(_r, $v);\n",
-                    accel_h);
+            if (has_ift_local) {
+                if (rmask)
+                    fmt("auto _hit = _inter.intersect(_r, $v, $v, $v);\n",
+                        accel_h, rmask, ift_h);
+                else
+                    fmt("auto _hit = _inter.intersect(_r, $v, $v);\n",
+                        accel_h, ift_h);
+            } else {
+                if (rmask)
+                    fmt("auto _hit = _inter.intersect(_r, $v, $v);\n",
+                        accel_h, rmask);
+                else
+                    fmt("auto _hit = _inter.intersect(_r, $v);\n",
+                        accel_h);
+            }
 
             // Hit-result extraction.
             // - Triangle hit: prim_uv = triangle_barycentric_coord

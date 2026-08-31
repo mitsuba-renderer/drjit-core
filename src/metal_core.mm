@@ -975,9 +975,12 @@ void jitc_metal_profile_stop() {
 void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
                           uint32_t mask, uint32_t *out,
                           uint32_t n_out, uint32_t scene, int shadow) {
-    if (n_args != 8)
-        jitc_raise("jit_metal_ray_trace(): expected 8 ray arguments, got %u.",
-                   n_args);
+    if (n_args != 8 && n_args != 9)
+        jitc_raise("jit_metal_ray_trace(): expected 8 or 9 ray arguments, "
+                   "got %u.", n_args);
+    if (n_args == 9 && jitc_var_type(args[8]) != VarType::UInt32)
+        jitc_raise("jit_metal_ray_trace(): the ray visibility mask "
+                   "(argument 9) must be of type UInt32.");
     if (n_out != 8)
         jitc_raise("jit_metal_ray_trace(): expected 8 outputs, got %u.",
                    n_out);

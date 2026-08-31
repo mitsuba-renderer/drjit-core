@@ -104,10 +104,11 @@ extern JIT_EXPORT uint32_t jit_metal_configure_scene(
  * clear them.
  *
  * \param n_args
- *     Number of ray input arguments. Must be 8.
+ *     Number of ray input arguments. Must be 8, or 9 when a per-lane
+ *     visibility mask is supplied.
  *
  * \param args
- *     Array of 8 JIT variable indices:
+ *     Array of 8 (or 9) JIT variable indices:
  *       [0] ox     (Float32) — ray origin X
  *       [1] oy     (Float32) — ray origin Y
  *       [2] oz     (Float32) — ray origin Z
@@ -116,6 +117,7 @@ extern JIT_EXPORT uint32_t jit_metal_configure_scene(
  *       [5] dz     (Float32) — ray direction Z
  *       [6] tmin   (Float32) — minimum ray distance
  *       [7] tmax   (Float32) — maximum ray distance
+ *       [8] vmask  (UInt32)  — optional visibility mask
  *
  * \param mask
  *     JIT variable index of the active lane mask (Bool).
