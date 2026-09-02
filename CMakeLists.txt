@@ -207,9 +207,8 @@ add_library(
   # LLVM backend
   src/llvm_api.h
   src/llvm_api.cpp
-  src/llvm_memmgr.h
-  src/llvm_memmgr.cpp
   src/llvm_core.cpp
+  src/llvm_orcv2.h
   src/llvm_orcv2.cpp
   src/llvm_eval.h
   src/llvm_eval.cpp

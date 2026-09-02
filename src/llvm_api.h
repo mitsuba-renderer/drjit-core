@@ -29,8 +29,10 @@
 #  if LLVM_VERSION_MAJOR >= 15
 #    include <llvm-c/Transforms/PassBuilder.h>
 #  endif
+#  include <llvm-c/TargetMachine.h>
+#  include <llvm-c/Error.h>
+#  include <llvm-c/Orc.h>
 #  include <llvm-c/LLJIT.h>
-#  include <llvm-c/OrcEE.h>
 #else
 #  include <stdint.h>
 #  include <stdlib.h>
@@ -38,6 +40,7 @@
 #  define LLVMCodeGenLevelAggressive 3
 #  define LLVMRelocPIC 2
 #  define LLVMCodeModelSmall 3
+#  define LLVMObjectFile 1
 
 /// LLVM API
 using LLVMBool = int;
@@ -50,28 +53,17 @@ using LLVMTargetRef = void *;
 using LLVMCodeModel = int;
 using LLVMRelocMode = int;
 using LLVMCodeGenOptLevel = int;
-using LLVMOrcThreadSafeContextRef = void*;
-using LLVMOrcThreadSafeModuleRef = void*;
-using LLVMOrcObjectLayerRef = void*;
-using LLVMOrcExecutionSessionRef = void*;
-using LLVMOrcJITTargetMachineBuilderRef = void*;
-using LLVMOrcLLJITBuilderRef = void*;
-using LLVMOrcLLJITRef = void*;
-using LLVMErrorRef = void*;
+using LLVMCodeGenFileType = int;
+using LLVMOrcJITTargetMachineBuilderRef = void *;
+using LLVMOrcLLJITBuilderRef = void *;
+using LLVMOrcLLJITRef = void *;
+using LLVMErrorRef = void *;
 using LLVMOrcJITDylibRef = void *;
+using LLVMOrcResourceTrackerRef = void *;
+using LLVMOrcDefinitionGeneratorRef = void *;
+using LLVMOrcSymbolStringPoolEntryRef = void *;
 using LLVMOrcExecutorAddress = uint64_t;
-
-using LLVMMemoryManagerAllocateCodeSectionCallback =
-    uint8_t *(*) (void *, uintptr_t, unsigned, unsigned, const char *);
-using LLVMMemoryManagerAllocateDataSectionCallback =
-    uint8_t *(*) (void *, uintptr_t, unsigned, unsigned, const char *,
-                  LLVMBool);
-using LLVMMemoryManagerFinalizeMemoryCallback = LLVMBool (*)(void *, char **);
-using LLVMMemoryManagerDestroyCallback = void (*)(void *);
-using LLVMMemoryManagerCreateContextCallback = void* (*)(void *);
-using LLVMMemoryManagerNotifyTerminatingCallback = void(void *);
-using LLVMOrcLLJITBuilderObjectLinkingLayerCreatorFunction =
-    LLVMOrcObjectLayerRef(void *, LLVMOrcExecutionSessionRef, const char *);
+using LLVMOrcSymbolPredicate = int (*)(void *, LLVMOrcSymbolStringPoolEntryRef);
 
 #if !defined(DR_LLVM_SYM)
 #  define DR_LLVM_SYM(x) extern x;
@@ -107,17 +99,25 @@ DR_LLVM_SYM(LLVMErrorRef (*LLVMRunPasses)(LLVMModuleRef, const char *,
                                           LLVMTargetMachineRef,
                                           LLVMPassBuilderOptionsRef));
 
-// API for ORCv2 interface
+// Code generation into relocatable object files
 DR_LLVM_SYM(LLVMBool (*LLVMGetTargetFromTriple)(const char *, LLVMTargetRef *,
                                                 char **));
 DR_LLVM_SYM(LLVMTargetMachineRef (*LLVMCreateTargetMachine)(
     LLVMTargetRef, const char *, const char *, const char *,
     LLVMCodeGenOptLevel, LLVMRelocMode, LLVMCodeModel));
-DR_LLVM_SYM(LLVMOrcThreadSafeContextRef (*LLVMOrcCreateNewThreadSafeContext)());
-DR_LLVM_SYM(LLVMOrcThreadSafeModuleRef (*LLVMOrcCreateNewThreadSafeModule)(
-    LLVMModuleRef, LLVMOrcThreadSafeContextRef));
-DR_LLVM_SYM(
-    void (*LLVMOrcDisposeThreadSafeContext)(LLVMOrcThreadSafeContextRef));
+DR_LLVM_SYM(LLVMBool (*LLVMTargetMachineEmitToMemoryBuffer)(
+    LLVMTargetMachineRef, LLVMModuleRef, LLVMCodeGenFileType, char **,
+    LLVMMemoryBufferRef *));
+DR_LLVM_SYM(void (*LLVMDisposeModule)(LLVMModuleRef));
+DR_LLVM_SYM(const char *(*LLVMGetBufferStart)(LLVMMemoryBufferRef));
+DR_LLVM_SYM(size_t (*LLVMGetBufferSize)(LLVMMemoryBufferRef));
+DR_LLVM_SYM(void (*LLVMDisposeMemoryBuffer)(LLVMMemoryBufferRef));
+DR_LLVM_SYM(LLVMMemoryBufferRef (*LLVMCreateMemoryBufferWithMemoryRangeCopy)(
+    const char *, size_t, const char *));
+DR_LLVM_SYM(char *(*LLVMGetErrorMessage)(LLVMErrorRef));
+DR_LLVM_SYM(void (*LLVMDisposeErrorMessage)(char *));
+
+// ORCv2 linker
 DR_LLVM_SYM(LLVMOrcJITTargetMachineBuilderRef (
     *LLVMOrcJITTargetMachineBuilderCreateFromTargetMachine)(
     LLVMTargetMachineRef));
@@ -126,23 +126,23 @@ DR_LLVM_SYM(void (*LLVMOrcLLJITBuilderSetJITTargetMachineBuilder)(
     LLVMOrcLLJITBuilderRef, LLVMOrcJITTargetMachineBuilderRef));
 DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcCreateLLJIT)(LLVMOrcLLJITRef *,
                                                LLVMOrcLLJITBuilderRef));
-DR_LLVM_SYM(char *(*LLVMGetErrorMessage)(LLVMErrorRef));
-DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcLLJITAddLLVMIRModule)(
-    LLVMOrcLLJITRef, LLVMOrcJITDylibRef, LLVMOrcThreadSafeModuleRef));
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcDisposeLLJIT)(LLVMOrcLLJITRef));
+DR_LLVM_SYM(LLVMOrcJITDylibRef (*LLVMOrcLLJITGetMainJITDylib)(LLVMOrcLLJITRef));
+DR_LLVM_SYM(char (*LLVMOrcLLJITGetGlobalPrefix)(LLVMOrcLLJITRef));
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcLLJITAddObjectFileWithRT)(
+    LLVMOrcLLJITRef, LLVMOrcResourceTrackerRef, LLVMMemoryBufferRef));
 DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcLLJITLookup)(LLVMOrcLLJITRef,
                                                LLVMOrcExecutorAddress *,
                                                const char *));
-DR_LLVM_SYM(LLVMOrcJITDylibRef (*LLVMOrcLLJITGetMainJITDylib)(LLVMOrcLLJITRef));
-DR_LLVM_SYM(void (*LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator)(
-    LLVMOrcLLJITBuilderRef,
-    LLVMOrcLLJITBuilderObjectLinkingLayerCreatorFunction, void *));
-DR_LLVM_SYM(LLVMOrcObjectLayerRef (
-    *LLVMOrcCreateRTDyldObjectLinkingLayerWithMCJITMemoryManagerLikeCallbacks)(
-    LLVMOrcExecutionSessionRef, void *, LLVMMemoryManagerCreateContextCallback,
-    LLVMMemoryManagerNotifyTerminatingCallback,
-    LLVMMemoryManagerAllocateCodeSectionCallback,
-    LLVMMemoryManagerAllocateDataSectionCallback,
-    LLVMMemoryManagerFinalizeMemoryCallback, LLVMMemoryManagerDestroyCallback));
-DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcDisposeLLJIT)(LLVMOrcLLJITRef));
-DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcJITDylibClear)(LLVMOrcJITDylibRef));
+DR_LLVM_SYM(LLVMOrcResourceTrackerRef (*LLVMOrcJITDylibCreateResourceTracker)(
+    LLVMOrcJITDylibRef));
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcResourceTrackerRemove)(
+    LLVMOrcResourceTrackerRef));
+DR_LLVM_SYM(void (*LLVMOrcReleaseResourceTracker)(LLVMOrcResourceTrackerRef));
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcCreateDynamicLibrarySearchGeneratorForProcess)(
+    LLVMOrcDefinitionGeneratorRef *, char, LLVMOrcSymbolPredicate, void *));
+DR_LLVM_SYM(void (*LLVMOrcJITDylibAddGenerator)(LLVMOrcJITDylibRef,
+                                                LLVMOrcDefinitionGeneratorRef));
+DR_LLVM_SYM(const char *(*LLVMOrcSymbolStringPoolEntryStr)(
+    LLVMOrcSymbolStringPoolEntryRef));
 #endif

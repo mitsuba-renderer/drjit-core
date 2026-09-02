@@ -277,6 +277,10 @@ void jitc_llvm_render_epilogue() {
         put("\"");
     }
 
+    // Kernels run with FTZ and DAZ enabled on x86
+    if (is_intel)
+        put(" \"denormal-fp-math-f32\"=\"preserve-sign,preserve-sign\"");
+
     put(" }\n");
 }
 
@@ -694,10 +698,30 @@ static void jitc_llvm_render(Variable *v) {
 
         case VarKind::Fma:
             if (jitc_is_float(v)) {
-                fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)",
-                    v, v, a0, a1, a2);
-                fmt("    $v = call $T @llvm.fma.v$w$h($V, $V, $V)\n",
-                    v, v, v, a0, a1, a2);
+                bool via_f32 = false;
+#if !defined(__aarch64__)
+                // Without AVX512-FP16, LLVM 22 promotes half precision FMAs
+                // to double and truncates the result through a per-lane
+                // '__truncdfhf2' libcall. Going through single precision
+                // instead reproduces the inline lowering of earlier versions.
+                via_f32 = jitc_is_half(v) &&
+                          !(jitc_llvm_target_features &&
+                            strstr(jitc_llvm_target_features, "+avx512fp16"));
+#endif
+                if (via_f32) {
+                    fmt_intrinsic("declare <$w x float> @llvm.fma.v$wf32(<$w x float>, <$w x float>, <$w x float>)");
+                    fmt("    $v_0 = fpext $V to <$w x float>\n"
+                        "    $v_1 = fpext $V to <$w x float>\n"
+                        "    $v_2 = fpext $V to <$w x float>\n"
+                        "    $v_3 = call <$w x float> @llvm.fma.v$wf32(<$w x float> $v_0, <$w x float> $v_1, <$w x float> $v_2)\n"
+                        "    $v = fptrunc <$w x float> $v_3 to $T\n",
+                        v, a0, v, a1, v, a2, v, v, v, v, v, v, v);
+                } else {
+                    fmt_intrinsic("declare $T @llvm.fma.v$w$h($T, $T, $T)",
+                        v, v, a0, a1, a2);
+                    fmt("    $v = call $T @llvm.fma.v$w$h($V, $V, $V)\n",
+                        v, v, v, a0, a1, a2);
+                }
             } else {
                 fmt("    $v_0 = mul $V, $v\n"
                     "    $v = add $V_0, $v\n",

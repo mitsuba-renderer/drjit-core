@@ -86,13 +86,6 @@ extern void jitc_llvm_shutdown();
 extern bool jitc_llvm_orcv2_init();
 extern void jitc_llvm_orcv2_shutdown();
 
-/// A self-contained LLVM compiler instance (defined in llvm_memmgr.h)
-struct LLVMCompiler;
-
-/// Check a compiler instance out of / back into the shared pool
-extern LLVMCompiler *jitc_llvm_compiler_acquire();
-extern void jitc_llvm_compiler_release(LLVMCompiler *c);
-
 /// Compile the just-assembled kernel  into `kernel`. Returns true when every
 /// artifact came from a cache.
 extern bool jitc_llvm_kernel_compile(Kernel &kernel);

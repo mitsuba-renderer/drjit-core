@@ -157,9 +157,9 @@ void jitc_unit_compile_parallel(std::vector<uint32_t> &indices, SizeFn &&size,
 /// A compiled per-unit artifact held by the unit cache. CUDA entries are
 /// empty and only record that the driver's own cache holds the unit.
 struct UnitArtifact {
-    void *ptr[2];   // LLVM: image, OptiX: module, Metal: retained library + function
-    uint64_t value; // LLVM: entry point offset within the image
-    uint32_t size;  // LLVM: image size
+    void *ptr[2];   // LLVM: resource tracker, OptiX: module, Metal: retained library + function
+    uint64_t value; // LLVM: entry point address
+    uint32_t size;  // LLVM: object file size
 };
 
 /// Look up the artifact of a unit compiled earlier, keyed by content hash

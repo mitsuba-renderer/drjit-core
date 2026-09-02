@@ -120,21 +120,29 @@ bool jitc_llvm_api_init() {
 
     LOAD(orcv2, LLVMCreateTargetMachine);
     LOAD(orcv2, LLVMGetTargetFromTriple);
-    LOAD(orcv2, LLVMOrcCreateNewThreadSafeContext);
-    LOAD(orcv2, LLVMOrcDisposeThreadSafeContext);
-    LOAD(orcv2, LLVMOrcCreateNewThreadSafeModule);
+    LOAD(orcv2, LLVMTargetMachineEmitToMemoryBuffer);
+    LOAD(orcv2, LLVMDisposeModule);
+    LOAD(orcv2, LLVMGetBufferStart);
+    LOAD(orcv2, LLVMGetBufferSize);
+    LOAD(orcv2, LLVMDisposeMemoryBuffer);
+    LOAD(orcv2, LLVMCreateMemoryBufferWithMemoryRangeCopy);
+    LOAD(orcv2, LLVMGetErrorMessage);
+    LOAD(orcv2, LLVMDisposeErrorMessage);
     LOAD(orcv2, LLVMOrcJITTargetMachineBuilderCreateFromTargetMachine);
     LOAD(orcv2, LLVMOrcCreateLLJITBuilder);
     LOAD(orcv2, LLVMOrcLLJITBuilderSetJITTargetMachineBuilder);
     LOAD(orcv2, LLVMOrcCreateLLJIT);
-    LOAD(orcv2, LLVMGetErrorMessage);
-    LOAD(orcv2, LLVMOrcLLJITAddLLVMIRModule);
-    LOAD(orcv2, LLVMOrcLLJITLookup);
-    LOAD(orcv2, LLVMOrcLLJITGetMainJITDylib);
-    LOAD(orcv2, LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator);
-    LOAD(orcv2, LLVMOrcCreateRTDyldObjectLinkingLayerWithMCJITMemoryManagerLikeCallbacks);
     LOAD(orcv2, LLVMOrcDisposeLLJIT);
-    LOAD(orcv2, LLVMOrcJITDylibClear);
+    LOAD(orcv2, LLVMOrcLLJITGetMainJITDylib);
+    LOAD(orcv2, LLVMOrcLLJITGetGlobalPrefix);
+    LOAD(orcv2, LLVMOrcLLJITAddObjectFileWithRT);
+    LOAD(orcv2, LLVMOrcLLJITLookup);
+    LOAD(orcv2, LLVMOrcJITDylibCreateResourceTracker);
+    LOAD(orcv2, LLVMOrcResourceTrackerRemove);
+    LOAD(orcv2, LLVMOrcReleaseResourceTracker);
+    LOAD(orcv2, LLVMOrcCreateDynamicLibrarySearchGeneratorForProcess);
+    LOAD(orcv2, LLVMOrcJITDylibAddGenerator);
+    LOAD(orcv2, LLVMOrcSymbolStringPoolEntryStr);
 
     /*
        Dr.Jit needs to know the LLVM version number to emit the right set of
@@ -236,21 +244,29 @@ void jitc_llvm_api_shutdown() {
     // ORCv2
     CLEAR(LLVMGetTargetFromTriple);
     CLEAR(LLVMCreateTargetMachine);
-    CLEAR(LLVMOrcCreateNewThreadSafeContext);
-    CLEAR(LLVMOrcDisposeThreadSafeContext);
-    CLEAR(LLVMOrcCreateNewThreadSafeModule);
+    CLEAR(LLVMTargetMachineEmitToMemoryBuffer);
+    CLEAR(LLVMDisposeModule);
+    CLEAR(LLVMGetBufferStart);
+    CLEAR(LLVMGetBufferSize);
+    CLEAR(LLVMDisposeMemoryBuffer);
+    CLEAR(LLVMCreateMemoryBufferWithMemoryRangeCopy);
+    CLEAR(LLVMGetErrorMessage);
+    CLEAR(LLVMDisposeErrorMessage);
     CLEAR(LLVMOrcJITTargetMachineBuilderCreateFromTargetMachine);
     CLEAR(LLVMOrcCreateLLJITBuilder);
     CLEAR(LLVMOrcLLJITBuilderSetJITTargetMachineBuilder);
     CLEAR(LLVMOrcCreateLLJIT);
-    CLEAR(LLVMGetErrorMessage);
-    CLEAR(LLVMOrcLLJITAddLLVMIRModule);
-    CLEAR(LLVMOrcLLJITLookup);
-    CLEAR(LLVMOrcLLJITGetMainJITDylib);
-    CLEAR(LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator);
-    CLEAR(LLVMOrcCreateRTDyldObjectLinkingLayerWithMCJITMemoryManagerLikeCallbacks);
     CLEAR(LLVMOrcDisposeLLJIT);
-    CLEAR(LLVMOrcJITDylibClear);
+    CLEAR(LLVMOrcLLJITGetMainJITDylib);
+    CLEAR(LLVMOrcLLJITGetGlobalPrefix);
+    CLEAR(LLVMOrcLLJITAddObjectFileWithRT);
+    CLEAR(LLVMOrcLLJITLookup);
+    CLEAR(LLVMOrcJITDylibCreateResourceTracker);
+    CLEAR(LLVMOrcResourceTrackerRemove);
+    CLEAR(LLVMOrcReleaseResourceTracker);
+    CLEAR(LLVMOrcCreateDynamicLibrarySearchGeneratorForProcess);
+    CLEAR(LLVMOrcJITDylibAddGenerator);
+    CLEAR(LLVMOrcSymbolStringPoolEntryStr);
 
 #if !defined(_WIN32)
     if (jitc_llvm_handle != RTLD_NEXT)
