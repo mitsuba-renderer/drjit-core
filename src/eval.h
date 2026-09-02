@@ -53,9 +53,6 @@ extern bool uses_metal4;
 extern int32_t alloca_size;
 extern int32_t alloca_align;
 
-/// Number of tentative callables that were assembled in the kernel being compiled
-extern uint32_t indirect_callable_count;
-
 /// Specifies the nesting level of virtual calls being compiled
 extern uint32_t callable_depth;
 

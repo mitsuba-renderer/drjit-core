@@ -128,9 +128,6 @@ bool uses_metal4 = false;
 int32_t alloca_size = -1;
 int32_t alloca_align = -1;
 
-/// Number of tentative indirect callables that were assembled in the kernel being compiled
-uint32_t indirect_callable_count = 0;
-
 /// Specifies the nesting level of virtual calls being compiled
 uint32_t callable_depth = 0;
 
@@ -345,7 +342,6 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
     kernel_param_info.clear();
     jitc_unit_reset();
     alloca_size = alloca_align = -1;
-    indirect_callable_count = 0;
     call_buffer.reset();
 
     uses_metal4 = false;
@@ -1307,15 +1303,7 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
 
     size_t kernel_length = buffer.size() - kernel_offset;
 
-    // With MergeFunctions disabled, each indirect callable keeps its own
-    // dispatch-table entry, identified by a per-kernel counter.
-    XXH128_hash_t hash;
-    if (!indirect || jit_flag(JitFlag::MergeFunctions)) {
-        hash = XXH128(buffer.get() + kernel_offset, kernel_length, 0);
-    } else {
-        hash.low64 = indirect_callable_count;
-        hash.high64 = 0;
-    }
+    XXH128_hash_t hash = XXH128(buffer.get() + kernel_offset, kernel_length, 0);
 
     // Replace '^'s in 'func_^^^..' or '__direct_callable__^^^..' with hash
     auto substitute_name = [&]() {
@@ -1340,7 +1328,6 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         } else {
             jitc_unit_pop_discard(unit, kernel_offset);
         }
-        indirect_callable_count++;
     } else {
         substitute_name();
         if (jitc_unit_capture_preamble(hash, kernel_offset))

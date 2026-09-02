@@ -1714,9 +1714,6 @@ enum class JitFlag : uint32_t {
     /// Propagate constants through function calls and remove
     OptimizeCalls = 1 << 9,
 
-    /// Merge functions produced by Dr.Jit when they have a compatible structure
-    MergeFunctions = 1 << 10,
-
     /// Capture conditionals symbolically instead of evaluating both branches
     /// and combining their results.
     SymbolicConditionals = 1 << 11,
@@ -1761,8 +1758,8 @@ enum class JitFlag : uint32_t {
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
               (uint32_t) OptimizeLoops | (uint32_t) SymbolicCalls |
-              (uint32_t) MergeFunctions | (uint32_t) OptimizeCalls |
-              (uint32_t) SymbolicConditionals | (uint32_t) ReuseIndices |
+              (uint32_t) OptimizeCalls | (uint32_t) SymbolicConditionals |
+              (uint32_t) ReuseIndices |
               (uint32_t) ScatterReduceLocal | (uint32_t) PacketOps |
               (uint32_t) KernelFreezing | (uint32_t) ShaderExecutionReordering,
 
@@ -1770,7 +1767,6 @@ enum class JitFlag : uint32_t {
     LoopRecord = SymbolicLoops,
     LoopOptimize = OptimizeLoops,
     VCallRecord = SymbolicCalls,
-    VCallDeduplicate = MergeFunctions,
     VCallOptimize = OptimizeCalls,
     Recording = SymbolicScope
 };
@@ -1786,7 +1782,6 @@ enum JitFlag {
     JitFlagCopmressLoops = 1 << 7,
     JitFlagSymbolicCalls = 1 << 8,
     JitFlagOptimizeCalls = 1 << 9,
-    JitFlagMergeFunctions = 1 << 10,
     JitFlagSymbolicConditionals = 1 << 11,
     JitFlagPacketOps = 1 << 12,
     JitFlagForceOptiX = 1 << 13,

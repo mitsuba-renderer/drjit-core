@@ -2850,6 +2850,7 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
     bool is_llvm = false, is_cuda = false, is_metal = false;
 
     is_llvm = jitc_is_llvm(backend);
+    (void) is_llvm;
 
 #if defined(DRJIT_ENABLE_CUDA)
     if (jitc_is_cuda(backend)) {
@@ -2861,11 +2862,6 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
 #if defined(DRJIT_ENABLE_METAL)
     is_metal = jitc_is_metal(backend);
 #endif
-
-    // LLVM prior to v15.0.0 lacks minimum/maximum atomic reduction intrinsics
-    if (is_llvm && (op == ReduceOp::Min || op == ReduceOp::Max) &&
-        jitc_llvm_version_major < 15)
-        return false;
 
     // Metal does not support 64-bit atomics
     if (is_metal && (vt == VarType::Int64 || vt == VarType::UInt64 ||
@@ -2888,10 +2884,6 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
             // Half-precision min/max reductions require sm_90
             if (is_cuda && (op == ReduceOp::Min || op == ReduceOp::Max) &&
                 compute_capability < 90)
-                return false;
-
-            // Half precision atomics too spotty on LLVM before v16.0.0
-            if (is_llvm && jitc_llvm_version_major < 16)
                 return false;
 
 #if defined(__x86_64__) || defined(_M_X64)

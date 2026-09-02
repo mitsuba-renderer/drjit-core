@@ -7,16 +7,9 @@
     license that can be found in the LICENSE file.
 */
 
-#if defined(_WIN32)
-#  include <windows.h>
-#else
-#  include <dlfcn.h>
-#  include <sys/mman.h>
-#endif
-
 #include "llvm.h"
 #include "llvm_api.h"
-#include "llvm_memmgr.h"
+#include "llvm_orcv2.h"
 #include "internal.h"
 #include "log.h"
 #include "var.h"
@@ -76,6 +69,16 @@ bool jitc_llvm_init() {
         return false;
     }
 
+    if (jitc_llvm_version_major < 18) {
+        jitc_log(Warn,
+                 "jit_llvm_init(): the located LLVM version (%i) is too old. "
+                 "The Dr.Jit LLVM backend requires LLVM 18 or newer, shutting "
+                 "down LLVM backend..",
+                 jitc_llvm_version_major);
+        jitc_llvm_api_shutdown();
+        return false;
+    }
+
     if (!jitc_llvm_api_has_core()) {
         jitc_log(Warn, "jit_llvm_init(): detected LLVM version lacks core API "
                        "used by Dr.Jit, shutting down LLVM backend ..");
@@ -129,10 +132,7 @@ bool jitc_llvm_init() {
 #if defined(__APPLE__) && defined(__aarch64__)
     jitc_llvm_vector_width = 4;
     LLVMDisposeMessage(jitc_llvm_target_cpu);
-    const char *machine_name = "apple-a14";
-    if (jitc_llvm_version_major > 15)
-        machine_name = "apple-m1";
-    jitc_llvm_target_cpu = LLVMCreateMessage(machine_name);
+    jitc_llvm_target_cpu = LLVMCreateMessage("apple-m1");
 #endif
 
     jitc_llvm_init_success = jitc_llvm_vector_width > 1;
@@ -148,16 +148,6 @@ bool jitc_llvm_init() {
     if (!jitc_llvm_api_has_orcv2() || !jitc_llvm_orcv2_init()) {
         jitc_log(Warn, "jit_llvm_init(): ORCv2 could not be initialized, "
                        "shutting down LLVM backend..");
-        jitc_llvm_shutdown();
-        return false;
-    }
-
-    if (jitc_llvm_version_major < 16) {
-        jitc_log(Warn,
-                 "jit_llvm_init(): the located LLVM version (%i) is too old. "
-                 "The Dr.Jit LLVM backend requires LLVM 16 or newer, shutting "
-                 "down LLVM backend..",
-                 jitc_llvm_version_major);
         jitc_llvm_shutdown();
         return false;
     }
@@ -336,60 +326,24 @@ void jitc_llvm_set_target(const char *target_cpu,
         jitc_llvm_target_features = LLVMCreateMessage((char *) target_features);
 
     jitc_llvm_update_strings();
+
+    // Pooled target machines describe the previous target
+    jitc_llvm_compiler_pool_clear();
 }
 
 // ============================================================================
 //  Per-unit kernel compilation
 // ============================================================================
 
-/// A compiled unit is an immutable, executable, position-independent image
-/// shared by every kernel that links the unit. The unit cache stores it as
-/// { ptr[0] = image, size = image size, value = entry point offset }.
-
-/// Release a mapping created by jitc_llvm_map_image()
-static void jitc_llvm_unmap_image(void *image, size_t size) {
-#if !defined(_WIN32)
-    if (munmap(image, size) == -1)
-        jitc_fail("jit_llvm_unmap_image(): munmap() failed!");
-#else
-    (void) size;
-    if (VirtualFree(image, 0, MEM_RELEASE) == 0)
-        jitc_fail("jit_llvm_unmap_image(): VirtualFree() failed!");
-#endif
-}
+/// Each unit compiles into a relocatable object file, which the disk cache
+/// stores verbatim. Linking it into the process produces the artifact that
+/// every kernel using the unit shares (see jitc_llvm_link() for its layout).
 
 static void jitc_llvm_unit_release(UnitArtifact &a) {
-    jitc_llvm_unmap_image(a.ptr[0], a.size);
+    jitc_llvm_unlink(a);
 }
 
-/// Copy a finished image into a fresh executable mapping. Images are PIC and
-/// GOT-free, so internal references survive the relocation.
-static void *jitc_llvm_map_image(const uint8_t *data, size_t size) {
-#if !defined(_WIN32)
-    void *ptr = mmap(nullptr, size, PROT_READ | PROT_WRITE,
-                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    if (ptr == MAP_FAILED)
-        jitc_fail("jit_llvm_compile(): could not mmap() memory: %s",
-                  strerror(errno));
-    memcpy(ptr, data, size);
-    if (mprotect(ptr, size, PROT_READ | PROT_EXEC) == -1)
-        jitc_fail("jit_llvm_compile(): mprotect() failed: %s", strerror(errno));
-#else
-    void *ptr = VirtualAlloc(nullptr, size, MEM_RESERVE | MEM_COMMIT,
-                             PAGE_READWRITE);
-    if (!ptr)
-        jitc_fail("jit_llvm_compile(): could not VirtualAlloc() memory: %u",
-                  GetLastError());
-    memcpy(ptr, data, size);
-    DWORD unused;
-    if (VirtualProtect(ptr, size, PAGE_EXECUTE_READ, &unused) == 0)
-        jitc_fail("jit_llvm_compile(): VirtualProtect() failed: %u",
-                  GetLastError());
-#endif
-    return ptr;
-}
-
-/// Fold the target and toolchain version into a disk-cache key: unit images
+/// Fold the target and toolchain version into a disk-cache key: unit objects
 /// are specific to both
 static XXH128_hash_t jitc_llvm_disk_key(XXH128_hash_t hash) {
     XXH3_state_t xs;
@@ -409,16 +363,16 @@ static XXH128_hash_t jitc_llvm_disk_key(XXH128_hash_t hash) {
 }
 
 struct LLVMCompileJob : UnitCompileJob {
-    XXH128_hash_t disk_key;   // target/toolchain-salted unit hash
+    XXH128_hash_t disk_key;      // target/toolchain-salted unit hash
     UnitArtifact artifact { };
-    bool hit = false;         // served by the in-memory unit cache
-    bool from_disk = false;   // image came from a disk entry
+    std::vector<uint8_t> object; // relocatable object file
+    bool hit = false;            // served by the in-memory unit cache
+    bool from_disk = false;      // object came from a disk entry
 };
 
-/// Compile one unit into a fresh executable image (runs on a worker thread)
+/// Compile one unit into a relocatable object file (runs on a worker thread)
 static void jitc_llvm_compile_unit(LLVMCompileJob &job) {
     LLVMCompiler *c = jitc_llvm_compiler_acquire();
-    jitc_llvm_memmgr_prepare(c->memmgr, job.source_size);
 
     LLVMMemoryBufferRef llvm_buf = LLVMCreateMemoryBufferWithMemoryRange(
         job.source, job.source_size, job.symbol, 0);
@@ -457,41 +411,18 @@ static void jitc_llvm_compile_unit(LLVMCompileJob &job) {
                   LLVMGetErrorMessage(error_ref));
     LLVMDisposePassBuilderOptions(pb_opt);
 
-    // Code generation via LLJIT, into the instance's bump allocator
-    LLVMErrorRef err = LLVMOrcJITDylibClear(c->dylib);
-    if (err)
-        jitc_fail("jit_llvm_compile(): could not clear dylib: %s",
-                  LLVMGetErrorMessage(err));
+    // Code generation
+    LLVMMemoryBufferRef obj_buf = nullptr;
+    if (LLVMTargetMachineEmitToMemoryBuffer(c->tm, llvm_module, LLVMObjectFile,
+                                            &error, &obj_buf))
+        jitc_fail("jit_llvm_compile(): code generation failed. Please see "
+                  "the LLVM IR and error message below:\n\n%s\n\n%s",
+                  job.source, error);
+    LLVMDisposeModule(llvm_module);
 
-    LLVMOrcThreadSafeContextRef ts_ctx = LLVMOrcCreateNewThreadSafeContext();
-    LLVMOrcThreadSafeModuleRef ts_mod =
-        LLVMOrcCreateNewThreadSafeModule(llvm_module, ts_ctx);
-    LLVMOrcDisposeThreadSafeContext(ts_ctx);
-
-    err = LLVMOrcLLJITAddLLVMIRModule(c->lljit, c->dylib, ts_mod);
-    if (err)
-        jitc_fail("jit_llvm_compile(): could not add module: %s",
-                  LLVMGetErrorMessage(err));
-
-    LLVMOrcExecutorAddress addr = 0;
-    err = LLVMOrcLLJITLookup(c->lljit, &addr, job.symbol);
-    if (err)
-        jitc_fail("jit_llvm_compile(): could not resolve symbol \"%s\": %s",
-                  job.symbol, LLVMGetErrorMessage(err));
-
-    if (c->memmgr.got)
-        jitc_fail(
-            "jit_llvm_compile(): a global offset table was generated by LLVM, "
-            "which typically means that a compiler intrinsic was not supported "
-            "by the target architecture. DrJit cannot handle this case "
-            "and will terminate the application now. For reference, the "
-            "following kernel code was responsible for this problem:\n\n%s",
-            job.source);
-
-    job.artifact.size = (uint32_t) c->memmgr.offset;
-    job.artifact.value =
-        (uint64_t) ((uint8_t *) (uintptr_t) addr - c->memmgr.data);
-    job.artifact.ptr[0] = jitc_llvm_map_image(c->memmgr.data, c->memmgr.offset);
+    const char *obj_data = LLVMGetBufferStart(obj_buf);
+    job.object.assign(obj_data, obj_data + LLVMGetBufferSize(obj_buf));
+    LLVMDisposeMemoryBuffer(obj_buf);
 
     jitc_llvm_compiler_release(c);
 }
@@ -502,7 +433,7 @@ bool jitc_llvm_kernel_compile(Kernel &kernel) {
     ProfilerPhase phase(profiler_region_llvm_compile);
 
     size_t n_units = 1 + callable_units.size(),
-           image_bytes = 0;
+           object_bytes = 0;
 
     std::vector<LLVMCompileJob> jobs(n_units);
     std::vector<uint32_t> misses;
@@ -527,71 +458,59 @@ bool jitc_llvm_kernel_compile(Kernel &kernel) {
     if (!misses.empty()) {
         unlock_guard guard(state.lock);
 
-        // Probe the disk cache; its payload is {u32 entry offset, image}
-        std::vector<uint32_t> pending;
-        std::vector<uint8_t> data;
+        // Probe the disk cache for the object files
         for (uint32_t i : misses) {
             LLVMCompileJob &job = jobs[i];
-
-            if (jitc_cache_blob_load("llvm", job.disk_key,
-                                     (uint32_t) job.source_size, data) &&
-                data.size() > sizeof(uint32_t)) {
-                uint32_t entry_offset;
-                memcpy(&entry_offset, data.data(), sizeof(uint32_t));
-                uint32_t size = (uint32_t) (data.size() - sizeof(uint32_t));
-                if (entry_offset < size) {
-                    job.artifact.size = size;
-                    job.artifact.value = entry_offset;
-                    job.artifact.ptr[0] = jitc_llvm_map_image(
-                        data.data() + sizeof(uint32_t), size);
-                    job.from_disk = true;
-                    continue;
-                }
-            }
-
-            pending.push_back(i);
+            job.from_disk =
+                jitc_cache_blob_load("llvm", job.disk_key,
+                                     (uint32_t) job.source_size, job.object) &&
+                !job.object.empty();
         }
 
-        if (!pending.empty()) {
-            jitc_unit_compile_parallel(
-                pending, [&](uint32_t i) { return jobs[i].source_size; },
-                [&](uint32_t i) { jitc_llvm_compile_unit(jobs[i]); });
+        // Compile the remaining units, then link every miss into the process.
+        // Linking is cheap compared to compilation, so issue those jobs last.
+        jitc_unit_compile_parallel(
+            misses,
+            [&](uint32_t i) {
+                return jobs[i].from_disk ? (size_t) 0 : jobs[i].source_size;
+            },
+            [&](uint32_t i) {
+                LLVMCompileJob &job = jobs[i];
+                if (!job.from_disk)
+                    jitc_llvm_compile_unit(job);
+                jitc_llvm_link(job.symbol, job.object.data(), job.object.size(),
+                               job.source, job.artifact);
+            });
 
-            // Persist the new images
-            for (uint32_t i : pending) {
-                const LLVMCompileJob &job = jobs[i];
-                uint32_t entry_offset = (uint32_t) job.artifact.value;
-                data.resize(sizeof(uint32_t) + job.artifact.size);
-                memcpy(data.data(), &entry_offset, sizeof(uint32_t));
-                memcpy(data.data() + sizeof(uint32_t), job.artifact.ptr[0],
-                       job.artifact.size);
+        // Persist the new object files
+        for (uint32_t i : misses) {
+            const LLVMCompileJob &job = jobs[i];
+            if (!job.from_disk)
                 jitc_cache_blob_store("llvm", job.disk_key,
                                       (uint32_t) job.source_size,
-                                      data.data(), data.size(),
+                                      job.object.data(), job.object.size(),
                                       /* replace = */ false);
-            }
         }
 
-        // Publish the new artifacts; the cache pins the images
+        // Publish the new artifacts; the cache pins the linked units
         for (uint32_t i : misses)
             jitc_unit_cache_insert(JitBackend::LLVM, jobs[i].unit_hash, 0,
                                    jobs[i].artifact, jitc_llvm_unit_release);
     }
 
-    // Link: the kernel references the entry points of its units. 'reloc[0]'
-    // is the kernel entry; the array doubles as the callable table that the
-    // launch binds to a reserved kernel parameter.
+    // The kernel references the entry points of its units. 'reloc[0]' is the
+    // kernel entry; the array doubles as the callable table that the launch
+    // binds to a reserved kernel parameter.
     kernel.llvm.reloc = (void **) malloc_check(sizeof(void *) * n_units);
 
     bool all_cached = true;
     for (size_t i = 0; i < n_units; ++i) {
         const LLVMCompileJob &job = jobs[i];
-        kernel.llvm.reloc[i] =
-            (uint8_t *) job.artifact.ptr[0] + job.artifact.value;
-        image_bytes += job.artifact.size;
+        kernel.llvm.reloc[i] = (void *) (uintptr_t) job.artifact.value;
+        object_bytes += job.artifact.size;
         all_cached &= job.hit || job.from_disk;
     }
-    kernel.size = (uint32_t) image_bytes;
+    kernel.size = (uint32_t) object_bytes;
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
     kernel.llvm.itt = __itt_string_handle_create(kernel_name);

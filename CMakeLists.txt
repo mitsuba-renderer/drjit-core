@@ -207,9 +207,8 @@ add_library(
   # LLVM backend
   src/llvm_api.h
   src/llvm_api.cpp
-  src/llvm_memmgr.h
-  src/llvm_memmgr.cpp
   src/llvm_core.cpp
+  src/llvm_orcv2.h
   src/llvm_orcv2.cpp
   src/llvm_eval.h
   src/llvm_eval.cpp
@@ -327,10 +326,10 @@ endif()
 if (DRJIT_DYNAMIC_LLVM)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_DYNAMIC_LLVM=1)
 else()
-  find_package(LLVM REQUIRED)
+  find_package(LLVM 18 REQUIRED)
   target_include_directories(drjit-core PRIVATE ${LLVM_INCLUDE_DIRS})
   target_link_directories(drjit-core PRIVATE ${LLVM_LIB_DIRS})
-  llvm_config(drjit-core USE_SHARED core support executionengine orcjit analysis native target mcdisassembler irreader scalaropts mcjit)
+  llvm_config(drjit-core USE_SHARED core support executionengine orcjit analysis native target mcdisassembler irreader scalaropts)
 endif()
 
 if (DRJIT_ENABLE_OPTIX)

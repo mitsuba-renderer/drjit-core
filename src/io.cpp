@@ -37,7 +37,7 @@
 namespace fs = std::filesystem;
 
 /// Version number for cache files
-#define DRJIT_CACHE_VERSION 1
+#define DRJIT_CACHE_VERSION 2
 
 /// Also write each payload in uncompressed form to a sibling ".trn" file
 /// (set via DRJIT_CACHE_TRAIN) that can be used to train the LZ4 dictionary.
