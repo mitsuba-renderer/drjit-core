@@ -109,6 +109,7 @@ void jitc_lz4_init() {
 static XXH128_hash_t jitc_cache_checksum(const CacheFileHeader &header,
                                          const char *compressed) {
     XXH3_state_t xxh_state;
+    XXH3_INITSTATE(&xxh_state);
     XXH3_128bits_reset_withSeed(&xxh_state, DRJIT_CACHE_CHECKSUM_SEED);
     XXH3_128bits_update(&xxh_state, &header, offsetof(CacheFileHeader, checksum));
     XXH3_128bits_update(&xxh_state, compressed, header.compressed_size);

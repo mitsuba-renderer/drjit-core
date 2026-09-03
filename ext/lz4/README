@@ -1,8 +1,9 @@
 This is a copy of 'lz4.h/c' and 'lz4hc.h/c' from the LZ4 [1] repository
-(release v1.10.0) and of 'xxhash.h' from the xxHash [2] repository. Why a copy
-and not a Git submodule? The reason is the odd licensing policy of lz4: it uses
-multiple licenses for different parts of the repository. To be on the safe
-side, this is a copy of the strictly BSD-licensed implementation portions.
+(release v1.10.0) and of 'xxhash.h' from the xxHash [2] repository (release
+v0.8.3). Why a copy and not a Git submodule? The reason is the odd licensing
+policy of lz4: it uses multiple licenses for different parts of the repository.
+To be on the safe side, this is a copy of the strictly BSD-licensed
+implementation portions.
 
 [1] https://github.com/lz4/lz4
 [2] https://github.com/Cyan4973/xxHash

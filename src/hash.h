@@ -17,7 +17,8 @@
 #include <tsl/robin_map.h>
 #include <drjit-core/jit.h>
 #include <drjit-core/hash.h>
-#include <xxh3.h>
+#define XXH_INLINE_ALL
+#include <xxhash.h>
 
 #if defined (_MSC_VER)
 #  pragma warning (pop)

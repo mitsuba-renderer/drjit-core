@@ -241,7 +241,7 @@ add_library(
 
   # LZ4 compression library & XXHash hash function
   ext/lz4/lz4.h ext/lz4/lz4.c
-  ext/lz4/xxhash.h ext/lz4/xxh3.h ext/lz4/xxhash.c
+  ext/lz4/xxhash.h
 
   # LZ4 kernel-cache dictionary (CUDA PTX kernels are added under
   # DRJIT_CUDA_FILES so they are only compiled with the CUDA backend)

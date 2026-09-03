@@ -481,9 +481,9 @@ struct VariableKeyHasher {
         // costly steps of tracing, and the computation is arranged this way to
         // permit overlapping their latency. XOR-ing each input with a constant
         // avoids degenerate all-zero multiplies. We reuse xxHash's 64-bit primes.
-        uint64_t a = mix(w[0] ^ PRIME64_1, w[1] ^ PRIME64_2);
-        uint64_t b = mix(w[2] ^ PRIME64_3, w[3] ^ PRIME64_4);
-        uint64_t c = mix((uint64_t) k.packed ^ PRIME64_5, PRIME64_1);
+        uint64_t a = mix(w[0] ^ XXH_PRIME64_1, w[1] ^ XXH_PRIME64_2);
+        uint64_t b = mix(w[2] ^ XXH_PRIME64_3, w[3] ^ XXH_PRIME64_4);
+        uint64_t c = mix((uint64_t) k.packed ^ XXH_PRIME64_5, XXH_PRIME64_1);
         return (size_t) (a ^ b ^ c);
     }
 };
