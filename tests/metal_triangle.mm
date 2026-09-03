@@ -155,23 +155,23 @@ static void demo() {
               oy = Float(y) * (2.0f / res) - 1.0f,
               oz = -1.f;
         Float dx = 0.f, dy = 0.f, dz = 1.f;
-        Float mint = 0.f, maxt = 100.f;
+        Float mint = 0.f, maxt = 100.f, time = 0.f;
         Mask  mask = true;
 
         // =====================================================
         //  Trace all rays in a single batched launch
         // =====================================================
-        uint32_t ray_args[8] = {
+        uint32_t ray_args[9] = {
             ox.index(), oy.index(), oz.index(),
             dx.index(), dy.index(), dz.index(),
-            mint.index(), maxt.index()
+            mint.index(), maxt.index(), time.index()
         };
 
-        uint32_t out[7];
-        jit_metal_ray_trace(8, ray_args, mask.index(), out, 7, scene.index(), false);
+        uint32_t out[8];
+        jit_metal_ray_trace(9, ray_args, mask.index(), out, 8, scene.index(), false);
 
         Mask valid = Mask::steal(out[0]);
-        for (int k = 1; k < 7; ++k)
+        for (int k = 1; k < 8; ++k)
             jit_var_dec_ref(out[k]);
 
         // Convert the hit mask to a 0/1 image and read it back on the host.
