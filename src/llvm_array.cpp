@@ -88,25 +88,10 @@ void jitc_llvm_render_array_read(Variable *v, Variable *source, Variable *mask,
     if (v->type == (uint32_t) VarType::Bool)
         ext = "_r";
 
-    if (!offset || offset->size == 1) {
-        // Scalar/literal offset case: we can avoid a gather operation
-        if (offset) {
-            fmt_intrinsic("declare i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32>)");
-
-            // Scalar offset, extract the value (danger: can't use
-            // extractelement because masked index entries can be invalid)
-            fmt("    $v_0 = select $V, $V, $T $z\n"
-                "    $v_1 = call i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32> $v_0)\n"
-                "    $v_2 = mul i32 $v_1, $u\n"
-                "    $v_3 = getelementptr inbounds $m, ptr %arr_$u, i32 $v_2\n",
-                v, mask, offset, offset,
-                v, v,
-                v, v, jitc_llvm_vector_width,
-                v, v, source->reg_index, v);
-        } else {
-            fmt("    $v_3 = getelementptr inbounds $m, ptr %arr_$u, i32 $u\n",
-                v, v, source->reg_index, v->literal * jitc_llvm_vector_width);
-        }
+    if (!offset) {
+        // Literal offset case: we can avoid a gather operation
+        fmt("    $v_3 = getelementptr inbounds $m, ptr %arr_$u, i32 $u\n",
+            v, v, source->reg_index, v->literal * jitc_llvm_vector_width);
 
         if (mask_safe_to_ignore(mask)) {
             fmt("    $v$s = load $M, ptr $v_3, align $A\n",
@@ -117,7 +102,7 @@ void jitc_llvm_render_array_read(Variable *v, Variable *source, Variable *mask,
                 v, v, v, v,
                 v, ext, mask, v, v, v);
         }
-    } else if (jitc_llvm_vector_width >= 8 && DRJIT_LLVM_OPTIMIZE_ARRAY_ACCESSES) {
+    } else if (DRJIT_LLVM_OPTIMIZE_ARRAY_ACCESSES) {
         // Check if the gather can be reduced to a packet load
 
         fmt_intrinsic("declare i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32>)");
@@ -225,25 +210,10 @@ void jitc_llvm_render_array_write(Variable *v, Variable *target,
         ext = "_e";
     }
 
-    if (!offset || offset->size == 1) {
-        // Scalar/literal offset case: we can avoid a scatter operation
-        if (offset) {
-            fmt_intrinsic("declare i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32>)");
-
-            // Scalar offset, extract the value (danger: can't use
-            // extractelement because masked index entries can be invalid)
-            fmt("    $v_0 = select $V, $V, $T $z\n"
-                "    $v_1 = call i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32> $v_0)\n"
-                "    $v_2 = mul i32 $v_1, $u\n"
-                "    $v_3 = getelementptr inbounds $m, ptr %arr_$u, i32 $v_2\n",
-                v, mask, offset, offset,
-                v, v,
-                v, v, jitc_llvm_vector_width,
-                v, v, target_buffer, v);
-        } else {
-            fmt("    $v_3 = getelementptr inbounds $m, ptr %arr_$u, i32 $u\n",
-                v, v, target_buffer, v->literal * jitc_llvm_vector_width);
-        }
+    if (!offset) {
+        // Literal offset case: we can avoid a scatter operation
+        fmt("    $v_3 = getelementptr inbounds $m, ptr %arr_$u, i32 $u\n",
+            v, v, target_buffer, v->literal * jitc_llvm_vector_width);
 
         if (mask_safe_to_ignore(mask)) {
             fmt("    store $M $v$s, ptr $v_3, align $A\n",
@@ -256,8 +226,8 @@ void jitc_llvm_render_array_write(Variable *v, Variable *target,
                 v, mask, v, value, ext, v, v,
                 v, v, v, v);
         }
-    } else if (jitc_llvm_vector_width >= 8 && DRJIT_LLVM_OPTIMIZE_ARRAY_ACCESSES) {
-        /// Check if the scatter can be reduced to a packet store
+    } else if (DRJIT_LLVM_OPTIMIZE_ARRAY_ACCESSES) {
+        // Check if the scatter can be reduced to a packet store
 
         fmt_intrinsic("declare i32 @llvm.vector.reduce.umax.v$wi32(<$w x i32>)");
         fmt_intrinsic("declare i32 @llvm.vector.reduce.umin.v$wi32(<$w x i32>)");

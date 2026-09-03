@@ -91,6 +91,11 @@ size_t jitc_array_length(uint32_t index) {
     return v->array_length;
 }
 
+/// Is the array offset 'vo' guaranteed to be identical across all lanes?
+static bool jitc_array_offset_uniform(const Variable *vo) {
+    return vo->is_literal() || (vo->size == 1 && !vo->symbolic);
+}
+
 uint32_t jitc_array_read(uint32_t source, uint32_t offset, uint32_t mask_) {
     if (source == 0 && offset == 0 && mask_ == 0)
         return 0;
@@ -120,7 +125,7 @@ uint32_t jitc_array_read(uint32_t source, uint32_t offset, uint32_t mask_) {
         uint64_t zero = 0;
         return jitc_var_literal(backend, (VarType) jitc_var(source)->type,
                                 &zero, 1, 0);
-    } else if ((vo->is_literal() || vo->size == 1) &&
+    } else if (jitc_array_offset_uniform(vo) &&
                (vm->kind == (uint32_t) VarKind::DefaultMask ||
                 vm->kind == (uint32_t) VarKind::CallMask)) {
         // When we know that the read is always from a uniform location, we
@@ -258,7 +263,7 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
         // Elide the write (it is fully masked)
         jitc_var_inc_ref(target);
         return target;
-    } else if ((vo->is_literal() || vo->size == 1) &&
+    } else if (jitc_array_offset_uniform(vo) &&
                (vm->kind == (uint32_t) VarKind::DefaultMask ||
                 vm->kind == (uint32_t) VarKind::CallMask)) {
         // When we know that the write is always to a uniform location, we
