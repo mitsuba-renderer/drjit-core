@@ -18,6 +18,7 @@
 
 #include "strbuf.h"
 #include "hash.h"
+#include "log.h"
 #include <tsl/robin_set.h>
 #include <nanothread/nanothread.h>
 #include <algorithm>
@@ -152,6 +153,7 @@ void jitc_unit_compile_parallel(std::vector<uint32_t> &indices, SizeFn &&size,
         &payload, 0, nullptr, /* always_async = */ 1);
     task_wait_exclusive(task);
     task_release(task);
+    jitc_log_flush();
 }
 
 /// A compiled per-unit artifact held by the unit cache. CUDA entries are

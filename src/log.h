@@ -38,6 +38,9 @@ static constexpr LogLevel Trace   = LogLevel::Trace;
 #endif
 extern void jitc_log(LogLevel level, const char* fmt, ...);
 
+/// Deliver log messages queued by pool workers (see jitc_log_postpone())
+extern void jitc_log_flush();
+
 /// Print a log message with the specified log level and message
 extern void jitc_vlog(LogLevel level, const char* fmt, va_list args);
 

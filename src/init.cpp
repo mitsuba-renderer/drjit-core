@@ -252,6 +252,7 @@ void jitc_shutdown(int light) {
         }
 
         pool_destroy();
+        jitc_log_flush();
         state.tss.clear();
     }
 

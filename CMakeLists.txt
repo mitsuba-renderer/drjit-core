@@ -89,13 +89,34 @@ mark_as_advanced(NANOTHREAD_ENABLE_TESTS NANOTHREAD_STATIC)
 # Tool to embed binary blobs (compressed PTX kernels, the Metal metallib)
 include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/bin2c.cmake)
 
-# LZ4 dictionary for the kernel cache used by the LLVM backend
+# LZ4 dictionaries for the kernel cache
+if (WIN32)
+  set(DRJIT_LZ4_DICT_OBJECT coff)
+  set(DRJIT_OBJECT_SUFFIX obj)
+elseif (APPLE)
+  set(DRJIT_LZ4_DICT_OBJECT macho)
+  set(DRJIT_OBJECT_SUFFIX o)
+else()
+  set(DRJIT_LZ4_DICT_OBJECT elf)
+  set(DRJIT_OBJECT_SUFFIX o)
+endif()
+
+set(DRJIT_LZ4_DICT_SYMBOLS lz4_dict_object)
+set(DRJIT_LZ4_DICT_INPUTS
+  ${CMAKE_CURRENT_SOURCE_DIR}/resources/lz4_dict_${DRJIT_LZ4_DICT_OBJECT})
+
+if (DRJIT_ENABLE_METAL)
+  list(APPEND DRJIT_LZ4_DICT_SYMBOLS lz4_dict_metallib lz4_dict_mpso)
+  list(APPEND DRJIT_LZ4_DICT_INPUTS
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/lz4_dict_metallib
+    ${CMAKE_CURRENT_SOURCE_DIR}/resources/lz4_dict_mpso)
+endif()
+
 drjit_embed_binary(
-  OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/resources/kernels_dict.c
-  SYMBOLS kernels_dict
-  INPUTS  ${CMAKE_CURRENT_SOURCE_DIR}/resources/kernels_dict.lz4
-  TYPE    char
-  HEADER  resources/kernels.h)
+  OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/resources/lz4_dicts.c
+  SYMBOLS ${DRJIT_LZ4_DICT_SYMBOLS}
+  INPUTS  ${DRJIT_LZ4_DICT_INPUTS}
+  TYPE    char)
 
 
 # ----------------------------------------------------------
@@ -241,12 +262,13 @@ add_library(
 
   # LZ4 compression library & XXHash hash function
   ext/lz4/lz4.h ext/lz4/lz4.c
+  ext/lz4/lz4hc.h ext/lz4/lz4hc.c
   ext/lz4/xxhash.h
 
-  # LZ4 kernel-cache dictionary (CUDA PTX kernels are added under
+  # LZ4 kernel-cache dictionaries (CUDA PTX kernels are added under
   # DRJIT_CUDA_FILES so they are only compiled with the CUDA backend)
   resources/kernels.h
-  ${CMAKE_CURRENT_BINARY_DIR}/resources/kernels_dict.c
+  ${CMAKE_CURRENT_BINARY_DIR}/resources/lz4_dicts.c
 )
 
 target_include_directories(drjit-core PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
@@ -313,6 +335,10 @@ target_include_directories(drjit-core
   $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>)
 
 target_compile_definitions(drjit-core PRIVATE -DDRJIT_BUILD=1)
+
+# File name suffix of cache entries holding LLVM object files
+target_compile_definitions(drjit-core PRIVATE
+  -DDRJIT_OBJECT_SUFFIX="${DRJIT_OBJECT_SUFFIX}")
 target_link_libraries(drjit-core PRIVATE nanothread)
 
 if (DRJIT_DYNAMIC_CUDA OR APPLE)
@@ -346,13 +372,16 @@ endif()
 
 if (DRJIT_ENABLE_METAL)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_ENABLE_METAL=1)
-  # Embed the precompiled Metal kernel metallib (declarations in src/metal.h)
+  # Precompiled (and compressed) Metal utility kernels
   drjit_embed_binary(
     OUTPUT  ${CMAKE_CURRENT_BINARY_DIR}/resources/metal_kernels.c
-    SYMBOLS metal_kernels_metallib
-    INPUTS  ${CMAKE_CURRENT_SOURCE_DIR}/resources/metal_kernels.metallib
-    SIZE)
-  target_sources(drjit-core PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/resources/metal_kernels.c")
+    SYMBOLS metal_kernels
+    INPUTS  ${CMAKE_CURRENT_SOURCE_DIR}/resources/metal_kernels.lz4
+    TYPE    char
+    HEADER  resources/metal_kernels.h)
+  target_sources(drjit-core PRIVATE
+    resources/metal_kernels.h
+    "${CMAKE_CURRENT_BINARY_DIR}/resources/metal_kernels.c")
   target_link_libraries(drjit-core PRIVATE
     "-framework Foundation"
     "-framework Metal"

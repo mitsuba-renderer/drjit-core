@@ -40,7 +40,7 @@ tests/optix_triangle
 tests/metal_triangle
 tests/microbenchmark
 
-/resources/kernels_dict.c
+/resources/lz4_dicts.c
 /resources/kernels_75.c
 /resources/kernels.c
 /resources/metal_kernels.c

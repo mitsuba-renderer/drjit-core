@@ -343,11 +343,13 @@ static void jitc_llvm_unit_release(UnitArtifact &a) {
     jitc_llvm_unlink(a);
 }
 
-/// Fold the target and toolchain version into a disk-cache key: unit objects
-/// are specific to both
+/// Fold the target, toolchain version, and cache version into a disk-cache
+/// key: unit objects are specific to all three
 static XXH128_hash_t jitc_llvm_disk_key(XXH128_hash_t hash) {
+    // A seeded reset consults the previous state, so it must be initialized
     XXH3_state_t xs;
-    XXH3_128bits_reset(&xs);
+    XXH3_INITSTATE(&xs);
+    XXH3_128bits_reset_withSeed(&xs, DRJIT_CACHE_VERSION);
     XXH3_128bits_update(&xs, &hash, sizeof(XXH128_hash_t));
     XXH3_128bits_update(&xs, jitc_llvm_target_triple,
                         strlen(jitc_llvm_target_triple));
@@ -448,7 +450,6 @@ bool jitc_llvm_kernel_compile(Kernel &kernel) {
             continue;
         }
 
-        // The source size doubles as the disk collision check
         job.disk_key = jitc_llvm_disk_key(job.unit_hash);
         misses.push_back((uint32_t) i);
     }
@@ -462,13 +463,14 @@ bool jitc_llvm_kernel_compile(Kernel &kernel) {
         for (uint32_t i : misses) {
             LLVMCompileJob &job = jobs[i];
             job.from_disk =
-                jitc_cache_blob_load("llvm", job.disk_key,
-                                     (uint32_t) job.source_size, job.object) &&
+                jitc_cache_blob_load(CacheKind::Object, job.disk_key,
+                                     job.object) &&
                 !job.object.empty();
         }
 
-        // Compile the remaining units, then link every miss into the process.
-        // Linking is cheap compared to compilation, so issue those jobs last.
+        // Compile the remaining units, then link every miss into the process
+        // and hand its object file to a detached store. Linking is cheap
+        // compared to compilation, so issue those jobs last.
         jitc_unit_compile_parallel(
             misses,
             [&](uint32_t i) {
@@ -480,17 +482,10 @@ bool jitc_llvm_kernel_compile(Kernel &kernel) {
                     jitc_llvm_compile_unit(job);
                 jitc_llvm_link(job.symbol, job.object.data(), job.object.size(),
                                job.source, job.artifact);
+                if (!job.from_disk)
+                    jitc_cache_blob_store_async(CacheKind::Object, job.disk_key,
+                                                std::move(job.object));
             });
-
-        // Persist the new object files
-        for (uint32_t i : misses) {
-            const LLVMCompileJob &job = jobs[i];
-            if (!job.from_disk)
-                jitc_cache_blob_store("llvm", job.disk_key,
-                                      (uint32_t) job.source_size,
-                                      job.object.data(), job.object.size(),
-                                      /* replace = */ false);
-        }
 
         // Publish the new artifacts; the cache pins the linked units
         for (uint32_t i : misses)

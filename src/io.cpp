@@ -14,17 +14,18 @@
 #include "cuda.h"
 #include "optix.h"
 #include "unit.h"
-#include "resources/kernels.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <errno.h>
 #include <lz4.h>
+#include <lz4hc.h>
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
 #include <thread>
-#include <mutex>
+#include <nanothread/nanothread.h>
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -36,18 +37,7 @@
 
 namespace fs = std::filesystem;
 
-/// Version number for cache files
-#define DRJIT_CACHE_VERSION 2
-
-/// Also write each payload in uncompressed form to a sibling ".trn" file
-/// (set via DRJIT_CACHE_TRAIN) that can be used to train the LZ4 dictionary.
-static bool jitc_cache_train = false;
-
-/// Seed of the cache file checksum. Must differ from the (zero) seed of the
-/// unit content hashes, so that the two cannot coincide.
-#define DRJIT_CACHE_CHECKSUM_SEED 1
-
-/// Records when the last sweep began. Must not end in ".bin".
+/// Records when the last sweep began. Must not end in ".lz4".
 #define DRJIT_CACHE_STAMP "sweep.stamp"
 
 /// Kernel cache directory. Empty when the on-disk cache is unavailable.
@@ -56,8 +46,8 @@ static fs::path jitc_cache_path;
 /// 'jitc_cache_path' as a char string, for log messages and jit_cache_dir()
 static std::string jitc_cache_path_str;
 
-/// Latched when a write fails for lack of permission. Reads keep working.
-static bool jitc_cache_read_only = false;
+/// Latched when a write fails for lack of permission.
+static std::atomic<bool> jitc_cache_read_only { false };
 
 /// Report what the sweep did? (set via DRJIT_CACHE_VERBOSE)
 static bool jitc_cache_verbose = false;
@@ -74,54 +64,107 @@ static constexpr auto jitc_cache_sweep_interval = std::chrono::hours(1);
 /// Only refresh the timestamp of entries that have been idle for a day
 static constexpr auto jitc_cache_touch_interval = std::chrono::hours(24);
 
+// ============================================================================
+//  File format
+// ============================================================================
+//
+// Cache entries are LZ4 frames that the 'lz4' tool can unpack given the
+// matching dictionary from 'resources/', e.g.
+//
+//   lz4 -d -D lz4_dict_elf <hash>.o.lz4 kernel.o
+
 #pragma pack(push)
 #pragma pack(1)
 struct CacheFileHeader {
-    uint8_t version;
-    uint32_t compressed_size;
-    uint32_t check;
-    uint32_t payload_size;
-    XXH128_hash_t checksum;
+    /// Magic number of the LZ4 frame
+    uint32_t magic;
+    /// Frame descriptor flags
+    uint8_t flg;
+    /// Block descriptor (maximum block size)
+    uint8_t bd;
+    /// Uncompressed size of the payload
+    uint64_t payload_size;
+    /// Checksum of the preceding three fields
+    uint8_t hc;
 };
 #pragma pack(pop)
 
-static_assert(sizeof(CacheFileHeader) == 29, "CacheFileHeader is not packed!");
+static_assert(sizeof(CacheFileHeader) == 15, "CacheFileHeader is not packed!");
 
-char jitc_lz4_dict[jitc_lz4_dict_size];
-static std::once_flag jitc_lz4_dict_once;
+/// Largest block size of the format
+static constexpr int jitc_lz4_block_size = 4 << 20;
 
-void jitc_lz4_init() {
-    std::call_once(jitc_lz4_dict_once, []() {
-        if (jitc_lz4_dict_size != kernels_dict_size_uncompressed)
-            jitc_fail("jit_init_lz4(): dictionary has invalid size!");
+/// Payload bytes per block. Even an incompressible chunk then fits into a
+/// compressed block, so entries never need the format's uncompressed blocks.
+static constexpr int jitc_lz4_chunk_size =
+    jitc_lz4_block_size - jitc_lz4_block_size / 255 - 16;
 
-        if (LZ4_decompress_safe(kernels_dict, jitc_lz4_dict,
-                                kernels_dict_size_compressed,
-                                kernels_dict_size_uncompressed) !=
-            (int) kernels_dict_size_uncompressed)
-            jitc_fail("jit_init_lz4(): decompression of dictionary failed!");
-    });
+static_assert(LZ4_COMPRESSBOUND(jitc_lz4_chunk_size) <= jitc_lz4_block_size,
+              "LZ4 chunk size is too large!");
+
+/// Header of an entry with the given payload size
+static CacheFileHeader jitc_cache_header(uint64_t payload_size) {
+    CacheFileHeader h;
+    h.magic = 0x184D2204u;
+    h.flg = 0x4C; // Version 1, linked blocks, payload size and checksum present
+    h.bd = 0x70;  // 4 MiB blocks
+    h.payload_size = payload_size;
+    h.hc = (uint8_t) (XXH32(&h.flg, 10, 0) >> 8);
+    return h;
 }
 
-/// Checksum over the header (up to the checksum itself) and the payload in
-/// compressed form. This serves as extra validation that a cache file has the
-/// expected contents.
-static XXH128_hash_t jitc_cache_checksum(const CacheFileHeader &header,
-                                         const char *compressed) {
-    XXH3_state_t xxh_state;
-    XXH3_INITSTATE(&xxh_state);
-    XXH3_128bits_reset_withSeed(&xxh_state, DRJIT_CACHE_CHECKSUM_SEED);
-    XXH3_128bits_update(&xxh_state, &header, offsetof(CacheFileHeader, checksum));
-    XXH3_128bits_update(&xxh_state, compressed, header.compressed_size);
-    return XXH3_128bits_digest(&xxh_state);
+// ============================================================================
+//  LZ4 dictionaries
+// ============================================================================
+
+// Raw 64 KiB dictionaries embedded from resources/lz4_dict_* (see CMakeLists.txt)
+extern "C" {
+    extern const char lz4_dict_object[];
+#if defined(DRJIT_ENABLE_METAL)
+    extern const char lz4_dict_metallib[];
+    extern const char lz4_dict_mpso[];
+#endif
+}
+
+/// Size of every dictionary. LZ4 cannot reference further back than this.
+static constexpr int jitc_lz4_dict_size = 65536;
+
+/// File name suffix and dictionary of each 'CacheKind', plus an HC stream
+/// with the dictionary pre-loaded (see jitc_cache_init()).
+struct CacheKindInfo {
+    const char *suffix;
+    const char *dict;
+    LZ4_streamHC_t *stream = nullptr;
+};
+
+static CacheKindInfo jitc_cache_kinds[] = {
+    { DRJIT_OBJECT_SUFFIX, lz4_dict_object },
+#if defined(DRJIT_ENABLE_METAL)
+    { "air.metallib", lz4_dict_metallib },
+    { "func.metallib", lz4_dict_metallib },
+    { "pso.metallib", lz4_dict_mpso },
+#endif
+};
+
+char *jitc_lz4_inflate(const char *compressed, size_t compressed_size,
+                       size_t size, const char *what) {
+    char *out = (char *) malloc_check(size + 1);
+    int rv = LZ4_decompress_safe(compressed, out, (int) compressed_size,
+                                 (int) size);
+    if (rv != (int) size)
+        jitc_fail("jit_lz4_inflate(): decompression of the %s failed! Expected "
+                  "%zu bytes (negative value indicates an error), got %d.",
+                  what, size, rv);
+    out[size] = '\0';
+    return out;
 }
 
 /// Path of the cache file holding an entry of the given kind
-static fs::path jitc_cache_entry(XXH128_hash_t hash, const char *kind) {
+static fs::path jitc_cache_entry(XXH128_hash_t hash, CacheKind kind) {
     char name[80];
-    snprintf(name, sizeof(name), "%016llx%016llx.%s.v%i.bin",
+    snprintf(name, sizeof(name), "%016llx%016llx.%s.lz4",
              (unsigned long long) hash.high64, (unsigned long long) hash.low64,
-             kind, DRJIT_CACHE_VERSION);
+             jitc_cache_kinds[(uint32_t) kind].suffix);
 
     return jitc_cache_path / name;
 }
@@ -190,15 +233,20 @@ void jitc_cache_init() {
         return;
     jitc_cache_initialized = true;
 
+    // Stores attach to these streams instead of re-indexing the dictionary
+    for (CacheKindInfo &info : jitc_cache_kinds) {
+        info.stream = LZ4_createStreamHC();
+        if (!info.stream)
+            jitc_fail("jit_init(): could not allocate the LZ4 stream!");
+        LZ4_resetStreamHC(info.stream, LZ4HC_CLEVEL_DEFAULT);
+        LZ4_loadDictHC(info.stream, info.dict, jitc_lz4_dict_size);
+    }
+
     // The sweep runs before the host can raise the log level, so it needs its
     // own switch to be able to report anything at all.
     const char *verbose_str = getenv("DRJIT_CACHE_VERBOSE");
     jitc_cache_verbose =
         verbose_str && *verbose_str && strcmp(verbose_str, "0") != 0;
-
-    const char *train_str = getenv("DRJIT_CACHE_TRAIN");
-    jitc_cache_train =
-        train_str && *train_str && strcmp(train_str, "0") != 0;
 
     jitc_cache_max_size = jitc_cache_default_max_size;
     const char *max_size_str = getenv("DRJIT_CACHE_MAXSIZE");
@@ -252,6 +300,11 @@ void jitc_cache_init() {
 }
 
 void jitc_cache_shutdown() {
+    for (CacheKindInfo &info : jitc_cache_kinds) {
+        LZ4_freeStreamHC(info.stream);
+        info.stream = nullptr;
+    }
+
     jitc_cache_path.clear();
     jitc_cache_path_str.clear();
     jitc_cache_read_only = false;
@@ -288,8 +341,8 @@ static bool jitc_cache_reject(const fs::path &path, const char *reason) {
     return false;
 }
 
-bool jitc_cache_blob_load(const char *kind, XXH128_hash_t hash,
-                          uint32_t check, std::vector<uint8_t> &data) {
+bool jitc_cache_blob_load(CacheKind kind, XXH128_hash_t hash,
+                          std::vector<uint8_t> &data) {
     if (jitc_cache_path.empty())
         return false;
 
@@ -304,9 +357,8 @@ bool jitc_cache_blob_load(const char *kind, XXH128_hash_t hash,
     if (ec)
         return false;
 
-    jitc_lz4_init();
-
-    if (file_size < sizeof(CacheFileHeader))
+    // The header is followed by at least the end mark and the checksum
+    if (file_size < sizeof(CacheFileHeader) + 8)
         return jitc_cache_reject(path, "truncated");
 
     // A stream that failed to open reports every subsequent read as an error
@@ -316,41 +368,60 @@ bool jitc_cache_blob_load(const char *kind, XXH128_hash_t hash,
     if (!file.read((char *) &header, sizeof(CacheFileHeader)))
         return false;
 
-    if (header.version != DRJIT_CACHE_VERSION)
-        return jitc_cache_reject(path, "incompatible format version");
+    // Bounds the allocation below. The store rejects larger payloads.
+    if (header.payload_size > (uint64_t) INT32_MAX)
+        return jitc_cache_reject(path, "malformed header");
 
-    // Bounds the allocation below, which precedes the checksum test
-    if (file_size != sizeof(CacheFileHeader) + (uintmax_t) header.compressed_size)
-        return jitc_cache_reject(path, "size disagrees with the header");
+    CacheFileHeader expected = jitc_cache_header(header.payload_size);
+    if (memcmp(&header, &expected, sizeof(CacheFileHeader)) != 0)
+        return jitc_cache_reject(path, "malformed header");
 
-    if (header.check != check)
-        return jitc_cache_reject(path, "hash collision");
+    size_t compressed_size = (size_t) file_size - sizeof(CacheFileHeader);
+    ScopedBuffer compressed;
+    compressed.ptr = (char *) malloc_check(compressed_size);
 
-    ScopedBuffer compressed, buf;
-    compressed.ptr = (char *) malloc_check(header.compressed_size);
-
-    if (!file.read(compressed.ptr, header.compressed_size))
+    if (!file.read(compressed.ptr, compressed_size))
         return false;
 
     file.close();
 
-    if (!XXH128_isEqual(header.checksum,
-                        jitc_cache_checksum(header, compressed.ptr)))
+    // Decode the blocks into a contiguous buffer. The decoder tracks the
+    // history, which starts out as the dictionary of this entry type.
+    size_t payload_size = (size_t) header.payload_size, off = 0;
+    data.resize(payload_size);
+    char *payload = (char *) data.data();
+    const char *p = compressed.ptr, *end = p + compressed_size - 4;
+
+    LZ4_streamDecode_t decoder;
+    LZ4_setStreamDecode(&decoder, jitc_cache_kinds[(uint32_t) kind].dict,
+                        jitc_lz4_dict_size);
+
+    while (true) {
+        uint32_t block_size;
+        if (end - p < 4)
+            return jitc_cache_reject(path, "malformed");
+        memcpy(&block_size, p, 4);
+        p += 4;
+        if (block_size == 0)
+            break;
+        if (block_size > (size_t) (end - p))
+            return jitc_cache_reject(path, "malformed");
+
+        int rv = LZ4_decompress_safe_continue(
+            &decoder, p, payload + off, (int) block_size,
+            (int) std::min((size_t) jitc_lz4_chunk_size, payload_size - off));
+        if (rv <= 0)
+            return jitc_cache_reject(path, "malformed");
+
+        off += (size_t) rv;
+        p += block_size;
+    }
+
+    uint32_t checksum;
+    memcpy(&checksum, p, 4);
+    if (off != payload_size || p != end ||
+        checksum != XXH32(payload, payload_size, 0))
         return jitc_cache_reject(path, "checksum mismatch");
-
-    // Decompress with the shared dictionary, which must precede the payload
-    // in memory
-    buf.ptr = (char *) malloc_check(size_t(header.payload_size) +
-                                    jitc_lz4_dict_size);
-    memcpy(buf.ptr, jitc_lz4_dict, jitc_lz4_dict_size);
-
-    uint32_t rv = (uint32_t) LZ4_decompress_safe_usingDict(
-        compressed.ptr, buf.ptr + jitc_lz4_dict_size,
-        (int) header.compressed_size, (int) header.payload_size,
-        buf.ptr, jitc_lz4_dict_size);
-
-    if (rv != header.payload_size)
-        return jitc_cache_reject(path, "malformed");
 
     jitc_log(Trace, "jit_cache_blob_load(\"%s\")", path.string().c_str());
 
@@ -363,30 +434,19 @@ bool jitc_cache_blob_load(const char *kind, XXH128_hash_t hash,
             fs::last_write_time(path, now, ec);
     }
 
-    const uint8_t *payload = (const uint8_t *) buf.ptr + jitc_lz4_dict_size;
-    data.assign(payload, payload + header.payload_size);
     return true;
 }
 
-bool jitc_cache_blob_store(const char *kind, XXH128_hash_t hash,
-                           uint32_t check, const uint8_t *data, size_t size,
-                           bool replace) {
+bool jitc_cache_blob_store(CacheKind kind, XXH128_hash_t hash,
+                           const uint8_t *data, size_t size) {
     if (!jitc_cache_writable())
         return false;
 
-    // LZ4 tops out at INT32_MAX, well below the range of 'payload_size'
     if (size > (size_t) INT32_MAX) {
         jitc_log(Warn, "jit_cache_blob_store(): the compiled artifact is too "
                        "large to be cached (%zu bytes).", size);
         return false;
     }
-
-    jitc_lz4_init();
-
-    CacheFileHeader header;
-    header.version = DRJIT_CACHE_VERSION;
-    header.check = check;
-    header.payload_size = (uint32_t) size;
 
     // The temporary name carries the pid: a process that dies before the
     // cleanup below must not poison this entry for every future process.
@@ -408,23 +468,43 @@ bool jitc_cache_blob_store(const char *kind, XXH128_hash_t hash,
         return false;
     }
 
-    uint32_t out_size = LZ4_compressBound((int) size);
-    uint8_t *temp_out = (uint8_t *) malloc_check(out_size);
+    // The frame holds one block per chunk, each preceded by its size, and
+    // ends with a zero size field and the payload checksum. Each chunk bound
+    // adds 16 bytes beyond its share of the bound of the whole payload.
+    size_t n_blocks = (size + jitc_lz4_chunk_size - 1) / jitc_lz4_chunk_size;
+    ScopedBuffer out;
+    out.ptr = (char *) malloc_check(sizeof(CacheFileHeader) +
+                                    LZ4_compressBound((int) size) +
+                                    20 * n_blocks + 8);
+    char *p = out.ptr;
 
-    LZ4_stream_t stream;
-    memset(&stream, 0, sizeof(LZ4_stream_t));
-    LZ4_resetStream_fast(&stream);
-    LZ4_loadDict(&stream, jitc_lz4_dict, jitc_lz4_dict_size);
+    CacheFileHeader header = jitc_cache_header(size);
+    memcpy(p, &header, sizeof(CacheFileHeader));
+    p += sizeof(CacheFileHeader);
 
-    header.compressed_size = (uint32_t) LZ4_compress_fast_continue(
-        &stream, (const char *) data, (char *) temp_out, (int) size,
-        (int) out_size, 1);
+    LZ4_streamHC_t *stream = LZ4_createStreamHC();
+    if (!stream)
+        jitc_fail("jit_cache_blob_store(): could not allocate the LZ4 stream!");
+    LZ4_resetStreamHC_fast(stream, LZ4HC_CLEVEL_DEFAULT);
+    LZ4_attach_HC_dictionary(stream, jitc_cache_kinds[(uint32_t) kind].stream);
 
-    // Every other header field must be final by this point
-    header.checksum = jitc_cache_checksum(header, (const char *) temp_out);
+    for (size_t off = 0; off < size; off += jitc_lz4_chunk_size) {
+        int chunk = (int) std::min((size_t) jitc_lz4_chunk_size, size - off);
+        uint32_t block_size = (uint32_t) LZ4_compress_HC_continue(
+            stream, (const char *) data + off, p + 4, chunk,
+            LZ4_compressBound(chunk));
+        memcpy(p, &block_size, 4);
+        p += 4 + block_size;
+    }
 
-    file.write((const char *) &header, sizeof(CacheFileHeader));
-    file.write((const char *) temp_out, header.compressed_size);
+    LZ4_freeStreamHC(stream);
+
+    uint32_t trailer[2] = { 0, XXH32(data, size, 0) };
+    memcpy(p, trailer, 8);
+    p += 8;
+
+    size_t out_size = (size_t) (p - out.ptr);
+    file.write(out.ptr, out_size);
     file.close();
 
     // close() reports a failure to flush, so this also covers deferred errors
@@ -437,7 +517,7 @@ bool jitc_cache_blob_store(const char *kind, XXH128_hash_t hash,
         jitc_trace("jit_cache_blob_store(\"%s\"): compressed %s to %s",
                   filename.c_str(),
                   jitc_mem_string(size).c_str(),
-                  jitc_mem_string(header.compressed_size).c_str());
+                  jitc_mem_string(out_size).c_str());
 
     std::error_code ec;
     if (success) {
@@ -445,15 +525,11 @@ bool jitc_cache_blob_store(const char *kind, XXH128_hash_t hash,
         fs::permissions(path_tmp, fs::perms::owner_read | fs::perms::owner_write |
                                   fs::perms::group_read | fs::perms::others_read, ec);
 
-        // Publish atomically
-        if (replace) {
-            fs::rename(path_tmp, path, ec);
-        } else {
-            fs::create_hard_link(path_tmp, path, ec);
-            // A pre-existing entry is equivalent, so leave it in place
-            if (ec == std::errc::file_exists)
-                ec.clear();
-        }
+        // Publish atomically. A pre-existing entry is equivalent, so leave
+        // it in place
+        fs::create_hard_link(path_tmp, path, ec);
+        if (ec == std::errc::file_exists)
+            ec.clear();
 
         if (ec) {
             jitc_log(Warn, "jit_cache_blob_store(): could not link the cache "
@@ -465,16 +541,31 @@ bool jitc_cache_blob_store(const char *kind, XXH128_hash_t hash,
 
     fs::remove(path_tmp, ec);
 
-    if (unlikely(jitc_cache_train)) {
-        // Uncompressed payload, for retraining the LZ4 dictionary
-        fs::path path_trn = path;
-        path_trn.replace_extension("trn");
-        std::ofstream(path_trn, std::ios::binary).write((const char *) data, size);
-    }
-
-    free(temp_out);
-
     return success;
+}
+
+void jitc_cache_blob_store_async(CacheKind kind, XXH128_hash_t hash,
+                                 std::vector<uint8_t> &&data) {
+    if (!jitc_cache_writable())
+        return;
+
+    struct Payload {
+        CacheKind kind;
+        XXH128_hash_t hash;
+        std::vector<uint8_t> data;
+    };
+
+    Task *task = task_submit_dep(
+        nullptr, nullptr, 0, 1,
+        [](uint32_t, void *p) {
+            Payload *payload = (Payload *) p;
+            jitc_cache_blob_store(payload->kind, payload->hash,
+                                  payload->data.data(), payload->data.size());
+        },
+        new Payload { kind, hash, std::move(data) }, 0,
+        [](void *p) { delete (Payload *) p; }, /* always_async = */ 1);
+
+    task_release(task);
 }
 
 // ============================================================================
@@ -496,7 +587,7 @@ static void jitc_cache_sweep_thread(fs::path dir, size_t max_size, bool verbose)
     try {
         // Collect the whole listing before removing anything
         for (const fs::directory_entry &entry : fs::directory_iterator(dir, ec)) {
-            if (entry.path().extension() != ".bin")
+            if (entry.path().extension() != ".lz4")
                 continue;
 
             std::error_code e_type, e_size, e_time;

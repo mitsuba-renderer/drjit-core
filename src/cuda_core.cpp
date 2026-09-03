@@ -9,7 +9,6 @@
 #include "unit.h"
 #include "profile.h"
 #include "resources/kernels.h"
-#include <lz4.h>
 #include <string>
 
 /// One named PTX input of a driver JIT compilation
@@ -67,8 +66,7 @@ CUfunction *jitc_cuda_gemm[(int) VarType::Count][4][3] = { };
 // ====================================================================
 
 // Decompressed builtin-kernel PTX blob: preamble '\0' entry_0 '\0' entry_1 ...
-static char *jitc_cuda_kernels_alloc = nullptr;
-static const char *jitc_cuda_kernels = nullptr;
+static char *jitc_cuda_kernels = nullptr;
 
 // Scratch buffer (reused, guarded by state.lock) for assembling preamble + entry
 static StringBuffer jitc_cuda_ptx_buf;
@@ -481,7 +479,7 @@ void cuda_check_impl(CUresult errval, const char *file, const int line) {
 
 bool jitc_cuda_init() {
     /// Was the CUDA backend already initialized?
-    if (jitc_cuda_kernels_alloc)
+    if (jitc_cuda_kernels)
         return true;
 
     // First, dynamically load CUDA into the process
@@ -546,24 +544,10 @@ bool jitc_cuda_init() {
                 jitc_cuda_gemm[k][l][t] = (CUfunction *) malloc_check_zero(asize);
     }
 
-    jitc_lz4_init();
-
     // Decompress the builtin-kernel PTX blob once.
-    jitc_cuda_kernels_alloc = (char *) malloc_check(
-        kernels_75_size_uncompressed + jitc_lz4_dict_size + 1);
-    memcpy(jitc_cuda_kernels_alloc, jitc_lz4_dict, jitc_lz4_dict_size);
-    char *kernels = jitc_cuda_kernels_alloc + jitc_lz4_dict_size;
-    jitc_cuda_kernels = kernels;
-
-    int uncompressed_size_actual = LZ4_decompress_safe_usingDict(
-        kernels_75, kernels, (int) kernels_75_size_compressed,
-        (int) kernels_75_size_uncompressed, jitc_cuda_kernels_alloc,
-        jitc_lz4_dict_size);
-    if ((size_t) uncompressed_size_actual != kernels_75_size_uncompressed)
-        jitc_fail("jit_cuda_init(): decompression of builtin kernels failed!"
-                  " Expected %zu bytes (negative value indicates an error), got %d.",
-                  kernels_75_size_uncompressed, uncompressed_size_actual);
-    kernels[kernels_75_size_uncompressed] = '\0';
+    jitc_cuda_kernels =
+        jitc_lz4_inflate(kernels_75, kernels_75_size_compressed,
+                         kernels_75_size_uncompressed, "builtin kernels");
 
     for (int i = 0; i < device_count; ++i) {
         int pci_bus_id = 0, pci_dom_id = 0, pci_dev_id = 0, sm_count = 0,
@@ -806,8 +790,7 @@ void jitc_cuda_shutdown() {
                 Z(jitc_cuda_gemm[k][l][t]);
     }
 
-    free(jitc_cuda_kernels_alloc);
-    jitc_cuda_kernels_alloc = nullptr;
+    free(jitc_cuda_kernels);
     jitc_cuda_kernels = nullptr;
 
     jitc_cuda_api_shutdown();

@@ -23,6 +23,7 @@
 #include "trace.h"
 #include "record_ts.h"
 #include "drjit-core/metal.h"
+#include "resources/metal_kernels.h"
 
 // Suppress the obsolete Carbon <CarbonCore/Threads.h>, whose ThreadState collides with Dr.Jit
 #define __THREADS__
@@ -318,6 +319,17 @@ bool jitc_metal_init() {
 
         state.metal_devices.clear();
 
+        // Decompress the precompiled utility kernel library once. The
+        // dispatch object copies the buffer.
+        char *metallib = jitc_lz4_inflate(metal_kernels,
+                                          metal_kernels_size_compressed,
+                                          metal_kernels_size_uncompressed,
+                                          "utility kernel library");
+        dispatch_data_t lib_data = dispatch_data_create(
+            metallib, metal_kernels_size_uncompressed, nullptr,
+            DISPATCH_DATA_DESTRUCTOR_DEFAULT);
+        free(metallib);
+
         for (id<MTLDevice> dev in devices) {
             if (![dev supportsFamily:MTLGPUFamilyMetal3]) {
                 jitc_log(Warn,
@@ -351,9 +363,6 @@ bool jitc_metal_init() {
 
             // Instantiate the precompiled utility kernel library
             NSError *err = nil;
-            dispatch_data_t lib_data = dispatch_data_create(
-                metal_kernels_metallib, metal_kernels_metallib_size, nullptr,
-                DISPATCH_DATA_DESTRUCTOR_DEFAULT);
             id<MTLLibrary> lib = [dev newLibraryWithData:lib_data error:&err];
             if (!lib)
                 jitc_fail("jit_metal_init(): could not instantiate the utility "
@@ -446,10 +455,12 @@ static void jitc_metal_unit_release(UnitArtifact &a) {
 // entries after a handful of unrelated insertions. Dr.Jit therefore maintains
 // its own cache in ``~/.drjit``, at three granularities:
 //
-//  - "mair":  a library image produced by the MSL front end, per unit
-//  - "mbfn":  a binary archive holding one callable's device-specialized
-//             machine code (the back-end result), per unit
-//  - "mpso":  a binary archive holding a kernel's pipeline machine code
+//  - ``MetalLibrary`` (``.air.metallib``): a library image produced by the
+//    MSL front end, per unit
+//  - ``MetalFunction`` (``.func.metallib``): a binary archive holding one
+//    callable's device-specialized machine code (the back-end result), per unit
+//  - ``MetalPipeline`` (``.pso.metallib``): a binary archive holding a
+//    kernel's pipeline machine code
 
 /// Cleared once the library image cannot be exported, which disables AIR
 /// caching for the remainder of the process (archives still work).
@@ -599,11 +610,41 @@ static bool jitc_metal_archive_data(id<MTLBinaryArchive> archive,
     return true;
 }
 
-/// Fold device identity and OS build into a disk-cache key.
+/// Serialize ``archive`` and store it in the kernel cache on a pool worker.
+/// The caller does not wait for the store, which overlaps with whatever
+/// follows the kernel compilation.
+static void jitc_metal_archive_store_async(id<MTLBinaryArchive> archive,
+                                           CacheKind kind, XXH128_hash_t hash) {
+    struct Payload {
+        id<MTLBinaryArchive> archive;
+        CacheKind kind;
+        XXH128_hash_t hash;
+    };
+
+    Task *task = task_submit_dep(
+        nullptr, nullptr, 0, 1,
+        [](uint32_t, void *p) {
+            @autoreleasepool {
+                Payload *payload = (Payload *) p;
+                std::vector<uint8_t> data;
+                if (jitc_metal_archive_data(payload->archive, data))
+                    jitc_cache_blob_store(payload->kind, payload->hash,
+                                          data.data(), data.size());
+            }
+        },
+        new Payload { archive, kind, hash }, 0,
+        [](void *p) { delete (Payload *) p; }, /* always_async = */ 1);
+
+    task_release(task);
+}
+
+/// Fold device identity, OS build, and cache version into a disk-cache key.
 static XXH128_hash_t jitc_metal_disk_key(id<MTLDevice> dev,
                                          XXH128_hash_t hash) {
+    // A seeded reset consults the previous state, so it must be initialized
     XXH3_state_t xs;
-    XXH3_128bits_reset(&xs);
+    XXH3_INITSTATE(&xs);
+    XXH3_128bits_reset_withSeed(&xs, DRJIT_CACHE_VERSION);
     XXH3_128bits_update(&xs, &hash, sizeof(XXH128_hash_t));
 
     uint64_t registry_id = dev.registryID;
@@ -622,7 +663,6 @@ static XXH128_hash_t jitc_metal_disk_key(id<MTLDevice> dev,
 /// State of one per-unit compilation (see jitc_metal_kernel_compile())
 struct MetalCompileJob : UnitCompileJob {
     XXH128_hash_t disk_key;        // device/OS-salted unit hash
-    uint32_t check = 0;            // collision-check value for disk entries
     std::vector<uint8_t> bfn_data; // serialized binary-function archive
     id<MTLLibrary> library = nil;
     id<MTLFunction> function = nil;
@@ -689,9 +729,8 @@ static void jitc_metal_build_binary_function(id<MTLDevice> dev,
                 jp->function = f;
                 std::vector<uint8_t> data;
                 if (jitc_metal_archive_data(ar, data))
-                    jitc_cache_blob_store("mbfn", jp->disk_key, jp->check,
-                                          data.data(), data.size(),
-                                          /* replace = */ false);
+                    jitc_cache_blob_store_async(CacheKind::MetalFunction,
+                                                jp->disk_key, std::move(data));
                 return;
             }
         }
@@ -707,8 +746,9 @@ static void jitc_metal_build_binary_function(id<MTLDevice> dev,
         jp->error = e;
 }
 
-/// Compile a compilation unit (if not loaded from disk), then
-/// fetch its entry point or build a device-specialized binary function
+/// Compile a compilation unit (if not loaded from disk) and persist its AIR
+/// image, then fetch its entry point or build a device-specialized binary
+/// function. Runs concurrently on the nanothread pool.
 static void jitc_metal_compile_unit(id<MTLDevice> dev, MTLCompileOptions *opts,
                                     MetalCompileJob *jp, bool entry) {
     @autoreleasepool {
@@ -726,6 +766,13 @@ static void jitc_metal_compile_unit(id<MTLDevice> dev, MTLCompileOptions *opts,
                 return;
             }
             jp->library = l;
+
+            if (jitc_cache_writable()) {
+                std::vector<uint8_t> data;
+                if (jitc_metal_library_data(l, data))
+                    jitc_cache_blob_store_async(CacheKind::MetalLibrary,
+                                                jp->disk_key, std::move(data));
+            }
         }
 
         if (entry)
@@ -767,7 +814,6 @@ bool jitc_metal_kernel_compile(ThreadState *ts, Kernel &kernel) {
             }
 
             job.disk_key = jitc_metal_disk_key(dev, job.unit_hash);
-            job.check = (uint32_t) job.source_size;
             n_misses++;
         }
 
@@ -837,8 +883,8 @@ bool jitc_metal_kernel_compile(ThreadState *ts, Kernel &kernel) {
                         continue;
 
                     std::vector<uint8_t> data;
-                    if (jitc_cache_blob_load("mair", job.disk_key, job.check,
-                                             data)) {
+                    if (jitc_cache_blob_load(CacheKind::MetalLibrary,
+                                             job.disk_key, data)) {
                         id<MTLLibrary> l = jitc_metal_library_from_data(dev, data);
                         if (l && (i != 0 ||
                                   (job.function =
@@ -849,8 +895,8 @@ bool jitc_metal_kernel_compile(ThreadState *ts, Kernel &kernel) {
                     }
 
                     if (i != 0)
-                        jitc_cache_blob_load("mbfn", job.disk_key, job.check,
-                                             job.bfn_data);
+                        jitc_cache_blob_load(CacheKind::MetalFunction,
+                                             job.disk_key, job.bfn_data);
                 }
 
                 // The entry unit only needs its plain function (the PSO
@@ -888,20 +934,6 @@ bool jitc_metal_kernel_compile(ThreadState *ts, Kernel &kernel) {
                               job.source);
                 }
 
-                // Persist newly compiled AIR images
-                if (jitc_cache_writable() && metal_library_export_available) {
-                    std::vector<uint8_t> data;
-                    for (const MetalCompileJob &job : jobs) {
-                        if (job.hit || job.from_disk)
-                            continue;
-                        if (jitc_metal_library_data(job.library, data))
-                            jitc_cache_blob_store("mair", job.disk_key,
-                                                  job.check, data.data(),
-                                                  data.size(),
-                                                  /* replace = */ false);
-                    }
-                }
-
                 // Publish the new artifacts; the cache pins them (+1 each)
                 for (MetalCompileJob &job : jobs) {
                     if (job.hit)
@@ -937,11 +969,11 @@ bool jitc_metal_kernel_compile(ThreadState *ts, Kernel &kernel) {
             // ``FailOnBinaryArchiveMiss`` ensures that pipeline creation
             // reuses the archived code or fails instead of recompiling.
             XXH128_hash_t pso_key = jitc_metal_disk_key(dev, khash);
-            uint32_t pso_check = (uint32_t) source_bytes;
 
             {
                 std::vector<uint8_t> data;
-                if (jitc_cache_blob_load("mpso", pso_key, pso_check, data)) {
+                if (jitc_cache_blob_load(CacheKind::MetalPipeline, pso_key,
+                                         data)) {
                     id<MTLBinaryArchive> ar =
                         jitc_metal_archive_from_data(dev, data);
                     if (ar) {
@@ -977,13 +1009,9 @@ bool jitc_metal_kernel_compile(ThreadState *ts, Kernel &kernel) {
                                    options:MTLPipelineOptionFailOnBinaryArchiveMiss
                                 reflection:nil
                                      error:&e];
-                    if (pso) {
-                        std::vector<uint8_t> data;
-                        if (jitc_metal_archive_data(ar, data))
-                            jitc_cache_blob_store("mpso", pso_key, pso_check,
-                                                  data.data(), data.size(),
-                                                  /* replace = */ false);
-                    }
+                    if (pso)
+                        jitc_metal_archive_store_async(
+                            ar, CacheKind::MetalPipeline, pso_key);
                 }
                 if (!pso)
                     jitc_log(Debug, "jit_metal_kernel_compile(): could not "

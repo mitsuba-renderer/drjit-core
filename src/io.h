@@ -107,6 +107,9 @@ struct Kernel {
     };
 };
 
+/// Version number of the cache format and dictionaries
+#define DRJIT_CACHE_VERSION 1
+
 /// Locate and prepare the kernel cache directory. Never fails, never throws.
 extern void jitc_cache_init();
 
@@ -119,27 +122,45 @@ extern const char *jitc_cache_dir();
 /// Can new entries be added to the kernel cache?
 extern bool jitc_cache_writable();
 
-/// Typed cache entries holding a single binary artifact (e.g. a Metal AIR
-/// library image or a serialized binary archive). 'kind' becomes part of the
-/// file name; 'check' is an arbitrary value validated on load to guard
-/// against hash collisions (by convention, the size of the generating
-/// source). Stores with 'replace' overwrite an existing entry.
-extern bool jitc_cache_blob_load(const char *kind, XXH128_hash_t hash,
-                                 uint32_t check, std::vector<uint8_t> &data);
+/// Artifact types held by the kernel cache. The kind determines the file
+/// name suffix and the LZ4 dictionary.
+enum class CacheKind : uint32_t {
+    /// Relocatable object file of the LLVM backend
+    Object,
 
-extern bool jitc_cache_blob_store(const char *kind, XXH128_hash_t hash,
-                                  uint32_t check, const uint8_t *data,
-                                  size_t size, bool replace);
+    /// Metal library image produced by the MSL front end
+    MetalLibrary,
+
+    /// Metal binary archive holding one callable's device-specialized code
+    MetalFunction,
+
+    /// Metal binary archive holding a kernel's pipeline
+    MetalPipeline
+};
+
+/// Typed cache entries holding a single binary artifact. A store leaves a
+/// pre-existing entry in place. These functions may be called concurrently
+/// from worker threads.
+extern bool jitc_cache_blob_load(CacheKind kind, XXH128_hash_t hash,
+                                 std::vector<uint8_t> &data);
+
+extern bool jitc_cache_blob_store(CacheKind kind, XXH128_hash_t hash,
+                                  const uint8_t *data, size_t size);
+
+/// Compress and store 'data' on a pool worker without waiting for the
+/// result. The store is best effort: tasks still queued at shutdown are
+/// dropped, and the next process simply recompiles the artifact.
+extern void jitc_cache_blob_store_async(CacheKind kind, XXH128_hash_t hash,
+                                        std::vector<uint8_t> &&data);
 
 /// Occasionally prune the kernel cache on a detached background thread
 extern void jitc_cache_sweep();
 
-// LZ4 compression dictionary
-static const int jitc_lz4_dict_size = 65536;
-extern char jitc_lz4_dict[];
-
-/// Initialize dictionary
-extern void jitc_lz4_init();
+/// Decompress an embedded LZ4 blob (e.g. the builtin kernels) into a
+/// malloc()-ed buffer of 'size' bytes plus a terminating zero. 'what'
+/// names the blob in the error message should decompression fail.
+extern char *jitc_lz4_inflate(const char *compressed, size_t compressed_size,
+                              size_t size, const char *what);
 
 extern void jitc_kernel_free(int device_id, const Kernel &kernel);
 

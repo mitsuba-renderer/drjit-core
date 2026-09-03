@@ -13,13 +13,9 @@
 extern "C" {
 #endif
 
-extern const char kernels_dict[];
-static const size_t kernels_dict_size_uncompressed = 65536;
-static const size_t kernels_dict_size_compressed = 19638;
-
 extern const char kernels_75[];
 static const size_t kernels_75_size_uncompressed = 3689349;
-static const size_t kernels_75_size_compressed = 621897;
+static const size_t kernels_75_size_compressed = 622120;
 
 static const size_t kernels_75_preamble_size = 6267;
 

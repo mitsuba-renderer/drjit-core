@@ -21,10 +21,6 @@ struct ThreadState;
 struct Kernel;
 enum class MetalKernel : uint32_t;
 
-/// Precompiled utility-kernel ``.metallib`` archive, embedded as a byte array.
-extern "C" const unsigned char metal_kernels_metallib[];
-extern "C" const size_t metal_kernels_metallib_size;
-
 /// Initialize the Metal backend
 extern bool jitc_metal_init();
 

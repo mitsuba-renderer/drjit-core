@@ -15,6 +15,7 @@
 #include <vector>
 #include "internal.h"
 #include "log.h"
+#include <nanothread/nanothread.h>
 
 #if defined(_WIN32)
 #  include <windows.h>
@@ -108,6 +109,24 @@ void lock_release_pending(Lock &lock) noexcept {
     jit_log_flush();
 }
 
+/// Deliver queued messages now, or once this thread leaves its critical section
+static void jitc_log_flush_or_defer() {
+    if (likely(state.lock.owner.load(std::memory_order_relaxed) == thread_id()))
+        lock_set_pending(state.lock);
+    else
+        jit_log_flush();
+}
+
+void jitc_log_flush() {
+    {
+        std::lock_guard<std::mutex> guard(log_mutex);
+        if (log_postponed.empty())
+            return;
+    }
+
+    jitc_log_flush_or_defer();
+}
+
 /// Queue `msg`, and arrange for it to be delivered at a safe moment
 static void jitc_log_postpone(LogLevel log_level, std::string &&msg) {
     {
@@ -115,10 +134,13 @@ static void jitc_log_postpone(LogLevel log_level, std::string &&msg) {
         log_postponed.push_back({ log_level, std::move(msg) });
     }
 
-    if (likely(state.lock.owner.load(std::memory_order_relaxed) == thread_id()))
-        lock_set_pending(state.lock); // Deliver once this thread lets go
-    else
-        jit_log_flush();
+    // Pool workers never invoke the callback themselves. The thread that waits
+    // for them may hold a resource that the callback needs (e.g. the GIL), and
+    // it drains the queue via jitc_log_flush() after the parallel region ends.
+    if (pool_thread_id() != 0)
+        return;
+
+    jitc_log_flush_or_defer();
 }
 
 void jitc_vlog(LogLevel log_level, const char* fmt, va_list args) {
@@ -173,16 +195,17 @@ void jitc_raise(const char* fmt, ...) {
 void jitc_vfail(const char* fmt, va_list args) noexcept {
     std::string msg = fatal_error_msg + jitc_vformat(fmt, args);
 
-    // Release the lock and deliver the messages leading up to the failure. The
-    // report below can then no longer hang while the callback waits for a
-    // resource owned by a thread that is itself stuck on the lock.
+    // Release the lock first. Otherwise, the callback below could wait for a
+    // resource held by another thread that is itself blocked on the lock.
     if (state.lock.owner.load(std::memory_order_relaxed) == thread_id()) {
         state.lock.recursion_count = 1;
         lock_release(state.lock);
     }
-    jitc_log_deliver(); // Unconditional: we are about to abort
 
-    if (state.log_callback) {
+    // Deliver the messages leading up to the failure, then report it. Pool
+    // workers write to stderr instead for the reason given in jitc_log_postpone()
+    if (state.log_callback && pool_thread_id() == 0) {
+        jitc_log_deliver();
         state.log_callback(Error, msg.c_str());
     } else {
         fputs(msg.c_str(), stderr);
