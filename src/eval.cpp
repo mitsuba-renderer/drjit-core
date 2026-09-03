@@ -1258,6 +1258,21 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
     for (ScheduledVariable &sv : schedule) {
         Variable *v = jitc_var(sv.index);
         v->reg_index = n_regs++;
+
+        VarKind kind = (VarKind) v->kind;
+        if (unlikely(v->is_array() && v->is_evaluated()))
+            jitc_raise("jit_assemble_func(): the symbolic call '%s' "
+                       "references the evaluated local memory buffer r%u. "
+                       "Local memory cannot be captured by a callable, "
+                       "please allocate it within the call.",
+                       call->name.c_str(), sv.index);
+
+        if (unlikely(kind == VarKind::Array ||
+                     kind == VarKind::ArrayInit ||
+                     kind == VarKind::ArrayPhi ||
+                     kind == VarKind::ArrayWrite ||
+                     kind == VarKind::ArrayRead))
+            jitc_process_array_op(kind, v);
     }
 
     // A callable with one target becomes part of the same compilation unit,

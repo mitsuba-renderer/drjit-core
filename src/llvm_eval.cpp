@@ -429,6 +429,10 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                 fmt("    $v = bitcast <$w x i1> %mask to <$w x i1>\n", v);
                 break;
 
+            case VarKind::Array:
+                jitc_llvm_render_array(v, v->dep[0] ? jitc_var(v->dep[0]) : nullptr);
+                break;
+
             default:
                 jitc_llvm_render(v);
                 break;
