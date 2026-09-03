@@ -156,48 +156,119 @@ __device__ void block_prefix_reduce(block_prefix_reduce_params params) {
         uint32_t lane = tid & (WarpSize - 1);
         int32_t shift = lane - WarpSize;
 
-        // Decoupled look-back iteration
-        while (true) {
-            uint32_t status;
-            Value pred;
-            UInt pred_u;
+        constexpr bool stable =
+            std::is_same<Red, reduction_add<T>>::value &&
+            (std::is_same<T, float>::value ||
+             std::is_same<T, double>::value);
 
-            if ((int32_t) rel_chunk + shift >= 0) {
-                load_with_status(scratch + 2*shift, pred_u, status);
-                pred = memcpy_cast<Value>(pred_u);
-            } else {
-                pred = red.init();
-                status = 2;
+        if (stable) {
+            /*
+               Use fixed WarpSize-wide anchor intervals so that the
+               floating-point reduction order does not depend on block
+               scheduling. Lane 0 examines the immediate predecessor,
+               lane 1 the preceding chunk, and so on.
+            */
+            uint32_t anchor_lane =
+                (rel_chunk - 1) & (WarpSize - 1);
+
+            while (true) {
+                uint32_t status;
+                Value pred;
+                UInt pred_u;
+
+                int32_t predecessor =
+                    (int32_t) rel_chunk - (int32_t) lane - 1;
+
+                if (predecessor >= 0) {
+                    load_with_status(
+                        scratch - 2 * (lane + 1),
+                        pred_u,
+                        status
+                    );
+                    pred = memcpy_cast<Value>(pred_u);
+                } else {
+                    pred = red.init();
+                    status = 2;
+                }
+
+                if (__any_sync(WarpMask, status == 0))
+                    continue;
+
+                uint32_t anchor_status =
+                    __shfl_sync(WarpMask, status, anchor_lane);
+
+                if (anchor_status != 2)
+                    continue;
+
+                prefix = pred;
+                break;
             }
 
-            // Retry if at least one of the predecessors hasn't made any progress yet
-            if (__any_sync(WarpMask, status == 0))
-                continue;
+            /*
+               Reduce through the fixed anchor, then broadcast lane 0's
+               result.
+            */
+            for (uint32_t offset = 1;
+                 offset < WarpSize;
+                 offset <<= 1) {
+                Value other =
+                    __shfl_down_sync(WarpMask, prefix, offset);
 
-            uint32_t mask = __ballot_sync(WarpMask, status == 2);
-            if (mask == 0) {
-                // Sum partial results, look back further
-                prefix = red(prefix, pred);
-                shift -= WarpSize;
-            } else {
-                // Lane 'index' is done!
-                uint32_t index = 31 - __clz(mask);
+                if (lane + offset <= anchor_lane)
+                    prefix = red(prefix, other);
+            }
 
-                // Sum up all the unconverged (higher) lanes *and* 'index'
-                if (lane >= index)
+            prefix =
+                __shfl_sync(WarpMask, prefix, 0);
+        } else {
+            // Original decoupled look-back iteration.
+            while (true) {
+                uint32_t status;
+                Value pred;
+                UInt pred_u;
+
+                if ((int32_t) rel_chunk + shift >= 0) {
+                    load_with_status(scratch + 2*shift, pred_u, status);
+                    pred = memcpy_cast<Value>(pred_u);
+                } else {
+                    pred = red.init();
+                    status = 2;
+                }
+
+                // Retry if at least one of the predecessors hasn't made any progress yet
+                if (__any_sync(WarpMask, status == 0))
+                    continue;
+
+                uint32_t mask = __ballot_sync(WarpMask, status == 2);
+                if (mask == 0) {
+                    // Sum partial results, look back further
                     prefix = red(prefix, pred);
+                    shift -= WarpSize;
+                } else {
+                    // Lane 'index' is done!
+                    uint32_t index = 31 - __clz(mask);
 
-                break;
+                    // Sum up all the unconverged (higher) lanes *and* 'index'
+                    if (lane >= index)
+                        prefix = red(prefix, pred);
+
+                    break;
+                }
             }
         }
 
         // Warp-level sum reduction of 'prefix'
-        for (uint32_t i = 1; i < WarpSize; i *= 2)
-            prefix = red(prefix, __shfl_xor_sync(WarpMask, prefix, i));
+        if (!stable) {
+            for (uint32_t i = 1; i < WarpSize; i *= 2)
+                prefix =
+                    red(prefix,
+                        __shfl_xor_sync(WarpMask, prefix, i));
+        }
 
         value = red(value, prefix);
 
-        if (is_leader)
+        if (is_leader &&
+            (!stable || (rel_chunk & (WarpSize - 1)) == 0))
             store_with_status(scratch, memcpy_cast<UInt>(value), 2);
     }
 
