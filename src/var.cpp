@@ -3110,7 +3110,8 @@ const char *jitc_var_whos() {
         const char *label = jitc_var_label((uint32_t) index);
 
         var_buffer.fmt(" %3u %10u %12s   %s\n", (uint32_t) v.ref_count,
-                       v.size, v.is_evaluated() ? jitc_mem_string(mem_size) : "", label ? label : "");
+                       v.size, v.is_evaluated() ? jitc_mem_string(mem_size).c_str() : "",
+                       label ? label : "");
 
         if (v.is_evaluated())
             mem_size_evaluated += mem_size;
@@ -3128,14 +3129,14 @@ const char *jitc_var_whos() {
     var_buffer.put("  JIT compiler\n");
     var_buffer.put("  ============\n");
     var_buffer.fmt("   - Storage           : %s on device, ",
-               jitc_mem_string(mem_size_evaluated));
+               jitc_mem_string(mem_size_evaluated).c_str());
     var_buffer.fmt("%s unevaluated.\n",
-               jitc_mem_string(mem_size_unevaluated));
+               jitc_mem_string(mem_size_unevaluated).c_str());
     var_buffer.fmt("   - Variables created : %zu (peak: %zu, table size: %s).\n",
                state.variable_counter, state.variables.size(),
                jitc_mem_string(
                    state.variables.capacity() * sizeof(Variable)+
-                   state.lvn_map.bucket_count() * LVNBucketSize));
+                   state.lvn_map.bucket_count() * LVNBucketSize).c_str());
     var_buffer.fmt("   - Kernel launches   : %zu (%zu cache hits, "
                "%zu soft, %zu hard misses).\n\n",
                state.kernel_launches, state.kernel_hits,
@@ -3147,16 +3148,16 @@ const char *jitc_var_whos() {
         if (state.alloc_allocated[i] != 0 || state.alloc_watermark[i] != 0)
             var_buffer.fmt("   - %-5s buffers  : %s/%s used (peak: %s).\n",
                        jitc_backend_name((JitBackend) i),
-                       std::string(jitc_mem_string(state.alloc_usage[i])).c_str(),
-                       std::string(jitc_mem_string(state.alloc_allocated[i])).c_str(),
-                       std::string(jitc_mem_string(state.alloc_watermark[i])).c_str());
+                       jitc_mem_string(state.alloc_usage[i]).c_str(),
+                       jitc_mem_string(state.alloc_allocated[i]).c_str(),
+                       jitc_mem_string(state.alloc_watermark[i]).c_str());
         if (state.texture_watermark[i] != 0)
             var_buffer.fmt("   - %-5s textures : %s in %zu texture%s (peak: %s).\n",
                        jitc_backend_name((JitBackend) i),
-                       std::string(jitc_mem_string(state.texture_usage[i])).c_str(),
+                       jitc_mem_string(state.texture_usage[i]).c_str(),
                        state.texture_count[i],
                        state.texture_count[i] == 1 ? "" : "s",
-                       std::string(jitc_mem_string(state.texture_watermark[i])).c_str());
+                       jitc_mem_string(state.texture_watermark[i]).c_str());
     }
 
     return var_buffer.get();

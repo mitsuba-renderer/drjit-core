@@ -66,11 +66,17 @@ extern void jitc_fail(const char* fmt, ...) noexcept;
 /// Immediately terminate the application due to a fatal internal error
 [[noreturn]] extern void jitc_vfail(const char* fmt, va_list args) noexcept;
 
-/// Convert a number of bytes into a human-readable string (returns static buffer!)
-extern const char *jitc_mem_string(size_t size);
+/// Fixed-size string returned by value by the formatting helpers below.
+struct SmallString {
+    char buf[32];
+    const char *c_str() const { return buf; }
+};
 
-/// Convert a time in microseconds into a human-readable string (returns static buffer!)
-extern const char *jitc_time_string(float us);
+/// Convert a number of bytes into a human-readable string
+extern SmallString jitc_mem_string(size_t size);
+
+/// Convert a time in microseconds into a human-readable string
+extern SmallString jitc_time_string(float us);
 
 /// Return the number of microseconds since the previous timer() call
 extern float timer();

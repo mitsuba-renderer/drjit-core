@@ -606,8 +606,8 @@ bool jitc_cuda_init() {
                 " - Found CUDA device %i: \"%s\" "
                 "(PCI ID %02x:%02x.%i, compute cap. %i.%i, %i SMs w/%s shared mem., %s global mem.%s)",
                 i, name, pci_bus_id, pci_dev_id, pci_dom_id, cc_major, cc_minor, sm_count,
-                std::string(jitc_mem_string(shared_memory_bytes)).c_str(),
-                std::string(jitc_mem_string(mem_total)).c_str(),
+                jitc_mem_string(shared_memory_bytes).c_str(),
+                jitc_mem_string(mem_total).c_str(),
                 preemptable ? "" : ", non-preemptable");
 
         if (unified_addr == 0) {

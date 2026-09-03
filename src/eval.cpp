@@ -672,13 +672,14 @@ void jitc_assemble(ThreadState *ts, ScheduledGroup group) {
             Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, se=%u, ops=%u, jit=%s):",
             (unsigned long long) kernel_hash.high64,
             uses_optix ? "via OptiX, " : "", group.size, n_params_in,
-            n_params_out, n_side_effects, n_ops_total, jitc_time_string(codegen_time));
+            n_params_out, n_side_effects, n_ops_total,
+            jitc_time_string(codegen_time).c_str());
     else
         jitc_log(
             Info, "  -> launching %016llx (%sn=%u, in=%u, out=%u, ops=%u, jit=%s):",
             (unsigned long long) kernel_hash.high64,
             uses_optix ? "via OptiX, " : "", group.size, n_params_in,
-            n_params_out, n_ops_total, jitc_time_string(codegen_time));
+            n_params_out, n_ops_total, jitc_time_string(codegen_time).c_str());
 
     if (unlikely(jit_flag(JitFlag::KernelHistory))) {
         kernel_history_entry.backend = backend;
@@ -786,8 +787,8 @@ Task *jitc_run(ThreadState *ts, ScheduledGroup group) {
         jitc_log(Info, "     cache %s, %s: %s, %s.",
                 cache_hit ? "hit" : "miss",
                 cache_hit ? "load" : "build",
-                std::string(jitc_time_string(link_time)).c_str(),
-                std::string(jitc_mem_string(kernel.size)).c_str());
+                jitc_time_string(link_time).c_str(),
+                jitc_mem_string(kernel.size).c_str());
 
         // The kernel source is only needed when the kernel history is active
         if (unlikely(jit_flag(JitFlag::KernelHistory)))

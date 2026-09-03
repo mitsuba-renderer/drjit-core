@@ -436,8 +436,8 @@ bool jitc_cache_blob_store(const char *kind, XXH128_hash_t hash,
     else if (jitc_log_active(LogLevel::Trace))
         jitc_trace("jit_cache_blob_store(\"%s\"): compressed %s to %s",
                   filename.c_str(),
-                  std::string(jitc_mem_string(size)).c_str(),
-                  std::string(jitc_mem_string(header.compressed_size)).c_str());
+                  jitc_mem_string(size).c_str(),
+                  jitc_mem_string(header.compressed_size).c_str());
 
     std::error_code ec;
     if (success) {

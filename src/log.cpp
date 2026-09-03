@@ -33,9 +33,6 @@ static std::vector<LogMessage> log_postponed;
 /// Client hook registered via \ref jit_set_log_defer_callback(), if any
 static LogDeferCallback log_defer_callback = nullptr;
 
-static char jitc_mem_buf[64];
-static char jitc_time_buf[64];
-
 static const char *fatal_error_msg =
     "\nDr.Jit encountered an unrecoverable error and will now shut\n"
     "down. Please re-run your program in debug mode to check for\n"
@@ -233,7 +230,7 @@ static void print_float_with_unit(char *buf, size_t bufsize, double value,
     buf[pos] = '\0';
 }
 
-const char *jitc_mem_string(size_t size) {
+SmallString jitc_mem_string(size_t size) {
     const char *orders[] = {
         "B", "KiB", "MiB", "GiB",
         "TiB", "PiB", "EiB"
@@ -245,13 +242,14 @@ const char *jitc_mem_string(size_t size) {
     for (i = 0; i < 6 && value > 1024.0; ++i)
         value /= 1024.0;
 
-    print_float_with_unit(jitc_mem_buf, sizeof(jitc_mem_buf),
+    SmallString result;
+    print_float_with_unit(result.buf, sizeof(result.buf),
                           value, false, orders[i]);
 
-    return jitc_mem_buf;
+    return result;
 }
 
-const char *jitc_time_string(float value_) {
+SmallString jitc_time_string(float value_) {
     double value = (double) value_;
 
     struct Order { double factor; const char* suffix; };
@@ -264,10 +262,11 @@ const char *jitc_time_string(float value_) {
     for (i = 0; i < 7 && value > orders[i+1].factor; ++i)
         value /= orders[i+1].factor;
 
-    print_float_with_unit(jitc_time_buf, sizeof(jitc_time_buf),
+    SmallString result;
+    print_float_with_unit(result.buf, sizeof(result.buf),
                           value, true, orders[i].suffix);
 
-    return jitc_time_buf;
+    return result;
 }
 
 #if !defined(_WIN32)

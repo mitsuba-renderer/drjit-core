@@ -543,7 +543,7 @@ void jitc_flush_malloc_cache(bool warn) {
                 continue;
             jitc_log(Debug, " - %s memory: %s in %zu allocation%s",
                     jitc_backend_name((JitBackend) i),
-                    jitc_mem_string(trim_size[i]),
+                    jitc_mem_string(trim_size[i]).c_str(),
                     trim_count[i], trim_count[i] > 1 ? "s" : "");
         }
     }
@@ -591,7 +591,7 @@ void jitc_malloc_shutdown() {
                     continue;
                 jitc_log(Warn, " - %s memory: %s in %zu allocation%s",
                         jitc_backend_name((JitBackend) i),
-                        jitc_mem_string(leak_size[i]),
+                        jitc_mem_string(leak_size[i]).c_str(),
                         leak_count[i], leak_count[i] > 1 ? "s" : "");
             }
         }
