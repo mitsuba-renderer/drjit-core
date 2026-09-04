@@ -1270,7 +1270,7 @@ uint32_t jitc_var_new_node_3(JitBackend backend, VarKind kind, VarType vt,
             jitc_raise_dirty_error(a1);
 
         v2 = jitc_var(a2);
-        if (v1->is_dirty())
+        if (v2->is_dirty())
             jitc_raise_dirty_error(a2);
     }
 
@@ -1309,11 +1309,11 @@ uint32_t jitc_var_new_node_4(JitBackend backend, VarKind kind, VarType vt,
             jitc_raise_dirty_error(a1);
 
         v2 = jitc_var(a2);
-        if (v1->is_dirty())
+        if (v2->is_dirty())
             jitc_raise_dirty_error(a2);
 
         v3 = jitc_var(a3);
-        if (v1->is_dirty())
+        if (v3->is_dirty())
             jitc_raise_dirty_error(a3);
     }
 
