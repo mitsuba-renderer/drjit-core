@@ -132,7 +132,7 @@ void jitc_var_cond_end(uint32_t index, uint32_t *rv_out) {
             v3.backend = (uint32_t) backend;
             v3.type = (uint32_t) vt;
             v3.symbolic = symbolic;
-            v3.size = std::max(size, size);
+            v3.size = std::max(std::max(size, v_t->size), v_f->size);
             v3.array_state = (uint32_t) ArrayState::Clean;
             v3.array_length = v_f->array_length;
             v3.dep[0] = i_f;
