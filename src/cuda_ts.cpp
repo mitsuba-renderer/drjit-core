@@ -7,8 +7,6 @@
 #include "util.h"
 #include "optix_api.h"
 
-static uint8_t *kernel_params_global = nullptr;
-
 static void submit_gpu(KernelType type, KernelRecordingMode recording_mode,
                        CUfunction kernel, uint32_t block_count_x,
                        uint32_t thread_count, uint32_t shared_mem_bytes,
@@ -64,6 +62,7 @@ CUDAThreadState::launch(Kernel kernel, KernelKey & /*key*/,
     }
 
     uint32_t kernel_param_count = (uint32_t) kernel_params.size();
+    uint8_t *kernel_params_global = nullptr;
 
     // Pass parameters through global memory if too large or using OptiX
     if (uses_optix || kernel_param_count > jitc_cuda_arg_limit) {
