@@ -133,7 +133,7 @@ extern JIT_EXPORT void *jit_tex_wrap(JitBackend backend,
  * On CUDA, an OpenGL-wrapped texture belongs to OpenGL between uses; this call
  * hands it to CUDA. ``cuGraphicsMapResources()`` synchronizes against pending
  * OpenGL work and exposes the storage, after which Dr.Jit (re)builds the
- * sampling/surface object that kernels access. The matching \ref
+ * sampling and surface objects that kernels access. The matching \ref
  * jit_tex_unmap() returns the texture to OpenGL. On Metal, this is a no-op.
  */
 extern JIT_EXPORT void jit_tex_map(void *handle);

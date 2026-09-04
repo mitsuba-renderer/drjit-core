@@ -867,7 +867,7 @@ void *jitc_cuda_tex_wrap(uintptr_t handle, size_t ndim, int format,
     texture->shape[0] = desc.Width;
     texture->shape[1] = desc.Height;
     texture->shape[2] = desc.Depth;
-    texture->indices[0] = 0; // texture / surface object only exists while mapped
+    texture->indices[0] = 0; // texture / surface objects only exist while mapped
 
     jitc_log(LogLevel::Debug, "jitc_cuda_tex_wrap(gl=%u): " DRJIT_PTR,
              texture->gl_id, (uintptr_t) texture);
@@ -889,9 +889,18 @@ void jitc_cuda_tex_map(void *handle) {
     cuda_check(cuGraphicsSubResourceGetMappedArray(&array, resource, 0, 0));
     texture->arrays[0] = array;
 
-    // The mapped array (and hence the texture/surface object) may change across
-    // map cycles, so (re)build it and its handle variable here. A writable wrap
-    // binds a surface object for TexWrite; otherwise a sampled texture object.
+    // The mapped array (and hence the texture/surface objects) may change
+    // across map cycles, so (re)build them and their handle variables here.
+    // Like a Dr.Jit-allocated texture, a writable wrap is both sampled via a
+    // texture object and written via a surface object over the same array.
+    texture->textures[0] = cuda_tex_make_texobject(
+        array, texture->storage_format, texture->n_channels,
+        texture->filter_mode, texture->wrap_mode, texture->srgb,
+        texture->shape[0], texture->shape[1], texture->shape[2]);
+    texture->indices[0] =
+        jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,
+                         (void *) texture->textures[0], 1, false);
+
     if (texture->writable) {
         CUDA_RESOURCE_DESC res_desc{};
         res_desc.resType = CU_RESOURCE_TYPE_ARRAY;
@@ -900,14 +909,6 @@ void jitc_cuda_tex_map(void *handle) {
         texture->surf_indices[0] =
             jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,
                              (void *) texture->surfaces[0], 1, false);
-    } else {
-        texture->textures[0] = cuda_tex_make_texobject(
-            array, texture->storage_format, texture->n_channels,
-            texture->filter_mode, texture->wrap_mode, texture->srgb,
-            texture->shape[0], texture->shape[1], texture->shape[2]);
-        texture->indices[0] =
-            jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,
-                             (void *) texture->textures[0], 1, false);
     }
 
     texture->mapped = true;
@@ -930,15 +931,14 @@ void jitc_cuda_tex_unmap(void *handle) {
             cuda_check(cuSurfObjectDestroy(texture->surfaces[0]));
             texture->surfaces[0] = 0;
         }
-    } else {
-        if (texture->indices[0]) {
-            jitc_var_dec_ref(texture->indices[0]);
-            texture->indices[0] = 0;
-        }
-        if (texture->textures[0]) {
-            cuda_check(cuTexObjectDestroy(texture->textures[0]));
-            texture->textures[0] = 0;
-        }
+    }
+    if (texture->indices[0]) {
+        jitc_var_dec_ref(texture->indices[0]);
+        texture->indices[0] = 0;
+    }
+    if (texture->textures[0]) {
+        cuda_check(cuTexObjectDestroy(texture->textures[0]));
+        texture->textures[0] = 0;
     }
     texture->arrays[0] = nullptr; // owned by OpenGL; invalidated by unmap
 
