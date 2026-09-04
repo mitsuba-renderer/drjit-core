@@ -1,6 +1,8 @@
 #include <drjit-core/nanostl.h>
 #include <drjit-core/half.h>
 #include <limits>
+#include <cmath>
+#include <cstring>
 #include "internal.h"
 #include "llvm.h"
 #include "var.h"
@@ -365,6 +367,27 @@ bool jitc_is_pow2(uint64_t value) {
     return value != 0 && (value & (value - 1)) == 0;
 }
 
+/// Is the reciprocal of the floating point literal exactly representable?
+/// Multiplying by it then matches division bit for bit.
+static bool jitc_rcp_exact(const Variable *v) {
+    switch ((VarType) v->type) {
+        case VarType::Float32: {
+            float c;
+            memcpy(&c, &v->literal, sizeof(float));
+            return std::fma(1.f / c, c, -1.f) == 0.f;
+        }
+
+        case VarType::Float64: {
+            double c;
+            memcpy(&c, &v->literal, sizeof(double));
+            return std::fma(1.0 / c, c, -1.0) == 0.0;
+        }
+
+        default:
+            return false;
+    }
+}
+
 static int jitc_clz(uint64_t value) {
 #if !defined(_MSC_VER)
     return __builtin_clzl(value);
@@ -611,6 +634,7 @@ static bool eval_div(bool, bool) { jitc_fail("eval_div(): unsupported operands!"
 
 uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
     auto [info, v0, v1] = jitc_var_check<IsArithmetic>("jit_var_div", a0, a1);
+    bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
 
     uint32_t result = 0;
     if (info.simplify) {
@@ -621,7 +645,8 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
             result = jitc_var_resize(a0, info.size);
         } else if (jitc_is_uint(info.type) && v1->is_literal() && jitc_is_pow2(v1->literal)) {
             result = jitc_var_shift<false>(info, a0, v1->literal);
-        } else if (jitc_is_float(info.type) && !jitc_is_half(info.type) && v1->is_literal()) {
+        } else if (jitc_is_float(info.type) && !jitc_is_half(info.type) &&
+                   v1->is_literal() && (fast_math || jitc_rcp_exact(v1))) {
             uint32_t recip = jitc_var_rcp(a1);
             result = jitc_var_mul(a0, recip);
             jitc_var_dec_ref(recip);
@@ -635,7 +660,6 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
         return f32_binary_op(jitc_var_div, a0, a1, true);
 
     if (!result && info.size) {
-        bool fast_math = jit_flags() & (uint32_t) JitFlag::FastMath;
         bool approx =
             info.type == VarType::Float32 &&
             jitc_is_gpu(info.backend) && fast_math;
