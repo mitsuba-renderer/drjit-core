@@ -2031,14 +2031,7 @@ uint32_t jitc_var_resize(uint32_t index, size_t size) {
     }
 
     uint32_t result;
-    if (!v->is_evaluated() && v->ref_count == 1) {
-        // Nobody else holds a reference -- we can directly resize this variable
-        jitc_var_inc_ref(index, v);
-        jitc_lvn_drop(index, v);
-        v->size = (uint32_t) size;
-        jitc_lvn_put(index, v);
-        result = index;
-    } else if (v->is_literal()) {
+    if (v->is_literal()) {
         result = jitc_var_literal((JitBackend) v->backend, (VarType) v->type,
                                   &v->literal, size, 0);
     } else {
@@ -2270,8 +2263,6 @@ uint32_t jitc_var_mask_apply(uint32_t index, uint32_t size) {
     if (mask) {
         result = jitc_var_and(mask, index);
     } else {
-        // Hold a temporary reference so that the following operation does not mutate 'index'
-        Ref temp = borrow(index);
         result = jitc_var_resize(index, size);
     }
 

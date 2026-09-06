@@ -1428,9 +1428,9 @@ extern JIT_EXPORT int jit_var_is_unaligned(uint32_t index);
 /**
  * \brief Resize a scalar variable to a new size
  *
- * This function takes a scalar variable as input and changes its size to \c
- * size, potentially creating a new copy in case something already depends on
- * \c index. The returned copy is unevaluated.
+ * This function takes a scalar variable as input and returns a new
+ * unevaluated variable of size \c size that broadcasts it. The input
+ * variable is never modified.
  *
  * The function increases the reference count of the returned value.
  * When \c index is not a scalar variable and its size exactly matches \c size,
