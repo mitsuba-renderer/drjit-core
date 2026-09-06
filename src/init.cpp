@@ -23,7 +23,6 @@
 #include "var.h"
 #include "profile.h"
 #include "strbuf.h"
-#include <sys/stat.h>
 
 #include "nvtx_api.h"
 
@@ -678,7 +677,6 @@ void *jitc_find_library(const char *fname, const char *glob_pat,
 
         glob_t g;
         if (glob(glob_pat, GLOB_BRACE, nullptr, &g) == 0) {
-            const char *chosen = nullptr;
             if (g.gl_pathc > 1) {
                 jitc_log(Info, "jit_find_library(): Multiple versions of "
                               "%s were found on your system!\n", fname);
@@ -702,28 +700,17 @@ void *jitc_find_library(const char *fname, const char *glob_pat,
                               }
                               return false;
                           });
-                uint32_t counter = 1;
-                for (int j = 0; j < 2; ++j) {
-                    for (size_t i = 0; i < g.gl_pathc; ++i) {
-                        struct stat buf;
-                        // Skip symbolic links at first
-                        if (j == 0 && (lstat(g.gl_pathv[i], &buf) || S_ISLNK(buf.st_mode)))
-                            continue;
-                        jitc_log(Info, " %u. \"%s\"", counter++, g.gl_pathv[i]);
-                        chosen = g.gl_pathv[i];
-                    }
-                    if (chosen)
-                        break;
-                }
+                for (size_t i = 0; i < g.gl_pathc; ++i)
+                    jitc_log(Info, " %zu. \"%s\"", i + 1, g.gl_pathv[i]);
                 jitc_log(Info,
-                        "\nChoosing the last one. Specify a path manually "
-                        "using the environment\nvariable '%s' to override this "
-                        "behavior.\n", env_var);
-            } else if (g.gl_pathc == 1) {
-                chosen = g.gl_pathv[0];
+                        "\nTrying them in order of decreasing version number. "
+                        "Specify a path manually using the environment\n"
+                        "variable '%s' to override this behavior.\n", env_var);
             }
-            if (chosen)
-                handle = dlopen(chosen, RTLD_LAZY);
+
+            // Highest version number first, take the first one that loads
+            for (size_t i = g.gl_pathc; i > 0 && !handle; --i)
+                handle = dlopen(g.gl_pathv[i - 1], RTLD_LAZY);
             globfree(&g);
         }
     }
