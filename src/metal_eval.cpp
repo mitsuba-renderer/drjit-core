@@ -379,17 +379,16 @@ static void jitc_metal_render(Variable *v) {
                 fmt("$t $v = $v * $v + $v;\n", v, v, a0, a1, a2);
             break;
         }
-        // MSL 'min'/'max' ignore NaNs, so the propagating variant needs an
-        // explicit test. It must use 'isnan()' rather than 'a != a', which
-        // 'MTLMathModeFast' would fold away.
+        // MSL 'min'/'max' ignore NaNs and can't be used here. The negated
+        // comparisons compile to a single unordered comparison at the AIR level.
         case VarKind::Min:
         case VarKind::Max: {
             const char *fn = (VarKind) v->kind == VarKind::Min ? "min" : "max";
             if (jitc_is_float(v)) {
                 Variable *a0 = jitc_var(v->dep[0]),
                          *a1 = jitc_var(v->dep[1]);
-                fmt("$t $v = select($s($v, $v), ($t) NAN, isnan($v) || isnan($v));\n",
-                    v, v, fn, a0, a1, v, a0, a1);
+                fmt("$t $v = select($s($v, $v), ($t) NAN, !($v <= $v || $v > $v));\n",
+                    v, v, fn, a0, a1, v, a0, a1, a0, a1);
             } else {
                 jitc_metal_render_call(v, fn, 2);
             }
