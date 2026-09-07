@@ -48,6 +48,9 @@ extern void jitc_metal_sync(ThreadState *ts);
 /// Submit the current thread's pending command buffer without waiting for it.
 extern void jitc_metal_flush(ThreadState *ts);
 
+/// Wait until the command buffers committed by all threads have completed.
+extern void jitc_metal_sync_devices();
+
 /// Event API functions for the Metal backend
 extern JitEvent jitc_metal_event_create(bool enable_timing);
 extern void jitc_metal_event_destroy(JitEvent event);

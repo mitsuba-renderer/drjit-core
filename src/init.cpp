@@ -612,8 +612,22 @@ void jitc_sync_device() {
 /// Wait for all computation on *all devices* to finish
 void jitc_sync_all_devices() {
     std::vector<ThreadState *> tss = state.tss;
-    for (ThreadState *ts : tss)
+    for (ThreadState *ts : tss) {
+#if defined(DRJIT_ENABLE_METAL)
+        // Only the owning thread may flush a Metal thread state
+        if (jitc_is_metal(ts->backend))
+            continue;
+#endif
         jitc_sync_thread(ts);
+    }
+
+#if defined(DRJIT_ENABLE_METAL)
+    jitc_sync_thread(jitc_thread_local().ts_metal);
+
+    // Wait for the command buffers that other threads have committed
+    unlock_guard guard(state.lock);
+    jitc_metal_sync_devices();
+#endif
 }
 
 static void jitc_rebuild_prefix(ThreadState *ts) {

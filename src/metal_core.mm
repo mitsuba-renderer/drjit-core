@@ -1205,6 +1205,19 @@ void jitc_metal_flush(ThreadState *ts) {
     ((MetalThreadState *) ts->actual_state())->flush(/* wait = */ false);
 }
 
+void jitc_metal_sync_devices() {
+    @autoreleasepool {
+        // Command buffers on a queue complete in commit order, so an empty
+        // one committed now finishes after everything submitted earlier
+        for (MetalDevice &dev : state.metal_devices) {
+            id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>) dev.queue;
+            id<MTLCommandBuffer> cb = [queue commandBuffer];
+            [cb commit];
+            [cb waitUntilCompleted];
+        }
+    }
+}
+
 // ============================================================================
 //  Ray Tracing API
 // ============================================================================
