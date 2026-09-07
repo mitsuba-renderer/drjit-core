@@ -241,11 +241,17 @@ void jitc_llvm_api_shutdown() {
 #if !defined(_WIN32)
     if (jitc_llvm_handle != RTLD_NEXT)
         dlclose(jitc_llvm_handle);
+    jitc_llvm_handle = nullptr;
 #else
-    FreeLibrary((HMODULE) jitc_llvm_handle);
+    // The line below is now commented as unloading turns out to be unsafe on
+    // Windows. LLVM may have created fiber TLS objects whose destructors fire
+    // at process exist. If the DLL file is unmapped, this will crash the
+    // process.
+    //
+    // FreeLibrary((HMODULE) jitc_llvm_handle);
+    // jitc_llvm_handle = nullptr;
 #endif
 
-    jitc_llvm_handle = nullptr;
     jitc_llvm_has_core = false;
     jitc_llvm_has_version = false;
     jitc_llvm_has_orcv2 = false;
