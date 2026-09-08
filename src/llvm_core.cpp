@@ -361,6 +361,10 @@ static XXH128_hash_t jitc_llvm_disk_key(XXH128_hash_t hash) {
     int version[3] = { jitc_llvm_version_major, jitc_llvm_version_minor,
                        jitc_llvm_version_patch };
     XXH3_128bits_update(&xs, version, sizeof(version));
+#if defined(_WIN32)
+    // Distinguish objects built with the large code model (see llvm_orcv2.cpp)
+    XXH3_128bits_update(&xs, "large", 5);
+#endif
     return XXH3_128bits_digest(&xs);
 }
 

@@ -42,11 +42,24 @@ static int jitc_llvm_symbol_filter(void *, LLVMOrcSymbolStringPoolEntryRef sym) 
     return 1;
 }
 
+/// Code model used to compile units
+static LLVMCodeModel jitc_llvm_code_model() {
+#if defined(_WIN32)
+    // On Windows, LLJIT links via RuntimeDyld, which may place an object's
+    // code and constant pool more than 2 GiB apart and then silently
+    // truncates their RIP-relative displacements. The large code model
+    // addresses constants absolutely, which sidesteps the problem.
+    return LLVMCodeModelLarge;
+#else
+    return LLVMCodeModelSmall;
+#endif
+}
+
 static LLVMTargetMachineRef jitc_llvm_tm_create() {
     return LLVMCreateTargetMachine(
         jitc_llvm_target_ref, jitc_llvm_target_triple, jitc_llvm_target_cpu,
         jitc_llvm_target_features, LLVMCodeGenLevelAggressive, LLVMRelocPIC,
-        LLVMCodeModelSmall);
+        jitc_llvm_code_model());
 }
 
 bool jitc_llvm_orcv2_init() {

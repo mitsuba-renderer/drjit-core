@@ -38,6 +38,7 @@
 #  define LLVMCodeGenLevelAggressive 3
 #  define LLVMRelocPIC 2
 #  define LLVMCodeModelSmall 3
+#  define LLVMCodeModelLarge 6
 #  define LLVMObjectFile 1
 
 /// LLVM API
