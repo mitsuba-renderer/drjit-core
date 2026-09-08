@@ -42,17 +42,22 @@ static int jitc_llvm_symbol_filter(void *, LLVMOrcSymbolStringPoolEntryRef sym) 
     return 1;
 }
 
-/// Code model used to compile units
-static LLVMCodeModel jitc_llvm_code_model() {
+/// JITLink is LLJIT's default linker on ELF and MachO. On Windows, LLJIT
+/// defaults to RuntimeDyld, and JITLink must be requested explicitly through
+/// C API entry points that exist in LLVM 22 and newer.
+bool jitc_llvm_jitlink = false;
+
+LLVMCodeModel jitc_llvm_code_model() {
 #if defined(_WIN32)
-    // On Windows, LLJIT links via RuntimeDyld, which may place an object's
-    // code and constant pool more than 2 GiB apart and then silently
-    // truncates their RIP-relative displacements. The large code model
-    // addresses constants absolutely, which sidesteps the problem.
-    return LLVMCodeModelLarge;
-#else
-    return LLVMCodeModelSmall;
+    // RuntimeDyld's section memory manager may place an object's code and
+    // constant pool more than 2 GiB apart and then silently truncates their
+    // RIP-relative displacements. The large code model addresses constants
+    // absolutely, which sidesteps the problem. JITLink allocates each object
+    // as one contiguous region and does not need this workaround.
+    if (!jitc_llvm_jitlink)
+        return LLVMCodeModelLarge;
 #endif
+    return LLVMCodeModelSmall;
 }
 
 static LLVMTargetMachineRef jitc_llvm_tm_create() {
@@ -73,10 +78,33 @@ bool jitc_llvm_orcv2_init() {
         return false;
     }
 
+    LLVMOrcLLJITBuilderRef lljit_builder = LLVMOrcCreateLLJITBuilder();
+
+#if !defined(_WIN32)
+    jitc_llvm_jitlink = true;
+#elif !defined(__aarch64__) && \
+      (defined(DRJIT_DYNAMIC_LLVM) || LLVM_VERSION_MAJOR >= 22)
+    // LLJIT defaults to RuntimeDyld on COFF. Request JITLink if the C API
+    // provides it (LLVM 22+). JITLink has no COFF backend for AArch64.
+    jitc_llvm_jitlink = jitc_llvm_api_has_jitlink();
+    if (jitc_llvm_jitlink) {
+        auto create = [](void *, LLVMOrcExecutionSessionRef es, const char *) {
+            LLVMOrcObjectLayerRef layer = nullptr;
+            LLVMErrorRef err =
+                LLVMOrcCreateObjectLinkingLayerWithInProcessMemoryManager(&layer, es);
+            if (err)
+                jitc_fail("jit_llvm_init(): could not create the JITLink "
+                          "linking layer: %s", jitc_llvm_error_str(err).c_str());
+            return layer;
+        };
+        LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator(lljit_builder, create,
+                                                        nullptr);
+    }
+#endif
+
     // The LLJIT's target machine only determines the object format
     LLVMOrcJITTargetMachineBuilderRef machine_builder =
         LLVMOrcJITTargetMachineBuilderCreateFromTargetMachine(jitc_llvm_tm_create());
-    LLVMOrcLLJITBuilderRef lljit_builder = LLVMOrcCreateLLJITBuilder();
     LLVMOrcLLJITBuilderSetJITTargetMachineBuilder(lljit_builder, machine_builder);
 
     LLVMErrorRef err = LLVMOrcCreateLLJIT(&jitc_llvm_lljit, lljit_builder);
@@ -116,6 +144,7 @@ void jitc_llvm_orcv2_shutdown() {
     jitc_llvm_lljit = nullptr;
     jitc_llvm_dylib = nullptr;
     jitc_llvm_target_ref = nullptr;
+    jitc_llvm_jitlink = false;
 }
 
 // ============================================================================

@@ -15,6 +15,12 @@
 
 struct UnitArtifact;
 
+/// Does LLJIT link units via JITLink (as opposed to RuntimeDyld)?
+extern bool jitc_llvm_jitlink;
+
+/// Code model used to compile units. Depends on the linker in use.
+extern LLVMCodeModel jitc_llvm_code_model();
+
 /// A per-thread LLVM compiler instance. LLVMContext is not thread-safe, so
 /// each in-flight unit compilation checks one out of a shared pool (see
 /// llvm_orcv2.cpp). Instances are created lazily and reused across kernels.

@@ -30,6 +30,7 @@
 #  include <llvm-c/TargetMachine.h>
 #  include <llvm-c/Error.h>
 #  include <llvm-c/Orc.h>
+#  include <llvm-c/OrcEE.h>
 #  include <llvm-c/LLJIT.h>
 #else
 #  include <stdint.h>
@@ -63,6 +64,10 @@ using LLVMOrcDefinitionGeneratorRef = void *;
 using LLVMOrcSymbolStringPoolEntryRef = void *;
 using LLVMOrcExecutorAddress = uint64_t;
 using LLVMOrcSymbolPredicate = int (*)(void *, LLVMOrcSymbolStringPoolEntryRef);
+using LLVMOrcObjectLayerRef = void *;
+using LLVMOrcExecutionSessionRef = void *;
+using LLVMOrcLLJITBuilderObjectLinkingLayerCreatorFunction =
+    LLVMOrcObjectLayerRef (*)(void *, LLVMOrcExecutionSessionRef, const char *);
 
 #if !defined(DR_LLVM_SYM)
 #  define DR_LLVM_SYM(x) extern x;
@@ -144,4 +149,11 @@ DR_LLVM_SYM(void (*LLVMOrcJITDylibAddGenerator)(LLVMOrcJITDylibRef,
                                                 LLVMOrcDefinitionGeneratorRef));
 DR_LLVM_SYM(const char *(*LLVMOrcSymbolStringPoolEntryStr)(
     LLVMOrcSymbolStringPoolEntryRef));
+
+// JITLink-based linking layer (LLVM 22+)
+DR_LLVM_SYM(void (*LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator)(
+    LLVMOrcLLJITBuilderRef, LLVMOrcLLJITBuilderObjectLinkingLayerCreatorFunction,
+    void *));
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcCreateObjectLinkingLayerWithInProcessMemoryManager)(
+    LLVMOrcObjectLayerRef *, LLVMOrcExecutionSessionRef));
 #endif

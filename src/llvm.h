@@ -35,6 +35,9 @@ extern bool jitc_llvm_api_has_orcv2();
 /// Is the (new) pass builder interface available?
 extern bool jitc_llvm_api_has_pb_new();
 
+/// Can a JITLink-based linking layer be requested via the C API?
+extern bool jitc_llvm_api_has_jitlink();
+
 /// String describing the LLVM target
 extern char *jitc_llvm_target_triple;
 

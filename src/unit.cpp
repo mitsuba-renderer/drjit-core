@@ -231,7 +231,12 @@ struct UnitCacheEntry {
 static tsl::robin_map<UnitCacheKey, UnitCacheEntry, UnitCacheKeyHasher>
     unit_cache;
 
-/// Guards ``unit_cache``. Never held while acquiring ``state.lock``.
+/// Artifacts of duplicate compiles (keyed by backend), retained until the next
+/// flush. Linked units may share constants, so none is released individually.
+static std::vector<std::pair<uint32_t, UnitCacheEntry>> unit_cache_duplicates;
+
+/// Guards ``unit_cache`` and ``unit_cache_duplicates``. Never held while
+/// acquiring ``state.lock``.
 static std::mutex unit_cache_mutex;
 
 bool jitc_unit_cache_lookup(JitBackend backend, XXH128_hash_t hash,
@@ -254,7 +259,8 @@ void jitc_unit_cache_insert(JitBackend backend, XXH128_hash_t hash,
     if (!inserted) {
         // A concurrent compile beat us to it: use its artifact
         if (release)
-            release(artifact);
+            unit_cache_duplicates.emplace_back(
+                (uint32_t) backend, UnitCacheEntry { artifact, release });
         artifact = it->second.artifact;
     }
 }
@@ -270,6 +276,16 @@ void jitc_unit_cache_flush(int backend) {
         if (entry.release)
             entry.release(entry.artifact);
         it = unit_cache.erase(it);
+    }
+
+    for (auto it = unit_cache_duplicates.begin();
+         it != unit_cache_duplicates.end(); ) {
+        if (backend != -1 && it->first != (uint32_t) backend) {
+            ++it;
+            continue;
+        }
+        it->second.release(it->second.artifact);
+        it = unit_cache_duplicates.erase(it);
     }
 }
 

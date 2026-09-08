@@ -352,7 +352,12 @@ endif()
 if (DRJIT_DYNAMIC_LLVM)
   target_compile_definitions(drjit-core PRIVATE -DDRJIT_DYNAMIC_LLVM=1)
 else()
-  find_package(LLVM 18 REQUIRED)
+  # LLVM's package version file only accepts an exact major.minor match, so
+  # check the minimum version by hand
+  find_package(LLVM REQUIRED)
+  if (LLVM_VERSION_MAJOR LESS 18)
+    message(FATAL_ERROR "Dr.Jit-Core: LLVM 18 or newer is required (found version ${LLVM_PACKAGE_VERSION}).")
+  endif()
   target_include_directories(drjit-core PRIVATE ${LLVM_INCLUDE_DIRS})
   target_link_directories(drjit-core PRIVATE ${LLVM_LIB_DIRS})
   llvm_config(drjit-core USE_SHARED core support executionengine orcjit analysis native target mcdisassembler irreader scalaropts)

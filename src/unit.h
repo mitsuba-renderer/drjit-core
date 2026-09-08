@@ -171,8 +171,9 @@ extern bool jitc_unit_cache_lookup(JitBackend backend, XXH128_hash_t hash,
                                    uint64_t salt, UnitArtifact &out);
 
 /// Publish a freshly compiled artifact. If a concurrent compile got there
-/// first, 'artifact' is released and replaced by the cached one. 'release'
-/// (may be null) is also used to evict the entry later.
+/// first, 'artifact' is replaced by the cached one, and the duplicate is
+/// retained until the next flush. 'release' (may be null) frees an artifact
+/// when it is evicted.
 extern void jitc_unit_cache_insert(JitBackend backend, XXH128_hash_t hash,
                                    uint64_t salt, UnitArtifact &artifact,
                                    void (*release)(UnitArtifact &));

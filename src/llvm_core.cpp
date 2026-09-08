@@ -164,10 +164,12 @@ bool jitc_llvm_init() {
         snprintf(patch_str, sizeof(patch_str), "%i", jitc_llvm_version_patch);
 
     jitc_log(Info,
-             "jit_llvm_init(): found LLVM %s.%s.%s, target=%s, cpu=%s, width=%u.",
+             "jit_llvm_init(): found LLVM %s.%s.%s, target=%s, cpu=%s, "
+             "width=%u, linker=%s.",
              major_str, minor_str, patch_str,
              jitc_llvm_target_triple, jitc_llvm_target_cpu,
-             jitc_llvm_vector_width);
+             jitc_llvm_vector_width,
+             jitc_llvm_jitlink ? "jitlink" : "rtdyld");
 
     return jitc_llvm_init_success;
 }
@@ -361,10 +363,9 @@ static XXH128_hash_t jitc_llvm_disk_key(XXH128_hash_t hash) {
     int version[3] = { jitc_llvm_version_major, jitc_llvm_version_minor,
                        jitc_llvm_version_patch };
     XXH3_128bits_update(&xs, version, sizeof(version));
-#if defined(_WIN32)
     // Distinguish objects built with the large code model (see llvm_orcv2.cpp)
-    XXH3_128bits_update(&xs, "large", 5);
-#endif
+    if (jitc_llvm_code_model() == LLVMCodeModelLarge)
+        XXH3_128bits_update(&xs, "large", 5);
     return XXH3_128bits_digest(&xs);
 }
 
