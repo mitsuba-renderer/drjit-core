@@ -818,13 +818,14 @@ static void jitc_metal_render(Variable *v) {
                 scene_local && (scene_local->geometry_types_mask & 0x8u) != 0;
             bool has_motion_local =
                 scene_local && (scene_local->geometry_types_mask & 0x10u) != 0;
-            bool extended = has_ift_local || has_curves_local;
+            bool has_bbox_local =
+                scene_local && (scene_local->geometry_types_mask & 0x2u) != 0;
 
             fmt("raytracing::intersector<raytracing::triangle_data, raytracing::instancing$s$s> _inter;\n",
                 has_curves_local ? ", raytracing::curve_data" : "",
                 has_motion_local ? ", raytracing::instance_motion" : "");
 
-            if (!extended)
+            if (!has_bbox_local && !has_curves_local)
                 put("_inter.assume_geometry_type(raytracing::geometry_type::triangle);\n");
 
             fmt("_inter.force_opacity(raytracing::forced_opacity::opaque);\n"
@@ -841,40 +842,15 @@ static void jitc_metal_render(Variable *v) {
                 ox, oy, oz, dx, dy, dz, tmin, tmax);
 
             // Route the intersect call to this trace's reconstructed accel
-            // (+ IFT) reference variables.
-            if (has_motion_local) {
-                if (has_ift_local) {
-                    if (rmask)
-                        fmt("auto _hit = _inter.intersect(_r, $v, $v, $v, $v);\n",
-                            accel_h, rmask, time, ift_h);
-                    else
-                        fmt("auto _hit = _inter.intersect(_r, $v, $v, $v);\n",
-                            accel_h, time, ift_h);
-                } else {
-                    if (rmask)
-                        fmt("auto _hit = _inter.intersect(_r, $v, $v, $v);\n",
-                            accel_h, rmask, time);
-                    else
-                        fmt("auto _hit = _inter.intersect(_r, $v, $v);\n",
-                            accel_h, time);
-                }
-            } else {
-                if (has_ift_local) {
-                    if (rmask)
-                        fmt("auto _hit = _inter.intersect(_r, $v, $v, $v);\n",
-                            accel_h, rmask, ift_h);
-                    else
-                        fmt("auto _hit = _inter.intersect(_r, $v, $v);\n",
-                            accel_h, ift_h);
-                } else {
-                    if (rmask)
-                        fmt("auto _hit = _inter.intersect(_r, $v, $v);\n",
-                            accel_h, rmask);
-                    else
-                        fmt("auto _hit = _inter.intersect(_r, $v);\n",
-                            accel_h);
-                }
-            }
+            // (+ IFT) reference variables
+            fmt("auto _hit = _inter.intersect(_r, $v", accel_h);
+            if (rmask)
+                fmt(", $v", rmask);
+            if (has_motion_local)
+                fmt(", $v", time);
+            if (has_ift_local)
+                fmt(", $v", ift_h);
+            put(");\n");
 
             // Hit-result extraction.
             // - Triangle hit: prim_uv = triangle_barycentric_coord
