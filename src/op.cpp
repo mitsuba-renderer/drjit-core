@@ -3381,6 +3381,14 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     // Must compute final index before potentially expanding below
     index = steal(jitc_var_mul(index, scale));
 
+    // Apply default masks and potentially bounds checks
+    Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size));
+    if (flags & (uint32_t) JitFlag::Debug)
+        mask_2 = steal(jitc_var_check_bounds(
+            op == ReduceOp::Identity ? BoundsCheckType::PacketScatter
+                                     : BoundsCheckType::PacketScatterReduce,
+            index, mask_2, target_size));
+
     // Check if it is safe to directly write to ``target``.
     // See the original scatter operation for details.
     target_v = jitc_var(target);
@@ -3398,17 +3406,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     target = steal(jitc_var_data(target, false, &target_addr));
     ptr = steal(jitc_var_pointer(backend, target_addr, target, 1));
 
-    // Apply default masks
-    Ref mask_2 = steal(jitc_var_mask_apply(mask, var_info.size));
     Ref index_2 = steal(jitc_scatter_gather_index(target, index));
-
-    // Insert a bounds check in debug mode
-    if (flags & (uint32_t) JitFlag::Debug) {
-        mask_2 = steal(jitc_var_check_bounds(
-            op == ReduceOp::Identity ? BoundsCheckType::PacketScatter
-                                     : BoundsCheckType::PacketScatterReduce,
-            /* original index */ index, mask_2, target_size));
-    }
 
     uint32_t op_size = std::max(var_info.size, jitc_var(mask_2)->size);
     uint32_t scatter_op = jitc_var_new_node_3(
