@@ -1754,6 +1754,10 @@ enum class JitFlag : uint32_t {
     /// Reorder threads in OptiX after a ray-intersection
     ShaderExecutionReordering = 1 << 23,
 
+    /// Enable all three forms of symbolic control flow at once
+    SymbolicAll = (uint32_t) SymbolicLoops | (uint32_t) SymbolicCalls |
+                  (uint32_t) SymbolicConditionals,
+
     /// Default flags
     Default = (uint32_t) ConstantPropagation | (uint32_t) ValueNumbering |
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
@@ -1793,7 +1797,8 @@ enum JitFlag {
     JitFlagSymbolic = 1 << 19,
     JitFlagKernelFreezing = 1 << 20,
     JitFlagFreezingScope = 1 << 21,
-    JitFlagShaderExecutionReordering = 1 << 23
+    JitFlagShaderExecutionReordering = 1 << 23,
+    JitFlagSymbolicAll = (1 << 5) | (1 << 8) | (1 << 11)
 };
 #endif
 
@@ -1806,7 +1811,9 @@ extern JIT_EXPORT uint32_t jit_flags();
 /// Selectively enables/disables flags
 extern JIT_EXPORT void jit_set_flag(JIT_ENUM JitFlag flag, int enable);
 
-/// Checks whether a given flag is active. Returns zero or one.
+/// Checks whether a given flag is active. Composite flags such as \ref
+/// JitFlag::SymbolicAll are only considered active when all of their
+/// constituent bits are set. Returns zero or one.
 extern JIT_EXPORT int jit_flag(JIT_ENUM JitFlag flag);
 
 // ====================================================================

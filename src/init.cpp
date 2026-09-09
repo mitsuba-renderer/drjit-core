@@ -771,7 +771,8 @@ void jitc_set_flag(JitFlag flag, int enable) {
 }
 
 int jitc_flag(JitFlag flag) {
-    return (jitc_flags() & (uint32_t) flag) ? 1 : 0;
+    // Composite flags (e.g. JitFlag::SymbolicAll) require all bits to be set
+    return (jitc_flags() & (uint32_t) flag) == (uint32_t) flag;
 }
 
 /// Default implementations of ThreadState functions
