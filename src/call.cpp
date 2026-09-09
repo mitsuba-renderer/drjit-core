@@ -1046,6 +1046,9 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
         PacketScatterData *psd = (PacketScatterData *) v->data;
         for (uint32_t i : psd->values)
             jitc_var_call_analyze(call, inst_id, i);
+    } else if (kind == VarKind::ScatterCAS) {
+        ScatterCASDData *cas_data = (ScatterCASDData *) v->data;
+        jitc_var_call_analyze(call, inst_id, cas_data->mask);
     } else if (kind == VarKind::CoopVecPack) {
         CoopVecPackData *cvid = (CoopVecPackData *) v->data;
         for (uint32_t i : cvid->indices)
