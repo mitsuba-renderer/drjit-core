@@ -38,6 +38,9 @@ extern bool jitc_llvm_api_has_pb_new();
 /// Can a JITLink-based linking layer be requested via the C API?
 extern bool jitc_llvm_api_has_jitlink();
 
+/// Can LLJIT register JIT-compiled debug info with a debugger?
+extern bool jitc_llvm_api_has_orcdbg();
+
 /// String describing the LLVM target
 extern char *jitc_llvm_target_triple;
 

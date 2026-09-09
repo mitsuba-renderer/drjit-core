@@ -404,6 +404,12 @@ struct VariableExtra {
 
     /// Set to 'true' if the central mutex should be released before invoking 'callback'
     bool callback_internal = false;
+
+    /// Source line (for debugging)
+    uint32_t src_line = 0;
+
+    /// Interned source file name (for debugging)
+    const char *src_file = nullptr;
 };
 
 struct CallBucket;

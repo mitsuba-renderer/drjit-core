@@ -6,6 +6,7 @@
 #include <initializer_list>
 #include <cmath>
 #include <cstring>
+#include <string>
 #include <typeinfo>
 
 TEST_ALL(01_creation_destruction_cse) {
@@ -697,3 +698,49 @@ TEST_ALL_FLOAT_AGNOSTIC(07_and_or_mixed) {
         }
     }
 }
+
+static void test08_debug_locations_llvm() {
+    uint32_t flags = jit_flags();
+    jit_set_flag(JitFlag::KernelHistory, true);
+
+    auto run = [](bool debug) {
+        jit_set_flag(JitFlag::Debug, debug);
+        uint64_t start = jit_kernel_history_begin();
+        jit_set_source_location("first.py", 12);
+        UInt32L x = arange<UInt32L>(16);
+        jit_assert(label(x) == nullptr);
+        jit_assert(!strstr(jit_var_graphviz(), "first.py"));
+        jit_assert(!strstr(jit_var_whos(), "first.py"));
+        jit_set_source_location("second\"file.py", 34);
+        UInt32L y = x * x + 1;
+        // User labels must not replace the separately recorded location.
+        set_label(y, nullptr);
+        jit_assert(label(y) == nullptr);
+        set_label(y, "result");
+        jit_assert(strcmp(label(y), "result") == 0);
+        y.eval();
+        KernelHistory *h = jit_kernel_history_end(start);
+        jit_assert(y.read(3) == 10);
+        jit_assert(jit_kernel_history_size(h) == 1);
+        std::string source = jit_kernel_history_source(h, 0);
+        jit_kernel_history_free(h);
+        jit_set_source_location(nullptr, 0);
+        jit_flush_kernel_cache();
+        return source;
+    };
+
+    std::string before = run(false), debug = run(true), after = run(false);
+    jit_assert(before.find("!dbg") == std::string::npos);
+    jit_assert(before == after);
+    // The optional LLVM debugger API is unavailable on some platforms.
+    if (debug.find("!llvm.dbg.cu") != std::string::npos) {
+        jit_assert(debug.find("first.py") != std::string::npos);
+        jit_assert(debug.find("second\\22file.py") != std::string::npos);
+        jit_assert(debug.find("!DILocation(line: 12,") != std::string::npos);
+        jit_assert(debug.find("!DILocation(line: 34,") != std::string::npos);
+    }
+    jit_set_flags(flags);
+}
+
+static int test08_debug_locations_registered =
+    test_register("test08_debug_locations_llvm", test08_debug_locations_llvm);

@@ -462,6 +462,8 @@ bool jitc_llvm_kernel_compile(Kernel &kernel) {
     // Release the lock while compiling. The job sources stay valid
     // throughout (see UnitCompileJob in unit.h)
     if (!misses.empty()) {
+        bool debug = (jitc_flags() & (uint32_t) JitFlag::Debug) &&
+                     jitc_llvm_debug_init();
         unlock_guard guard(state.lock);
 
         // Probe the disk cache for the object files
@@ -486,7 +488,7 @@ bool jitc_llvm_kernel_compile(Kernel &kernel) {
                 if (!job.from_disk)
                     jitc_llvm_compile_unit(job);
                 jitc_llvm_link(job.symbol, job.object.data(), job.object.size(),
-                               job.source, job.artifact);
+                               job.source, debug, job.artifact);
                 if (!job.from_disk)
                     jitc_cache_blob_store_async(CacheKind::Object, job.disk_key,
                                                 std::move(job.object));

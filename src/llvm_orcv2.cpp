@@ -18,9 +18,9 @@
 
 static LLVMTargetRef jitc_llvm_target_ref = nullptr;
 
-/// The process-wide linker and the dylib holding every linked unit
-static LLVMOrcLLJITRef jitc_llvm_lljit = nullptr;
-static LLVMOrcJITDylibRef jitc_llvm_dylib = nullptr;
+/// Maintain a separate linker for release and debug modes
+static LLVMOrcLLJITRef jitc_llvm_lljit[2] = { };
+static bool jitc_llvm_debug_tried = false;
 
 /// Idle compiler instances
 static std::vector<LLVMCompiler *> compiler_pool;
@@ -67,7 +67,8 @@ static LLVMTargetMachineRef jitc_llvm_tm_create() {
         jitc_llvm_code_model());
 }
 
-bool jitc_llvm_orcv2_init() {
+static bool jitc_llvm_linker_init(bool debug) {
+    LLVMOrcLLJITRef &lljit = jitc_llvm_lljit[debug];
     char *err_str = nullptr;
     if (LLVMGetTargetFromTriple(jitc_llvm_target_triple, &jitc_llvm_target_ref,
                                 &err_str)) {
@@ -107,44 +108,68 @@ bool jitc_llvm_orcv2_init() {
         LLVMOrcJITTargetMachineBuilderCreateFromTargetMachine(jitc_llvm_tm_create());
     LLVMOrcLLJITBuilderSetJITTargetMachineBuilder(lljit_builder, machine_builder);
 
-    LLVMErrorRef err = LLVMOrcCreateLLJIT(&jitc_llvm_lljit, lljit_builder);
+    LLVMErrorRef err = LLVMOrcCreateLLJIT(&lljit, lljit_builder);
     if (err) {
         jitc_log(Warn, "jitc_llvm_init(): could not create LLJIT: %s",
                  jitc_llvm_error_str(err).c_str());
         return false;
     }
-    jitc_llvm_dylib = LLVMOrcLLJITGetMainJITDylib(jitc_llvm_lljit);
-
     // The generator runs ahead of LLJIT's own process symbol resolution, so
     // that the filter sees every external symbol
     LLVMOrcDefinitionGeneratorRef generator = nullptr;
     err = LLVMOrcCreateDynamicLibrarySearchGeneratorForProcess(
-        &generator, LLVMOrcLLJITGetGlobalPrefix(jitc_llvm_lljit),
+        &generator, LLVMOrcLLJITGetGlobalPrefix(lljit),
         jitc_llvm_symbol_filter, nullptr);
+    if (!err) {
+        LLVMOrcJITDylibAddGenerator(LLVMOrcLLJITGetMainJITDylib(lljit), generator);
+
+        if (debug)
+            err = LLVMOrcLLJITEnableDebugSupport(lljit);
+    }
     if (err) {
-        jitc_log(Warn, "jitc_llvm_init(): could not create symbol generator: %s",
-                 jitc_llvm_error_str(err).c_str());
+        jitc_log(debug ? Debug : Warn,
+                 "jitc_llvm_init(): could not initialize %slinker: %s",
+                 debug ? "debug " : "", jitc_llvm_error_str(err).c_str());
+        LLVMErrorRef dispose_err = LLVMOrcDisposeLLJIT(lljit);
+        if (dispose_err)
+            jitc_llvm_error_str(dispose_err);
+        lljit = nullptr;
         return false;
     }
-    LLVMOrcJITDylibAddGenerator(jitc_llvm_dylib, generator);
 
     return true;
+}
+
+bool jitc_llvm_orcv2_init() {
+    return jitc_llvm_linker_init(false);
+}
+
+bool jitc_llvm_debug_init() {
+    // Called during assembly, with state.lock and state.eval_lock held.
+    if (!jitc_llvm_debug_tried) {
+        jitc_llvm_debug_tried = true;
+        if (jitc_llvm_api_has_orcdbg())
+            jitc_llvm_linker_init(true);
+    }
+    return jitc_llvm_lljit[1] != nullptr;
 }
 
 void jitc_llvm_orcv2_shutdown() {
     jitc_llvm_compiler_pool_clear();
 
-    if (jitc_llvm_lljit) {
-        LLVMErrorRef err = LLVMOrcDisposeLLJIT(jitc_llvm_lljit);
+    for (LLVMOrcLLJITRef &lljit : jitc_llvm_lljit) {
+        if (!lljit)
+            continue;
+        LLVMErrorRef err = LLVMOrcDisposeLLJIT(lljit);
         if (err)
             jitc_fail("jit_llvm_orcv2_shutdown(): could not dispose LLJIT: %s",
                       jitc_llvm_error_str(err).c_str());
+        lljit = nullptr;
     }
 
-    jitc_llvm_lljit = nullptr;
-    jitc_llvm_dylib = nullptr;
     jitc_llvm_target_ref = nullptr;
     jitc_llvm_jitlink = false;
+    jitc_llvm_debug_tried = false;
 }
 
 // ============================================================================
@@ -186,31 +211,43 @@ void jitc_llvm_compiler_pool_clear() {
 //  Linking
 // ============================================================================
 
+/// Mutex to serialize linking in debug mode. LLDB (when attached) generates
+/// warnings when linking in parallel.
+static std::mutex jitc_llvm_link_mutex;
+
 void jitc_llvm_link(const char *symbol, const uint8_t *object, size_t size,
-                    const char *source, UnitArtifact &artifact) {
+                    const char *source, bool debug, UnitArtifact &artifact) {
+    std::unique_lock<std::mutex> guard(jitc_llvm_link_mutex, std::defer_lock);
+    if (debug)
+        guard.lock();
+    LLVMOrcLLJITRef lljit = jitc_llvm_lljit[debug];
+
     // The linker takes ownership of this copy of the object
     LLVMMemoryBufferRef buf = LLVMCreateMemoryBufferWithMemoryRangeCopy(
         (const char *) object, size, symbol);
     LLVMOrcResourceTrackerRef rt =
-        LLVMOrcJITDylibCreateResourceTracker(jitc_llvm_dylib);
+        LLVMOrcJITDylibCreateResourceTracker(LLVMOrcLLJITGetMainJITDylib(lljit));
 
     // The lookup triggers the actual link
     LLVMOrcExecutorAddress address = 0;
-    LLVMErrorRef err = LLVMOrcLLJITAddObjectFileWithRT(jitc_llvm_lljit, rt, buf);
+    LLVMErrorRef err = LLVMOrcLLJITAddObjectFileWithRT(lljit, rt, buf);
     if (!err)
-        err = LLVMOrcLLJITLookup(jitc_llvm_lljit, &address, symbol);
+        err = LLVMOrcLLJITLookup(lljit, &address, symbol);
     if (err)
         jitc_fail("jit_llvm_link(): could not link unit \"%s\": %s\n\n"
                   "For reference, the LLVM IR of the unit follows:\n\n%s",
                   symbol, jitc_llvm_error_str(err).c_str(), source);
 
     artifact.ptr[0] = rt;
-    artifact.ptr[1] = nullptr;
+    artifact.ptr[1] = debug ? lljit : nullptr;
     artifact.value = address;
     artifact.size = (uint32_t) size;
 }
 
 void jitc_llvm_unlink(UnitArtifact &artifact) {
+    std::unique_lock<std::mutex> guard(jitc_llvm_link_mutex, std::defer_lock);
+    if (artifact.ptr[1])
+        guard.lock();
     LLVMOrcResourceTrackerRef rt = (LLVMOrcResourceTrackerRef) artifact.ptr[0];
     LLVMErrorRef err = LLVMOrcResourceTrackerRemove(rt);
     if (err)

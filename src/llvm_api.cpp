@@ -38,6 +38,7 @@ bool jitc_llvm_api_has_core() { return true; }
 bool jitc_llvm_api_has_orcv2() { return LLVM_VERSION_MAJOR >= 18; }
 bool jitc_llvm_api_has_pb_new() { return LLVM_VERSION_MAJOR >= 18; }
 bool jitc_llvm_api_has_jitlink() { return LLVM_VERSION_MAJOR >= 22; }
+bool jitc_llvm_api_has_orcdbg() { return LLVM_VERSION_MAJOR >= 18; }
 int jitc_llvm_version_major = LLVM_VERSION_MAJOR;
 int jitc_llvm_version_minor = LLVM_VERSION_MINOR;
 int jitc_llvm_version_patch = LLVM_VERSION_PATCH;
@@ -51,6 +52,7 @@ static bool jitc_llvm_has_version = false;
 static bool jitc_llvm_has_orcv2 = false;
 static bool jitc_llvm_has_pb_new = false;
 static bool jitc_llvm_has_jitlink = false;
+static bool jitc_llvm_has_orcdbg = false;
 
 int jitc_llvm_version_major = -1;
 int jitc_llvm_version_minor = -1;
@@ -91,6 +93,7 @@ bool jitc_llvm_api_init() {
     jitc_llvm_has_orcv2 = true;
     jitc_llvm_has_pb_new = true;
     jitc_llvm_has_jitlink = true;
+    jitc_llvm_has_orcdbg = true;
     jitc_llvm_version_major = -1;
     jitc_llvm_version_minor = -1;
     jitc_llvm_version_patch = -1;
@@ -150,6 +153,9 @@ bool jitc_llvm_api_init() {
     // Optional: without these, LLJIT links via its default for the platform
     LOAD(jitlink, LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator);
     LOAD(jitlink, LLVMOrcCreateObjectLinkingLayerWithInProcessMemoryManager);
+
+    // Optional: registers JIT-compiled debug info with an attached debugger
+    LOAD(orcdbg, LLVMOrcLLJITEnableDebugSupport);
 
     /*
        Dr.Jit needs to know the LLVM version number to emit the right set of
@@ -238,6 +244,9 @@ void jitc_llvm_api_shutdown() {
     CLEAR(LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator);
     CLEAR(LLVMOrcCreateObjectLinkingLayerWithInProcessMemoryManager);
 
+    // Debugger support
+    CLEAR(LLVMOrcLLJITEnableDebugSupport);
+
 #if !defined(_WIN32)
     if (jitc_llvm_handle != RTLD_NEXT)
         dlclose(jitc_llvm_handle);
@@ -257,6 +266,7 @@ void jitc_llvm_api_shutdown() {
     jitc_llvm_has_orcv2 = false;
     jitc_llvm_has_pb_new = false;
     jitc_llvm_has_jitlink = false;
+    jitc_llvm_has_orcdbg = false;
     jitc_llvm_version_major = -1;
     jitc_llvm_version_minor = -1;
     jitc_llvm_version_patch = -1;
@@ -266,5 +276,6 @@ bool jitc_llvm_api_has_core() { return jitc_llvm_has_core; }
 bool jitc_llvm_api_has_orcv2() { return jitc_llvm_has_orcv2; }
 bool jitc_llvm_api_has_pb_new() { return jitc_llvm_has_pb_new; }
 bool jitc_llvm_api_has_jitlink() { return jitc_llvm_has_jitlink; }
+bool jitc_llvm_api_has_orcdbg() { return jitc_llvm_has_orcdbg; }
 
 #endif

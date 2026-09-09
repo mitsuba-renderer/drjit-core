@@ -360,7 +360,7 @@ else()
   endif()
   target_include_directories(drjit-core PRIVATE ${LLVM_INCLUDE_DIRS})
   target_link_directories(drjit-core PRIVATE ${LLVM_LIB_DIRS})
-  llvm_config(drjit-core USE_SHARED core support executionengine orcjit analysis native target mcdisassembler irreader scalaropts)
+  llvm_config(drjit-core USE_SHARED core support executionengine orcjit orcdebugging analysis native target mcdisassembler irreader scalaropts)
 endif()
 
 if (DRJIT_ENABLE_OPTIX)

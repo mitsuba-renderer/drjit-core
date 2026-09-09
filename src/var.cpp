@@ -21,6 +21,8 @@
 #  include "metal.h"
 #endif
 #include <algorithm>
+#include <string>
+#include <unordered_set>
 
 #if defined(DRJIT_ENABLE_METAL)
 static bool jitc_metal_warn_float64_demotion = false;
@@ -711,14 +713,23 @@ void jitc_value_print(const Variable *v, bool graphviz = false) {
     #undef JIT_LITERAL_PRINT
 }
 
-static char source_location_buf[256] { 0 };
+// Interned source file names for use in debug symbols
+static std::unordered_set<std::string> source_files;
+static const char *source_file = nullptr;
+static uint32_t source_line = 0;
 
 void jitc_set_source_location(const char *fname, size_t lineno) noexcept {
-    if (!fname)
-        source_location_buf[0] = '\0';
-    else
-        snprintf(source_location_buf, sizeof(source_location_buf),
-                 "%s:%zu", fname, lineno);
+    if (!fname) {
+        source_file = nullptr;
+        source_line = 0;
+        return;
+    }
+
+    source_line = (uint32_t) lineno;
+
+    // Consecutive events usually come from the same file
+    if (!source_file || strcmp(source_file, fname) != 0)
+        source_file = source_files.emplace(fname).first->c_str();
 }
 
 /// Append the given variable to the instruction trace and return its ID
@@ -835,27 +846,22 @@ uint32_t jitc_var_new(Variable &v, bool disable_lvn) {
         }
     }
 
-    // If a new variable was created, attach an optional label
+    // If a new variable was created, attach an optional prefix and source location
     if (likely(!cse_hit)) {
         bool has_prefix = ts->prefix != nullptr,
-             has_loc = (flags & (uint32_t) JitFlag::Debug) && (source_location_buf[0] != '\0');
+             has_loc = (flags & (uint32_t) JitFlag::Debug) && source_file;
 
         if (unlikely(has_prefix || has_loc)) {
-            size_t size_prefix = has_prefix ? strlen(ts->prefix) : 0,
-                   size_loc    = has_loc ? strlen(source_location_buf) : 0;
-            char *s = (char *) malloc_check(size_prefix + size_loc + 1), *p = s;
+            VariableExtra *extra = jitc_var_extra(vo);
             if (has_prefix) {
-                memcpy(p, ts->prefix, size_prefix);
-                p += size_prefix;
+                size_t size = strlen(ts->prefix) + 1;
+                extra->label = (char *) malloc_check(size);
+                memcpy(extra->label, ts->prefix, size);
             }
-
-            if (size_loc) {
-                memcpy(p, source_location_buf, size_loc);
-                p += size_loc;
+            if (has_loc) {
+                extra->src_file = source_file;
+                extra->src_line = source_line;
             }
-
-            *p++ = '\0';
-            jitc_var_extra(vo)->label = s;
         }
 
         st.variable_counter++;

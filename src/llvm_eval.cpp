@@ -65,6 +65,7 @@
 #include "llvm_eval.h"
 #include "llvm_packet.h"
 #include "llvm_coop_vec.h"
+#include "llvm_orcv2.h"
 
 // Forward declaration
 static void jitc_llvm_render(Variable *v);
@@ -73,13 +74,42 @@ static void jitc_llvm_render_trace(const Variable *v,
                                    const Variable *func,
                                    const Variable *scene);
 
+// Helper functions to record DWARF line table metadata in debug mode.
+static void jitc_llvm_dbg_function_begin(const char *name, bool new_module);
+static void jitc_llvm_dbg_function_end();
+static uint32_t jitc_llvm_dbg_location(const Variable *v);
+
+/// Innermost module, or null when debug info is disabled
+struct LLVMDebugInfo;
+static LLVMDebugInfo *llvm_dbg = nullptr;
+
+/// RAII helper: attaches debug locations to everything a variable renders
+struct LLVMDebugScope {
+    size_t start;
+    uint32_t loc = 0;
+
+    LLVMDebugScope(const Variable *v) {
+        if (unlikely(llvm_dbg)) {
+            start = buffer.size();
+            loc = jitc_llvm_dbg_location(v);
+        }
+    }
+
+    ~LLVMDebugScope() {
+        if (unlikely(loc))
+            buffer.annotate_llvm(start, loc);
+    }
+};
+
 void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
     (void) ts;
     bool print_labels = jitc_log_active(LogLevel::Trace) ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
-    fmt("define void @drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 "
-        "%end, i32 %thread_id, ptr noalias %params) #0 {\n"
+    put("define void @drjit_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(i64 %start, i64 "
+        "%end, i32 %thread_id, ptr noalias %params) #0");
+    jitc_llvm_dbg_function_begin("drjit_kernel", true);
+    put(" {\n"
         "entry:\n");
 
     for (uint32_t gi = group.start; gi != group.end; ++gi) {
@@ -112,6 +142,8 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
             if (label && *label && vt != VarType::Void && kind != VarKind::CallOutput)
                 fmt("    ; $s\n", label);
         }
+
+        LLVMDebugScope dbg_scope(v);
 
         /// Determine source/destination address of input/output parameters
         if (ptype == ParamType::Input && size == 1 && vt == VarType::Pointer) {
@@ -229,6 +261,7 @@ void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group) {
         buffer.move_suffix(suffix_start, suffix_target);
     }
 
+    jitc_llvm_dbg_function_end();
 }
 
 /// Render the metadata and attribute groups shared by every unit of a kernel
@@ -350,7 +383,9 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
         fmt(", $T %in_$u", vi, i);
     }
 
-    fmt(") #0 {\n"
+    put(") #0");
+    jitc_llvm_dbg_function_begin(call->name.c_str(), call->n_inst != 1);
+    fmt(" {\n"
         "entry:\n"
         "    ; Call: $s\n", call->name.c_str());
 
@@ -382,6 +417,8 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                 kind != VarKind::CallOutput)
                 fmt("    ; $s\n", label);
         }
+
+        LLVMDebugScope dbg_scope(v);
 
         if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
             uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
@@ -480,6 +517,8 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     }
 
     put("}");
+
+    jitc_llvm_dbg_function_end();
 }
 
 // Emit a fused rounding + float-to-int conversion (e.g. `floor2int`). LLVM
@@ -1892,4 +1931,183 @@ void jitc_var_call_assemble_llvm(CallData *call, uint32_t call_reg,
         fmt("    br label %l$u_done\n"
             "\nl$u_done:\n", call_reg, call_reg);
     }
+}
+
+// ============================================================================
+//  Debug information
+// ============================================================================
+//  Each instruction rendered for a variable receives a '!dbg' attachment. The
+//  module gains DICompileUnit/DISubprogram/DILocation metadata that ties the
+//  locations together. Node IDs 0-5 belong to the shared unit epilogue, and
+//  the fixed IDs below follow them.
+// ============================================================================
+
+// This section writes to several buffers using printf-style formatting
+#undef put
+#undef fmt
+
+static constexpr uint32_t LLVM_DBG_CU_ID    = 6,
+                          LLVM_DBG_FLAGS_ID = 7,
+                          LLVM_DBG_FTYPE_ID = 8,
+                          LLVM_DBG_FIRST_ID = 9;
+
+/// A function being rendered
+struct LLVMDebugFunction {
+    /// Node ID of the DISubprogram (referenced by the 'define')
+    uint32_t node;
+
+    /// Function name shown by the debugger
+    const char *name;
+
+    /// Source location of the first variable seen, which the DISubprogram
+    /// reports as the function's position. Debuggers use it to tell whether
+    /// a line breakpoint falls into the function.
+    const char *file = nullptr;
+    uint32_t line = 0;
+
+    /// DIFile node -> DILexicalBlockFile node
+    tsl::robin_map<uint32_t, uint32_t> scopes;
+};
+
+/// Per-module state
+struct LLVMDebugInfo {
+    uint32_t next_id = LLVM_DBG_FIRST_ID;
+
+    /// Functions being rendered, innermost last
+    std::vector<LLVMDebugFunction> funcs;
+
+    /// Interned source file name -> DIFile node
+    tsl::robin_map<const char *, uint32_t> files;
+
+    /// (scope node, line) -> DILocation node
+    tsl::robin_map<uint64_t, uint32_t> locations;
+
+    /// Metadata definitions
+    StringBuffer defs;
+};
+
+/// Modules being rendered, innermost last. The kernel and each indirect
+/// callable form separate modules, while direct callables share the module
+/// of their caller.
+static std::vector<LLVMDebugInfo> llvm_dbg_stack;
+
+/// Append 's' to the definitions as an LLVM IR string literal body
+static void jitc_llvm_dbg_escape(const char *s) {
+    StringBuffer &out = llvm_dbg->defs;
+    for (; *s; ++s) {
+        unsigned char c = (unsigned char) *s;
+        if (c == '"' || c == '\\' || c < 0x20 || c >= 0x7f) {
+            out.put('\\');
+            out.put("0123456789ABCDEF"[c >> 4]);
+            out.put("0123456789ABCDEF"[c & 15]);
+        } else {
+            out.put((char) c);
+        }
+    }
+}
+
+/// Return the DIFile node of a source file (null = placeholder file)
+static uint32_t jitc_llvm_dbg_file(const char *fname) {
+    LLVMDebugInfo &d = *llvm_dbg;
+    auto [it, inserted] = d.files.try_emplace(fname, d.next_id);
+    if (inserted) {
+        d.defs.fmt("!%u = !DIFile(filename: \"", d.next_id++);
+        jitc_llvm_dbg_escape(fname ? fname : "<unknown>");
+        d.defs.put("\", directory: \"\")\n");
+    }
+    return it->second;
+}
+
+/// Begin a function. Emits the '!dbg' attachment of its 'define' line.
+static void jitc_llvm_dbg_function_begin(const char *name, bool new_module) {
+    if (callable_depth == 0) {
+        // The kernel is the outermost function. Discard state that an
+        // assembly which raised an exception may have left behind. Debug
+        // info is only useful when a debugger can consume it.
+        llvm_dbg_stack.clear();
+        llvm_dbg = nullptr;
+        if (!(jitc_flags() & (uint32_t) JitFlag::Debug) ||
+            !jitc_llvm_debug_init())
+            return;
+    } else if (!llvm_dbg) {
+        return;
+    }
+
+    if (new_module)
+        llvm_dbg = &llvm_dbg_stack.emplace_back();
+
+    LLVMDebugInfo &d = *llvm_dbg;
+    d.funcs.push_back({ d.next_id++, name, nullptr, 0, {} });
+    buffer.fmt(" !dbg !%u", d.funcs.back().node);
+}
+
+/// Finish a function by emitting its DISubprogram
+static void jitc_llvm_dbg_function_end() {
+    if (!llvm_dbg)
+        return;
+
+    LLVMDebugInfo &d = *llvm_dbg;
+    LLVMDebugFunction &f = d.funcs.back();
+
+    uint32_t file = jitc_llvm_dbg_file(f.file);
+    d.defs.fmt("!%u = distinct !DISubprogram(name: \"", f.node);
+    jitc_llvm_dbg_escape(f.name);
+    d.defs.fmt("\", scope: !%u, file: !%u, line: %u, type: !%u, "
+               "scopeLine: %u, spFlags: DISPFlagDefinition | "
+               "DISPFlagOptimized, unit: !%u)\n",
+               file, file, f.line, LLVM_DBG_FTYPE_ID, f.line, LLVM_DBG_CU_ID);
+    d.funcs.pop_back();
+
+    if (!d.funcs.empty())
+        return;
+
+    buffer.fmt("\n!llvm.dbg.cu = !{!%u}\n"
+               "!llvm.module.flags = !{!%u}\n"
+               "!%u = distinct !DICompileUnit(language: DW_LANG_C, file: !%u, "
+               "producer: \"Dr.Jit\", isOptimized: true, runtimeVersion: 0, "
+               "emissionKind: LineTablesOnly)\n"
+               "!%u = !{i32 2, !\"Debug Info Version\", i32 3}\n"
+               "!%u = !DISubroutineType(types: !4)\n",
+               LLVM_DBG_CU_ID, LLVM_DBG_FLAGS_ID, LLVM_DBG_CU_ID, file,
+               LLVM_DBG_FLAGS_ID, LLVM_DBG_FTYPE_ID);
+    buffer.put(d.defs.get(), d.defs.size());
+
+    llvm_dbg_stack.pop_back();
+    llvm_dbg = llvm_dbg_stack.empty() ? nullptr : &llvm_dbg_stack.back();
+}
+
+/// Return the DILocation node describing the origin of variable 'v'
+static uint32_t jitc_llvm_dbg_location(const Variable *v) {
+    LLVMDebugInfo &d = *llvm_dbg;
+    LLVMDebugFunction &f = d.funcs.back();
+    uint32_t scope = f.node, line = 0;
+    const char *fname = nullptr;
+
+    if (v->extra) {
+        const VariableExtra &extra = state.extra[v->extra];
+        fname = extra.src_file;
+        line = extra.src_line;
+    }
+
+    if (fname) {
+        if (!f.file) {
+            f.file = fname;
+            f.line = line;
+        }
+
+        // A scope that binds the location to its file
+        uint32_t file = jitc_llvm_dbg_file(fname);
+        auto [it, inserted] = f.scopes.try_emplace(file, d.next_id);
+        if (inserted)
+            d.defs.fmt("!%u = !DILexicalBlockFile(scope: !%u, file: !%u, "
+                       "discriminator: 0)\n", d.next_id++, f.node, file);
+        scope = it->second;
+    }
+
+    uint64_t key = ((uint64_t) scope << 32) | line;
+    auto [it, inserted] = d.locations.try_emplace(key, d.next_id);
+    if (inserted)
+        d.defs.fmt("!%u = !DILocation(line: %u, scope: !%u)\n",
+                   d.next_id++, line, scope);
+    return it->second;
 }

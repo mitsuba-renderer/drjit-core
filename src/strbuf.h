@@ -155,6 +155,37 @@ public:
      */
     void fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...);
 
+    /**
+     * \brief Attach a source location to the LLVM instructions emitted for a
+     * Dr.Jit variable. \c start marks the beginning of its emitted text;
+     * \c location is the DILocation metadata node ID.
+     *
+     * For example, with location = 12:
+     * \code
+     *     %a = load float, ptr %p
+     *     %b = fmul float %a, %a
+     * \endcode
+     * becomes:
+     * \code
+     *     %a = load float, ptr %p, !dbg !12
+     *     %b = fmul float %a, %a, !dbg !12
+     * \endcode
+     *
+     * 1. Scan the newly emitted text and record the byte offset of each
+     *    instruction's newline. Instructions are indented; labels, comments,
+     *    blank lines, and an unfinished final line are skipped.
+     * 2. Format the suffix once. The number of recorded offsets times its length
+     *    gives the exact amount of additional space needed.
+     * 3. Expand the buffer once. Byte offsets remain valid even if it relocates.
+     * 4. Visit the offsets backward, moving the following text right and
+     *    inserting each suffix. This preserves unread text and moves each
+     *    affected span once.
+     *
+     * The offsets avoid a second search for instruction boundaries and a full
+     * scratch copy of the IR. Their storage is reused between calls.
+     */
+    void annotate_llvm(size_t start, uint32_t location);
+
 #if defined(DRJIT_ENABLE_CUDA)
     /**
      * \brief CUDA-specific formatting routine. Its syntax is described at the

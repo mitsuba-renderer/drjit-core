@@ -18,6 +18,9 @@ struct UnitArtifact;
 /// Does LLJIT link units via JITLink (as opposed to RuntimeDyld)?
 extern bool jitc_llvm_jitlink;
 
+/// Lazily create the debugger-enabled linker. Returns false if unsupported.
+extern bool jitc_llvm_debug_init();
+
 /// Code model used to compile units. Depends on the linker in use.
 extern LLVMCodeModel jitc_llvm_code_model();
 
@@ -43,9 +46,10 @@ extern void jitc_llvm_compiler_pool_clear();
 /// Link a relocatable object file into the process and resolve the entry
 /// point 'symbol'. On return, 'artifact' holds the resource tracker that owns
 /// the linked code (ptr[0]), the entry point address (value), and the object
-/// size (size). 'source' is printed when linking fails.
+/// size (size). 'source' is printed when linking fails. Debug units use a
+/// separate linker and store it in ptr[1] to serialize debugger notifications.
 extern void jitc_llvm_link(const char *symbol, const uint8_t *object,
-                           size_t size, const char *source,
+                           size_t size, const char *source, bool debug,
                            UnitArtifact &artifact);
 
 /// Unlink a unit and release its memory

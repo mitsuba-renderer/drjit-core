@@ -437,6 +437,50 @@ size_t StringBuffer::vfmt(const char *fmt, va_list args_) {
     } while (true);
 }
 
+// Reusable buffer of byte offsets where LLVM instructions receive '!dbg' attachments.
+static std::vector<size_t> llvm_debug_offsets;
+
+void StringBuffer::annotate_llvm(size_t start, uint32_t location) {
+    if (start == size())
+        return;
+
+    auto &offsets = llvm_debug_offsets;
+    offsets.clear();
+    for (const char *p = m_start + start; p < m_cur;) {
+        const char *nl = (const char *) memchr(p, '\n', m_cur - p);
+        if (!nl)
+            break;
+        const char *q = p;
+        while (q < nl && *q == ' ')
+            ++q;
+        if (q != p && q != nl && *q != ';')
+            offsets.push_back((size_t) (nl - m_start));
+        p = nl + 1;
+    }
+    if (offsets.empty())
+        return;
+
+    char suffix[8 + MAXSIZE_U32];
+    memcpy(suffix, ", !dbg !", 8);
+    size_t suffix_len = (size_t) (w_u32(suffix + 8, location) - suffix);
+
+    // Reserve once, then expand backwards so unread text is never overwritten.
+    char *src = expand(m_cur, offsets.size() * suffix_len),
+         *dst = src + offsets.size() * suffix_len;
+    m_cur = dst;
+    *m_cur = '\0';
+
+    for (auto it = offsets.rbegin(); it != offsets.rend(); ++it) {
+        char *pos = m_start + *it;
+        size_t len = (size_t) (src - pos);
+        dst -= len;
+        memmove(dst, pos, len);
+        dst -= suffix_len;
+        memcpy(dst, suffix, suffix_len);
+        src = pos;
+    }
+}
+
 void StringBuffer::fmt_llvm(size_t nargs, size_t fmt_len, const char *fmt, ...) {
     va_list args2;
     va_start(args2, fmt);

@@ -32,6 +32,7 @@
 #  include <llvm-c/Orc.h>
 #  include <llvm-c/OrcEE.h>
 #  include <llvm-c/LLJIT.h>
+#  include <llvm-c/LLJITUtils.h>
 #else
 #  include <stdint.h>
 #  include <stdlib.h>
@@ -156,4 +157,7 @@ DR_LLVM_SYM(void (*LLVMOrcLLJITBuilderSetObjectLinkingLayerCreator)(
     void *));
 DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcCreateObjectLinkingLayerWithInProcessMemoryManager)(
     LLVMOrcObjectLayerRef *, LLVMOrcExecutionSessionRef));
+
+// Debugger registration of JIT-compiled code (LLVM 18+)
+DR_LLVM_SYM(LLVMErrorRef (*LLVMOrcLLJITEnableDebugSupport)(LLVMOrcLLJITRef));
 #endif
