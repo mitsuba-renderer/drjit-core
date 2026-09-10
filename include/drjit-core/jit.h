@@ -2519,7 +2519,9 @@ jit_var_call_reduce(JIT_ENUM JitBackend backend, const char *variant,
  * - mask, id, flags
  * </tt>.
  *
- * The \c out array receives one boolean hit mask for shadow rays. Closest-hit
+ * The \c out array receives two outputs for shadow rays: the boolean hit mask
+ * and the ray's user \c flags word (32 bit integer) after the trace, which
+ * intersection filters may use to report back to the caller. Closest-hit
  * rays receive eight outputs:
  *
  * - valid

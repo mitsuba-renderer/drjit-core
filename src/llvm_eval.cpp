@@ -1437,6 +1437,9 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
         out[0] = jitc_var_new_node_1(
             JitBackend::LLVM, VarKind::Extract, VarType::Bool, size, symbolic,
             index, jitc_var(index), 0);
+        out[1] = jitc_var_new_node_1(
+            JitBackend::LLVM, VarKind::Extract, VarType::UInt32, size, symbolic,
+            index, jitc_var(index), 1);
     } else {
         for (int i = 0; i < 8; ++i) {
             VarType vt = (i == 0 || i == 7) ? VarType::Bool
@@ -1654,10 +1657,14 @@ static void jitc_llvm_render_trace(const Variable *v,
     if (shadow_ray) {
         fmt("    $v_out_tfar_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
             "    $v_out_tfar = load <$w x $s>, ptr $v_out_tfar_1, align $u\n"
-            "    $v_out_0 = fcmp olt <$w x $s> $v_out_tfar, $z\n",
+            "    $v_out_0 = fcmp olt <$w x $s> $v_out_tfar, $z\n"
+            "    $v_out_1_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
+            "    $v_out_1 = load <$w x i32>, ptr $v_out_1_1, align $u\n",
             v, offset,
             v, tname, v, float_size * width,
-            v, tname, v);
+            v, tname, v,
+            v, (9 * float_size + 12) * width,
+            v, v, 4 * width);
     } else {
         fmt("    $v_out_tfar_1 = getelementptr inbounds i8, ptr %buffer, i32 $u\n"
             "    $v_out_tfar = load <$w x $s>, ptr $v_out_tfar_1, align $u\n",

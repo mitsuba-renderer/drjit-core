@@ -143,8 +143,11 @@ extern JIT_EXPORT uint32_t jit_metal_configure_scene(
  *     which scene's TLAS / IFT this trace operation will run against.
  *
  * \param shadow
- *     If nonzero, performs a shadow ray test. In this case, only
- *     output 0 (the hit flag) is computed; outputs 1-7 are left untouched.
+ *     If nonzero, performs a shadow ray test that accepts any intersection
+ *     and terminates traversal early. Only outputs 0 (the hit flag) and 7
+ *     (the user instance ID of whichever hit ended the traversal) are
+ *     computed; callers may use the latter to classify the hit. Outputs
+ *     1-6 keep their miss values.
  */
 extern JIT_EXPORT void jit_metal_ray_trace(uint32_t n_args, uint32_t *args,
                                            uint32_t mask, uint32_t *out,

@@ -772,19 +772,15 @@ static void jitc_metal_render(Variable *v) {
             // Initialize all outputs to their canonical miss values (distance
             // +infinity, validity false, the rest zero). Masked lanes skip the
             // block below and missed lanes skip the hit-field write, keeping these.
-            if (td->shadow) {
-                fmt("bool $v_out_0 = false;\n", v);
-            } else {
-                fmt("bool $v_out_0 = false;\n"
-                    "float $v_out_1 = as_type<float>(0x7f800000u);\n"
-                    "float $v_out_2 = 0.0f;\n"
-                    "float $v_out_3 = 0.0f;\n"
-                    "uint $v_out_4 = 0u;\n"
-                    "uint $v_out_5 = 0u;\n"
-                    "uint $v_out_6 = 0u;\n"
-                    "uint $v_out_7 = 0u;\n",
-                    v, v, v, v, v, v, v, v);
-            }
+            fmt("bool $v_out_0 = false;\n"
+                "float $v_out_1 = as_type<float>(0x7f800000u);\n"
+                "float $v_out_2 = 0.0f;\n"
+                "float $v_out_3 = 0.0f;\n"
+                "uint $v_out_4 = 0u;\n"
+                "uint $v_out_5 = 0u;\n"
+                "uint $v_out_6 = 0u;\n"
+                "uint $v_out_7 = 0u;\n",
+                v, v, v, v, v, v, v, v);
 
             Variable *accel_h = jitc_var(v->dep[2]);
             Variable *ift_h = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
@@ -858,24 +854,27 @@ static void jitc_metal_render(Variable *v) {
             // - Bbox hit:     prim_uv = (0, 0) — compute_surface_interaction()
             //                 will recompute it from the hit point.
             // On a hit, overwrite the miss defaults set above.
+
             put("    auto _ht = _hit.type;\n"
                 "    if (_ht != raytracing::intersection_type::none) {\n");
 
-            if (td->shadow) {
-                fmt("        $v_out_0 = true;\n",
-                    v);
+            const char *prim_u, *prim_v;
+            if (has_curves_local) {
+                prim_u = "(_ht == raytracing::intersection_type::curve)"
+                         " ? _hit.curve_parameter : _hit.triangle_barycentric_coord.x";
+                prim_v = "(_ht == raytracing::intersection_type::curve)"
+                         " ? 0.0f : _hit.triangle_barycentric_coord.y";
             } else {
-                const char *prim_u, *prim_v;
-                if (has_curves_local) {
-                    prim_u = "(_ht == raytracing::intersection_type::curve)"
-                             " ? _hit.curve_parameter : _hit.triangle_barycentric_coord.x";
-                    prim_v = "(_ht == raytracing::intersection_type::curve)"
-                             " ? 0.0f : _hit.triangle_barycentric_coord.y";
-                } else {
-                    prim_u = "_hit.triangle_barycentric_coord.x";
-                    prim_v = "_hit.triangle_barycentric_coord.y";
-                }
+                prim_u = "_hit.triangle_barycentric_coord.x";
+                prim_v = "_hit.triangle_barycentric_coord.y";
+            }
 
+            // Shadow traces only classify the hit that ended the traversal
+            if (td->shadow)
+                fmt("        $v_out_0 = true;\n"
+                    "        $v_out_7 = _hit.user_instance_id;\n",
+                    v, v);
+            else
                 fmt("        $v_out_0 = true;\n"
                     "        $v_out_1 = _hit.distance;\n"
                     "        $v_out_2 = $s;\n"
@@ -885,10 +884,9 @@ static void jitc_metal_render(Variable *v) {
                     "        $v_out_6 = _hit.geometry_id;\n"
                     "        $v_out_7 = _hit.user_instance_id;\n",
                     v, v, v, prim_u, v, prim_v, v, v, v, v);
-            }
 
-            put("    }\n" // close: if (_ht != none)
-                "}\n");   // close: if (valid) / unconditional block
+            put("    }\n"  // close: if (_ht != none)
+                "}\n");    // close: if (valid) / unconditional block
             break;
         }
 

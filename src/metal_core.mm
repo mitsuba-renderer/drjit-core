@@ -1561,7 +1561,7 @@ void jitc_metal_ray_trace(uint32_t n_args, uint32_t *args,
         VarType::UInt32   // user-provided instance ID
     };
 
-    for (uint32_t i = 0; i < (td->shadow ? 1u : 8u); ++i)
+    for (uint32_t i = 0; i < 8; ++i)
         out[i] = jitc_var_new_node_1(
             JitBackend::Metal, VarKind::Extract, out_types[i],
             size, symbolic, trace, jitc_var(trace), (uint64_t) i);
