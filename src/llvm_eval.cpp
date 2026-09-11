@@ -603,11 +603,13 @@ static void jitc_llvm_render(Variable *v) {
                     v, v, v,
                     v, v, a0,
                     v, v, v);
-            } else if (jitc_llvm_has_avx512 && jitc_llvm_vector_width == 16) {
-                fmt_intrinsic("declare <$w x float> @llvm.x86.avx512.rsqrt14.ps.$u(<$w x float>, <$w x float>, i16)", jitc_llvm_vector_width * 32);
+            } else if (jitc_llvm_has_avx512 && jitc_llvm_vector_width >= 4) {
+                // AVX-512VL also provides the 128- and 256-bit forms
+                const char *mask_type = jitc_llvm_vector_width == 16 ? "i16" : "i8";
+                fmt_intrinsic("declare <$w x float> @llvm.x86.avx512.rsqrt14.ps.$u(<$w x float>, <$w x float>, $s)", jitc_llvm_vector_width * 32, mask_type);
                 fmt_intrinsic("declare <$w x i1> @llvm.x86.avx512.fpclass.ps.$u(<$w x float>, i32)", jitc_llvm_vector_width * 32);
                 fmt_intrinsic("declare <$w x float> @llvm.fma.v$wf32(<$w x float>, <$w x float>, <$w x float>)");
-                fmt("    $v_0 = call <$w x float> @llvm.x86.avx512.rsqrt14.ps.$u($V, <$w x float> $z, i16 -1)\n"
+                fmt("    $v_0 = call <$w x float> @llvm.x86.avx512.rsqrt14.ps.$u($V, <$w x float> $z, $s -1)\n"
                     "    $v_1 = call <$w x i1> @llvm.x86.avx512.fpclass.ps.$u($V, i32 30)\n"
                     "    $v_2 = insertelement <$w x float> undef, float 0.5, i32 0\n"
                     "    $v_3 = insertelement <$w x float> undef, float 3.0, i32 0\n"
@@ -619,7 +621,7 @@ static void jitc_llvm_render(Variable *v) {
                     "    $v_9 = call <$w x float> @llvm.fma.v$wf32(<$w x float> $v_8, <$w x float> $v_0, <$w x float> $v_5)\n"
                     "    $v_10 = fmul <$w x float> $v_7, $v_9\n"
                     "    $v = select <$w x i1> $v_1, <$w x float> $v_0, <$w x float> $v_10\n",
-                    v, jitc_llvm_vector_width * 32, a0,
+                    v, jitc_llvm_vector_width * 32, a0, mask_type,
                     v, jitc_llvm_vector_width * 32, a0,
                     v,
                     v,
