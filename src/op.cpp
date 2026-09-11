@@ -1303,7 +1303,10 @@ uint32_t jitc_var_select(uint32_t a0, uint32_t a1, uint32_t a2) {
 
     uint32_t result = 0;
     if (info.simplify || a1 == a2) {
-        if (jitc_is_one(v0) || a1 == a2)
+        // Fold equal literals even if they are in different LVN scopes
+        bool same_literal = v1->is_literal() && v2->is_literal() &&
+                            v1->literal == v2->literal;
+        if (jitc_is_one(v0) || a1 == a2 || same_literal)
             return jitc_var_resize(a1, info.size);
         else if (jitc_is_zero(v0))
             return jitc_var_resize(a2, info.size);
