@@ -121,8 +121,12 @@ bool jitc_llvm_init() {
         jitc_llvm_has_avx = true;
     }
     if (strstr(jitc_llvm_target_features, "+avx512vl")) {
-        jitc_llvm_vector_width = 16;
         jitc_llvm_has_avx512 = true;
+#if !defined(_WIN32)
+        // 16-wide packets are disabled on Windows, since the Embree
+        // dependency does not support them on this platform.
+        jitc_llvm_vector_width = 16;
+#endif
     }
     if (strstr(jitc_llvm_target_features, "+neon")) {
         jitc_llvm_vector_width = 4;
