@@ -650,8 +650,8 @@ uint32_t jitc_var_div(uint32_t a0, uint32_t a1) {
             uint32_t recip = jitc_var_rcp(a1);
             result = jitc_var_mul(a0, recip);
             jitc_var_dec_ref(recip);
-        } else if (a0 == a1 && !jitc_is_float(v0)) {
-            uint64_t value = 1;
+        } else if (a0 == a1 && (!jitc_is_float(v0) || fast_math)) {
+            uint64_t value = type_one[(int) info.type];
             result = jitc_var_literal(info.backend, info.type, &value, info.size, 0);
         }
     }

@@ -364,6 +364,9 @@ extern const char *type_name      [(int) VarType::Count];
 extern const char *type_name_short[(int) VarType::Count];
 extern const uint32_t type_size   [(int) VarType::Count];
 
+/// Bit pattern of the value 1 for each variable type
+extern const uint64_t type_one    [(int) VarType::Count];
+
 /// Fixed-width, length-tagged storage for the per-VarType name tables that the
 /// IR formatters consult on the hot codegen path. Entries must be shorter than
 /// 6 characters or they will be truncated.
