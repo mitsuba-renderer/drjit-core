@@ -237,7 +237,7 @@ enum OptixHitObjectField {
   */
 extern JIT_EXPORT void jit_optix_ray_trace(
     uint32_t n_args, uint32_t *args, uint32_t n_hit_object_field,
-    OptixHitObjectField *hit_object_fields, uint32_t *hit_object_out,
+    const OptixHitObjectField *hit_object_fields, uint32_t *hit_object_out,
     int reorder, uint32_t reorder_hint, uint32_t reorder_hint_num_bits,
     int invoke, uint32_t mask, uint32_t pipeline, uint32_t sbt);
 
