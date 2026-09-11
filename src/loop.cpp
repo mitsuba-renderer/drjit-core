@@ -166,8 +166,9 @@ bool jitc_var_loop_end(uint32_t loop, uint32_t cond, uint32_t *indices, uint32_t
     uint32_t size = jitc_var(cond)->size;
     {
         for (size_t i = 0; i < ld->size; ++i) {
-            // Ignore loop-invariant state variables
-            if (indices[i] == ld->inner_in[i])
+            // Ignore loop-invariant and eliminated state variables.
+            if (indices[i] == ld->inner_in[i] ||
+                ld->inner_in[i] == ld->outer_in[i])
                 continue;
 
             const Variable *v1 = jitc_var(ld->outer_in[i]),
