@@ -523,9 +523,12 @@ bool jitc_optix_compile(ThreadState *ts, Kernel &kernel) {
     unsigned int dc_stack_size_from_state = max_dc_depth * ssp.dssDC; // DC is invoked from RG, MS, or CH.
     unsigned int continuation_stack_size = ssp.cssRG + std::max(std::max(ssp.cssCH, ssp.cssMS), ssp.cssAH + ssp.cssIS);
 
+    unsigned int flags = pipeline.compile_options.traversableGraphFlags;
     unsigned int max_traversable_graph_depth = 2; // Support instancing
-    if (pipeline.compile_options.traversableGraphFlags == OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS)
-        max_traversable_graph_depth = 1;
+    if (flags == OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS)
+        max_traversable_graph_depth = 1; // No instancing
+    else if (flags == OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_ANY)
+        max_traversable_graph_depth = 3; // Support motion transforms
 
     rv = optixPipelineSetStackSize(kernel.optix.pipeline,
                                    dc_stack_size_from_traversal,
