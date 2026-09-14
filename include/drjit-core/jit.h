@@ -2199,6 +2199,35 @@ extern JIT_EXPORT void jit_memcpy(JIT_ENUM JitBackend backend, void *dst, const 
 extern JIT_EXPORT void jit_memcpy_async(JIT_ENUM JitBackend backend, void *dst, const void *src,
                                         size_t size);
 
+#if defined(__cplusplus)
+extern "C" {
+#endif
+
+/**
+ * \brief Compress a host buffer with LZ4 HC
+ *
+ * Produces a single LZ4 block (no frame, no dictionary) and returns its size.
+ * The output buffer must hold at least <tt>src_size + src_size / 255 + 16</tt>
+ * bytes. The caller must record the uncompressed size separately, since \ref
+ * jit_lz4_decompress() needs it.
+ */
+extern JIT_EXPORT size_t jit_lz4_compress(const void *src, size_t src_size,
+                                          void *dst, size_t dst_size);
+
+/**
+ * \brief Decompress a block produced by \ref jit_lz4_compress()
+ *
+ * Reconstructs the first \c dst_size bytes of the original data, which may be
+ * a prefix of it. Raises an exception when the input is corrupt or shorter
+ * than that.
+ */
+extern JIT_EXPORT void jit_lz4_decompress(const void *src, size_t src_size,
+                                          void *dst, size_t dst_size);
+
+#if defined(__cplusplus)
+}
+#endif
+
 /**
  * \brief Reduce the given array to a single value
  *

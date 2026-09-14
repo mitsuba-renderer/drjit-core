@@ -32,6 +32,8 @@
 #include <condition_variable>
 #include <drjit-core/half.h>
 #include <drjit-core/texture.h>
+#include <lz4.h>
+#include <lz4hc.h>
 
 #if defined(DRJIT_ENABLE_OPTIX)
 #  include <drjit-core/optix.h>
@@ -2571,4 +2573,28 @@ void* jit_event_handle(JitEvent event) {
         default:
             jitc_raise("jit_event_handle(): invalid backend");
     }
+}
+
+size_t jit_lz4_compress(const void *src, size_t src_size, void *dst,
+                        size_t dst_size) {
+    if (src_size > LZ4_MAX_INPUT_SIZE)
+        jitc_raise("jit_lz4_compress(): input exceeds the LZ4 block size limit.");
+    int rv = LZ4_compress_HC((const char *) src, (char *) dst, (int) src_size,
+                             (int) std::min<size_t>(dst_size, INT32_MAX),
+                             LZ4HC_CLEVEL_DEFAULT);
+    if (rv <= 0)
+        jitc_raise("jit_lz4_compress(): the output buffer is too small.");
+    return (size_t) rv;
+}
+
+void jit_lz4_decompress(const void *src, size_t src_size, void *dst,
+                        size_t dst_size) {
+    if (src_size > INT32_MAX || dst_size > INT32_MAX)
+        jitc_raise("jit_lz4_decompress(): buffer exceeds the LZ4 block size limit.");
+    int rv = LZ4_decompress_safe_partial((const char *) src, (char *) dst,
+                                         (int) src_size, (int) dst_size,
+                                         (int) dst_size);
+    if (rv != (int) dst_size)
+        jitc_raise("jit_lz4_decompress(): corrupt input, or the uncompressed "
+                   "size does not match.");
 }
