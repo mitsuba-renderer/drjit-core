@@ -6,7 +6,7 @@ extern void *jitc_cuda_tex_create(size_t ndim, const size_t *shape,
                                   size_t n_channels, int format,
                                   int filter_mode, int wrap_mode, int writable,
                                   int srgb, size_t n_levels, int mip_filter,
-                                  size_t max_aniso);
+                                  size_t max_aniso, int compression);
 extern void jitc_cuda_tex_get_shape(const void *handle, size_t *shape);
 extern void jitc_cuda_tex_get_indices(const void *handle,
                                       uint32_t *indices);

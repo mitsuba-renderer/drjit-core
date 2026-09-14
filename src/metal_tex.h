@@ -61,7 +61,8 @@ extern void *jitc_metal_tex_create(size_t ndim, const size_t *shape,
                                    size_t n_channels, int format,
                                    int filter_mode, int wrap_mode,
                                    int writable, int srgb, size_t n_levels,
-                                   int mip_filter, size_t max_aniso);
+                                   int mip_filter, size_t max_aniso,
+                                   int compression);
 extern void *jitc_metal_tex_wrap(uintptr_t handle, size_t ndim, int format,
                                  int writable, int filter_mode, int wrap_mode,
                                  int srgb);

@@ -35,7 +35,16 @@
 // ============================================================================
 
 static MTLPixelFormat metal_tex_pixel_format(int format, size_t channels_storage,
-                                             int srgb) {
+                                             int srgb, int compression) {
+    // Validated by jit_tex_create()
+    switch (compression) {
+        case 4: return MTLPixelFormatBC4_RUnorm;
+        case 5: return MTLPixelFormatBC5_RGUnorm;
+        case 7: return srgb ? MTLPixelFormatBC7_RGBAUnorm_sRGB
+                            : MTLPixelFormatBC7_RGBAUnorm;
+        default: break;
+    }
+
     if ((VarType) format == VarType::UInt8) {
         if (srgb) {
             switch (channels_storage) {
@@ -153,7 +162,7 @@ static void metal_tex_install_release(MetalTexture *tex, size_t i) {
 void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                             int format, int filter_mode, int wrap_mode,
                             int writable, int srgb, size_t n_levels,
-                            int mip_filter, size_t max_aniso) {
+                            int mip_filter, size_t max_aniso, int compression) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_metal_tex_create(): invalid texture dimension!");
     else if (n_channels == 0)
@@ -166,7 +175,6 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     if (n_levels > 1 && writable)
         jitc_raise("jit_metal_tex_create(): MIP-mapped textures cannot be "
                    "writable!");
-
     ThreadState *ts = thread_state(JitBackend::Metal);
     id<MTLDevice> device = (__bridge id<MTLDevice>) ts->metal_device;
 
@@ -185,6 +193,7 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
     MetalTexture *tex = new MetalTexture(type_size, n_channels, writable != 0);
     tex->ndim = ndim;
     tex->n_levels = n_levels;
+    tex->compression = compression;
     for (size_t i = 0; i < ndim; ++i)
         tex->shape[i] = shape[i];
 
@@ -200,7 +209,8 @@ void *jitc_metal_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
 
             MTLTextureDescriptor *desc = [[MTLTextureDescriptor alloc] init];
             desc.textureType = (ndim == 3) ? MTLTextureType3D : MTLTextureType2D;
-            desc.pixelFormat = metal_tex_pixel_format(format, ci, srgb);
+            desc.pixelFormat = metal_tex_pixel_format(format, ci, srgb,
+                                                      compression);
             desc.width = width;
             desc.height = height;
             desc.depth = depth;
@@ -422,6 +432,31 @@ void jitc_metal_tex_memcpy_d2t(const void *src_ptr, void *dst_handle,
     size_t height = (ndim >= 2) ? shape[1] : 1;
     size_t depth  = (ndim == 3) ? shape[2] : 1;
 
+    // Block-compressed textures upload their 4x4 blocks as-is. The row pitch
+    // then counts a row of blocks, while the region is still given in texels.
+    if (tex.compression) {
+        size_t bw, bh;
+        tex.level_blocks(level, &bw, &bh);
+        size_t bytes_per_row = bw * tex.block_bytes();
+        @autoreleasepool {
+            id<MTLBlitCommandEncoder> blit =
+                (__bridge id<MTLBlitCommandEncoder>) mts->ensure_blit_encoder();
+            size_t src_off = 0;
+            id<MTLBuffer> src_buf = (__bridge id<MTLBuffer>)
+                jitc_metal_find_buffer((void *) src_ptr, &src_off);
+            [blit copyFromBuffer:src_buf
+                    sourceOffset:src_off
+               sourceBytesPerRow:bytes_per_row
+             sourceBytesPerImage:bytes_per_row * bh
+                      sourceSize:MTLSizeMake(width, height, 1)
+                       toTexture:(__bridge id<MTLTexture>) tex.textures[0]
+                destinationSlice:0
+                destinationLevel:level
+               destinationOrigin:MTLOriginMake(0, 0, 0)];
+        }
+        return;
+    }
+
     bool needs_staging = (tex.n_textures > 1) || (tex.n_channels == 3);
     MetalKernel deint = (type_size == 1)   ? MetalKernel::DeinterleaveU8
                         : (type_size == 2) ? MetalKernel::DeinterleaveU16
@@ -472,6 +507,9 @@ void jitc_metal_tex_memcpy_d2t(const void *src_ptr, void *dst_handle,
 
 void jitc_metal_tex_memcpy_t2d(const void *src_handle, void *dst_ptr) {
     MetalTexture &tex = *((MetalTexture *) src_handle);
+    if (tex.compression)
+        jitc_raise("jit_tex_memcpy_t2d(): block-compressed textures cannot be "
+                   "read back into linear memory.");
     ThreadState *ts = thread_state(JitBackend::Metal);
     MetalThreadState *mts = (MetalThreadState *) ts->actual_state();
 

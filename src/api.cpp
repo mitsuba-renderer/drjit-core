@@ -1547,19 +1547,41 @@ static void jit_tex_unavailable(JitBackend backend) {
 void *jit_tex_create(JitBackend backend, size_t ndim, const size_t *shape,
                      size_t n_channels, int format, int filter_mode,
                      int wrap_mode, int writable, int srgb, size_t n_levels,
-                     int mip_filter, size_t max_aniso) {
+                     int mip_filter, size_t max_aniso, int compression) {
     lock_guard guard(state.lock);
+
+    if (compression) {
+        size_t bc_channels;
+        switch (compression) {
+            case 4: bc_channels = 1; break;
+            case 5: bc_channels = 2; break;
+            case 7: bc_channels = 4; break;
+            default:
+                jitc_raise("jit_tex_create(): invalid block compression %i "
+                           "(expected 0, 4, 5, or 7)!", compression);
+        }
+        if ((VarType) format != VarType::UInt8 || ndim != 2 || writable)
+            jitc_raise("jit_tex_create(): block-compressed textures must be "
+                       "non-writable 2D textures with UInt8 storage!");
+        if (n_channels != bc_channels)
+            jitc_raise("jit_tex_create(): BC%i textures must have exactly %zu "
+                       "channel(s), got %zu!", compression, bc_channels,
+                       n_channels);
+    }
+
 #if defined(DRJIT_ENABLE_CUDA)
     if (jitc_is_cuda(backend))
         return jitc_cuda_tex_create(ndim, shape, n_channels, format,
                                     filter_mode, wrap_mode, writable, srgb,
-                                    n_levels, mip_filter, max_aniso);
+                                    n_levels, mip_filter, max_aniso,
+                                    compression);
 #endif
 #if defined(DRJIT_ENABLE_METAL)
     if (jitc_is_metal(backend))
         return jitc_metal_tex_create(ndim, shape, n_channels, format,
                                      filter_mode, wrap_mode, writable, srgb,
-                                     n_levels, mip_filter, max_aniso);
+                                     n_levels, mip_filter, max_aniso,
+                                     compression);
 #endif
     jit_tex_unavailable(backend);
     return nullptr;

@@ -65,6 +65,16 @@ extern "C" {
  * \param max_aniso
  *     Anisotropy bound of \ref jit_tex_lookup_grad(), clamped by the hardware
  *     to <tt>[1, 16]</tt>. The value 1 selects isotropic filtering.
+ *
+ * \param compression
+ *     Block compression of the texel storage: 0 (none), 4 (BC4, 1 channel,
+ *     8 bytes per block), 5 (BC5, 2 channels, 16 bytes per block), or 7
+ *     (BC7, 4 channels, 16 bytes per block). A compressed texture must be 2D,
+ *     use the <tt>UInt8</tt> format with exactly the format's channel count,
+ *     and cannot be \c writable. \ref jit_tex_memcpy_d2t()
+ *     then expects the 4x4 blocks of a level in row-major order
+ *     (each level covers <tt>ceil(w/4) * ceil(h/4)</tt> blocks), and
+ *     \ref jit_tex_memcpy_t2d() is unavailable.
  */
 extern JIT_EXPORT void *jit_tex_create(JitBackend backend,
                                        size_t ndim,
@@ -77,7 +87,8 @@ extern JIT_EXPORT void *jit_tex_create(JitBackend backend,
                                        int srgb JIT_DEF(0),
                                        size_t n_levels JIT_DEF(1),
                                        int mip_filter JIT_DEF(1),
-                                       size_t max_aniso JIT_DEF(1));
+                                       size_t max_aniso JIT_DEF(1),
+                                       int compression JIT_DEF(0));
 
 /**
  * \brief Wrap an existing native texture object as a Dr.Jit texture

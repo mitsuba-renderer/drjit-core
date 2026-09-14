@@ -28,6 +28,7 @@ struct TextureBase {
     bool writable = false; // Created/wrapped for kernel stores?
     size_t shape[3] = { 0, 0, 0 }; // Per-dimension texel counts (0 past ndim)
     size_t n_levels = 1;   // Number of MIP levels, including the base
+    int compression = 0;   // Block compression: 0 (none), 4, 5, or 7 (BC4/5/7)
     size_t device_bytes = 0; // GPU memory of all sub-textures (0 when wrapped)
     std::atomic_size_t n_referenced_textures{ 0 }; // Outstanding sub-texture refs
 
@@ -69,20 +70,41 @@ struct TextureBase {
         }
     }
 
+    /// Bytes per 4x4 block of a block-compressed texture (0 otherwise)
+    size_t block_bytes() const {
+        return compression == 0 ? 0 : (compression == 4 ? 8 : 16);
+    }
+
+    /// Block-compressed textures: block columns and rows of MIP level ``level``
+    void level_blocks(size_t level, size_t *bw, size_t *bh) const {
+        size_t sh[3];
+        level_shape(level, sh);
+        *bw = (sh[0] + 3) / 4;
+        *bh = (sh[1] + 3) / 4;
+    }
+
     /// Storage of all sub-textures and MIP levels, excluding driver padding
     size_t storage_bytes() const {
-        size_t texels = 0, sh[3];
+        size_t bytes = 0, sh[3];
+        if (compression) {
+            for (size_t l = 0; l < n_levels; ++l) {
+                size_t bw, bh;
+                level_blocks(l, &bw, &bh);
+                bytes += bw * bh * block_bytes();
+            }
+            return bytes;
+        }
         for (size_t l = 0; l < n_levels; ++l) {
             level_shape(l, sh);
             size_t t = 1;
             for (size_t i = 0; i < ndim; ++i)
                 t *= sh[i];
-            texels += t;
+            bytes += t;
         }
         size_t chans = 0;
         for (size_t i = 0; i < n_textures; ++i)
             chans += channels_storage(i);
-        return texels * chans * type_size;
+        return bytes * chans * type_size;
     }
 };
 

@@ -98,12 +98,13 @@ static CUtexObject cuda_tex_make_texobject(CUarray array, int format,
                                            CUmipmappedArray mip = nullptr,
                                            size_t n_levels = 1,
                                            int mip_filter = 1,
-                                           size_t max_aniso = 1);
+                                           size_t max_aniso = 1,
+                                           int compression = 0);
 
 void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
                            int format, int filter_mode, int wrap_mode,
                            int writable, int srgb, size_t n_levels,
-                           int mip_filter, size_t max_aniso) {
+                           int mip_filter, size_t max_aniso, int compression) {
     if (ndim < 1 || ndim > 3)
         jitc_raise("jit_cuda_tex_create(): invalid texture dimension!");
     else if (n_channels == 0)
@@ -144,11 +145,20 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
             break;
     }
 
+    // Validated by jit_tex_create()
+    switch (compression) {
+        case 4: array_format = CU_AD_FORMAT_BC4_UNORM; break;
+        case 5: array_format = CU_AD_FORMAT_BC5_UNORM; break;
+        case 7: array_format = CU_AD_FORMAT_BC7_UNORM; break;
+        default: break;
+    }
+
     CUDATexture *texture =
         new CUDATexture(tsize, n_channels, writable != 0);
     texture->ndim = ndim;
     texture->srgb = srgb;
     texture->n_levels = n_levels;
+    texture->compression = compression;
     for (size_t i = 0; i < ndim; ++i)
         texture->shape[i] = shape[i];
     if (n_levels > 1)
@@ -195,7 +205,7 @@ void *jitc_cuda_tex_create(size_t ndim, const size_t *shape, size_t n_channels,
         texture->textures[tex] = cuda_tex_make_texobject(
             array, format, tex_channels, filter_mode, wrap_mode, srgb, shape[0],
             (ndim >= 2) ? shape[1] : 0, (ndim == 3) ? shape[2] : 0,
-            mip, n_levels, mip_filter, max_aniso);
+            mip, n_levels, mip_filter, max_aniso, compression);
         texture->indices[tex] =
             jitc_var_mem_map(JitBackend::CUDA, VarType::UInt64,
                              (void *) texture->textures[tex], 1, false);
@@ -339,6 +349,32 @@ static void jitc_cuda_tex_memcpy(bool to_texture, const CUDATexture &tex,
     size_t n_texels = shape[0];
     for (size_t dim = 1; dim < ndim; ++dim)
         n_texels *= shape[dim];
+
+    if (tex.compression) {
+        if (!to_texture)
+            jitc_raise("jit_tex_memcpy_t2d(): block-compressed textures cannot "
+                       "be read back into linear memory.");
+
+        CUarray array = tex.arrays[0];
+        if (level > 0)
+            cuda_check(cuMipmappedArrayGetLevel(&array, tex.mip_arrays[0],
+                                                (unsigned int) level));
+
+        size_t bw, bh;
+        tex.level_blocks(level, &bw, &bh);
+        size_t pitch = bw * tex.block_bytes();
+
+        CUDA_MEMCPY2D op{};
+        op.srcMemoryType = CU_MEMORYTYPE_UNIFIED;
+        op.srcDevice = (CUdeviceptr) linear;
+        op.srcPitch = pitch;
+        op.dstMemoryType = CU_MEMORYTYPE_ARRAY;
+        op.dstArray = array;
+        op.WidthInBytes = pitch;
+        op.Height = bh;
+        cuda_check(cuMemcpy2DAsync(&op, ts->stream));
+        return;
+    }
 
     StagingAreaDeleter noop = [](void *) {};
     std::unique_ptr<void, StagingAreaDeleter> staging(nullptr, noop);
@@ -739,7 +775,7 @@ static CUtexObject cuda_tex_make_texobject(CUarray array, int format,
                                            size_t height, size_t depth,
                                            CUmipmappedArray mip,
                                            size_t n_levels, int mip_filter,
-                                           size_t max_aniso) {
+                                           size_t max_aniso, int compression) {
     CUDA_RESOURCE_DESC res_desc{};
     if (mip) {
         res_desc.resType = CU_RESOURCE_TYPE_MIPMAPPED_ARRAY;
@@ -772,6 +808,14 @@ static CUtexObject cuda_tex_make_texobject(CUarray array, int format,
     max_aniso = max_aniso < 1 ? 1 : (max_aniso > 16 ? 16 : max_aniso);
     tex_desc.maxAnisotropy = (unsigned int) max_aniso;
     tex_desc.maxMipmapLevelClamp = (float) (n_levels - 1);
+
+    // A block-compressed array carries its format itself and rejects any
+    // explicit resource view.
+    if (compression) {
+        CUtexObject texobj = 0;
+        cuda_check(cuTexObjectCreate(&texobj, &res_desc, &tex_desc, nullptr));
+        return texobj;
+    }
 
     CUDA_RESOURCE_VIEW_DESC view_desc{};
     view_desc.width = width;
