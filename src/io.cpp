@@ -8,6 +8,7 @@
 */
 
 #include "io.h"
+#include "isect.h"
 #include "log.h"
 #include "internal.h"
 #include "profile.h"
@@ -665,6 +666,7 @@ void jitc_cache_sweep() {
 void jitc_kernel_free(int device_id, const Kernel &kernel) {
     delete[] kernel.param_info;
     free(kernel.src);
+    free(kernel.isect);
 
     if (device_id == -1) {
         // The per-unit images referenced by 'reloc' are owned by the unit
@@ -716,4 +718,7 @@ void jitc_flush_kernel_cache() {
 
     // Kernels referencing the per-unit artifacts are gone; now evict those
     jitc_unit_cache_flush();
+
+    // Intersection bindings pointed into the evicted units
+    jitc_isect_invalidate();
 }

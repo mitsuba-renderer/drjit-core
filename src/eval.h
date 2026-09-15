@@ -81,6 +81,38 @@ extern void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
 /// Used by jitc_eval() to generate LLVM IR source code
 extern void jitc_llvm_assemble(ThreadState *ts, ScheduledGroup group);
 
+/// Saves the kernel schedule and the per-variable code generation state
+/// while a nested function body is assembled, and restores both on scope exit
+struct ScopedScheduleBackup {
+    struct Record {
+        ScheduledVariable sv;
+        uint32_t param_type : 2;
+        uint32_t output_flag : 1;
+        uint32_t reg_index;
+        uint32_t param_offset;
+    };
+
+    std::vector<Record> backup;
+
+    ScopedScheduleBackup();
+    ~ScopedScheduleBackup();
+};
+
+/// Saves the pending stack allocation request of the function being assembled
+/// (see 'alloca_size') around the assembly of a nested function body
+struct ScopedAllocaBackup {
+    int32_t size, align;
+
+    ScopedAllocaBackup() : size(alloca_size), align(alloca_align) {
+        alloca_size = alloca_align = -1;
+    }
+
+    ~ScopedAllocaBackup() {
+        alloca_size = size;
+        alloca_align = align;
+    }
+};
+
 /// Used by jitc_call() to generate source code for calls
 struct CallData;
 extern XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
@@ -90,11 +122,17 @@ extern XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
 /// Used by jitc_call() to generate LLVM IR source code for callables
 extern void jitc_llvm_assemble_func(const CallData *call, uint32_t inst);
 
+/// Generate the LLVM IR of an intersection function (see isect.h)
+extern void jitc_llvm_assemble_isect(const CallData *call);
+
 /// Used by jitc_call() to generate PTX source code for callables
 extern void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
                                     uint32_t in_size, uint32_t in_align,
                                     uint32_t out_size, uint32_t out_align,
                                     uint32_t n_regs);
+
+/// Generate the PTX of an OptiX intersection program (see isect.h)
+extern void jitc_cuda_assemble_isect(const CallData *call, uint32_t n_regs);
 
 #if defined(DRJIT_ENABLE_METAL)
 struct Kernel;

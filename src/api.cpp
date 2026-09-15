@@ -21,6 +21,7 @@
 #endif
 #include "op.h"
 #include "call.h"
+#include "isect.h"
 #include "loop.h"
 #include "cond.h"
 #include "profile.h"
@@ -913,6 +914,28 @@ uint32_t jit_var_pointer(JitBackend backend, const void *value,
 uint32_t jit_var_call_input(uint32_t index) {
     lock_guard guard(state.lock);
     return jitc_var_call_input(index);
+}
+
+void jit_isect_begin(JitBackend backend, VarType float_type, uint32_t *in) {
+    lock_guard guard(state.lock);
+    jitc_isect_begin(backend, float_type, in);
+}
+
+uint32_t jit_isect_end(const char *name, const uint32_t *out) {
+    lock_guard guard(state.lock);
+    return jitc_isect_end(name, out);
+}
+
+JitIsectBinding *jit_isect_bind(uint32_t func, uintptr_t scene,
+                                uint32_t record_index, uint32_t flags,
+                                void *user) {
+    lock_guard guard(state.lock);
+    return jitc_isect_bind(func, scene, record_index, flags, user);
+}
+
+void jit_isect_unbind(JitIsectBinding *binding) {
+    lock_guard guard(state.lock);
+    jitc_isect_unbind(binding);
 }
 
 uint32_t jit_var_inc_ref_impl(uint32_t index) noexcept {

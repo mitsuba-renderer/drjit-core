@@ -2568,6 +2568,170 @@ extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
                                           int shadow_ray, const uint32_t *in,
                                           uint32_t *out);
 
+// ====================================================================
+//         Custom intersection functions for ray tracing backends
+// ====================================================================
+
+/*
+ * Ray tracing backends invoke a callback for every custom (bounding-box)
+ * primitive that a ray traverses. Dr.Jit can generate that callback from a
+ * recorded computation, so that the same body serves each backend:
+ *
+ * 1. Call \ref jit_isect_begin(), which opens a symbolic recording session
+ *    and returns nine placeholder inputs: the object-space ray origin and
+ *    direction (6 values), the maximum distance, the ray time (all of one
+ *    floating point type), and the primitive index (UInt32).
+ *
+ * 2. Trace the intersection routine on these placeholders. It produces four
+ *    outputs: a hit mask (Bool), the distance along the direction (the float
+ *    type), and two 32-bit attribute words (UInt32) that the backend stores
+ *    with the hit.
+ *
+ * 3. Pass the outputs to \ref jit_isect_end(), which closes the session and
+ *    creates the function. Every value that the body reads from outside the
+ *    recording (a shape parameter, a pointer to a per-primitive table) is
+ *    evaluated at this point and becomes a slot of a per-binding data block.
+ *    Side effects, ray tracing, nested calls, and the thread/counter index
+ *    are not allowed in the body.
+ *
+ * 4. Bind the function to each geometry via \ref jit_isect_bind(), which
+ *    returns a \ref JitIsectBinding record with a filled data block. On the
+ *    LLVM backend, the Embree geometry stores the record's address as its
+ *    user pointer and registers a small thunk as its intersection and
+ *    occlusion callback. The thunk forwards the callback arguments to
+ *    \ref JitIsectBinding::code together with the mode. On the CUDA
+ *    backend, the binding names a hit record of the shader binding table,
+ *    and Dr.Jit keeps that record's header and data pointer current.
+ *
+ * Code generation is deferred: when a kernel traces a scene, the functions
+ * bound to that scene are assembled into the kernel as separate units, and
+ * each kernel launch points the bindings of the traced scenes at the
+ * compiled code. The scene key given to \ref jit_isect_bind() must therefore
+ * match what the ray tracing operation references (see there). A launch
+ * fails if a traced scene has a binding whose function is not part of the
+ * kernel, which happens when a scene is rebuilt with different intersection
+ * code and a frozen function then replays a kernel recorded earlier. The
+ * dry run of a frozen function detects this case and requests a new trace.
+ *
+ * A binding must outlive every kernel that can invoke the callback,
+ * including kernels recorded before its release that launch later. Releasing
+ * it from the free callback of the scene variable that the ray tracing
+ * operations reference satisfies this; the record and data block are then
+ * freed once the kernels in flight have completed.
+ */
+
+/// Bits of \ref JitIsectBinding::flags with a meaning to the generated code
+enum JitIsectFlags : uint32_t {
+    /// The geometry has null transmission. Occlusion queries whose ray sets
+    /// \ref JitIsectRayFlags::SkipNull pass through it and set
+    /// \ref JitIsectRayFlags::HasNull in the ray's flags word.
+    JitIsectFlagNull = 1
+};
+
+/// Bits of the Embree ray flags word interpreted by occlusion callbacks
+enum JitIsectRayFlags : uint32_t {
+    JitIsectRaySkipNull = 1,
+    JitIsectRayHasNull  = 2
+};
+
+/**
+ * \brief Record read by a generated intersection callback
+ *
+ * On the LLVM backend, the record's address is the Embree geometry user
+ * pointer, and the thunk installed by the application calls
+ * <tt>((void (*)(const void *, int)) code)(args, mode)</tt> with the Embree
+ * callback arguments and mode 0 (intersect) or 1 (occluded).
+ *
+ * On the CUDA backend, the intersection program reads its data block through
+ * the second field of the hit record data, which must be laid out as
+ * <tt>{ uint32_t application_id; void *data; }</tt>. Dr.Jit writes both the
+ * record header and that second field before each launch of a kernel that
+ * contains the function (see \ref jit_isect_bind()). Hits are reported with
+ * hit kind 0 and the two attributes.
+ */
+struct JitIsectBinding {
+    /// Compiled intersection code, or null before the first kernel launch
+    void *code;
+
+    /// Captured data block
+    void *data;
+
+    /// Flags (see \ref JitIsectFlags)
+    uint32_t flags;
+    uint32_t pad;
+
+    /// Application-defined pointer (e.g. the shape object)
+    void *user;
+};
+
+/**
+ * \brief Begin recording an intersection function
+ *
+ * Opens a symbolic recording session on the calling thread with the call
+ * mask pushed, and creates the nine placeholder inputs ``ox, oy, oz, dx, dy,
+ * dz, tmax, time`` (of type \c float_type, which must be Float32 or Float64)
+ * and ``prim_index`` (UInt32). The caller receives one reference to each
+ * placeholder. Sessions do not nest, and \ref jit_isect_end() must close the
+ * session on the same thread.
+ */
+extern JIT_EXPORT void jit_isect_begin(JIT_ENUM JitBackend backend,
+                                       JIT_ENUM VarType float_type,
+                                       uint32_t *in);
+
+/**
+ * \brief Finish recording an intersection function
+ *
+ * Closes the session opened by \ref jit_isect_begin(). When \c out is null,
+ * the recording is abandoned and the function returns zero. Otherwise, \c out
+ * holds the four outputs ``hit`` (Bool), ``t`` (the float type), and two
+ * attributes (UInt32), and the function returns a handle variable that owns
+ * the recorded function. Release it via \ref jit_var_dec_ref(); bindings
+ * retain their own reference.
+ *
+ * Values read from outside the recording are evaluated here, so this call
+ * may launch a kernel.
+ */
+extern JIT_EXPORT uint32_t jit_isect_end(const char *name, const uint32_t *out);
+
+/**
+ * \brief Bind an intersection function to a geometry of a scene
+ *
+ * Allocates and fills the data block from the current values of the captured
+ * variables, and retains a reference to the function.
+ *
+ * \param scene
+ *    Key that ray tracing operations against this scene can recover: the
+ *    value of the scene pointer variable (the ``RTCScene``) on the LLVM
+ *    backend, and the index of the shader binding table variable (see \ref
+ *    jit_optix_configure_sbt()) on the CUDA backend. The binding holds a
+ *    reference to that variable.
+ *
+ * \param record_index
+ *    CUDA backend: index of the geometry's hit record in the shader binding
+ *    table. Before each launch of a kernel that contains the function,
+ *    Dr.Jit writes the record's header and the data pointer in its second
+ *    data field (see \ref JitIsectBinding) at the table's current base
+ *    address. The table may therefore be reallocated between launches, but
+ *    the application must carry the existing records over, since Dr.Jit
+ *    rewrites a record only when the compiled code changes. Ignored on the
+ *    LLVM backend.
+ *
+ * \param flags
+ *    See \ref JitIsectFlags
+ *
+ * \param user
+ *    Stored in \ref JitIsectBinding::user
+ *
+ * \return
+ *    The binding record, whose address is stable until \ref jit_isect_unbind()
+ */
+extern JIT_EXPORT struct JitIsectBinding *
+jit_isect_bind(uint32_t func, uintptr_t scene, uint32_t record_index,
+               uint32_t flags, void *user);
+
+/// Release a binding and its data block (see the lifetime note above)
+extern JIT_EXPORT void jit_isect_unbind(struct JitIsectBinding *binding);
+
 /**
  * \brief Set a new scope identifier to limit the effect of common
  * subexpression elimination

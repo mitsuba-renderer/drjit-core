@@ -1,4 +1,5 @@
 #include "llvm_ts.h"
+#include "isect.h"
 #include "llvm.h"
 #include "log.h"
 #include "var.h"
@@ -177,6 +178,9 @@ LLVMThreadState::launch(Kernel kernel, KernelKey & /*key*/,
 #endif
 
     kernel_params[3] = (void *) kernel.llvm.reloc;
+
+    if (kernel.isect_count)
+        jitc_isect_launch(JitBackend::LLVM, kernel, nullptr, nullptr);
 
     jitc_trace("jit_run(): launching %u %u-wide packet%s in %u block%s of size %u ..",
                packets, packet_size, packets == 1 ? "" : "s", blocks,

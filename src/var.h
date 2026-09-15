@@ -86,6 +86,9 @@ extern uint32_t jitc_var_resource_pointer(uint32_t backing, ResourceKind kind,
 /// Wrap an input variable of a virtual function call before recording computation
 extern uint32_t jitc_var_call_input(uint32_t index);
 
+/// Create a placeholder input for recording an intersection function
+extern uint32_t jitc_var_placeholder(JitBackend backend, VarType type);
+
 /// Register an existing variable with the JIT compiler
 extern uint32_t jitc_var_mem_map(JitBackend backend, VarType type, void *ptr,
                                  size_t size, int free);

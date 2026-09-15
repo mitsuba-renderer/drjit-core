@@ -1,6 +1,6 @@
 enable_testing()
 
-set(TEST_FILES basics.cpp mem.cpp loop.cpp vcall.cpp graphviz.cpp reductions.cpp array.cpp record.cpp)
+set(TEST_FILES basics.cpp mem.cpp loop.cpp vcall.cpp graphviz.cpp reductions.cpp array.cpp record.cpp isect.cpp)
 
 add_executable(test_half half.cpp)
 add_test(NAME test_half COMMAND test_half

@@ -66,6 +66,7 @@
 #include "llvm_packet.h"
 #include "llvm_coop_vec.h"
 #include "llvm_orcv2.h"
+#include "isect.h"
 
 // Forward declaration
 static void jitc_llvm_render(Variable *v);
@@ -346,53 +347,15 @@ static std::string jitc_llvm_call_ret_type(const CallData *call) {
     return name;
 }
 
-void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
+/**
+ * Render the scheduled body of a callable or intersection function. Captured
+ * data is gathered per lane through '%offsets' (callables) or loaded once from
+ * the uniform '%data' block and broadcast (intersection functions).
+ */
+static void jitc_llvm_render_func_body(const CallData *call, uint32_t inst,
+                                       bool uniform_data) {
     bool print_labels = jitc_log_active(LogLevel::Trace) ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
-
-    std::string ret_ty = jitc_llvm_call_ret_type(call);
-
-    // Callables with 1 instance aren't separately compiled and have internal linkage
-    fmt("define $sfastcc $s @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<$w x i1> %mask",
-        call->n_inst == 1 ? "internal " : "", ret_ty.c_str());
-
-    if (call->use_self)
-        fmt(", <$w x i32> %self");
-
-    if (call->use_index)
-        put(", i64 %index");
-
-    if (call->use_thread_id)
-        put(", i32 %thread_id");
-
-    // %data (the kernel's combined call data) and %callables (the dispatch
-    // table) are kernel-uniform and therefore passed as scalar pointers. A
-    // callable that reads captured data additionally needs the per-lane
-    // %offsets, while one that merely contains a nested call only forwards
-    // the two pointers.
-    if (!call->slots.empty())
-        fmt(", ptr noalias %data, ptr noalias %callables, <$w x i32> %offsets");
-    else if (call->use_nested)
-        fmt(", ptr noalias %data, ptr noalias %callables");
-
-    // Name each input argument by slot index
-    for (uint32_t i = 0; i < (uint32_t) call->outer_in.size(); ++i) {
-        if (!call->in_active[i])
-            continue;
-        const Variable *vi = jitc_var(call->inner_in[i]);
-        fmt(", $T %in_$u", vi, i);
-    }
-
-    put(") #0");
-    jitc_llvm_dbg_function_begin(call->name.c_str(), call->n_inst != 1);
-    fmt(" {\n"
-        "entry:\n"
-        "    ; Call: $s\n", call->name.c_str());
-
-    // Offset at which to insert the alloca/callables setup code
-    size_t alloca_target = buffer.size();
-
-    alloca_size = alloca_align = -1;
 
     // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
     jitc_call_bind_slots(call, inst);
@@ -400,8 +363,9 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     // Coalesce the recorded size-class buckets into packet loads up front.
     // ``packetized_until[c]`` is the first slot past the packetized prefix of
     // bucket c; the scalar path below validates a slot before consulting it.
-    uint32_t packetized_until[4];
-    jitc_llvm_render_call_data(call, inst, packetized_until);
+    uint32_t packetized_until[4] = { };
+    if (!uniform_data)
+        jitc_llvm_render_call_data(call, inst, packetized_until);
 
     // Warning: do not rewrite this into a range-based for loop.
     // The memory location of 'schedule' may change.
@@ -422,6 +386,23 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
 
         if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
             uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
+
+            if (uniform_data) {
+                // One scalar load from the data block, broadcast to all lanes
+                const char *st = vt == VarType::Pointer
+                                     ? "ptr" : type_name_llvm[(int) vt];
+                fmt("    $v_p = getelementptr inbounds i8, ptr %data, i32 $u\n",
+                    v, offset);
+                if (vt == VarType::Bool)
+                    fmt("    $v_i = load i8, ptr $v_p, align 1\n"
+                        "    $v_s = trunc i8 $v_i to i1\n", v, v, v, v);
+                else
+                    fmt("    $v_s = load $s, ptr $v_p, align $a\n", v, st, v, v);
+                fmt("    $v_0 = insertelement <$w x $s> undef, $s $v_s, i32 0\n"
+                    "    $v = shufflevector <$w x $s> $v_0, <$w x $s> undef, <$w x i32> $z\n",
+                    v, st, st, v, v, st, v, st);
+                continue;
+            }
 
             // Skip fields already emitted by the coalesced packet loads above.
             uint32_t slot = v->param_offset;
@@ -481,6 +462,67 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
                 break;
         }
     }
+}
+
+/// Insert the '%buffer' allocation requested by the body at 'alloca_target'
+static void jitc_llvm_render_func_alloca(size_t alloca_target) {
+    if (alloca_size < 0)
+        return;
+
+    size_t suffix_start = buffer.size();
+
+    fmt("    %buffer = alloca i8, i32 $u, align $u\n",
+        (uint32_t) alloca_size, (uint32_t) alloca_align);
+
+    buffer.move_suffix(suffix_start, alloca_target);
+}
+
+void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
+    std::string ret_ty = jitc_llvm_call_ret_type(call);
+
+    // Callables with 1 instance aren't separately compiled and have internal linkage
+    fmt("define $sfastcc $s @func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(<$w x i1> %mask",
+        call->n_inst == 1 ? "internal " : "", ret_ty.c_str());
+
+    if (call->use_self)
+        fmt(", <$w x i32> %self");
+
+    if (call->use_index)
+        put(", i64 %index");
+
+    if (call->use_thread_id)
+        put(", i32 %thread_id");
+
+    // %data (the kernel's combined call data) and %callables (the dispatch
+    // table) are kernel-uniform and therefore passed as scalar pointers. A
+    // callable that reads captured data additionally needs the per-lane
+    // %offsets, while one that merely contains a nested call only forwards
+    // the two pointers.
+    if (!call->slots.empty())
+        fmt(", ptr noalias %data, ptr noalias %callables, <$w x i32> %offsets");
+    else if (call->use_nested)
+        fmt(", ptr noalias %data, ptr noalias %callables");
+
+    // Name each input argument by slot index
+    for (uint32_t i = 0; i < (uint32_t) call->outer_in.size(); ++i) {
+        if (!call->in_active[i])
+            continue;
+        const Variable *vi = jitc_var(call->inner_in[i]);
+        fmt(", $T %in_$u", vi, i);
+    }
+
+    put(") #0");
+    jitc_llvm_dbg_function_begin(call->name.c_str(), call->n_inst != 1);
+    fmt(" {\n"
+        "entry:\n"
+        "    ; Call: $s\n", call->name.c_str());
+
+    // Offset at which to insert the alloca/callables setup code
+    size_t alloca_target = buffer.size();
+
+    alloca_size = alloca_align = -1;
+
+    jitc_llvm_render_func_body(call, inst, /*uniform_data=*/ false);
 
     // Return the active outputs as a struct. The caller is responsible for
     // merging active lanes into its accumulators, so no masking happens here.
@@ -507,14 +549,154 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     // The function requires extra memory. Insert setup code at the top of
     // the function to accomplish this. (Nested dispatch needs no setup: the
     // callable table arrives as the '%callables' argument.)
-    if (alloca_size >= 0) {
-        size_t suffix_start = buffer.size();
+    jitc_llvm_render_func_alloca(alloca_target);
 
-        fmt("    %buffer = alloca i8, i32 $u, align $u\n",
-            (uint32_t) alloca_size, (uint32_t) alloca_align);
+    put("}");
 
-        buffer.move_suffix(suffix_start, alloca_target);
+    jitc_llvm_dbg_function_end();
+}
+
+/**
+ * Generate an Embree user geometry callback from a recorded intersection
+ * function (see isect.h and the API documentation in jit.h).
+ *
+ * The function receives the address of an 'RTCIntersectFunctionNArguments'
+ * (which 'RTCOccludedFunctionNArguments' mirrors) and a mode: 0 intersects, 1
+ * tests occlusion. The ray record is a structure of arrays with 'N' entries
+ * per field, and 'N' equals the vector width by the contract in jit.h. The
+ * user pointer of the geometry is a 'JitIsectBinding' record.
+ *
+ * Mitsuba always traces with a ray minimum of zero, so the body sees the ray
+ * origin and tmax as given, without a tnear shift.
+ */
+void jitc_llvm_assemble_isect(const CallData *call) {
+    const uint32_t width = jitc_llvm_vector_width;
+    VarType float_type = (VarType) jitc_var(call->inner_in[0])->type;
+    bool is_double = float_type == VarType::Float64;
+
+    fmt_intrinsic("declare void @llvm.masked.store.v$wf32.p0(<$w x float>, ptr, i32, <$w x i1>)");
+    fmt_intrinsic("declare void @llvm.masked.store.v$wi32.p0(<$w x i32>, ptr, i32, <$w x i1>)");
+
+    put("define void @isect_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(ptr noalias %args, i32 %mode) #0");
+    jitc_llvm_dbg_function_begin(call->name.c_str(), true);
+    fmt(" {\n"
+        "entry:\n"
+        "    ; Intersection function: $s\n", call->name.c_str());
+
+    size_t alloca_target = buffer.size();
+    alloca_size = alloca_align = -1;
+
+    // Unpack the callback arguments and the binding record
+    fmt("    %valid_p = load ptr, ptr %args\n"
+        "    %record_p = getelementptr inbounds i8, ptr %args, i32 8\n"
+        "    %record = load ptr, ptr %record_p\n"
+        "    %prim_p = getelementptr inbounds i8, ptr %args, i32 16\n"
+        "    %prim_s = load i32, ptr %prim_p\n"
+        "    %ctx_p = getelementptr inbounds i8, ptr %args, i32 24\n"
+        "    %ctx = load ptr, ptr %ctx_p\n"
+        "    %ray_p = getelementptr inbounds i8, ptr %args, i32 32\n"
+        "    %ray = load ptr, ptr %ray_p\n"
+        "    %geom_p = getelementptr inbounds i8, ptr %args, i32 44\n"
+        "    %geom_s = load i32, ptr %geom_p\n"
+        "    %inst_p = getelementptr inbounds i8, ptr %ctx, i32 16\n"
+        "    %inst_s = load i32, ptr %inst_p\n"
+        "    %data_p = getelementptr inbounds i8, ptr %record, i32 $u\n"
+        "    %data = load ptr, ptr %data_p\n"
+        "    %bflags_p = getelementptr inbounds i8, ptr %record, i32 $u\n"
+        "    %bflags = load i32, ptr %bflags_p\n"
+        "    %valid = load <$w x i32>, ptr %valid_p, align 4\n"
+        "    %mask = icmp ne <$w x i32> %valid, $z\n",
+        (uint32_t) offsetof(JitIsectBinding, data),
+        (uint32_t) offsetof(JitIsectBinding, flags));
+
+    // Body inputs, loaded from the structure-of-arrays ray record ('width'
+    // floats per field). Mitsuba always traces with tnear = 0, so the body
+    // sees the ray origin and tmax directly. Inputs 0..7 map to these SoA
+    // fields; input 6 (tmax) is the tfar slot, which also receives the hit
+    // distance below (%in_6_p).
+    const uint32_t soa[8] = { 0, 1, 2, 4, 5, 6, 8, 7 };
+    for (uint32_t i = 0; i < 8; ++i) {
+        fmt("    %in_$u_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+            "    %in_$u$s = load <$w x float>, ptr %in_$u_p, align 4\n",
+            i, soa[i] * 4 * width, i, is_double ? "_f" : "", i);
+        if (is_double)
+            fmt("    %in_$u = fpext <$w x float> %in_$u_f to <$w x double>\n", i, i);
     }
+    fmt("    %in_8_0 = insertelement <$w x i32> undef, i32 %prim_s, i32 0\n"
+        "    %in_8 = shufflevector <$w x i32> %in_8_0, <$w x i32> undef, <$w x i32> $z\n");
+
+    jitc_llvm_render_func_body(call, 0, /*uniform_data=*/ true);
+
+    const Variable *out_hit = jitc_var(call->inner_out[0]),
+                   *out_t   = jitc_var(call->inner_out[1]),
+                   *out_a0  = jitc_var(call->inner_out[2]),
+                   *out_a1  = jitc_var(call->inner_out[3]);
+
+    fmt("    %hit = and <$w x i1> %mask, $v\n", out_hit);
+    if (is_double)
+        fmt("    %t_out = fptrunc <$w x double> $v to <$w x float>\n", out_t);
+    else
+        fmt("    %t_out = bitcast <$w x float> $v to <$w x float>\n", out_t);
+
+    fmt("    %occl = icmp ne i32 %mode, 0\n"
+        "    br i1 %occl, label %l_occluded, label %l_intersect\n"
+        "\n"
+        "l_intersect:\n"
+        "    call void @llvm.masked.store.v$wf32.p0(<$w x float> %t_out, ptr %in_6_p, i32 4, <$w x i1> %hit)\n"
+        "    %attr0_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+        "    call void @llvm.masked.store.v$wi32.p0(<$w x i32> $v, ptr %attr0_p, i32 4, <$w x i1> %hit)\n"
+        "    %attr1_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+        "    call void @llvm.masked.store.v$wi32.p0(<$w x i32> $v, ptr %attr1_p, i32 4, <$w x i1> %hit)\n"
+        "    %primid_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+        "    call void @llvm.masked.store.v$wi32.p0(<$w x i32> %in_8, ptr %primid_p, i32 4, <$w x i1> %hit)\n"
+        "    %geomid_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+        "    %geomid_0 = insertelement <$w x i32> undef, i32 %geom_s, i32 0\n"
+        "    %geomid = shufflevector <$w x i32> %geomid_0, <$w x i32> undef, <$w x i32> $z\n"
+        "    call void @llvm.masked.store.v$wi32.p0(<$w x i32> %geomid, ptr %geomid_p, i32 4, <$w x i1> %hit)\n"
+        "    %instid_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+        "    %instid_0 = insertelement <$w x i32> undef, i32 %inst_s, i32 0\n"
+        "    %instid = shufflevector <$w x i32> %instid_0, <$w x i32> undef, <$w x i32> $z\n"
+        "    call void @llvm.masked.store.v$wi32.p0(<$w x i32> %instid, ptr %instid_p, i32 4, <$w x i1> %hit)\n"
+        "    ret void\n"
+        "\n",
+        15 * 4 * width, out_a0,
+        16 * 4 * width, out_a1,
+        17 * 4 * width,
+        18 * 4 * width,
+        19 * 4 * width);
+
+    // Occlusion: a ray with the 'skip null' bit passes through null geometry
+    // and records the encounter in its flags word; everything else is blocked
+    fmt("l_occluded:\n"
+        "    %rflags_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+        "    %rflags = load <$w x i32>, ptr %rflags_p, align 4\n"
+        "    %skip_c0 = insertelement <$w x i32> undef, i32 $u, i32 0\n"
+        "    %skip_c = shufflevector <$w x i32> %skip_c0, <$w x i32> undef, <$w x i32> $z\n"
+        "    %skip_0 = and <$w x i32> %rflags, %skip_c\n"
+        "    %skip_1 = icmp ne <$w x i32> %skip_0, $z\n"
+        "    %null_0 = and i32 %bflags, $u\n"
+        "    %null_1 = icmp ne i32 %null_0, 0\n"
+        "    %null_2 = insertelement <$w x i1> undef, i1 %null_1, i32 0\n"
+        "    %null = shufflevector <$w x i1> %null_2, <$w x i1> undef, <$w x i32> $z\n"
+        "    %skip_2 = and <$w x i1> %skip_1, %null\n"
+        "    %skip = and <$w x i1> %skip_2, %hit\n"
+        "    %has_c0 = insertelement <$w x i32> undef, i32 $u, i32 0\n"
+        "    %has_c = shufflevector <$w x i32> %has_c0, <$w x i32> undef, <$w x i32> $z\n"
+        "    %rflags_2 = or <$w x i32> %rflags, %has_c\n"
+        "    call void @llvm.masked.store.v$wi32.p0(<$w x i32> %rflags_2, ptr %rflags_p, i32 4, <$w x i1> %skip)\n"
+        "    %occ_0 = xor <$w x i1> %skip, $s\n"
+        "    %occ = and <$w x i1> %hit, %occ_0\n"
+        "    %ninf_0 = insertelement <$w x float> undef, float 0xFFF0000000000000, i32 0\n"
+        "    %ninf = shufflevector <$w x float> %ninf_0, <$w x float> undef, <$w x i32> $z\n"
+        "    call void @llvm.masked.store.v$wf32.p0(<$w x float> %ninf, ptr %in_6_p, i32 4, <$w x i1> %occ)\n"
+        "    ret void\n",
+        11 * 4 * width,
+        (uint32_t) JitIsectRaySkipNull,
+        (uint32_t) JitIsectFlagNull,
+        (uint32_t) JitIsectRayHasNull,
+        jitc_llvm_ones_bit_str[(int) VarType::Bool]);
+
+    jitc_llvm_render_func_alloca(alloca_target);
 
     put("}");
 
@@ -1464,6 +1646,12 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
 static void jitc_llvm_render_trace(const Variable *v,
                                    const Variable *func,
                                    const Variable *scene) {
+    // Assemble the intersection functions bound to the traced scene into the
+    // kernel. A scene that is not a literal (per-lane pointers inside a
+    // callable) may be any scene, so every binding is assembled.
+    jitc_isect_assemble_scene(
+        JitBackend::LLVM, scene->is_literal() ? (uintptr_t) scene->literal : 0);
+
     /* Intersection data structure layout:
         0  uint32_t valid
         1  float org_x

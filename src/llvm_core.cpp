@@ -14,6 +14,7 @@
 #include "log.h"
 #include "var.h"
 #include "eval.h"
+#include "isect.h"
 #include "profile.h"
 
 static bool jitc_llvm_init_attempted  = false;
@@ -517,6 +518,10 @@ bool jitc_llvm_kernel_compile(Kernel &kernel) {
         all_cached &= job.hit || job.from_disk;
     }
     kernel.size = (uint32_t) object_bytes;
+
+    jitc_isect_kernel_units(kernel, [&](uint32_t unit) {
+        return kernel.llvm.reloc[unit + 1];
+    });
 
 #if defined(DRJIT_ENABLE_ITTNOTIFY)
     kernel.llvm.itt = __itt_string_handle_create(kernel_name);

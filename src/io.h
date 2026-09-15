@@ -35,6 +35,16 @@ struct KernelParamInfo {
     uint8_t kind;
 };
 
+/// An intersection function unit (see isect.h) that a kernel contains
+struct KernelIsectUnit {
+    /// Body hash, which bindings use to recognize their function
+    XXH128_hash_t hash;
+
+    /// What a binding must reference to reach the compiled unit: the code
+    /// address on LLVM, the hit group program group on OptiX
+    void *handle;
+};
+
 /// Represents a compiled kernel for the different backends
 struct Kernel {
     uint32_t size;
@@ -47,6 +57,10 @@ struct Kernel {
     /// Per-slot parameter metadata, parallel to the launch ``kernel_params``
     /// vector (see KernelParamInfo).
     KernelParamInfo *param_info;
+
+    /// Intersection function units contained in this kernel (may be null)
+    KernelIsectUnit *isect;
+    uint32_t isect_count;
 
     union {
         /// 1. LLVM

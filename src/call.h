@@ -156,6 +156,15 @@ struct CallData {
     bool use_thread_id = false;
     /// Does this call contain OptiX operations?
     bool use_optix = false;
+    /// Does this call contain a ray tracing operation?
+    bool use_trace = false;
+    /// Does this call read an input of an enclosing call? (Only tracked
+    /// for intersection functions, which have no enclosing call.)
+    bool use_outer = false;
+
+    /// Is this the body of an intersection function (see isect.h)? Such a
+    /// body has a fixed signature, one instance, and no call site.
+    bool isect = false;
 
     ~CallData() {
         for (uint32_t index : inner_in)
@@ -265,6 +274,25 @@ inline uint32_t jitc_call_pick_word_chunk_size(uint32_t offset,
     }
     return 4;
 }
+
+/// Parameters of jitc_call_layout_instance() for the given backend: the byte
+/// alignment of a per-instance data block, and the widest call-data packet
+/// gather (in elements) that aligns each size bucket on the LLVM backend (1
+/// elsewhere, so that those backends pack blocks contiguously)
+extern void jitc_call_layout_params(const ThreadState *ts, uint32_t &align,
+                                    uint32_t &llvm_pkt_cap);
+
+/// Assign byte offsets to the capture slots [lo, hi) of one instance
+extern void jitc_call_layout_instance(CallData *call, uint32_t lo, uint32_t hi,
+                                      JitBackend backend, uint32_t alignment,
+                                      uint32_t llvm_pkt_cap, uint32_t &data_size,
+                                      std::vector<CallData::CaptureSlot> &reordered);
+
+/// Encode the copy of a captured variable's value (or pointer literal) to byte
+/// 'offset' of a data block as a jitc_aggregate() entry
+struct AggregationEntry;
+extern void jitc_call_capture_entry(AggregationEntry *p, const Variable *v,
+                                    uint32_t offset);
 
 extern uint32_t jitc_var_loop_init(uint32_t *indices, uint32_t n_indices);
 

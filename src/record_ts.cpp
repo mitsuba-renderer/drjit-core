@@ -129,6 +129,7 @@
 #include "drjit-core/jit.h"
 #include "eval.h"
 #include "internal.h"
+#include "isect.h"
 #include "llvm.h"
 #include "log.h"
 #include "malloc.h"
@@ -807,6 +808,11 @@ void RecordThreadState::record_launch(
 
     op.kernel.kernel   = kernel;
     op.kernel.hash     = hash;
+
+    // The dry run checks that the traced scenes are still bound to the
+    // intersection functions that the kernel contains
+    if (kernel.isect)
+        m_recording.requires_dry_run = true;
     op.kernel.device   = key.device;
     op.kernel.flags    = key.flags;
 
@@ -1001,6 +1007,16 @@ int Recording::replay_launch(Operation &op) {
     // Change kernel size in `kernel_params`
     if (jitc_is_gpu(backend))
         kernel_params[0] = (void *) (uintptr_t) launch_size;
+
+    // A kernel with intersection functions can only run if every unit it
+    // contains still has a live binding, i.e. the traced scenes were not
+    // rebuilt with different intersection code (see jitc_isect_check)
+    if (dry_run && op.kernel.kernel.isect_count &&
+        !jitc_isect_check(backend, op.kernel.kernel)) {
+        jitc_log(LogLevel::Debug, "replay(): the intersection functions of a "
+                 "traced scene changed, requesting a new trace");
+        return false;
+    }
 
     if (!dry_run) {
 #ifndef NDEBUG

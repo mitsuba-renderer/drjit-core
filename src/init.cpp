@@ -16,6 +16,7 @@
 #  include "metal.h"
 #endif
 #include "llvm_ts.h"
+#include "isect.h"
 #include "malloc.h"
 #include "internal.h"
 #include "log.h"
@@ -160,6 +161,9 @@ void jitc_shutdown(int light) {
             jitc_task = nullptr;
         }
     }
+
+    // Intersection bindings reference variables and compiled units
+    jitc_isect_shutdown();
 
     if (!state.kernel_cache.empty()) {
         jitc_log(Info, "jit_shutdown(): releasing %zu kernel%s ..",

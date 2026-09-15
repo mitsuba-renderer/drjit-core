@@ -18,6 +18,8 @@ StringBuffer unit_epilogue { 256 };
 
 UnitBuilder *unit_entry = nullptr;
 std::vector<CallableUnit> callable_units;
+uint32_t unit_generation = 0;
+uint32_t unit_dispatch_count = 0;
 
 /// Pool of unit builders, reused across kernels. Only grows.
 static std::vector<UnitBuilder *> unit_pool;
@@ -49,6 +51,7 @@ static UnitBuilder *jitc_unit_alloc() {
 }
 
 void jitc_unit_reset() {
+    unit_generation++;
     unit_pool_used = 0;
     unit_stack.clear();
     callable_registry.clear();
@@ -84,7 +87,7 @@ static void jitc_unit_finish(UnitBuilder *unit, const char *body,
 }
 
 void jitc_unit_pop_keep(UnitBuilder *unit, XXH128_hash_t hash,
-                        size_t body_start) {
+                        size_t body_start, bool isect) {
     jitc_assert(unit_stack.back() == unit,
                 "jitc_unit_pop_keep(): unit stack corruption!");
     unit_stack.pop_back();
@@ -94,7 +97,7 @@ void jitc_unit_pop_keep(UnitBuilder *unit, XXH128_hash_t hash,
     buffer.rewind_to(body_start);
 
     callable_registry.emplace(hash, 0);
-    callable_units.push_back({ hash, unit });
+    callable_units.push_back({ hash, unit, isect });
 }
 
 void jitc_unit_pop_discard(UnitBuilder *unit, size_t body_start) {
@@ -141,18 +144,24 @@ bool jitc_unit_capture_preamble(XXH128_hash_t hash, size_t start) {
 
 void jitc_unit_finalize(JitBackend backend) {
     // Order by body hash rather than registration order, which can be
-    // non-deterministic in programs that use Dr.Jit with parallelization
+    // non-deterministic in programs that use Dr.Jit with parallelization.
+    // Intersection functions follow the dispatchable callables.
     std::sort(callable_units.begin(), callable_units.end(),
               [](const CallableUnit &a, const CallableUnit &b) {
-                  return std::tie(a.hash.high64, a.hash.low64) <
-                         std::tie(b.hash.high64, b.hash.low64);
+                  return std::tie(a.isect, a.hash.high64, a.hash.low64) <
+                         std::tie(b.isect, b.hash.high64, b.hash.low64);
               });
+
+    unit_dispatch_count = 0;
+    while (unit_dispatch_count < (uint32_t) callable_units.size() &&
+           !callable_units[unit_dispatch_count].isect)
+        unit_dispatch_count++;
 
     // LLVM and CUDA reserve entry 0 of the dispatch table
     bool one_based =
         jitc_is_llvm(backend) || (jitc_is_cuda(backend) && !uses_optix);
     uint32_t base = one_based ? 1 : 0;
-    for (uint32_t i = 0; i < (uint32_t) callable_units.size(); ++i)
+    for (uint32_t i = 0; i < unit_dispatch_count; ++i)
         callable_registry[callable_units[i].hash] = base + i;
 }
 
@@ -298,7 +307,9 @@ static void jitc_unit_symbol(size_t i, char *buf, size_t size) {
     if (i == 0)
         snprintf(buf, size, "%s", kernel_name);
     else
-        snprintf(buf, size, "func_%016llx%016llx",
+        snprintf(buf, size, "%s%016llx%016llx",
+                 !callable_units[i - 1].isect ? "func_"
+                 : uses_optix ? "__intersection__" : "isect_",
                  (unsigned long long) callable_units[i - 1].hash.high64,
                  (unsigned long long) callable_units[i - 1].hash.low64);
 }

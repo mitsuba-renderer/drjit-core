@@ -1103,6 +1103,18 @@ uint32_t jitc_var_call_input(uint32_t index) {
     return jitc_var_new(v2, disable_lvn);
 }
 
+uint32_t jitc_var_placeholder(JitBackend backend, VarType type) {
+    Variable v;
+    v.kind = (uint32_t) VarKind::CallInput;
+    v.backend = (uint32_t) backend;
+    v.type = (uint32_t) type;
+    v.size = 1;
+    v.symbolic = 1;
+
+    // Placeholders of one type must stay distinct
+    return jitc_var_new(v, /* disable_lvn = */ true);
+}
+
 /// This function is called when the scope counter overflows, which can happen
 /// in very long-running computations. In this case, it is necessary to compact
 /// the scopes into a contiguous range.
