@@ -39,6 +39,7 @@
 #include "trace.h"
 #include "tex.h"
 #include "call.h"
+#include "isect.h"
 #include "metal_ts.h"
 #include "loop.h"
 #include "cond.h"
@@ -68,22 +69,21 @@ void metal_register_kernel_scene(MetalScene *scene) {
     metal_kernel_scenes.push_back(scene);
 }
 
-/// Intersection functions and the geometry type influence the PSO linking step
-/// but are otherwise invisible in the generated MSL. This function folds them
-/// in via a comment to ensure that incompatibilities produce unique kernels.
+/// The geometry types of the traced scenes select the intersector template
+/// tags. This function folds them in via a comment to ensure that
+/// incompatibilities produce unique kernels.
 static void jitc_metal_render_scene_configuration() {
     for (size_t i = 0; i < metal_kernel_scenes.size(); ++i) {
         MetalScene *si = metal_kernel_scenes[i];
-        fmt("// Scene properties: scene_$u mask=$u fns=[",
+        fmt("// Scene properties: scene_$u mask=$u\n",
             (uint32_t) i, si ? si->geometry_types_mask : 0u);
-        if (si) {
-            for (size_t j = 0; j < si->intersection_fns.size(); ++j) {
-                if (j) put(", ");
-                fmt("$s", si->intersection_fns[j].c_str());
-            }
-        }
-        put("]\n");
     }
+}
+
+static void jitc_metal_emit_isect_payload() {
+    size_t off = buffer.size();
+    put("struct IsectPayload { uint2 attributes; float time; };");
+    jitc_unit_capture_preamble(off);
 }
 
 // ----------------------------------------------------------------------------
@@ -769,6 +769,13 @@ static void jitc_metal_render(Variable *v) {
             Variable *valid = jitc_var(v->dep[0]);
             bool is_unmasked = valid->is_literal() && valid->literal == 1;
 
+            Variable *accel_h = jitc_var(v->dep[2]);
+            Variable *ift_h = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
+            MetalScene *scene_local = (MetalScene *) (uintptr_t) accel_h->literal;
+
+            // Assemble the intersection functions bound to the traced scene
+            jitc_isect_assemble_scene(JitBackend::Metal, (uintptr_t) scene_local);
+
             // Initialize all outputs to their canonical miss values (distance
             // +infinity, validity false, the rest zero). Masked lanes skip the
             // block below and missed lanes skip the hit-field write, keeping these.
@@ -781,10 +788,6 @@ static void jitc_metal_render(Variable *v) {
                 "uint $v_out_6 = 0u;\n"
                 "uint $v_out_7 = 0u;\n",
                 v, v, v, v, v, v, v, v);
-
-            Variable *accel_h = jitc_var(v->dep[2]);
-            Variable *ift_h = v->dep[3] ? jitc_var(v->dep[3]) : nullptr;
-            MetalScene *scene_local = (MetalScene *) (uintptr_t) accel_h->literal;
 
             if (!is_unmasked)
                 fmt("if ($v) {\n", valid);
@@ -814,8 +817,8 @@ static void jitc_metal_render(Variable *v) {
                 scene_local && (scene_local->geometry_types_mask & 0x8u) != 0;
             bool has_motion_local =
                 scene_local && (scene_local->geometry_types_mask & 0x10u) != 0;
-            bool has_bbox_local =
-                scene_local && (scene_local->geometry_types_mask & 0x2u) != 0;
+            bool has_bbox_local = has_ift_local ||
+                (scene_local && (scene_local->geometry_types_mask & 0x2u) != 0);
 
             fmt("raytracing::intersector<raytracing::triangle_data, raytracing::instancing$s$s> _inter;\n",
                 has_curves_local ? ", raytracing::curve_data" : "",
@@ -837,6 +840,12 @@ static void jitc_metal_render(Variable *v) {
                 "_r.max_distance = $v;\n",
                 ox, oy, oz, dx, dy, dz, tmin, tmax);
 
+            // Pass ray time to intersection functions and receive hit attributes
+            if (has_ift_local) {
+                jitc_metal_emit_isect_payload();
+                fmt("IsectPayload _pl = { uint2(0u), $v };\n", time);
+            }
+
             // Route the intersect call to this trace's reconstructed accel
             // (+ IFT) reference variables
             fmt("auto _hit = _inter.intersect(_r, $v", accel_h);
@@ -845,28 +854,31 @@ static void jitc_metal_render(Variable *v) {
             if (has_motion_local)
                 fmt(", $v", time);
             if (has_ift_local)
-                fmt(", $v", ift_h);
+                fmt(", $v, _pl", ift_h);
             put(");\n");
 
             // Hit-result extraction.
             // - Triangle hit: prim_uv = triangle_barycentric_coord
             // - Curve hit:    prim_uv = (curve_parameter, 0)
-            // - Bbox hit:     prim_uv = (0, 0) — compute_surface_interaction()
-            //                 will recompute it from the hit point.
+            // - Bbox hit:     prim_uv = the payload attributes
             // On a hit, overwrite the miss defaults set above.
 
             put("    auto _ht = _hit.type;\n"
                 "    if (_ht != raytracing::intersection_type::none) {\n");
 
-            const char *prim_u, *prim_v;
+            std::string prim_u = "_hit.triangle_barycentric_coord.x",
+                        prim_v = "_hit.triangle_barycentric_coord.y";
             if (has_curves_local) {
-                prim_u = "(_ht == raytracing::intersection_type::curve)"
-                         " ? _hit.curve_parameter : _hit.triangle_barycentric_coord.x";
-                prim_v = "(_ht == raytracing::intersection_type::curve)"
-                         " ? 0.0f : _hit.triangle_barycentric_coord.y";
-            } else {
-                prim_u = "_hit.triangle_barycentric_coord.x";
-                prim_v = "_hit.triangle_barycentric_coord.y";
+                prim_u = "(_ht == raytracing::intersection_type::curve) ? "
+                         "_hit.curve_parameter : " + prim_u;
+                prim_v = "(_ht == raytracing::intersection_type::curve) ? "
+                         "0.0f : " + prim_v;
+            }
+            if (has_ift_local) {
+                prim_u = "(_ht == raytracing::intersection_type::bounding_box) ? "
+                         "as_type<float>(_pl.attributes.x) : (" + prim_u + ")";
+                prim_v = "(_ht == raytracing::intersection_type::bounding_box) ? "
+                         "as_type<float>(_pl.attributes.y) : (" + prim_v + ")";
             }
 
             // Shadow traces only classify the hit that ended the traversal
@@ -883,7 +895,7 @@ static void jitc_metal_render(Variable *v) {
                     "        $v_out_5 = _hit.primitive_id;\n"
                     "        $v_out_6 = _hit.geometry_id;\n"
                     "        $v_out_7 = _hit.user_instance_id;\n",
-                    v, v, v, prim_u, v, prim_v, v, v, v, v);
+                    v, v, v, prim_u.c_str(), v, prim_v.c_str(), v, v, v, v);
 
             put("    }\n"  // close: if (_ht != none)
                 "}\n");    // close: if (valid) / unconditional block
@@ -1222,21 +1234,11 @@ static void jitc_metal_callable_signature(const CallData *call, bool with_names)
     }
 }
 
-void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
-                              uint32_t /*in_size*/, uint32_t /*in_align*/,
-                              uint32_t /*out_size*/, uint32_t /*out_align*/,
-                              uint32_t /*n_regs*/) {
-    jitc_metal_emit_tuple_struct(call, /*inputs=*/true);
-    jitc_metal_emit_tuple_struct(call, /*inputs=*/false);
-
-    if (call->n_inst != 1)
-        put("[[visible]] ");
-    jitc_metal_put_ret_type(call);
-    put(" func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(");
-    jitc_metal_callable_signature(call, /*with_names=*/true);
-    put(") {\n");
-    fmt("// Call: $s\n", call->name.c_str());
-
+/// Render the scheduled body of a callable or intersection function. Both
+/// read their captured data through the 'data' pointer. A callable binds its
+/// inputs to the call arguments, whereas the prologue of an intersection
+/// function binds the placeholder inputs.
+static void jitc_metal_render_func_body(const CallData *call, uint32_t inst) {
     // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
     jitc_call_bind_slots(call, inst);
 
@@ -1335,6 +1337,9 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
         if (kind == VarKind::Counter) {
             fmt("$t $v = ($t) index;\n", v, v, v);
         } else if (kind == VarKind::CallInput) {
+            if (call->isect) // bound by the prologue
+                continue;
+
             // Locate this input (this node is call->inner_in[i]) and its
             // ordinal among the active inputs (the Tuple_ field index).
             uint32_t in_i = 0, k = 0;
@@ -1360,23 +1365,21 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
                                                   offset))
                 continue;
 
-            // Track device buffers referenced from callable data for
-            // useResource(). During freeze recording the active TS is a
-            // ``RecordThreadState`` (which does NOT inherit from
-            // ``MetalThreadState``), so we must unwrap to the underlying
-            // Metal TS before touching MetalThreadState-specific fields —
-            // otherwise the cast would alias garbage memory.
-            auto *ts_curr = thread_state(JitBackend::Metal);
-            if (auto *rts = dynamic_cast<RecordThreadState *>(ts_curr))
-                ts_curr = rts->m_internal;
-            auto *mts = static_cast<MetalThreadState *>(ts_curr);
-            if (vt == VarType::Pointer) {
-                mts->metal_call_resources.push_back(
-                    { (void *) v->literal, ResourceKind::Buffer,
-                      (bool) v->written });
-            } else if (v->is_evaluated() && v->data) {
-                mts->metal_call_resources.push_back(
-                    { v->data, ResourceKind::Buffer, false });
+            // Track device buffers referenced from callable data. Intersection
+            // functions are handled by the launch function.
+            if (!call->isect) {
+                auto *ts_curr = thread_state(JitBackend::Metal);
+                if (auto *rts = dynamic_cast<RecordThreadState *>(ts_curr))
+                    ts_curr = rts->m_internal;
+                auto *mts = static_cast<MetalThreadState *>(ts_curr);
+                if (vt == VarType::Pointer) {
+                    mts->metal_call_resources.push_back(
+                        { (void *) v->literal, ResourceKind::Buffer,
+                          (bool) v->written });
+                } else if (v->is_evaluated() && v->data) {
+                    mts->metal_call_resources.push_back(
+                        { v->data, ResourceKind::Buffer, false });
+                }
             }
 
             const CallData::CaptureSlot &capture = call->slots[v->param_offset];
@@ -1395,12 +1398,28 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
             else
                 fmt("$t $v = *(device $t*)(data + $u);\n",
                     v, v, v, offset);
-        } else if (v->is_literal()) {
-            jitc_metal_render(v);
         } else {
             jitc_metal_render(v);
         }
     }
+}
+
+void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
+                              uint32_t /*in_size*/, uint32_t /*in_align*/,
+                              uint32_t /*out_size*/, uint32_t /*out_align*/,
+                              uint32_t /*n_regs*/) {
+    jitc_metal_emit_tuple_struct(call, /*inputs=*/true);
+    jitc_metal_emit_tuple_struct(call, /*inputs=*/false);
+
+    if (call->n_inst != 1)
+        put("[[visible]] ");
+    jitc_metal_put_ret_type(call);
+    put(" func_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(");
+    jitc_metal_callable_signature(call, /*with_names=*/true);
+    put(") {\n");
+    fmt("// Call: $s\n", call->name.c_str());
+
+    jitc_metal_render_func_body(call, inst);
 
     // Collect outputs into the return struct and return it by value.
     if (jitc_metal_call_has_out(call)) {
@@ -1420,6 +1439,50 @@ void jitc_metal_assemble_func(const CallData *call, uint32_t inst,
     }
 
     put("}\n");
+}
+
+///  Generate a Metal intersection function from a recorded intersection function
+void jitc_metal_assemble_isect(const CallData *call) {
+    jitc_metal_emit_isect_payload();
+    fmt("using namespace metal::raytracing;\n"
+        "struct IsectResult { bool accept [[accept_intersection]]; "
+        "float distance [[distance]]; };\n"
+        "[[intersection(bounding_box, instancing)]]\n"
+        "IsectResult isect_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
+        "float3 origin [[origin]], float3 direction [[direction]], "
+        "float max_distance [[max_distance]], uint prim [[primitive_id]], "
+        "uint inst_offset [[instance_intersection_function_table_offset]], "
+        "uint geom_offset [[geometry_intersection_function_table_offset]], "
+        "ray_data IsectPayload &payload [[payload]], "
+        "device const ulong *table [[buffer(0)]]) {\n"
+        "// Intersection function: $s\n"
+        "device uint8_t *data = (device uint8_t *) table[inst_offset + geom_offset];\n",
+        call->name.c_str());
+
+    // Bind the placeholder inputs that the body uses
+    const char *inputs[9] = {
+        "origin.x",     "origin.y",     "origin.z",
+        "direction.x",  "direction.y",  "direction.z",
+        "max_distance", "payload.time", "prim"
+    };
+    for (uint32_t i = 0; i < 9; ++i) {
+        const Variable *v = jitc_var(call->inner_in[i]);
+        if (v->reg_index)
+            fmt("$t $v = $s;\n", v, v, inputs[i]);
+    }
+
+    jitc_metal_render_func_body(call, 0);
+
+    const Variable *hit = jitc_var(call->inner_out[0]),
+                   *t   = jitc_var(call->inner_out[1]),
+                   *a0  = jitc_var(call->inner_out[2]),
+                   *a1  = jitc_var(call->inner_out[3]);
+
+    fmt("if ($v)\n"
+        "    payload.attributes = uint2($v, $v);\n"
+        "return IsectResult { $v, $v };\n"
+        "}\n",
+        hit, a0, a1, hit, t);
 }
 
 /// Getter masked load (Metal/MSL). Mirrors the 'Gather' case, sourcing from

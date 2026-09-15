@@ -45,6 +45,7 @@
 #include "loop.h"
 #include "optix.h"
 #include "trace.h"
+#include "isect.h"
 #include "cuda_eval.h"
 #include "cuda_array.h"
 #include "cuda_scatter.h"
@@ -227,53 +228,10 @@ void jitc_cuda_assemble(ThreadState *ts, ScheduledGroup group,
         "}\n");
 }
 
-void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
-                             uint32_t in_size, uint32_t in_align,
-                             uint32_t out_size, uint32_t out_align,
-                             uint32_t n_regs) {
-    uint32_t flags = jitc_flags();
-
+/// Render the scheduled body of a callable or intersection function
+static void jitc_cuda_render_func_body(const CallData *call, uint32_t inst) {
     bool print_labels = jitc_log_active(LogLevel::Trace) ||
-                        (flags & (uint32_t) JitFlag::PrintIR);
-
-    if (call->n_inst == 1)
-        put(".func");
-    else
-        // Marked as globally visible for OptiX
-        put(".visible .func");
-
-    if (out_size)
-        fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
-
-    if (call->n_inst == 1)
-        // Can't call it `func_` or we might conflict with an indirect call
-        put(" func_unique_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(");
-    else
-        fmt(" $s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
-            uses_optix ? (jitc_optix_use_continuation_callables()
-                              ? "__continuation_callable__"
-                              : "__direct_callable__") : "func_");
-
-    if (call->use_index)
-        put(".reg .u32 index, ");
-    if (call->use_self)
-        put(".reg .u32 self, ");
-    if (!call->slots.empty())
-        put(".reg .u64 data, ");
-    // Callables containing a nested call receive the base pointer.
-    if (call->use_nested)
-        put(".reg .u64 base, ");
-    if (in_size)
-        fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
-    buffer.delete_trailing_commas();
-
-    fmt(") {\n"
-        "    // Call: $s\n"
-        "    .reg.b8   %b <$u>; .reg.b16  %w<$u>; .reg.b32 %r<$u>;\n"
-        "    .reg.b64  %rd<$u>; .reg.f16  %h<$u>; .reg.f32 %f<$u>;\n"
-        "    .reg.f64  %d <$u>; .reg.pred %p<$u>;\n",
-        call->name.c_str(), n_regs, n_regs, n_regs, n_regs, n_regs, n_regs,
-        n_regs, n_regs);
+                        (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
     // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
     jitc_call_bind_slots(call, inst);
@@ -342,6 +300,8 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
         if (kind == VarKind::Counter) {
             fmt("    mov.$b $v, index;\n", v, v);
         } else if (kind == VarKind::CallInput) {
+            if (call->isect) // bound by the prologue
+                continue;
             Variable *a = jitc_var(v->dep[0]);
             if (vt != VarType::Bool) {
                 fmt("    ld.param.$b $v, [params+$o];\n", v, v, a);
@@ -391,6 +351,52 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
             jitc_cuda_render(v);
         }
     }
+}
+
+void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
+                             uint32_t in_size, uint32_t in_align,
+                             uint32_t out_size, uint32_t out_align,
+                             uint32_t n_regs) {
+    if (call->n_inst == 1)
+        put(".func");
+    else
+        // Marked as globally visible for OptiX
+        put(".visible .func");
+
+    if (out_size)
+        fmt(" (.param .align $u .b8 result[$u])", out_align, out_size);
+
+    if (call->n_inst == 1)
+        // Can't call it `func_` or we might conflict with an indirect call
+        put(" func_unique_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(");
+    else
+        fmt(" $s^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(",
+            uses_optix ? (jitc_optix_use_continuation_callables()
+                              ? "__continuation_callable__"
+                              : "__direct_callable__") : "func_");
+
+    if (call->use_index)
+        put(".reg .u32 index, ");
+    if (call->use_self)
+        put(".reg .u32 self, ");
+    if (!call->slots.empty())
+        put(".reg .u64 data, ");
+    // Callables containing a nested call receive the base pointer.
+    if (call->use_nested)
+        put(".reg .u64 base, ");
+    if (in_size)
+        fmt(".param .align $u .b8 params[$u], ", in_align, in_size);
+    buffer.delete_trailing_commas();
+
+    fmt(") {\n"
+        "    // Call: $s\n"
+        "    .reg.b8   %b <$u>; .reg.b16  %w<$u>; .reg.b32 %r<$u>;\n"
+        "    .reg.b64  %rd<$u>; .reg.f16  %h<$u>; .reg.f32 %f<$u>;\n"
+        "    .reg.f64  %d <$u>; .reg.pred %p<$u>;\n",
+        call->name.c_str(), n_regs, n_regs, n_regs, n_regs, n_regs, n_regs,
+        n_regs, n_regs);
+
+    jitc_cuda_render_func_body(call, inst);
 
     for (uint32_t i = 0; i < call->n_out; ++i) {
         const Variable *v = jitc_var(call->inner_out[inst * call->n_out + i]);
@@ -410,6 +416,68 @@ void jitc_cuda_assemble_func(const CallData *call, uint32_t inst,
 
     put("    ret;\n"
         "}");
+}
+
+/**
+ * Generate an OptiX intersection program from a recorded intersection
+ * function (see isect.h and the API documentation in jit.h).
+ */
+void jitc_cuda_assemble_isect(const CallData *call, uint32_t n_regs) {
+    VarType float_type = (VarType) jitc_var(call->inner_in[0])->type;
+    bool is_double = float_type == VarType::Float64;
+
+    fmt(".entry __intersection__^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^() {\n"
+        "    // Intersection function: $s\n"
+        "    .reg.b8   %b <$u>; .reg.b16  %w<$u>; .reg.b32 %r<$u>;\n"
+        "    .reg.b64  %rd<$u>; .reg.f16  %h<$u>; .reg.f32 %f<$u>;\n"
+        "    .reg.f64  %d <$u>; .reg.pred %p<$u>;\n"
+        "    .reg.f32  %isect_f;\n"
+        "    .reg.u32  %isect_kind, %isect_ret;\n"
+        "    .reg.b64  %isect_sbt, data;\n"
+        "    call (%isect_sbt), _optix_get_sbt_data_ptr_64, ();\n"
+        "    ld.global.u64 data, [%isect_sbt+8];\n",
+        call->name.c_str(), n_regs, n_regs, n_regs, n_regs, n_regs, n_regs,
+        n_regs, n_regs);
+
+    // Bind the placeholder inputs that the body uses
+    const char *inputs[9] = {
+        "_optix_get_object_ray_origin_x",    "_optix_get_object_ray_origin_y",
+        "_optix_get_object_ray_origin_z",    "_optix_get_object_ray_direction_x",
+        "_optix_get_object_ray_direction_y", "_optix_get_object_ray_direction_z",
+        "_optix_get_ray_tmax",               "_optix_get_ray_time",
+        "_optix_read_primitive_idx"
+    };
+    for (uint32_t i = 0; i < 9; ++i) {
+        const Variable *v = jitc_var(call->inner_in[i]);
+        if (!v->reg_index)
+            continue;
+        if (is_double && i < 8)
+            fmt("    call (%isect_f), $s, ();\n"
+                "    cvt.f64.f32 $v, %isect_f;\n", inputs[i], v);
+        else
+            fmt("    call ($v), $s, ();\n", v, inputs[i]);
+    }
+
+    jitc_cuda_render_func_body(call, 0);
+
+    const Variable *out_hit = jitc_var(call->inner_out[0]),
+                   *out_t   = jitc_var(call->inner_out[1]),
+                   *out_a0  = jitc_var(call->inner_out[2]),
+                   *out_a1  = jitc_var(call->inner_out[3]);
+
+    // Report the hit distance (converting a double result to f32 first)
+    put("    mov.u32 %isect_kind, 0;\n");
+    if (is_double) {
+        fmt("    cvt.rn.f32.f64 %isect_f, $v;\n"
+            "    @$v call (%isect_ret), _optix_report_intersection_2, "
+            "(%isect_f, %isect_kind, $v, $v);\n",
+            out_t, out_hit, out_a0, out_a1);
+    } else {
+        fmt("    @$v call (%isect_ret), _optix_report_intersection_2, "
+            "($v, %isect_kind, $v, $v);\n",
+            out_hit, out_t, out_a0, out_a1);
+    }
+    put("    ret;\n}");
 }
 
 static inline uint32_t jitc_fp16_min_compute_cuda(VarKind kind) {
@@ -1498,6 +1566,9 @@ static void jitc_cuda_render_trace(const Variable *v,
     ThreadState *ts = thread_state(JitBackend::CUDA);
     OptixPipelineData *pipeline_p = (OptixPipelineData *) pipeline->literal;
     OptixShaderBindingTable *sbt_p = (OptixShaderBindingTable*) sbt->literal;
+
+    // Assemble the intersection functions bound to the traced scene.
+    jitc_isect_assemble_scene(JitBackend::CUDA, (uintptr_t) sbt_p);
     bool disabled = false, some_masked = false;
     TraceData *td = (TraceData *) v->data;
 

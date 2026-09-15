@@ -55,6 +55,7 @@ struct OptixShaderBindingTable;
 #define OPTIX_PROGRAM_GROUP_KIND_RAYGEN                  0x2421
 #define OPTIX_PROGRAM_GROUP_KIND_CALLABLES               0x2425
 #define OPTIX_PROGRAM_GROUP_KIND_MISS                    0x2422
+#define OPTIX_PROGRAM_GROUP_KIND_HITGROUP                0x2424
 #define OPTIX_SBT_RECORD_HEADER_SIZE                     32
 #define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_ANY           0
 #define OPTIX_TRAVERSABLE_GRAPH_FLAG_ALLOW_SINGLE_GAS    1

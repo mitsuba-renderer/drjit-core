@@ -35,6 +35,19 @@ struct KernelParamInfo {
     uint8_t kind;
 };
 
+/// An intersection function unit contained in a kernel
+struct KernelIsectUnit {
+    /// Body hash
+    XXH128_hash_t hash;
+
+    /// Backend handle of the compiled unit:
+    /// - LLVM: the code address
+    /// - CUDA: the OptiX hit group program group
+    /// - Metal: the MTLFunction, from which the launch derives a
+    ///   pipeline-specific function handle
+    void *handle;
+};
+
 /// Represents a compiled kernel for the different backends
 struct Kernel {
     uint32_t size;
@@ -47,6 +60,10 @@ struct Kernel {
     /// Per-slot parameter metadata, parallel to the launch ``kernel_params``
     /// vector (see KernelParamInfo).
     KernelParamInfo *param_info;
+
+    /// Intersection function units contained in this kernel (may be null)
+    KernelIsectUnit *isect;
+    uint32_t isect_count;
 
     union {
         /// 1. LLVM

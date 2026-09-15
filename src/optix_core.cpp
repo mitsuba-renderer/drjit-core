@@ -10,6 +10,7 @@
 #include "util.h"
 #include "trace.h"
 #include "unit.h"
+#include "isect.h"
 
 static bool jitc_optix_cache_hit = false;
 static bool jitc_optix_cache_global_disable = false;
@@ -233,9 +234,12 @@ uint32_t jitc_optix_sbt_owner_handle(uint32_t sbt_index) {
 // ============================================================================
 
 /// Compiled per-unit OptiX modules are held by the unit cache as
-/// { ptr[0] = module }, filed under JitBackend::CUDA so that
+/// { ptr[0] = module, ptr[1] = hit group program group (intersection
+/// functions only) }, filed under JitBackend::CUDA so that
 /// jitc_cuda_shutdown() releases them ahead of the OptiX context.
 static void jitc_optix_unit_release(UnitArtifact &a) {
+    if (a.ptr[1])
+        jitc_optix_check(optixProgramGroupDestroy((OptixProgramGroup) a.ptr[1]));
     jitc_optix_check(optixModuleDestroy((OptixModule) a.ptr[0]));
 }
 
@@ -259,6 +263,8 @@ static uint64_t jitc_optix_config_salt(int device,
 
 struct OptixCompileJob : UnitCompileJob {
     OptixModule mod = nullptr;
+    /// Hit group program group of an intersection function unit
+    OptixProgramGroup pg = nullptr;
     OptixTask task = nullptr;
     char error_log[2048];
     size_t log_size = sizeof(error_log);
@@ -307,6 +313,7 @@ bool jitc_optix_compile(ThreadState *ts, Kernel &kernel) {
         if (jitc_unit_cache_lookup(JitBackend::CUDA, job.unit_hash, salt,
                                    artifact)) {
             job.mod = (OptixModule) artifact.ptr[0];
+            job.pg = (OptixProgramGroup) artifact.ptr[1];
             continue;
         }
 
@@ -382,14 +389,43 @@ bool jitc_optix_compile(ThreadState *ts, Kernel &kernel) {
                          job.symbol, job.error_log);
         }
 
+        // An intersection function is entered through a hit group program
+        // group that lives with its module in the unit cache, so that the
+        // hit record headers of the bindings stay valid across kernels
+        for (uint32_t i : misses) {
+            OptixCompileJob &job = jobs[i];
+            if (i == 0 || !callable_units[i - 1].isect)
+                continue;
+
+            OptixProgramGroupOptions pgo { };
+            OptixProgramGroupDesc pgd { };
+            pgd.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
+            pgd.hitgroup.moduleIS = job.mod;
+            pgd.hitgroup.entryFunctionNameIS = job.symbol;
+
+            char error_log[2048];
+            size_t log_size = sizeof(error_log);
+            error_log[0] = '\0';
+            int rv = optixProgramGroupCreate(optix_context, &pgd, 1, &pgo,
+                                             error_log, &log_size, &job.pg);
+            if (rv) {
+                jitc_log(Error, "jit_optix_compile(): optixProgramGroupCreate() "
+                         "failed for intersection function \"%s\". Please see "
+                         "the error message below:\n\n%s", job.symbol, error_log);
+                jitc_optix_check(rv);
+            }
+        }
+
         // Publish the new modules; the cache pins them
         for (uint32_t i : misses) {
             OptixCompileJob &job = jobs[i];
             UnitArtifact artifact { };
             artifact.ptr[0] = job.mod;
+            artifact.ptr[1] = job.pg;
             jitc_unit_cache_insert(JitBackend::CUDA, job.unit_hash, salt,
                                    artifact, jitc_optix_unit_release);
             job.mod = (OptixModule) artifact.ptr[0];
+            job.pg = (OptixProgramGroup) artifact.ptr[1];
         }
     }
 
@@ -397,7 +433,9 @@ bool jitc_optix_compile(ThreadState *ts, Kernel &kernel) {
     // 2. Create an OptiX program group
     // =====================================================
 
-    size_t n_programs = n_units;
+    // Raygen program plus the dispatchable callables. Intersection function
+    // units follow the callables and bring their own program groups.
+    size_t n_programs = 1 + unit_dispatch_count;
 
     OptixProgramGroupOptions pgo { };
     std::unique_ptr<OptixProgramGroupDesc[]> pgd(
@@ -410,7 +448,7 @@ bool jitc_optix_compile(ThreadState *ts, Kernel &kernel) {
 
     bool continuation_callables = jitc_optix_use_continuation_callables();
 
-    for (uint32_t i = 0; i < (uint32_t) callable_units.size(); ++i) {
+    for (uint32_t i = 0; i < unit_dispatch_count; ++i) {
         XXH128_hash_t ch = callable_units[i].hash;
 
         char *name = (char *) malloc_check(58);
@@ -480,6 +518,14 @@ bool jitc_optix_compile(ThreadState *ts, Kernel &kernel) {
             free((char *) pgd[i].callables.entryFunctionNameDC);
         pipeline.program_groups.push_back(kernel.optix.pg[i]);
     }
+
+    // Link the intersection programs of the traced scenes and remember them
+    // for the launch, which writes their hit record headers
+    jitc_isect_kernel_units(kernel, [&](uint32_t unit) {
+        OptixProgramGroup pg = jobs[unit + 1].pg;
+        pipeline.program_groups.push_back(pg);
+        return (void *) pg;
+    });
 
     log_size = sizeof(error_log);
     error_log[0] = '\0';

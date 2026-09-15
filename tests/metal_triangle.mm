@@ -133,13 +133,8 @@ static void demo() {
     UIntM scene = UIntM::steal(jit_metal_configure_scene(
         (__bridge void *) tlas,
         rt_resources, 3,
-        /* intersection_fn_library= */ nullptr,
-        /* n_ift_entries=          */ 0,
-        /* ift_function_names=     */ nullptr,
-        /* n_ift_buffers=          */ 0,
-        /* ift_buffers=            */ nullptr,
-        /* ift_buffer_slots=       */ nullptr,
-        /* geometry_types_mask=    */ 0x1u));
+        /* n_isect_entries=     */ 0,
+        /* geometry_types_mask= */ 0x1u));
 
     // Twice, to verify kernel caching (like triangle.cpp).
     for (int i = 0; i < 2; ++i) {

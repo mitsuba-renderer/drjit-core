@@ -1103,6 +1103,69 @@ uint32_t jitc_var_call_input(uint32_t index) {
     return jitc_var_new(v2, disable_lvn);
 }
 
+uint32_t jitc_var_placeholder(JitBackend backend, VarType type) {
+    Variable v;
+    v.kind = (uint32_t) VarKind::CallInput;
+    v.backend = (uint32_t) backend;
+    v.type = (uint32_t) type;
+    v.size = 1;
+    v.symbolic = 1;
+
+    // Placeholders of one type must stay distinct
+    return jitc_var_new(v, /* disable_lvn = */ true);
+}
+
+uint32_t jitc_record_begin(JitBackend backend, const char *name) {
+    ThreadState *ts = thread_state(backend);
+    std::vector<std::string> &stack = ts->record_stack;
+
+    // Potentially signal failure to limit recursion depth
+    if (name && std::count(stack.begin(), stack.end(), name) > 1)
+        return uint32_t(-1);
+    stack.push_back(name ? name : std::string());
+
+    if (name)
+        jitc_log(Debug, "jit_record_begin(\"%s\")", name);
+    else
+        jitc_log(Debug, "jit_record_begin()");
+
+    uint32_t result = (uint32_t) ts->side_effects_symbolic.size();
+    if (jitc_flag(JitFlag::SymbolicScope))
+        result |= 0x80000000u;
+    jitc_set_flag(JitFlag::SymbolicScope, true);
+
+    return result;
+}
+
+void jitc_record_end(JitBackend backend, uint32_t value, int cleanup) {
+    jitc_log(Debug, "jit_record_end()");
+
+    ThreadState *ts = thread_state(backend);
+    std::vector<std::string> &stack = ts->record_stack;
+
+    if (unlikely(stack.empty()))
+        jitc_fail("jit_record_end(): stack underflow!");
+
+    stack.pop_back();
+
+    // Set recording flag to previous value
+    jitc_set_flag(JitFlag::SymbolicScope, (value & 0x80000000u) != 0);
+    value &= 0x7fffffff;
+
+    if (cleanup) {
+        std::vector<uint32_t> &se = ts->side_effects_symbolic;
+        if (value > se.size())
+            jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
+
+        while (value < se.size()) {
+            uint32_t index = se.back();
+            se.pop_back();
+            jitc_log(Debug, "jit_record_end(): deleting side effect r%u", index);
+            jitc_var_dec_ref(index);
+        }
+    }
+}
+
 /// This function is called when the scope counter overflows, which can happen
 /// in very long-running computations. In this case, it is necessary to compact
 /// the scopes into a contiguous range.

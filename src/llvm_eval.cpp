@@ -66,6 +66,7 @@
 #include "llvm_packet.h"
 #include "llvm_coop_vec.h"
 #include "llvm_orcv2.h"
+#include "isect.h"
 
 // Forward declaration
 static void jitc_llvm_render(Variable *v);
@@ -346,10 +347,140 @@ static std::string jitc_llvm_call_ret_type(const CallData *call) {
     return name;
 }
 
-void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
+/**
+ * Render the scheduled body of a callable or intersection function. A
+ * callable gathers its captured data per lane through '%offsets'. An
+ * intersection function loads each value once from the uniform '%data'
+ * block and broadcasts it, and its prologue binds the placeholder inputs.
+ */
+static void jitc_llvm_render_func_body(const CallData *call, uint32_t inst) {
     bool print_labels = jitc_log_active(LogLevel::Trace) ||
                         (jitc_flags() & (uint32_t) JitFlag::PrintIR);
 
+    // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
+    jitc_call_bind_slots(call, inst);
+
+    // Coalesce the recorded size-class buckets into packet loads up front.
+    // ``packetized_until[c]`` is the first slot past the packetized prefix of
+    // bucket c; the scalar path below validates a slot before consulting it.
+    uint32_t packetized_until[4] = { };
+    if (!call->isect)
+        jitc_llvm_render_call_data(call, inst, packetized_until);
+
+    // Warning: do not rewrite this into a range-based for loop.
+    // The memory location of 'schedule' may change.
+    for (size_t i = 0; i < schedule.size(); ++i) {
+        ScheduledVariable &sv = schedule[i];
+        Variable *v = jitc_var(sv.index);
+        VarType vt = (VarType) v->type;
+        VarKind kind = (VarKind) v->kind;
+
+        if (unlikely(print_labels && v->extra)) {
+            const char *label = jitc_var_label(sv.index);
+            if (label && *label && vt != VarType::Void &&
+                kind != VarKind::CallOutput)
+                fmt("    ; $s\n", label);
+        }
+
+        LLVMDebugScope dbg_scope(v);
+
+        if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
+            uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
+
+            if (call->isect) {
+                // One scalar load from the data block, broadcast to all lanes
+                const char *st = vt == VarType::Pointer
+                                     ? "ptr" : type_name_llvm[(int) vt];
+                fmt("    $v_p = getelementptr inbounds i8, ptr %data, i32 $u\n",
+                    v, offset);
+                if (vt == VarType::Bool)
+                    fmt("    $v_i = load i8, ptr $v_p, align 1\n"
+                        "    $v_s = trunc i8 $v_i to i1\n", v, v, v, v);
+                else
+                    fmt("    $v_s = load $s, ptr $v_p, align $a\n", v, st, v, v);
+                fmt("    $v_0 = insertelement <$w x $s> undef, $s $v_s, i32 0\n"
+                    "    $v = shufflevector <$w x $s> $v_0, <$w x $s> undef, <$w x i32> $z\n",
+                    v, st, st, v, v, st, v, st);
+                continue;
+            }
+
+            // Skip fields already emitted by the coalesced packet loads above.
+            uint32_t slot = v->param_offset;
+            const CallData::CaptureSlot &capture = call->slots[slot];
+            if (capture.bucket.coalesceable()) {
+                const CallData::InstanceLayout::Bucket &bucket =
+                    call->instance_layout[inst].bucket[capture.bucket.id()];
+                if (slot >= bucket.slot_start &&
+                    slot < packetized_until[capture.bucket.id()])
+                    continue;
+            }
+
+            fmt_intrinsic("declare $M @llvm.masked.gather.v$w$h(<$w x ptr>, i32, <$w x i1>, $M)",
+                          v, v, v);
+
+            bool is_pointer_or_bool =
+                (vt == VarType::Pointer) || (vt == VarType::Bool);
+            // %data is the kernel-uniform base pointer; %offsets is the per-lane
+            // absolute byte offset of this instance's data block in the buffer.
+            fmt("    $v_p1 = getelementptr inbounds i8, ptr %data, i32 $u\n"
+                "    $v_p2 = getelementptr inbounds i8, ptr $v_p1, <$w x i32> %offsets\n"
+                "    $v$s = call $M @llvm.masked.gather.v$w$h(<$w x ptr> $v_p2, i32 $a, <$w x i1> %mask, $M $z), !alias.scope !2, !noalias !2\n",
+                v, offset,
+                v, v,
+                v, is_pointer_or_bool ? "_p3" : "", v, v, v, v, v);
+
+            if (vt == VarType::Pointer)
+                fmt("    $v = inttoptr <$w x i64> $v_p3 to <$w x ptr>\n",
+                    v, v);
+            else if (vt == VarType::Bool)
+                fmt("    $v = trunc <$w x i8> $v_p3 to <$w x i1>\n",
+                    v, v);
+            continue;
+        }
+
+        switch (kind) {
+            case VarKind::CallInput: {
+                if (call->isect) // bound by the prologue
+                    break;
+
+                // Bind to the argument of the matching slot (inner_in[in_i]).
+                uint32_t in_i = 0;
+                for (; in_i < call->n_in; ++in_i)
+                    if (call->inner_in[in_i] == sv.index)
+                        break;
+                fmt("    $v = bitcast $T %in_$u to $T\n", v, v, in_i, v);
+                break;
+            }
+
+            case VarKind::DefaultMask:
+                fmt("    $v = bitcast <$w x i1> %mask to <$w x i1>\n", v);
+                break;
+
+            case VarKind::Array:
+                jitc_llvm_render_array(v, v->dep[0] ? jitc_var(v->dep[0]) : nullptr);
+                break;
+
+            default:
+                jitc_llvm_render(v);
+                break;
+        }
+    }
+}
+
+/// Insert the '%buffer' allocation requested by the body at 'alloca_target'
+static void jitc_llvm_render_func_alloca(size_t alloca_target) {
+    if (alloca_size < 0)
+        return;
+
+    size_t suffix_start = buffer.size();
+
+    fmt("    %buffer = alloca i8, i32 $u, align $u\n",
+        (uint32_t) alloca_size, (uint32_t) alloca_align);
+
+    buffer.move_suffix(suffix_start, alloca_target);
+}
+
+void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     std::string ret_ty = jitc_llvm_call_ret_type(call);
 
     // Callables with 1 instance aren't separately compiled and have internal linkage
@@ -394,93 +525,7 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
 
     alloca_size = alloca_align = -1;
 
-    // Bind this instance's data slots so jitc_call_slot_rel_offset() resolves them O(1)
-    jitc_call_bind_slots(call, inst);
-
-    // Coalesce the recorded size-class buckets into packet loads up front.
-    // ``packetized_until[c]`` is the first slot past the packetized prefix of
-    // bucket c; the scalar path below validates a slot before consulting it.
-    uint32_t packetized_until[4];
-    jitc_llvm_render_call_data(call, inst, packetized_until);
-
-    // Warning: do not rewrite this into a range-based for loop.
-    // The memory location of 'schedule' may change.
-    for (size_t i = 0; i < schedule.size(); ++i) {
-        ScheduledVariable &sv = schedule[i];
-        Variable *v = jitc_var(sv.index);
-        VarType vt = (VarType) v->type;
-        VarKind kind = (VarKind) v->kind;
-
-        if (unlikely(print_labels && v->extra)) {
-            const char *label = jitc_var_label(sv.index);
-            if (label && *label && vt != VarType::Void &&
-                kind != VarKind::CallOutput)
-                fmt("    ; $s\n", label);
-        }
-
-        LLVMDebugScope dbg_scope(v);
-
-        if (v->is_evaluated() || (vt == VarType::Pointer && kind == VarKind::Literal)) {
-            uint32_t offset = jitc_call_slot_rel_offset(call, inst, v, sv.index);
-
-            // Skip fields already emitted by the coalesced packet loads above.
-            uint32_t slot = v->param_offset;
-            const CallData::CaptureSlot &capture = call->slots[slot];
-            if (capture.bucket.coalesceable()) {
-                const CallData::InstanceLayout::Bucket &bucket =
-                    call->instance_layout[inst].bucket[capture.bucket.id()];
-                if (slot >= bucket.slot_start &&
-                    slot < packetized_until[capture.bucket.id()])
-                    continue;
-            }
-
-            fmt_intrinsic("declare $M @llvm.masked.gather.v$w$h(<$w x ptr>, i32, <$w x i1>, $M)",
-                          v, v, v);
-
-            bool is_pointer_or_bool =
-                (vt == VarType::Pointer) || (vt == VarType::Bool);
-            // %data is the kernel-uniform base pointer; %offsets is the per-lane
-            // absolute byte offset of this instance's data block in the buffer.
-            fmt("    $v_p1 = getelementptr inbounds i8, ptr %data, i32 $u\n"
-                "    $v_p2 = getelementptr inbounds i8, ptr $v_p1, <$w x i32> %offsets\n"
-                "    $v$s = call $M @llvm.masked.gather.v$w$h(<$w x ptr> $v_p2, i32 $a, <$w x i1> %mask, $M $z), !alias.scope !2, !noalias !2\n",
-                v, offset,
-                v, v,
-                v, is_pointer_or_bool ? "_p3" : "", v, v, v, v, v);
-
-            if (vt == VarType::Pointer)
-                fmt("    $v = inttoptr <$w x i64> $v_p3 to <$w x ptr>\n",
-                    v, v);
-            else if (vt == VarType::Bool)
-                fmt("    $v = trunc <$w x i8> $v_p3 to <$w x i1>\n",
-                    v, v);
-            continue;
-        }
-
-        switch (kind) {
-            case VarKind::CallInput: {
-                // Bind to the argument of the matching slot (inner_in[in_i]).
-                uint32_t in_i = 0;
-                for (; in_i < call->n_in; ++in_i)
-                    if (call->inner_in[in_i] == sv.index)
-                        break;
-                fmt("    $v = bitcast $T %in_$u to $T\n", v, v, in_i, v);
-                break;
-            }
-
-            case VarKind::DefaultMask:
-                fmt("    $v = bitcast <$w x i1> %mask to <$w x i1>\n", v);
-                break;
-
-            case VarKind::Array:
-                jitc_llvm_render_array(v, v->dep[0] ? jitc_var(v->dep[0]) : nullptr);
-                break;
-
-            default:
-                jitc_llvm_render(v);
-                break;
-        }
-    }
+    jitc_llvm_render_func_body(call, inst);
 
     // Return the active outputs as a struct. The caller is responsible for
     // merging active lanes into its accumulators, so no masking happens here.
@@ -507,14 +552,142 @@ void jitc_llvm_assemble_func(const CallData *call, uint32_t inst) {
     // The function requires extra memory. Insert setup code at the top of
     // the function to accomplish this. (Nested dispatch needs no setup: the
     // callable table arrives as the '%callables' argument.)
-    if (alloca_size >= 0) {
-        size_t suffix_start = buffer.size();
+    jitc_llvm_render_func_alloca(alloca_target);
 
-        fmt("    %buffer = alloca i8, i32 $u, align $u\n",
-            (uint32_t) alloca_size, (uint32_t) alloca_align);
+    put("}");
 
-        buffer.move_suffix(suffix_start, alloca_target);
+    jitc_llvm_dbg_function_end();
+}
+
+/**
+ * Generate an Embree user geometry callback from a recorded intersection
+ * function.
+ *
+ * The function receives the address of an 'RTCIntersectFunctionNArguments'
+ * and a 0/1 mode parameter denoting intersection vs occlusion queries.
+ * The user pointer of the geometry is a 'JitIsectBinding' record.
+ */
+void jitc_llvm_assemble_isect(const CallData *call) {
+    const uint32_t width = jitc_llvm_vector_width;
+    VarType float_type = (VarType) jitc_var(call->inner_in[0])->type;
+    bool is_double = float_type == VarType::Float64;
+
+    put("define void @isect_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^(ptr noalias %args, i32 %mode) #0");
+    jitc_llvm_dbg_function_begin(call->name.c_str(), true);
+    fmt(" {\n"
+        "entry:\n"
+        "    ; Intersection function: $s\n", call->name.c_str());
+
+    size_t alloca_target = buffer.size();
+    alloca_size = alloca_align = -1;
+
+    // Unpack the callback arguments and the binding record
+    fmt("    %valid_p = load ptr, ptr %args\n"
+        "    %record_p = getelementptr inbounds i8, ptr %args, i32 8\n"
+        "    %record = load ptr, ptr %record_p\n"
+        "    %prim_p = getelementptr inbounds i8, ptr %args, i32 16\n"
+        "    %prim_s = load i32, ptr %prim_p\n"
+        "    %ctx_p = getelementptr inbounds i8, ptr %args, i32 24\n"
+        "    %ctx = load ptr, ptr %ctx_p\n"
+        "    %ray_p = getelementptr inbounds i8, ptr %args, i32 32\n"
+        "    %ray = load ptr, ptr %ray_p\n"
+        "    %geom_p = getelementptr inbounds i8, ptr %args, i32 44\n"
+        "    %geom_s = load i32, ptr %geom_p\n"
+        "    %inst_p = getelementptr inbounds i8, ptr %ctx, i32 16\n"
+        "    %inst_s = load i32, ptr %inst_p\n"
+        "    %data_p = getelementptr inbounds i8, ptr %record, i32 $u\n"
+        "    %data = load ptr, ptr %data_p\n"
+        "    %valid = load <$w x i32>, ptr %valid_p, align 4\n"
+        "    %mask = icmp ne <$w x i32> %valid, $z\n",
+        (uint32_t) offsetof(JitIsectBinding, data));
+
+    // Broadcast the primitive index. It takes the name of its placeholder
+    // when the body uses it.
+    const Variable *v_prim = jitc_var(call->inner_in[8]);
+    char prim[16] = "%prim";
+    if (v_prim->reg_index)
+        snprintf(prim, sizeof(prim), "%s%u", type_prefix[v_prim->type],
+                 v_prim->reg_index);
+    fmt("    %prim_0 = insertelement <$w x i32> undef, i32 %prim_s, i32 0\n"
+        "    $s = shufflevector <$w x i32> %prim_0, <$w x i32> undef, <$w x i32> $z\n",
+        prim);
+
+    // Bind the ray inputs that the body uses to these fields of the
+    // structure-of-arrays ray record ('width' floats per field)
+    const uint32_t soa[8] = { 0, 1, 2, 4, 5, 6, 8, 7 };
+    for (uint32_t i = 0; i < 8; ++i) {
+        const Variable *v = jitc_var(call->inner_in[i]);
+        if (!v->reg_index)
+            continue;
+        if (is_double)
+            fmt("    $v_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+                "    $v_f = load <$w x float>, ptr $v_p, align 4\n"
+                "    $v = fpext <$w x float> $v_f to <$w x double>\n",
+                v, soa[i] * 4 * width, v, v, v, v);
+        else
+            fmt("    $v_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+                "    $v = load <$w x float>, ptr $v_p, align 4\n",
+                v, soa[i] * 4 * width, v, v);
     }
+
+    jitc_llvm_render_func_body(call, 0);
+
+    const Variable *out_hit = jitc_var(call->inner_out[0]),
+                   *out_t   = jitc_var(call->inner_out[1]),
+                   *out_a0  = jitc_var(call->inner_out[2]),
+                   *out_a1  = jitc_var(call->inner_out[3]);
+
+    fmt("    %hit = and <$w x i1> %mask, $v\n", out_hit);
+    if (is_double)
+        fmt("    %t_out = fptrunc <$w x double> $v to <$w x float>\n", out_t);
+    else
+        fmt("    %t_out = bitcast <$w x float> $v to <$w x float>\n", out_t);
+
+    // Store a vector ('value' or the variable 'v') to field 'field' of the
+    // ray record for the hit lanes. The whole field is addressable, so a
+    // blend with the previous contents replaces a masked store, which some
+    // targets lack or implement slowly.
+    auto store = [&](const char *name, uint32_t field, bool is_float,
+                     const char *value, const Variable *v = nullptr) {
+        const char *ty = is_float ? "float" : "i32";
+        fmt("    %$s_p = getelementptr inbounds i8, ptr %ray, i32 $u\n"
+            "    %$s_old = load <$w x $s>, ptr %$s_p, align 4\n"
+            "    %$s_new = select <$w x i1> %hit, <$w x $s> ",
+            name, field * 4 * width, name, ty, name, name, ty);
+        if (v)
+            fmt("$v", v);
+        else
+            fmt("$s", value);
+        fmt(", <$w x $s> %$s_old\n"
+            "    store <$w x $s> %$s_new, ptr %$s_p, align 4\n",
+            ty, name, ty, name, name);
+    };
+
+    fmt("    %occl = icmp ne i32 %mode, 0\n"
+        "    br i1 %occl, label %l_occluded, label %l_intersect\n"
+        "\n"
+        "l_intersect:\n"
+        "    %geomid_0 = insertelement <$w x i32> undef, i32 %geom_s, i32 0\n"
+        "    %geomid = shufflevector <$w x i32> %geomid_0, <$w x i32> undef, <$w x i32> $z\n"
+        "    %instid_0 = insertelement <$w x i32> undef, i32 %inst_s, i32 0\n"
+        "    %instid = shufflevector <$w x i32> %instid_0, <$w x i32> undef, <$w x i32> $z\n");
+    store("tfar", 8, true, "%t_out");
+    store("attr0", 15, false, nullptr, out_a0);
+    store("attr1", 16, false, nullptr, out_a1);
+    store("primid", 17, false, prim);
+    store("geomid", 18, false, "%geomid");
+    store("instid", 19, false, "%instid");
+
+    // Occlusion: Embree signals a blocked ray by a far distance of -inf
+    fmt("    ret void\n"
+        "\n"
+        "l_occluded:\n"
+        "    %ninf_0 = insertelement <$w x float> undef, float 0xFFF0000000000000, i32 0\n"
+        "    %ninf = shufflevector <$w x float> %ninf_0, <$w x float> undef, <$w x i32> $z\n");
+    store("occl", 8, true, "%ninf");
+    put("    ret void\n");
+
+    jitc_llvm_render_func_alloca(alloca_target);
 
     put("}");
 
@@ -1464,6 +1637,12 @@ void jitc_llvm_ray_trace(uint32_t func, uint32_t scene, int shadow_ray,
 static void jitc_llvm_render_trace(const Variable *v,
                                    const Variable *func,
                                    const Variable *scene) {
+    // Assemble the intersection functions bound to the traced scene into the
+    // kernel. A scene that is not a literal (per-lane pointers inside a
+    // callable) may be any scene, so every binding is assembled.
+    jitc_isect_assemble_scene(
+        JitBackend::LLVM, scene->is_literal() ? (uintptr_t) scene->literal : 0);
+
     /* Intersection data structure layout:
         0  uint32_t valid
         1  float org_x

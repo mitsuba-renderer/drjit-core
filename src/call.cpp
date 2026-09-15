@@ -66,7 +66,7 @@ CallBufferState call_buffer;
 /// Scratch buffer holding one call's offset table. Used in jitc_call_update().
 static std::vector<uint64_t> offset_entries;
 
-/// Widest call-data packet gather the LLVM backend may issue, in elements.
+/// Widest call-data packet gather the LLVM backend may issue, in elements
 static uint32_t llvm_call_data_packet_cap() {
     return std::max(1u, std::min(8u, jitc_llvm_vector_width));
 }
@@ -116,6 +116,22 @@ static uint32_t call_data_align(const ThreadState *ts, bool uses_optix_) {
         default:
             return 8u;
     }
+}
+
+void jitc_call_layout_params(const ThreadState *ts, uint32_t &align,
+                             uint32_t &llvm_pkt_cap) {
+    align = call_data_align(ts, /*uses_optix_=*/ false);
+    llvm_pkt_cap = jitc_is_llvm((JitBackend) ts->backend)
+                       ? llvm_call_data_packet_cap() : 1u;
+}
+
+void jitc_call_capture_entry(AggregationEntry *p, const Variable *v,
+                             uint32_t offset) {
+    bool is_pointer = (VarType) v->type == VarType::Pointer;
+    p->offset        = offset;
+    p->size          = is_pointer ? (int16_t) 8 : (int16_t) -(int) type_size[v->type];
+    p->resource_kind = is_pointer ? (uint16_t) v->resource_kind() : (uint16_t) 0;
+    p->src           = is_pointer ? (const void *) v->literal : v->data;
 }
 
 // Walk through all slots of instance ``inst`` and populate the ``param_offset``
@@ -172,10 +188,10 @@ uint32_t jitc_call_slot_rel_offset(const CallData *call, uint32_t inst,
  * coalesceable byte prefix, and the four coalesceable size buckets.
  * ``reordered`` is a caller-provided scratch buffer.
  */
-static void jitc_call_layout_instance(CallData *call, uint32_t lo, uint32_t hi,
-                                      JitBackend backend, uint32_t alignment,
-                                      uint32_t llvm_pkt_cap, uint32_t &data_size,
-                                      std::vector<CallData::CaptureSlot> &reordered) {
+void jitc_call_layout_instance(CallData *call, uint32_t lo, uint32_t hi,
+                               JitBackend backend, uint32_t alignment,
+                               uint32_t llvm_pkt_cap, uint32_t &data_size,
+                               std::vector<CallData::CaptureSlot> &reordered) {
     // Histogram by SizeBucket ID: 0..3 are packet-loadable 8/4/2/1-byte
     // buckets, 4..7 are uncoalesced buckets of the same sizes.
     uint32_t bucket_count[8] = { },
@@ -489,12 +505,11 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
     // Scratch reused across instances by the layout pass.
     std::vector<CallData::CaptureSlot> reordered;
 
-    // ``alignment`` is the per-backend block alignment; ``llvm_pkt_cap`` is the
-    // LLVM gather width (in elements) that aligns each size bucket, and 1 elsewhere
-    // (so those backends pack blocks contiguously).
-    uint32_t align = call_data_align(ts, /*uses_optix_=*/ false),
-             llvm_pkt_cap = backend == JitBackend::LLVM
-                                ? llvm_call_data_packet_cap() : 1u;
+    // ``align`` is the per-backend block alignment. ``llvm_pkt_cap`` is the
+    // LLVM gather width (in elements) that aligns each size bucket, and 1
+    // elsewhere so that those backends pack blocks contiguously.
+    uint32_t align, llvm_pkt_cap;
+    jitc_call_layout_params(ts, align, llvm_pkt_cap);
     for (uint32_t i = 0; i < n_inst; ++i) {
         if (unlikely(checkpoints[i] > checkpoints[i + 1]))
             jitc_raise("jitc_var_call(): values in 'checkpoints' are not "
@@ -800,50 +815,8 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
             { borrow(slot.ref.index), call->data_base + slot.offset });
     }
 
-    // =====================================================
-    // 1. Need to backup state before we can JIT recursively
-    // =====================================================
-
-    struct JitBackupRecord {
-        ScheduledVariable sv;
-        uint32_t param_type : 2;
-        uint32_t output_flag : 1;
-        uint32_t reg_index;
-        uint32_t param_offset;
-    };
-
-    std::vector<JitBackupRecord> backup;
-    backup.reserve(schedule.size());
-
-    for (const ScheduledVariable &sv : schedule) {
-        const Variable *v = jitc_var(sv.index);
-        backup.push_back(JitBackupRecord{ sv, v->param_type, v->output_flag,
-                                          v->reg_index, v->param_offset });
-    }
-
-    /// Restore changes to 'schedule' when the function returns or throw
-    struct RestoreGuard {
-        std::vector<JitBackupRecord> &backup;
-
-        ~RestoreGuard() {
-            for (ScheduledVariable &sv : schedule) {
-                Variable *v = jitc_var(sv.index);
-                v->reg_index = 0;
-                v->output_flag = false;
-                jitc_var_dec_ref(sv.index, v);
-            }
-
-            schedule.clear();
-            for (const JitBackupRecord &b : backup) {
-                Variable *v = jitc_var(b.sv.index);
-                v->param_type = b.param_type;
-                v->output_flag = b.output_flag;
-                v->reg_index = b.reg_index;
-                v->param_offset = b.param_offset;
-                schedule.push_back(b.sv);
-            }
-        }
-    } restore_guard { backup };
+    // Back up the schedule so that the nested assembly below can reuse it
+    ScopedScheduleBackup schedule_backup;
 
     // =========================================================
     // 2. Determine size and alignment of parameter and return
@@ -928,19 +901,15 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
     using CallablesSet = std::set<XXH128_hash_t, XXH128Cmp>;
     CallablesSet callables_set;
 
-    int32_t alloca_size_backup = alloca_size;
-    int32_t alloca_align_backup = alloca_align;
-    alloca_size = alloca_align = -1;
-
-    for (size_t i = 0; i < n_inst; ++i) {
-        XXH128_hash_t hash =
-            jitc_assemble_func(call, (uint32_t) i, in_size, in_align, out_size, out_align);
-        call->inst_hash[i] = hash;
-        callables_set.insert(hash);
+    {
+        ScopedAllocaBackup alloca_backup;
+        for (size_t i = 0; i < n_inst; ++i) {
+            XXH128_hash_t hash =
+                jitc_assemble_func(call, (uint32_t) i, in_size, in_align, out_size, out_align);
+            call->inst_hash[i] = hash;
+            callables_set.insert(hash);
+        }
     }
-
-    alloca_size = alloca_size_backup;
-    alloca_align = alloca_align_backup;
 
     if (jitc_is_llvm(call->backend))
         jitc_var_call_assemble_llvm(call, call_reg, self_reg, mask_reg,
@@ -967,7 +936,7 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
     // 4. Restore previously backed-up JIT state
     // =====================================================
 
-    // Main cleanup happens when 'restore_guard' leaves the scope
+    // Main cleanup happens when 'schedule_backup' leaves the scope
 
     // Undo previous change (for more sensible debug out put about buffer sizes)
     if (jitc_is_llvm(call->backend))
@@ -1054,6 +1023,7 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
         for (uint32_t i : cvid->indices)
             jitc_var_call_analyze(call, inst_id, i);
     } else if (kind == VarKind::TraceRay) {
+        call->use_trace = true;
         TraceData *td = (TraceData *) v->data;
         for (uint32_t index_2: td->indices)
             jitc_var_call_analyze(call, inst_id, index_2);
@@ -1173,15 +1143,9 @@ void jitc_call_upload(ThreadState *ts) {
     }
 
     // Part 2: capture slots
-    for (const CallBufferState::CaptureSlotRef &e : call_buffer.data_entries) {
-        const Variable *v = jitc_var((uint32_t) e.src);
-        bool is_pointer = (VarType) v->type == VarType::Pointer;
-        p->offset        = e.offset + data_start;
-        p->size          = is_pointer ? (int16_t) 8 : (int16_t) -(int) type_size[v->type];
-        p->resource_kind = is_pointer ? (uint16_t) v->resource_kind() : (uint16_t) 0;
-        p->src           = is_pointer ? (const void *) v->literal : v->data;
-        p++;
-    }
+    for (const CallBufferState::CaptureSlotRef &e : call_buffer.data_entries)
+        jitc_call_capture_entry(p++, jitc_var((uint32_t) e.src),
+                                e.offset + data_start);
 
     // Part 3: getter value tables. They live in the header region, so
     // 'header_offset' is absolute (no 'data_start' shift).

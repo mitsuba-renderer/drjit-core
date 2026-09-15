@@ -30,25 +30,15 @@ extern JIT_EXPORT void *jit_metal_command_queue();
  *
  * The application calls this once per scene to register its acceleration
  * structure (TLAS), the list of child resources the TLAS references (BLAS
- * handles, vertex/index buffers), and (optionally) a library of custom
- * intersection functions plus an intersection-function-table specification.
+ * handles, vertex/index buffers), and the size of the intersection function
+ * table that its bounding-box geometry indexes.
  *
- * The function returns a JIT variable index that owns the lifetime of the
- * scene state on the drjit side. This index must be passed as the trailing
- * argument to subsequent ``jit_metal_ray_trace`` calls in order to bind
- * this scene's TLAS / IFT at launch time. When the variable's reference
+ * The function returns a JIT variable index that owns the lifetime of the scene
+ * state on the drjit side. This index must be passed to ``jit_metal_ray_trace``
+ * to bind this scene's TLAS / IFT at launch time. When the variable's reference
  * count reaches zero (i.e. the application releases its handle), Dr.Jit
- * releases its retained references on the Metal library, the intersection
- * function table, and any other owned per-scene resources.
- *
- * Multiple scenes can be live simultaneously — each call returns a fresh
- * index, and ray-tracing kernels select the correct TLAS / IFT per launch
- * based on which scene_index was attached to the corresponding TraceRay
- * IR node at recording time.
- *
- * Each call builds a fresh scene variable; a geometry edit registers a new
- * scene, whose owner handle the next frozen-function traversal rebinds as an
- * input (see \ref jit_metal_scene_owner_handle).
+ * releases the intersection function tables and any other owned per-scene
+ * resources.
  *
  * \param acceleration_structure
  *     The ``id<MTLAccelerationStructure>`` TLAS.
@@ -56,24 +46,8 @@ extern JIT_EXPORT void *jit_metal_command_queue();
  * \param resources / n_resources
  *     List of ``id<MTLResource>`` pointers that the TLAS references.
  *
- * \param intersection_fn_library
- *     Optional ``id<MTLLibrary>`` with custom intersection functions.
- *
- * \param n_ift_entries
- *     Number of entries in the intersection function table. Must be 0 if
- *     ``intersection_fn_library`` is null.
- *
- * \param ift_function_names
- *     Array of length ``n_ift_entries``. Each is a C-string name of an MSL
- *     intersection function in ``intersection_fn_library``. The names are
- *     copied internally.
- *
- * \param n_ift_buffers / ift_buffers / ift_buffer_slots Buffer bindings of the
- *     intersection function table: ``ift_buffers[i]`` (an ``id<MTLBuffer>``) is
- *     bound at the MSL ``[[buffer(ift_buffer_slots[i])]]`` slot. These bindings
- *     are scene-wide: intersection functions must locate per-geometry data
- *     through indexing (e.g. by instance/geometry/primitive ID) rather than
- *     through entry-specific buffers or offsets.
+ * \param n_isect_entries
+ *     Number of entries in the scene's intersection function table.
  *
  * \param geometry_types_mask
  *     Bit 0: triangle geometry present.
@@ -86,12 +60,7 @@ extern JIT_EXPORT uint32_t jit_metal_configure_scene(
     void *acceleration_structure,
     void **resources,
     uint32_t n_resources,
-    void *intersection_fn_library,
-    uint32_t n_ift_entries,
-    const char **ift_function_names,
-    uint32_t n_ift_buffers,
-    void **ift_buffers,
-    const uint32_t *ift_buffer_slots,
+    uint32_t n_isect_entries,
     uint32_t geometry_types_mask);
 
 /**
@@ -128,8 +97,10 @@ extern JIT_EXPORT uint32_t jit_metal_configure_scene(
  *     Array of 8 JIT variable indices (output, written by this function):
  *       [0] valid        (Bool)    — true if a hit was found
  *       [1] distance     (Float32) — distance to the closest hit
- *       [2] bary_u       (Float32) — barycentric U coordinate
- *       [3] bary_v       (Float32) — barycentric V coordinate
+ *       [2] bary_u       (Float32) — barycentric U coordinate, or the first
+ *                                    attribute of a bounding-box hit
+ *       [3] bary_v       (Float32) — barycentric V coordinate, or the second
+ *                                    attribute of a bounding-box hit
  *       [4] instance_id  (UInt32)  — instance index in the TLAS
  *       [5] primitive_id  (UInt32)  — triangle index in the mesh
  *       [6] geometry_id   (UInt32)  — geometry index within the instance
@@ -166,12 +137,10 @@ extern JIT_EXPORT void *jit_metal_lookup_buffer(void *ptr, size_t *offset);
 /**
  * \brief Register a cleanup callback that runs when the scene variable dies
  *
- * The application's Metal objects (TLAS, BLAS, buffers) must outlive the scene
- * variable, which can outlast the application's own use of the scene since
- * unevaluated kernels and frozen-function recordings reference it through their
- * TraceRay nodes. ``callback`` runs once, right after the MetalScene is
- * destroyed, so the application can release the scene by dropping its reference
- * rather than freeing those objects directly. ``scene_index`` must be a
+ * The application's Metal objects (TLAS, BLAS, buffers) and intersection
+ * bindings must outlive the scene variable. ``callback`` runs once when the
+ * variable is freed, right before the scene is destroyed, so the application
+ * can release the scene by dropping its reference. ``scene_index`` must be a
  * variable representing a scene, as returned by \ref jit_metal_configure_scene.
  */
 extern JIT_EXPORT void jit_metal_scene_set_cleanup(uint32_t scene_index,
@@ -182,12 +151,9 @@ extern JIT_EXPORT void jit_metal_scene_set_cleanup(uint32_t scene_index,
  * \brief Create a handle exposing a scene as a frozen-function input
  *
  * Returns an ``UInt64`` variable whose data pointer is drjit-core's internal
- * per-scene bookkeeping object (an opaque C++ struct tracking the TLAS and
- * referenced resources). It is used as an identity token so that traversal by
- * ``dr.freeze`` can capture and correctly bind the scene to kernel launches.
- * The handle does not own the scene.
- * \c scene_index must be a variable representing a scene, as returned by \ref
- * jit_metal_configure_scene.
+ * per-scene bookkeeping object. It is used as an identity token for
+ * ``dr.freeze``. The handle does not own the scene. \c scene_index must be a
+ * variable representing a scene, as returned by \ref jit_metal_configure_scene.
  */
 extern JIT_EXPORT uint32_t jit_metal_scene_owner_handle(uint32_t scene_index);
 

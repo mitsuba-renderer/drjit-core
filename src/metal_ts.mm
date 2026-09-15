@@ -323,8 +323,7 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                     // here: scenes queued by aggregate() reach only that pass.
                     id<MTLIntersectionFunctionTable> ift =
                         (__bridge id<MTLIntersectionFunctionTable>)
-                            jitc_metal_get_or_create_ift_for_scene(
-                                (MetalScene *) owner, (__bridge void *) pso);
+                            jitc_metal_scene_ift((MetalScene *) owner, kernel);
                     kernel_params[i] = ift ? (void *) (uintptr_t)
                         memcpy_cast<uint64_t>(ift.gpuResourceID) : nullptr;
                     break;
@@ -400,25 +399,18 @@ Task *MetalThreadState::launch(Kernel kernel, KernelKey & /*key*/,
                 case ResourceKind::Accel:
                 case ResourceKind::IFT: {
                     // The scene's TLAS, its BLAS / vertex / index buffers,
-                    // and (for custom-primitive scenes) its IFT + per-entry
-                    // buffers.
+                    // and (for custom-primitive scenes) its IFT and the
+                    // data of the bound intersection functions
                     auto *scene = (MetalScene *) res.ptr;
                     ro.push_back(scene->tlas);
                     for (void *r : scene->resources)
                         if (r)
                             ro.push_back(r);
-                    if (!scene->intersection_fn_library)
-                        break;
 
-                    void *ift = jitc_metal_get_or_create_ift_for_scene(
-                        scene, (__bridge void *) pso);
-                    if (!ift)
-                        break;
-
-                    ro.push_back(ift);
-                    for (const IFTBinding &b : scene->ift_bindings)
-                        if (b.buffer)
-                            ro.push_back(b.buffer);
+                    if (void *ift = jitc_metal_scene_ift(scene, kernel)) {
+                        ro.push_back(ift);
+                        jitc_metal_isect_resources(scene, kernel, ro);
+                    }
                     break;
                 }
 

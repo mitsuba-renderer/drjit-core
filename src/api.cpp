@@ -21,6 +21,7 @@
 #endif
 #include "op.h"
 #include "call.h"
+#include "isect.h"
 #include "loop.h"
 #include "cond.h"
 #include "profile.h"
@@ -245,55 +246,12 @@ uint32_t jit_record_checkpoint(JitBackend backend) {
 }
 
 uint32_t jit_record_begin(JitBackend backend, const char *name) {
-    ThreadState *ts = thread_state(backend);
-    std::vector<std::string> &stack = ts->record_stack;
-
-    // Potentially signal failure to limit recursion depth
-    if (name && std::count(stack.begin(), stack.end(), name) > 1)
-        return uint32_t(-1);
-    stack.push_back(name ? name : std::string());
-
-    if (name)
-        jitc_log(Debug, "jit_record_begin(\"%s\")", name);
-    else
-        jitc_log(Debug, "jit_record_begin()");
-
-    uint32_t result = (uint32_t) ts->side_effects_symbolic.size();
-    if (jit_flag(JitFlag::SymbolicScope))
-        result |= 0x80000000u;
-    jit_set_flag(JitFlag::SymbolicScope, true);
-
-    return result;
+    return jitc_record_begin(backend, name);
 }
 
 void jit_record_end(JitBackend backend, uint32_t value, int cleanup) {
-    jitc_log(Debug, "jit_record_end()");
-
-    ThreadState *ts = thread_state(backend);
-    std::vector<std::string> &stack = ts->record_stack;
-
-    if (unlikely(stack.empty()))
-        jitc_fail("jit_record_end(): stack underflow!");
-
-    stack.pop_back();
-
-    // Set recording flag to previous value
-    jit_set_flag(JitFlag::SymbolicScope, (value & 0x80000000u) != 0);
-    value &= 0x7fffffff;
-
-    if (cleanup) {
-        lock_guard guard(state.lock);
-        std::vector<uint32_t> &se = ts->side_effects_symbolic;
-        if (value > se.size())
-            jitc_raise("jit_record_end(): position lies beyond the end of the queue!");
-
-        while (value < se.size()) {
-            uint32_t index = se.back();
-            se.pop_back();
-            jitc_log(Debug, "jit_record_end(): deleting side effect r%u", index);
-            jitc_var_dec_ref(index);
-        }
-    }
+    lock_guard guard(state.lock);
+    jitc_record_end(backend, value, cleanup);
 }
 
 #if defined(DRJIT_ENABLE_CUDA)
@@ -520,29 +478,15 @@ void *jit_metal_command_queue() {
 
 uint32_t jit_metal_configure_scene(void *accel, void **resources,
                                    uint32_t n_resources,
-                                   void *intersection_fn_library,
-                                   uint32_t n_ift_entries,
-                                   const char **ift_function_names,
-                                   uint32_t n_ift_buffers,
-                                   void **ift_buffers,
-                                   const uint32_t *ift_buffer_slots,
+                                   uint32_t n_isect_entries,
                                    uint32_t geometry_types_mask) {
     lock_guard guard(state.lock);
 #if defined(DRJIT_ENABLE_METAL)
-    return jitc_metal_configure_scene(accel, resources,
-                                      n_resources,
-                                      intersection_fn_library,
-                                      n_ift_entries,
-                                      ift_function_names,
-                                      n_ift_buffers,
-                                      ift_buffers,
-                                      ift_buffer_slots,
-                                      geometry_types_mask);
+    return jitc_metal_configure_scene(accel, resources, n_resources,
+                                      n_isect_entries, geometry_types_mask);
 #else
     (void) accel; (void) resources; (void) n_resources;
-    (void) intersection_fn_library; (void) n_ift_entries;
-    (void) ift_function_names; (void) n_ift_buffers; (void) ift_buffers;
-    (void) ift_buffer_slots; (void) geometry_types_mask;
+    (void) n_isect_entries; (void) geometry_types_mask;
     jit_raise("jit_metal_configure_scene(): Metal backend not enabled.");
     return 0;
 #endif
@@ -913,6 +857,28 @@ uint32_t jit_var_pointer(JitBackend backend, const void *value,
 uint32_t jit_var_call_input(uint32_t index) {
     lock_guard guard(state.lock);
     return jitc_var_call_input(index);
+}
+
+void jit_isect_begin(JitBackend backend, VarType float_type, uint32_t *in) {
+    lock_guard guard(state.lock);
+    jitc_isect_begin(backend, float_type, in);
+}
+
+uint32_t jit_isect_end(JitBackend backend, const char *name,
+                       const uint32_t *out) {
+    lock_guard guard(state.lock);
+    return jitc_isect_end(backend, name, out);
+}
+
+JitIsectBinding *jit_isect_bind(uint32_t func, uintptr_t scene,
+                                uint32_t record_index, void *user) {
+    lock_guard guard(state.lock);
+    return jitc_isect_bind(func, scene, record_index, user);
+}
+
+void jit_isect_unbind(JitIsectBinding *binding) {
+    lock_guard guard(state.lock);
+    jitc_isect_unbind(binding);
 }
 
 uint32_t jit_var_inc_ref_impl(uint32_t index) noexcept {

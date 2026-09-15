@@ -11,7 +11,6 @@
 
 #include "internal.h"
 
-#include <string>
 #include <cstdint>
 #include <vector>
 
@@ -108,16 +107,12 @@ extern void jitc_metal_kernel_free(Kernel &kernel);
 //  Command-buffer / encoder helpers
 // ---------------------------------------------------------------------
 
-/// One buffer binding of an intersection function table. The argument table
-/// of an ``MTLIntersectionFunctionTable`` is *shared by all entries* (there
-/// is no per-entry binding in Metal), so bindings are specified per scene.
-struct IFTBinding {
-    /// MSL ``[[buffer(N)]]`` slot the data buffer binds to.
-    uint32_t slot = 0;
-
-    /// id<MTLBuffer> data buffer. Not retained — the caller manages buffer
-    /// lifetime.
-    void *buffer = nullptr;
+/// An intersection function table of a scene, built for one compute
+/// pipeline. Function handles are pipeline-specific, hence a scene needs one
+/// table per pipeline that traces it.
+struct MetalSceneIFT {
+    void *pso;
+    void *ift;
 };
 
 /// Per-scene Metal ray-tracing state. One instance is allocated per call
@@ -125,10 +120,6 @@ struct IFTBinding {
 /// lifetime is then driven by Dr.Jit's reference counting. When all
 /// external references go away, Dr.Jit invokes a destruction callback
 /// which releases the per-scene Metal objects.
-///
-/// All fields are owned by the MetalScene — releasing the scene releases
-/// the IFT, the linked MTLLibrary, and any cached compute pipelines we
-/// hold strong references to.
 struct MetalScene {
     /// id<MTLAccelerationStructure> (TLAS). Reconstructed in-shader from its
     /// ``gpuResourceID`` in ``params.args[]`` and made resident via
@@ -144,17 +135,14 @@ struct MetalScene {
     /// buffers, etc.). useResource()'d at every launch. Not retained.
     std::vector<void *> resources;
 
-    /// Optional id<MTLLibrary> with custom intersection functions.
-    /// Retained so the linker can find functions during pipeline
-    /// creation.
-    void *intersection_fn_library = nullptr;
+    /// Number of intersection function table entries, each bound to a
+    /// recorded intersection function via jit_isect_bind()
+    uint32_t isect_count = 0;
 
-    /// MSL intersection-function names, one per IFT entry (linked into the
-    /// PSO, looked up by name).
-    std::vector<std::string> intersection_fns;
-
-    /// Buffer bindings shared by all IFT entries (see IFTBinding).
-    std::vector<IFTBinding> ift_bindings;
+    /// Host-visible table with the data block pointer of each entry's
+    /// binding. It is bound at buffer slot 0, and the generated intersection
+    /// functions index it with their table offset.
+    uint64_t *isect_table = nullptr;
 
     /// Bit 0 = triangle, bit 1 = bounding_box, bit 2 = curves, bit 3 =
     /// triangle backface culling. Used to specialize the MSL
@@ -165,15 +153,14 @@ struct MetalScene {
     uint32_t accel_handle = 0;
     uint32_t ift_handle = 0;
 
-    /// Lazily created intersection function tables, paired with the MSL
-    /// compute pipeline they were built for. We need separate IFT instances
-    /// per pipeline because each MTLIntersectionFunctionTable is bound to
-    /// function handles obtained from a specific MTLComputePipelineState. At
-    /// most one entry per live PSO; each ``second`` is an owned (+1) IFT handle.
-    std::vector<std::pair<void *, void *>> ift_cache;
+    /// Intersection function tables, one per pipeline that traced the scene.
+    /// Each ``ift`` is an owned (+1) handle. The entries reflect the
+    /// bindings at creation time, and a binding change drops the tables.
+    std::vector<MetalSceneIFT> ift_cache;
 
-    /// Invoked once after this MetalScene is destroyed, letting the application
-    /// release its Metal objects then (see jit_metal_scene_set_cleanup()).
+    /// Invoked when the scene variable is freed, before the scene is
+    /// destroyed, letting the application release its Metal objects and
+    /// intersection bindings (see jit_metal_scene_set_cleanup()).
     void (*cleanup)(void *) = nullptr;
     void *cleanup_payload = nullptr;
 };
@@ -207,34 +194,35 @@ extern bool jitc_metal_resource_id(void *owner, ResourceKind kind,
 
 /// Render-discovered set of distinct ``MetalScene*`` referenced by this
 /// kernel's ``VarKind::TraceRay`` nodes (top-level schedule + callable bodies).
-/// Populated during code generation (no separate pre-walk) and consumed at
-/// compile time for PSO intersection-function linking (metal_core.mm).
+/// Populated during code generation and folded into the kernel source.
 extern std::vector<MetalScene *> metal_kernel_scenes;
 
 /// Append ``scene`` to ``metal_kernel_scenes`` if not already present (linear
 /// dedup; at most a handful of scenes per kernel). ``nullptr`` is ignored.
 extern void metal_register_kernel_scene(MetalScene *scene);
 
-/// Lazily build (and cache) an ``MTLIntersectionFunctionTable`` for the
-/// given scene + compute pipeline. The function handles are derived from
-/// the pipeline so each pipeline needs its own IFT instance. Returns
-/// nullptr if the scene has no custom intersection functions configured.
-/// (returns an opaque ``id<MTLIntersectionFunctionTable>``; ``pso`` is an
-/// opaque ``id<MTLComputePipelineState>``)
-extern void *
-jitc_metal_get_or_create_ift_for_scene(MetalScene *scene, void *pso);
+/// Return the scene's intersection function table for the pipeline of
+/// ``kernel`` (an opaque ``id<MTLIntersectionFunctionTable>``). The first
+/// call for a pipeline creates the table and points its entries at the
+/// kernel's intersection function units. Returns null if the scene has no
+/// intersection function entries.
+extern void *jitc_metal_scene_ift(MetalScene *scene, const Kernel &kernel);
+
+/// Drop the scene's intersection function tables (a binding changed)
+extern void jitc_metal_scene_release_ifts(MetalScene *scene);
+
+/// Append the resources that the kernel's intersection functions bound to
+/// ``scene`` dereference (the pointer table, the data blocks, and the buffers
+/// and textures they point to) to ``ro`` for residency
+extern void jitc_metal_isect_resources(MetalScene *scene, const Kernel &kernel,
+                                       std::vector<void *> &ro);
 
 /// Build a MetalScene with the given configuration and wrap it in a JIT
 /// variable. Returns the variable index; the caller is expected to hold
 /// the reference for the scene's lifetime and dec_ref it on destruction.
 extern uint32_t jitc_metal_configure_scene(void *accel, void **resources,
                                            uint32_t n_resources,
-                                           void *intersection_fn_library,
-                                           uint32_t n_ift_entries,
-                                           const char **ift_function_names,
-                                           uint32_t n_ift_buffers,
-                                           void **ift_buffers,
-                                           const uint32_t *ift_buffer_slots,
+                                           uint32_t n_isect_entries,
                                            uint32_t geometry_types_mask);
 
 /// Trace a batch of rays against the active scene. Mirrors the signature

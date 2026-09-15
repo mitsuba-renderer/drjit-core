@@ -51,6 +51,10 @@ struct CallableUnit {
 
     /// The unit holding its definition
     UnitBuilder *unit;
+
+    /// Is this an intersection function (see isect.h)? The ray tracing
+    /// backend calls it by address, so it takes no dispatch table entry.
+    bool isect;
 };
 
 /// Backend prologue shared by every unit of the kernel being assembled
@@ -66,6 +70,10 @@ extern UnitBuilder *unit_entry;
 /// callable-index order by jitc_unit_finalize()
 extern std::vector<CallableUnit> callable_units;
 
+/// Number of leading entries of 'callable_units' that are dispatchable
+/// callables (the intersection functions follow). Set by jitc_unit_finalize().
+extern uint32_t unit_dispatch_count;
+
 /// Reset the unit builders before starting to assemble a kernel
 extern void jitc_unit_reset();
 
@@ -78,7 +86,7 @@ extern bool jitc_unit_callable_known(XXH128_hash_t hash);
 /// Retain the active unit (the ``buffer`` data starting at ``body_start``).
 /// The caller already provides a hash.
 extern void jitc_unit_pop_keep(UnitBuilder *unit, XXH128_hash_t hash,
-                               size_t body_start);
+                               size_t body_start, bool isect = false);
 
 /// Discard the active callable unit (a duplicate) and rewind ``buffer``
 extern void jitc_unit_pop_discard(UnitBuilder *unit, size_t body_start);

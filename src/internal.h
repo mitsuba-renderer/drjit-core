@@ -791,6 +791,11 @@ struct ThreadStateBase {
     /// Stack of symbolic recording sessions
     std::vector<std::string> record_stack;
 
+    /// Placeholder inputs and jitc_record_begin() checkpoint of the
+    /// intersection function being recorded (see jit_isect_begin())
+    uint32_t isect_in[9] { };
+    uint32_t isect_record = 0;
+
     /// Combined version of the elements of 'prefix_stack'
     char *prefix = nullptr;
 

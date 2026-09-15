@@ -6,6 +6,7 @@
 #include "eval.h"
 #include "util.h"
 #include "optix_api.h"
+#include "isect.h"
 
 static void submit_gpu(KernelType type, KernelRecordingMode recording_mode,
                        CUfunction kernel, uint32_t block_count_x,
@@ -79,9 +80,13 @@ CUDAThreadState::launch(Kernel kernel, KernelKey & /*key*/,
     }
 
 #if defined(DRJIT_ENABLE_OPTIX)
-    if (unlikely(uses_optix))
+    if (unlikely(uses_optix)) {
+        if (kernel.isect_count)
+            jitc_isect_launch(JitBackend::CUDA, kernel,
+                              (void *) this->optix_sbt, (void *) this->stream);
         jitc_optix_launch(this, kernel, size, kernel_params_global,
                           kernel_param_count);
+    }
 #else
     (void) kernel_param_count;
     (void) kernel_params_global;

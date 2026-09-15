@@ -2568,6 +2568,166 @@ extern JIT_EXPORT void jit_llvm_ray_trace(uint32_t func, uint32_t scene,
                                           int shadow_ray, const uint32_t *in,
                                           uint32_t *out);
 
+// ====================================================================
+//         Custom intersection functions for ray tracing backends
+// ====================================================================
+
+/*
+ * Ray tracing backends invoke a callback for every custom bounding-box
+ * primitive that a ray traverses. Dr.Jit generates that callback from a
+ * recorded computation, so that one body serves every backend:
+ *
+ * 1. \ref jit_isect_begin() opens a symbolic recording session and returns
+ *    nine placeholder inputs: the object-space ray origin and direction, the
+ *    current maximum distance, and the ray time, followed by the primitive
+ *    index (UInt32). Rays must be traced with a minimum distance of zero.
+ *
+ * 2. The application traces its intersection routine on the placeholders,
+ *    producing a hit mask (Bool), the distance along the ray, and two
+ *    32-bit attribute words (UInt32) that the backend stores with the hit.
+ *    A reported hit must lie within the ray's interval, i.e. its distance
+ *    must satisfy ``0 <= t <= tmax``. The backend reduces ``tmax`` when it
+ *    accepts a closer hit, so the recorded routine must test against this
+ *    input on every invocation. Dr.Jit adds no interval checks around the
+ *    recorded body. Violating this contract can overwrite a closer hit or
+ *    its attributes.
+ *
+ * 3. \ref jit_isect_end() closes the session and creates the function.
+ *    Values that the body reads from outside the recording (shape
+ *    parameters, pointers to per-primitive tables) become slots of a
+ *    per-binding data block.
+ *
+ * 4. \ref jit_isect_bind() binds the function to a geometry and returns a
+ *    \ref JitIsectBinding record with a filled data block. Its documentation
+ *    describes the fields. \ref jit_isect_bind() explains the backend setup.
+ *
+ * A binding must outlive every kernel that can invoke it.
+ */
+
+/**
+ * \brief Begin recording an intersection function
+ *
+ * Opens a symbolic recording session on the calling thread with the call
+ * mask pushed, and creates the nine placeholder inputs ``ox, oy, oz, dx, dy,
+ * dz, tmax, time`` (of type \c float_type, which must be Float32 or Float64)
+ * and ``prim_index`` (UInt32).
+ */
+extern JIT_EXPORT void jit_isect_begin(JIT_ENUM JitBackend backend,
+                                       JIT_ENUM VarType float_type,
+                                       uint32_t *in);
+
+/**
+ * \brief Finish recording an intersection function
+ *
+ * Closes the session opened by \ref jit_isect_begin(). When \c out is null,
+ * the recording is abandoned and the function returns zero. Otherwise, \c out
+ * holds the four outputs ``hit`` (Bool), ``t`` (the float type), and two
+ * attributes (UInt32), and the function returns a handle variable that owns
+ * the recorded function.
+ */
+extern JIT_EXPORT uint32_t jit_isect_end(JIT_ENUM JitBackend backend,
+                                         const char *name,
+                                         const uint32_t *out);
+
+/**
+ * \brief Host-side record returned by \ref jit_isect_bind()
+ *
+ * Dr.Jit allocates this record when binding a recorded intersection function
+ * to a geometry. The application keeps the returned pointer and passes it to
+ * \ref jit_isect_unbind() to release the binding and its captured-data block.
+ *
+ * On LLVM, the application's Embree callback reads \c code from this record
+ * to invoke the compiled function, which in turn reads \c data. On CUDA and
+ * Metal, Dr.Jit copies the \c data pointer into a backend table read on-device.
+ *
+ * See \ref jit_isect_bind() for the backend setup required by the application.
+ */
+struct JitIsectBinding {
+    /**
+     * LLVM only: CPU address of the compiled intersection function with
+     * signature <tt>void(const void *args, int mode)</tt>. The pointer is
+     * initially null. Before launching a kernel that uses this binding, Dr.Jit
+     * writes the compiled function's CPU address here.
+     */
+    void *code;
+
+    /**
+     * Address of the captured-data block filled by \ref jit_isect_bind().
+     * This is a CPU address on LLVM and a device address on CUDA and Metal.
+     * It is null when the function has no captured data. The contents are
+     * private to Dr.Jit, which also manages the allocation.
+     */
+    void *data;
+
+    /// Copy of the application's user argument (e.g. a host-side shape pointer).
+    /// Dr.Jit does not dereference it or copy it into GPU tables.
+    void *user;
+};
+
+/**
+ * \brief Bind an intersection function to a geometry of a scene
+ *
+ * The application calls this function when (re)building the scene. This occurs
+ * after having recorded the shape's custom intersection routine, and before
+ * launching a ray tracing kernel. It maps the callable onto a specific shape
+ * managed by the ray tracing backends. The mapping must eventually be released
+ * via \ref jit_isect_unbind().
+ *
+ * The operation copies the recorded function's captured values and pointers
+ * (e.g., shape radii, positions, and pointers to per-primitive tables) into a
+ * backend-accessible data block.
+ *
+ * The following steps are required per backend:
+ *
+ * - LLVM: the application installs the returned \c binding pointer as the
+ *   Embree geometry's user data. Its intersect and occluded callbacks invoke
+ *   <tt>((void (*)(const void *, int)) binding->code)(args, mode)</tt> with
+ *   Embree's callback arguments and mode 0 (intersection) or 1 (occlusion).
+ *   The generated function retrieves \c binding->data through the geometry
+ *   user pointer in those arguments.
+ *
+ * - CUDA (OptiX): the application allocates a shader binding table (SBT),
+ *   and passes that geometry's SBT index as \c record_index. It must allocate
+ *   16 bytes after the OptiX header. The first 8 bytes are reserved for the
+ *   application and untouched by Dr.Jit. The subsequent 8 bytes
+ *   store \c binding->data. The application allocates the SBT storage but
+ *   does not need to initialize the header or the Dr.Jit-managed part.
+ *
+ * - Metal: the application reserves intersection function table entries with
+ *   \ref jit_metal_configure_scene(). Dr.Jit installs the compiled function in
+ *   entry specified by \c record_index and stores \c binding->data at the
+ *   same index in an internal pointer table managed by Dr.Jit. The geometry
+ *   must select this entry during ray traversal.
+ *
+ * \param func
+ *    Handle returned by \ref jit_isect_end()
+ *
+ * \param scene
+ *    LLVM: ``RTCScene`` pointer on the LLVM backend. OptiX: the index of the
+ *    shader binding table variable (see \ref jit_optix_configure_sbt()). Metal:
+ *    the index of the scene variable (see \ref jit_metal_configure_scene()).
+ *
+ * \param record_index
+ *    CUDA : index of the geometry's hit record in the shader binding table.
+ *    Metal: index of the geometry's entry in the scene's intersection function
+ *    table. Ignored on the LLVM backend.
+ *
+ * \param user
+ *    Stored in the binding record for the application's use.
+ *
+ * \return
+ *    Binding record, whose address is stable until \ref jit_isect_unbind()
+ */
+extern JIT_EXPORT struct JitIsectBinding *
+jit_isect_bind(uint32_t func, uintptr_t scene, uint32_t record_index, void *user);
+
+/// Release a binding and its data block
+extern JIT_EXPORT void jit_isect_unbind(struct JitIsectBinding *binding);
+
+// ====================================================================
+//                             Scopes
+// ====================================================================
+
 /**
  * \brief Set a new scope identifier to limit the effect of common
  * subexpression elimination

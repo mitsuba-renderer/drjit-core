@@ -1191,6 +1191,36 @@ void jitc_eval_impl(ThreadState *ts) {
         for (int j = 0; j < 4; ++j)
             jitc_var_dec_ref(dep[j]);
     }
+
+    schedule.clear();
+}
+
+ScopedScheduleBackup::ScopedScheduleBackup() {
+    backup.reserve(schedule.size());
+    for (const ScheduledVariable &sv : schedule) {
+        const Variable *v = jitc_var(sv.index);
+        backup.push_back(Record{ sv, v->param_type, v->output_flag,
+                                 v->reg_index, v->param_offset });
+    }
+}
+
+ScopedScheduleBackup::~ScopedScheduleBackup() {
+    for (ScheduledVariable &sv : schedule) {
+        Variable *v = jitc_var(sv.index);
+        v->reg_index = 0;
+        v->output_flag = false;
+        jitc_var_dec_ref(sv.index, v);
+    }
+
+    schedule.clear();
+    for (const Record &b : backup) {
+        Variable *v = jitc_var(b.sv.index);
+        v->param_type = b.param_type;
+        v->output_flag = b.output_flag;
+        v->reg_index = b.reg_index;
+        v->param_offset = b.param_offset;
+        schedule.push_back(b.sv);
+    }
 }
 
 static ProfilerRegion profiler_region_assemble_func("jit_assemble_func");
@@ -1251,6 +1281,11 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
             v->reg_index = 0;
     }
 
+    // Do the same for placeholder inputs of an intersection function
+    if (call->isect)
+        for (uint32_t index : call->inner_in)
+            jitc_var(index)->reg_index = 0;
+
     uint32_t n_regs = jitc_is_cuda(call->backend) ? 4 : 1;
     for (ScheduledVariable &sv : schedule) {
         Variable *v = jitc_var(sv.index);
@@ -1273,28 +1308,38 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
     }
 
     // A callable with one target becomes part of the same compilation unit,
-    // while true indirection involves separate compilation.
-    bool indirect = call->n_inst != 1;
+    // while true indirection involves separate compilation. Intersection
+    // functions are always separate: the backend calls them by address.
+    bool indirect = call->n_inst != 1 || call->isect;
     UnitBuilder *unit = indirect ? jitc_unit_push() : nullptr;
 
     size_t kernel_offset = buffer.size();
 
     switch (call->backend) {
         case JitBackend::LLVM:
-            jitc_llvm_assemble_func(call, inst);
+            if (call->isect)
+                jitc_llvm_assemble_isect(call);
+            else
+                jitc_llvm_assemble_func(call, inst);
             break;
 
 #if defined(DRJIT_ENABLE_CUDA)
         case JitBackend::CUDA:
-            jitc_cuda_assemble_func(call, inst, in_size, in_align, out_size,
-                                    out_align, n_regs);
+            if (call->isect)
+                jitc_cuda_assemble_isect(call, n_regs);
+            else
+                jitc_cuda_assemble_func(call, inst, in_size, in_align, out_size,
+                                        out_align, n_regs);
             break;
 #endif
 
 #if defined(DRJIT_ENABLE_METAL)
         case JitBackend::Metal:
-            jitc_metal_assemble_func(call, inst, in_size, in_align, out_size,
-                                     out_align, n_regs);
+            if (call->isect)
+                jitc_metal_assemble_isect(call);
+            else
+                jitc_metal_assemble_func(call, inst, in_size, in_align,
+                                         out_size, out_align, n_regs);
             break;
 #endif
 
@@ -1321,11 +1366,11 @@ XXH128_hash_t jitc_assemble_func(const CallData *call, uint32_t inst,
         if (!jitc_unit_callable_known(hash)) {
             substitute_name();
 #if defined(DRJIT_ENABLE_CUDA)
-            if (jitc_is_cuda(call->backend) && !uses_optix)
+            if (jitc_is_cuda(call->backend) && !uses_optix && !call->isect)
                 jitc_cuda_render_callable_export(hash);
 #endif
             n_ops_total += n_regs;
-            jitc_unit_pop_keep(unit, hash, kernel_offset);
+            jitc_unit_pop_keep(unit, hash, kernel_offset, call->isect);
         } else {
             jitc_unit_pop_discard(unit, kernel_offset);
         }
