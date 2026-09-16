@@ -24,9 +24,9 @@ struct IsectFunc {
     /// Index of the handle variable
     uint32_t id = 0;
 
-    /// Hash of the rendered body, which identifies the function's unit in
-    /// every kernel
-    XXH128_hash_t hash { 0, 0 };
+    /// Hash of the rendered body per variant, which identifies the unit in
+    /// every kernel. Metal scenes with instance motion use variant 1.
+    XXH128_hash_t hash[2] { };
 
     ~IsectFunc();
 };
@@ -68,10 +68,17 @@ struct JitIsectBindingExt {
 
     /// CUDA: the program group currently written to the hit record header
     void *optix_pg;
+
+    /// Metal: the scene has instance motion (see ``IsectFunc::hash``)
+    bool motion;
 };
 
 /// Live bindings
 extern std::vector<JitIsectBindingExt *> isect_bindings;
+
+/// Set while rendering a Metal intersection function for a scene with
+/// instance motion, which selects the ``instance_motion`` variant
+extern bool isect_motion;
 
 extern void jitc_isect_begin(JitBackend backend, VarType float_type,
                              uint32_t *in);

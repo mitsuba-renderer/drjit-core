@@ -29,6 +29,14 @@
 #endif
 
 std::vector<JitIsectBindingExt *> isect_bindings;
+bool isect_motion = false;
+
+/// Select the intersection function variant while rendering
+struct ScopedIsectMotion {
+    bool backup = isect_motion;
+    ScopedIsectMotion(bool motion) { isect_motion = motion; }
+    ~ScopedIsectMotion() { isect_motion = backup; }
+};
 
 static_assert(offsetof(JitIsectBindingExt, record) == 0,
               "The binding record must be the first member");
@@ -115,7 +123,7 @@ static void jitc_isect_analyze(IsectFunc *f) {
  * were compiled before the function was recorded (frozen function replay
  * after a scene update). jitc_isect_assemble_scene() refreshes it.
  */
-static void jitc_isect_hash(IsectFunc *f) {
+static XXH128_hash_t jitc_isect_hash(IsectFunc *f, bool motion) {
     // The assembler state (buffer, unit builders, schedule, ...) is global
     // and only ever touched under 'eval_lock'
     lock_release(state.lock);
@@ -136,7 +144,8 @@ static void jitc_isect_hash(IsectFunc *f) {
     } optix_flag;
     uses_optix = f->call->backend == JitBackend::CUDA;
 
-    f->hash = jitc_assemble_func(f->call, 0, 0, 0, 0, 0);
+    ScopedIsectMotion motion_scope(motion);
+    return jitc_assemble_func(f->call, 0, 0, 0, 0, 0);
 }
 
 uint32_t jitc_isect_end(JitBackend backend, const char *name,
@@ -234,7 +243,7 @@ uint32_t jitc_isect_end(JitBackend backend, const char *name,
                    "%s, which is not supported inside an intersection "
                    "function.", name, what);
 
-    jitc_isect_hash(f.get());
+    f->hash[0] = jitc_isect_hash(f.get(), false);
 
     uint32_t index = jitc_var_new_node_0(backend, VarKind::Nop, VarType::Void,
                                          1, 0, (uintptr_t) f.get());
@@ -244,8 +253,8 @@ uint32_t jitc_isect_end(JitBackend backend, const char *name,
     jitc_log(InfoSym, "jit_isect_end(\"%s\"): function r%u with %zu data "
              "slot%s (%u bytes), hash %016llx%016llx", name, index,
              call->slots.size(), call->slots.size() == 1 ? "" : "s",
-             call->data_size, (unsigned long long) f->hash.high64,
-             (unsigned long long) f->hash.low64);
+             call->data_size, (unsigned long long) f->hash[0].high64,
+             (unsigned long long) f->hash[0].low64);
 
     f.release();
     return index;
@@ -306,6 +315,7 @@ JitIsectBinding *jitc_isect_bind(uint32_t func, uintptr_t scene,
     // On the GPU backends, the key is the variable that the trace operations
     // reference (the shader binding table on CUDA, the scene on Metal)
     uint32_t scene_var = 0;
+    bool motion = false;
     if (backend == JitBackend::CUDA) {
         Variable *sbt = jitc_var((uint32_t) scene);
         scene_var = (uint32_t) scene;
@@ -322,6 +332,12 @@ JitIsectBinding *jitc_isect_bind(uint32_t func, uintptr_t scene,
                        "(the scene has %u entries)!", record_index,
                        s->isect_count);
         scene = (uintptr_t) s;
+
+        // The intersection functions of a scene with instance motion
+        // carry a matching tag, which the function's static variant lacks
+        motion = (s->geometry_types_mask & 0x10u) != 0;
+        if (motion && !f->hash[1].low64 && !f->hash[1].high64)
+            f->hash[1] = jitc_isect_hash(f, true);
     }
 #endif
 
@@ -336,6 +352,7 @@ JitIsectBinding *jitc_isect_bind(uint32_t func, uintptr_t scene,
     b->scene = scene;
     b->scene_var = scene_var;
     b->record_index = record_index;
+    b->motion = motion;
     jitc_var_inc_ref(f->id);
 
     try {
@@ -386,24 +403,26 @@ void jitc_isect_unbind(JitIsectBinding *record) {
 void jitc_isect_assemble_scene(JitBackend backend, uintptr_t scene) {
     for (JitIsectBindingExt *b : isect_bindings) {
         IsectFunc *f = b->func;
+        XXH128_hash_t &known = f->hash[b->motion];
         if (f->call->backend != backend || (scene && b->scene != scene) ||
-            jitc_unit_callable_known(f->hash))
+            jitc_unit_callable_known(known))
             continue;
 
         ScopedScheduleBackup schedule_backup;
         ScopedAllocaBackup alloca_backup;
+        ScopedIsectMotion motion_scope(b->motion);
         XXH128_hash_t hash = jitc_assemble_func(f->call, 0, 0, 0, 0, 0);
 
         // The body renders differently when code generation options (JIT
         // flags, log level) changed since the recording. Kernels compiled
         // before the change no longer resolve the function, later ones use
         // the new hash.
-        if (!(hash == f->hash)) {
+        if (!(hash == known)) {
             jitc_log(Debug, "jit_isect: the body of \"%s\" changed to "
                      "%016llx%016llx", f->call->name.c_str(),
                      (unsigned long long) hash.high64,
                      (unsigned long long) hash.low64);
-            f->hash = hash;
+            known = hash;
         }
     }
 }
@@ -426,7 +445,7 @@ void jitc_isect_launch(JitBackend backend, const Kernel &kernel,
         if (b->func->call->backend != backend)
             continue;
 
-        const KernelIsectUnit *u = jitc_isect_find_unit(kernel, b->func->hash);
+        const KernelIsectUnit *u = jitc_isect_find_unit(kernel, b->func->hash[0]);
         if (!u)
             continue;
 

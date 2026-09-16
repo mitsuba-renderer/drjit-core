@@ -145,8 +145,9 @@ struct MetalScene {
     uint64_t *isect_table = nullptr;
 
     /// Bit 0 = triangle, bit 1 = bounding_box, bit 2 = curves, bit 3 =
-    /// triangle backface culling. Used to specialize the MSL
-    /// ``intersector<...>`` template at codegen time.
+    /// triangle backface culling, bit 4 = instance motion. Used to
+    /// specialize the MSL ``intersector<...>`` template and the generated
+    /// intersection functions at codegen time.
     uint32_t geometry_types_mask = 0;
 
     /// Cached handle variables for the scene's TLAS and (optionally) IFT

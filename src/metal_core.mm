@@ -1358,7 +1358,7 @@ void *jitc_metal_scene_ift(MetalScene *scene, const Kernel &kernel) {
     for (const JitIsectBindingExt *b : isect_bindings) {
         if (b->scene != (uintptr_t) scene)
             continue;
-        const KernelIsectUnit *u = jitc_isect_find_unit(kernel, b->func->hash);
+        const KernelIsectUnit *u = jitc_isect_find_unit(kernel, b->func->hash[b->motion]);
         if (!u)
             continue;
         id<MTLFunctionHandle> handle = [pso
@@ -1390,7 +1390,7 @@ void jitc_metal_isect_resources(MetalScene *scene, const Kernel &kernel,
 
     for (const JitIsectBindingExt *b : isect_bindings) {
         if (b->scene != (uintptr_t) scene ||
-            !jitc_isect_find_unit(kernel, b->func->hash))
+            !jitc_isect_find_unit(kernel, b->func->hash[b->motion]))
             continue;
 
         if (b->record.data)

@@ -1447,7 +1447,7 @@ void jitc_metal_assemble_isect(const CallData *call) {
     fmt("using namespace metal::raytracing;\n"
         "struct IsectResult { bool accept [[accept_intersection]]; "
         "float distance [[distance]]; };\n"
-        "[[intersection(bounding_box, instancing)]]\n"
+        "[[intersection(bounding_box, instancing$s)]]\n"
         "IsectResult isect_^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^("
         "float3 origin [[origin]], float3 direction [[direction]], "
         "float max_distance [[max_distance]], uint prim [[primitive_id]], "
@@ -1457,7 +1457,7 @@ void jitc_metal_assemble_isect(const CallData *call) {
         "device const ulong *table [[buffer(0)]]) {\n"
         "// Intersection function: $s\n"
         "device uint8_t *data = (device uint8_t *) table[inst_offset + geom_offset];\n",
-        call->name.c_str());
+        isect_motion ? ", instance_motion" : "", call->name.c_str());
 
     // Bind the placeholder inputs that the body uses
     const char *inputs[9] = {
