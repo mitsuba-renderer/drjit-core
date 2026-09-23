@@ -215,10 +215,24 @@ void jitc_shutdown(int light) {
         jitc_log(Info, "jit_shutdown(): releasing %zu thread state%s ..",
                 state.tss.size(), state.tss.size() > 1 ? "s" : "");
 
+        // Releasing variables may call jitc_free(), which accesses the calling
+        // thread's ThreadState. Do this before any thread state is deleted.
         for (ThreadState *ts : state.tss) {
             for (uint32_t index : ts->side_effects)
                 jitc_var_dec_ref(index);
+            ts->side_effects.clear();
+        }
 
+        ThreadLocal &tl = jitc_thread_local();
+        tl.ts_llvm = nullptr;
+#if defined(DRJIT_ENABLE_CUDA)
+        tl.ts_cuda = nullptr;
+#endif
+#if defined(DRJIT_ENABLE_METAL)
+        tl.ts_metal = nullptr;
+#endif
+
+        for (ThreadState *ts : state.tss) {
 #if defined(DRJIT_ENABLE_CUDA)
             if (jitc_is_cuda(ts->backend) && ts->stream) {
                 scoped_set_context guard(ts->context);
@@ -258,15 +272,6 @@ void jitc_shutdown(int light) {
         jitc_log_flush();
         state.tss.clear();
     }
-
-    ThreadLocal &tl = jitc_thread_local();
-    tl.ts_llvm = nullptr;
-#if defined(DRJIT_ENABLE_CUDA)
-    tl.ts_cuda = nullptr;
-#endif
-#if defined(DRJIT_ENABLE_METAL)
-    tl.ts_metal = nullptr;
-#endif
 
     if (jitc_log_active(LogLevel::Warn) && state.leak_warnings) {
         size_t n_leaked = state.variables.size() - state.unused_variables.size() - 1;
