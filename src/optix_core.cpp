@@ -100,12 +100,15 @@ OptixDeviceContext jitc_optix_context() {
         jitc_optix_check(optixModuleCreate(
             ctx, &mco, &pco, minimal, strlen(minimal), log, &log_size, &mod));
 
-        OptixProgramGroupDesc pgd { };
+        OptixProgramGroupDesc pgd;
+        memset(&pgd, 0, sizeof(pgd));
         pgd.kind = OPTIX_PROGRAM_GROUP_KIND_MISS;
         pgd.miss.module = mod;
         pgd.miss.entryFunctionName = "__miss__dr";
 
-        OptixProgramGroupOptions pgo { };
+        OptixProgramGroupOptions pgo;
+        memset(&pgo, 0, sizeof(pgo));
+
         OptixProgramGroup pg;
         log_size = sizeof(log);
         jitc_optix_check(optixProgramGroupCreate(ctx, &pgd, 1, &pgo, log, &log_size, &pg));
@@ -397,8 +400,11 @@ bool jitc_optix_compile(ThreadState *ts, Kernel &kernel) {
             if (i == 0 || !callable_units[i - 1].isect)
                 continue;
 
-            OptixProgramGroupOptions pgo { };
-            OptixProgramGroupDesc pgd { };
+            OptixProgramGroupOptions pgo;
+            OptixProgramGroupDesc pgd;
+            memset(&pgo, 0, sizeof(pgo));
+            memset(&pgd, 0, sizeof(pgd));
+
             pgd.kind = OPTIX_PROGRAM_GROUP_KIND_HITGROUP;
             pgd.hitgroup.moduleIS = job.mod;
             pgd.hitgroup.entryFunctionNameIS = job.symbol;
@@ -437,7 +443,9 @@ bool jitc_optix_compile(ThreadState *ts, Kernel &kernel) {
     // units follow the callables and bring their own program groups.
     size_t n_programs = 1 + unit_dispatch_count;
 
-    OptixProgramGroupOptions pgo { };
+    OptixProgramGroupOptions pgo;
+    memset(&pgo, 0, sizeof(pgo));
+
     std::unique_ptr<OptixProgramGroupDesc[]> pgd(
         new OptixProgramGroupDesc[n_programs]);
     memset(pgd.get(), 0, n_programs * sizeof(OptixProgramGroupDesc));
