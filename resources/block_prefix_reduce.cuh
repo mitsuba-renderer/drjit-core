@@ -13,21 +13,23 @@
   This kernel uses a specified strategy ('Reduction') to prefix-reduce
   contiguous blocks of an input array 'in' and write the output to 'out'.
 
-  The implementation is very similar to the block reduction in 'block_reduce.h'.
-  Please start by reading the documentation there.
-
-  The main difference is that reduced warps in the block reduction can simply exit,
-  whereas every thread needs to write back a result here. This requires knowing
-  the the reduced value of the predecessor.
-
-  The communication scheme to resolve this dependency is based on
+  Each CUDA thread block processes a tile of 2048 elements using a coalesced
+  load, a sequential per-thread scan, and warp shuffles. Blocks that are
+  smaller than a tile are packed into tiles (as many whole blocks as fit), and
+  the scan carries segment-head flags so that the running value restarts at
+  each block boundary. Blocks larger than a tile are split into multiple
+  tiles that communicate through a scratch buffer using a variant of
 
     "Single-pass Parallel Prefix Scan with Decoupled Look-back"
      Duane Merrill and Michael Garland
 
-  This isn't the fastest possible CUDA prefix reduction kernel. But it is
-  general and generates compact code. It can be instantiated in many variants
-  that are shipped along with Dr.Jit.
+  The classic decoupled look-back produces results that depend on the timing
+  of thread blocks: each tile combines whatever mix of aggregates and
+  inclusive prefixes its predecessors have published so far. For
+  non-associative operations (floating point addition and multiplication),
+  this makes the output non-deterministic. The variant here instead publishes
+  partial sums organized as a radix-32 tree and always combines them in the
+  same order, which yields bitwise reproducible results at the same cost.
 */
 
 struct block_prefix_reduce_params {
@@ -42,203 +44,281 @@ struct block_prefix_reduce_params {
     uint8_t reverse;
 };
 
-/// ChunkSize is a power of two and potentially larger than the actual 'block_size'
-template <typename Red, typename T, uint32_t ChunkSize>
-__device__ void block_prefix_reduce(block_prefix_reduce_params params) {
-    // If reducing chunks smaller than this threshold, do multiple of them per thread block
-    constexpr uint32_t MultiChunkThreshold = 128;
-    constexpr bool MultiChunk = ChunkSize < MultiChunkThreshold;
+// Launch configuration. The host code in 'cuda_ts.cpp' depends on these values.
+#define BlockPrefixReduceThreads 256
+#define BlockPrefixReduceItems 8
+#define BlockPrefixReduceTile (BlockPrefixReduceThreads * BlockPrefixReduceItems)
 
-    // The thread block size is known at compile time
-    constexpr uint32_t BlockDim = MultiChunk ? MultiChunkThreshold : ChunkSize;
-
-    // When reducing large datasets, blocks may be split into multiple chunks
-    constexpr bool Large = ChunkSize == 1024;
-
-    // The reduction may use a higher intermediate precision
-    using Value = typename Red::Value;
-
-    // Shared memory storage uses this higher precision
-    Value *shared = SharedMemory<Value>::get();
-    const T * __restrict__ in = (T *) params.in;
-    T * __restrict__ out = (T *) params.out;
-
-    // Scratch buffer for communication between thread blocks
-    using UInt = uint_with_size_t<sizeof(Value)>;
-    UInt *scratch = (UInt *) params.scratch;
-
-    // Query the thread and block index once
-    uint32_t tid = threadIdx.x,
-             bid_x = blockIdx.x,
-             bid_y = blockIdx.y;
-
-    uint32_t block;        // Thread's block index
-    uint32_t rel_chunk;    // Thread's relative chunk index within block
-    uint32_t chunk;        // Thread's chunk index
-    uint32_t pos_in_chunk; // Thread's element index in chunk
-    uint32_t tb_chunk;     // Chunk index of element 0 of the thread block
-
-    if constexpr (Large) {
-        // This is a large reduction with blocks that are further split into
-        // chunks, whose IDs are encoded in the X/Y block index. The following
-        // ensures compliance with CUDA launch requirements (Y grid size < 64K).
-
-        block     = params.x_is_block_id ? bid_x : bid_y;
-        rel_chunk = params.x_is_block_id ? bid_y : bid_x;
-
-        chunk = block * params.chunks_per_block + rel_chunk;
-        pos_in_chunk = tid;
-        tb_chunk = chunk;
-    } else {
-        // This is a small reduction with 1 chunk per block
-
-        if constexpr (MultiChunk) {
-            // This kernel processes multiple chunks per thread block
-
-            tb_chunk = bid_x * (BlockDim / ChunkSize);
-            chunk = tb_chunk + tid / ChunkSize;
-            pos_in_chunk = tid % ChunkSize;
-        } else {
-            // This kernel processes one chunk per block
-
-            tb_chunk = bid_x;
-            chunk = tb_chunk;
-            pos_in_chunk = tid;
-        }
-
-        block = chunk;
-        rel_chunk = 0;
+/// Scratch entries needed per block for the radix-32 partial sum tree
+__device__ inline uint32_t block_prefix_reduce_scratch_stride(uint32_t chunks_per_block) {
+    uint32_t stride = 0;
+    for (uint32_t n = chunks_per_block;; n = (n + 31) >> 5) {
+        stride += n;
+        if (n <= 32)
+            break;
     }
+    return stride;
+}
 
-    // Index of this thread relative to the block, and input array
-    uint32_t pos_in_block = rel_chunk * ChunkSize + pos_in_chunk;
+/// Padded shared memory index that avoids bank conflicts in the transposes
+__device__ inline uint32_t block_prefix_reduce_pad(uint32_t i) {
+    return i + (i >> 5);
+}
 
-    if (params.reverse)
-        pos_in_block = params.block_size - 1 - pos_in_block;
+template <typename Red, typename T>
+__device__ void block_prefix_reduce(block_prefix_reduce_params params) {
+    constexpr uint32_t Threads = BlockPrefixReduceThreads,
+                       Items = BlockPrefixReduceItems,
+                       Tile = BlockPrefixReduceTile,
+                       Warps = Threads / WarpSize;
 
-    uint32_t pos_in_input = block * params.block_size + pos_in_block;
+    using Value = typename Red::Value;
+    using UInt = uint_with_size_t<sizeof(Value)>;
 
-    // Are we in bounds within respect to the block and input array?
-    bool is_valid = pos_in_block < params.block_size &&
-                    pos_in_input < params.size;
+    // Shared memory: per-warp head flags, then the padded tile and per-warp values
+    uint32_t *warp_flag = (uint32_t *) SharedMemory<Value>::get();
+    uint32_t *warp_fexcl = warp_flag + Warps;
+    Value *shared = (Value *) (warp_fexcl + Warps);
+    Value *warp_tot = shared + block_prefix_reduce_pad(Tile);
+    Value *warp_excl = warp_tot + Warps;
+    Value *tile_prefix_s = warp_excl + Warps;
 
     Red red;
-    Value value = red.init();
+    uint32_t tid = threadIdx.x,
+             lane = tid & (WarpSize - 1),
+             warp = tid / WarpSize;
 
-    // Perform a coalesced load
-    if (is_valid)
-        value = (Value) in[pos_in_input];
+    // Block and chunk IDs are encoded in the X/Y block index. The following
+    // ensures compliance with CUDA launch requirements (Y grid size < 64K).
+    uint32_t bid       = params.x_is_block_id ? blockIdx.x : blockIdx.y,
+             rel_chunk = params.x_is_block_id ? blockIdx.y : blockIdx.x;
 
-    // Prefix sum using shared memory
-    for (uint32_t i = 1; i < ChunkSize; i <<= 1) {
-        shared[tid] = value;
-        __syncthreads();
+    uint32_t block_size = params.block_size;
+    bool large = block_size > Tile, reverse = params.reverse;
 
-        if (pos_in_chunk - i < ChunkSize)
-            value = red(value, shared[tid - i]);
+    // Segment structure of the tile. Small blocks form 'seg_count' segments of
+    // 'seg_len' elements each, and tile 'bid' covers blocks starting at
+    // 'bid * seg_count'. Large blocks consist of multiple tiles, and tile
+    // 'rel_chunk' of block 'bid' is a single segment.
+    uint32_t seg_len = large ? Tile : block_size,
+             seg_count = large ? 1 : Tile / block_size;
 
-        __syncthreads();
+    // The tile loads and stores a contiguous memory range 'in[base + lstart +
+    // j]' for j < Tile, of which entries with 'lstart + j < limit' are valid.
+    // In reverse mode, the scan order runs against memory order within each
+    // segment, which is handled by mirroring indices in shared memory.
+    size_t base;
+    uint32_t lstart, limit;
+    if (large) {
+        uint32_t tile_start = rel_chunk * Tile;
+        base = (size_t) bid * block_size;
+        lstart = reverse ? block_size - tile_start - Tile : tile_start;
+        limit = min(block_size, params.size - bid * block_size);
+    } else {
+        uint32_t tile_base = bid * seg_count * block_size;
+        base = tile_base;
+        lstart = 0;
+        limit = min(seg_count * block_size, params.size - tile_base);
     }
 
-    // Wait for the result of predecessor blocks
-    Value prefix = red.init();
-    if (Large && scratch) {
-        // Advance to the churrent chunk's position within the scratch space
-        scratch += chunk * 2;
+    const T * __restrict__ in = (const T *) params.in + base;
+    T * __restrict__ out = (T *) params.out + base;
 
-        // The leader holds the chunk's reduced value
-        bool is_leader = tid == 1023;
+    // Coalesced load, staged through shared memory
+    #pragma unroll
+    for (uint32_t i = 0; i < Items; ++i) {
+        uint32_t j = i * Threads + tid, off = lstart + j;
+        Value v = red.init();
+        if (off < limit)
+            v = (Value) in[off];
+        shared[block_prefix_reduce_pad(j)] = v;
+    }
+    __syncthreads();
 
-        if (is_leader)
-            store_with_status(scratch, memcpy_cast<UInt>(value), 1);
+    // Each thread scans 'Items' consecutive elements in scan order and writes
+    // the local result back in place. Position 'p' lies in segment 'seg' at
+    // offset 'pos'. The running value restarts at segment heads, and
+    // 'first_head' records the first head within the thread (elements before
+    // it continue the segment of the preceding threads). This loop and the
+    // one applying the prefix are not unrolled to keep the kernel small.
+    uint32_t p0 = tid * Items, seg = p0 / seg_len, pos = p0 - seg * seg_len;
+    Value agg = red.init();
+    uint32_t first_head = Items;
+    #pragma unroll 1
+    for (uint32_t i = 0; i < Items; ++i) {
+        uint32_t r = block_prefix_reduce_pad(
+            (reverse && seg < seg_count) ? seg * seg_len + (seg_len - 1 - pos) : p0 + i);
+        Value v = shared[r], prev = agg;
+        bool head = !large && pos == 0;
 
-        // Each thread looks back a different amount
-        uint32_t lane = tid & (WarpSize - 1);
-        int32_t shift = lane - WarpSize;
+        agg = head ? v : red(agg, v);
+        shared[r] = params.exclusive ? (head ? red.init() : prev) : agg;
+        if (head)
+            first_head = min(first_head, i);
 
-        // Decoupled look-back iteration
-        while (true) {
-            uint32_t status;
-            Value pred;
-            UInt pred_u;
+        if (++pos == seg_len) {
+            pos = 0;
+            seg++;
+        }
+    }
 
-            if ((int32_t) rel_chunk + shift >= 0) {
-                load_with_status(scratch + 2*shift, pred_u, status);
-                pred = memcpy_cast<Value>(pred_u);
-            } else {
-                pred = red.init();
-                status = 2;
+    // Segmented inclusive warp scan of the thread aggregates. After the loop,
+    // 'inc' holds the reduction since the last head, and 'flag' indicates
+    // whether a head occurred at or before this lane.
+    Value inc = agg;
+    bool flag = first_head != Items;
+    #pragma unroll
+    for (uint32_t d = 1; d < WarpSize; d *= 2) {
+        Value n = __shfl_up_sync(WarpMask, inc, d);
+        bool nf = __shfl_up_sync(WarpMask, (uint32_t) flag, d);
+        if (lane >= d) {
+            if (!flag)
+                inc = red(n, inc);
+            flag |= nf;
+        }
+    }
+    if (lane == WarpSize - 1) {
+        warp_tot[warp] = inc;
+        warp_flag[warp] = flag;
+    }
+    __syncthreads();
+
+    Value tile_prefix = red.init();
+    if (warp == 0) {
+        // Segmented scan of the warp totals and the tile aggregate
+        Value w_inc = lane < Warps ? warp_tot[lane] : red.init();
+        bool w_flag = lane < Warps ? warp_flag[lane] : false;
+        #pragma unroll
+        for (uint32_t d = 1; d < WarpSize; d *= 2) {
+            Value n = __shfl_up_sync(WarpMask, w_inc, d);
+            bool nf = __shfl_up_sync(WarpMask, (uint32_t) w_flag, d);
+            if (lane >= d) {
+                if (!w_flag)
+                    w_inc = red(n, w_inc);
+                w_flag |= nf;
             }
+        }
+        Value w_excl = __shfl_up_sync(WarpMask, w_inc, 1);
+        bool w_fexcl = __shfl_up_sync(WarpMask, (uint32_t) w_flag, 1);
+        if (lane < Warps) {
+            warp_excl[lane] = lane == 0 ? red.init() : w_excl;
+            warp_fexcl[lane] = lane == 0 ? false : w_fexcl;
+        }
+        Value tile_agg = __shfl_sync(WarpMask, w_inc, Warps - 1);
 
-            // Retry if at least one of the predecessors hasn't made any progress yet
-            if (__any_sync(WarpMask, status == 0))
-                continue;
+        if (params.scratch) {
+            UInt *scratch = (UInt *) params.scratch +
+                            (size_t) bid * block_prefix_reduce_scratch_stride(params.chunks_per_block) * 2;
 
-            uint32_t mask = __ballot_sync(WarpMask, status == 2);
-            if (mask == 0) {
-                // Sum partial results, look back further
-                prefix = red(prefix, pred);
-                shift -= WarpSize;
-            } else {
-                // Lane 'index' is done!
-                uint32_t index = 31 - __clz(mask);
+            // Publish the tile aggregate at level 0 as early as possible
+            if (lane == 0)
+                store_with_status(scratch + rel_chunk * 2, memcpy_cast<UInt>(tile_agg), 1);
 
-                // Sum up all the unconverged (higher) lanes *and* 'index'
-                if (lane >= index)
-                    prefix = red(prefix, pred);
+            // Deterministic look-back. The scratch buffer holds a radix-32
+            // tree of partial sums: level 0 has one entry per tile, level l+1
+            // one entry per complete group of 32 level-l entries. The tile's
+            // exclusive prefix is the sum over its base-32 digits of the
+            // preceding siblings at each level. Each level is reduced by a
+            // fixed warp butterfly and the levels are accumulated in a fixed
+            // order, so the result does not depend on timing. A tile publishes
+            // the level-(l+1) entry of its group if its digits at all levels up
+            // to l equal 31, i.e., if it is the last tile of that group.
+            Value own = tile_agg;
+            uint32_t g = rel_chunk, n = params.chunks_per_block, level_base = 0;
+            bool closes = true;
 
-                break;
+            while (true) {
+                uint32_t digit = g & 31, group = g >> 5, status;
+                Value v;
+
+                // Wait until the preceding siblings at this level are available
+                do {
+                    v = red.init();
+                    status = 1;
+                    if (lane < digit) {
+                        UInt u;
+                        load_with_status(scratch + (level_base + group * 32 + lane) * 2, u, status);
+                        v = memcpy_cast<Value>(u);
+                    }
+                } while (__any_sync(WarpMask, status == 0));
+
+                #pragma unroll
+                for (uint32_t i = 1; i < WarpSize; i *= 2)
+                    v = red(v, __shfl_xor_sync(WarpMask, v, i));
+
+                tile_prefix = red(tile_prefix, v);
+                own = red(v, own);
+                closes = closes && digit == 31;
+
+                if (n <= 32)
+                    break;
+
+                // Advance to the next level and publish the group total if needed
+                level_base += n;
+                n = (n + 31) >> 5;
+                if (closes && lane == 0)
+                    store_with_status(scratch + (level_base + group) * 2, memcpy_cast<UInt>(own), 1);
+
+                if (group == 0)
+                    break;
+
+                g = group;
             }
         }
 
-        // Warp-level sum reduction of 'prefix'
-        for (uint32_t i = 1; i < WarpSize; i *= 2)
-            prefix = red(prefix, __shfl_xor_sync(WarpMask, prefix, i));
-
-        value = red(value, prefix);
-
-        if (is_leader)
-            store_with_status(scratch, memcpy_cast<UInt>(value), 2);
+        if (lane == 0)
+            *tile_prefix_s = tile_prefix;
     }
+    __syncthreads();
 
-    // Write reduced result back to global memory
-    if (is_valid) {
-        if (params.exclusive) {
-            shared[tid] = value;
-            __syncthreads();
-            value = pos_in_chunk == 0 ? prefix : shared[tid - 1];
+    // Prefix of the segment that continues into this thread's first elements
+    Value thread_excl = __shfl_up_sync(WarpMask, inc, 1);
+    bool thread_fexcl = __shfl_up_sync(WarpMask, (uint32_t) flag, 1);
+    if (lane == 0) {
+        thread_excl = red.init();
+        thread_fexcl = false;
+    }
+    Value prefix = warp_fexcl[warp] ? warp_excl[warp]
+                                    : red(*tile_prefix_s, warp_excl[warp]);
+    prefix = thread_fexcl ? thread_excl : red(prefix, thread_excl);
+
+    // Apply the prefix to the elements before the first head, then store
+    seg = p0 / seg_len;
+    pos = p0 - seg * seg_len;
+    #pragma unroll 1
+    for (uint32_t i = 0; i < first_head; ++i) {
+        uint32_t r = block_prefix_reduce_pad(
+            (reverse && seg < seg_count) ? seg * seg_len + (seg_len - 1 - pos) : p0 + i);
+        shared[r] = red(prefix, shared[r]);
+        if (++pos == seg_len) {
+            pos = 0;
+            seg++;
         }
+    }
+    __syncthreads();
 
-        out[pos_in_input] = (T) value;
+    #pragma unroll
+    for (uint32_t i = 0; i < Items; ++i) {
+        uint32_t j = i * Threads + tid, off = lstart + j;
+        if (off < limit)
+            out[off] = (T) shared[block_prefix_reduce_pad(j)];
     }
 }
 
 // ----------------------------------------------------------------------------
 
-#define BLOCK_P_RED_1(Op, T, TName, BSize)                                     \
-    KERNEL void block_prefix_reduce_##Op##_##TName##_##BSize(                  \
-        block_prefix_reduce_params params) {                                   \
-        block_prefix_reduce<reduction_##Op<T>, T, BSize>(params);              \
-    }
-
 #define BLOCK_P_RED(Op, T, TName)                                              \
-    BLOCK_P_RED_1(Op, T, TName, 1024)                                          \
-    BLOCK_P_RED_1(Op, T, TName, 512)                                           \
-    BLOCK_P_RED_1(Op, T, TName, 256)                                           \
-    BLOCK_P_RED_1(Op, T, TName, 128)                                           \
-    BLOCK_P_RED_1(Op, T, TName, 64)                                            \
-    BLOCK_P_RED_1(Op, T, TName, 32)                                            \
-    BLOCK_P_RED_1(Op, T, TName, 16)                                            \
-    BLOCK_P_RED_1(Op, T, TName, 8)                                             \
-    BLOCK_P_RED_1(Op, T, TName, 4)                                             \
-    BLOCK_P_RED_1(Op, T, TName, 2)
+    KERNEL void __launch_bounds__(BlockPrefixReduceThreads)                    \
+        block_prefix_reduce_##Op##_##TName(block_prefix_reduce_params params) {\
+        block_prefix_reduce<reduction_##Op<T>, T>(params);                     \
+    }
 
 #define BLOCK_P_RED_ALL(Op)                                                    \
     BLOCK_P_RED(Op, half, f16)                                                 \
     BLOCK_P_RED(Op, float, f32)                                                \
     BLOCK_P_RED(Op, double, f64)                                               \
     BLOCK_P_RED(Op, uint32_t, u32)                                             \
-    BLOCK_P_RED(Op, uint32_t, u64)                                             \
+    BLOCK_P_RED(Op, uint64_t, u64)                                             \
     BLOCK_P_RED(Op, int32_t, i32)                                              \
     BLOCK_P_RED(Op, int64_t, i64)
 

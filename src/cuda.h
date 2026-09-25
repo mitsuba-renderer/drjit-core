@@ -93,7 +93,7 @@ extern CUfunction *jitc_cuda_block_reduce[(int) ReduceOp::Count]
 extern CUfunction *jitc_cuda_block_reduce_vec[(int) ReduceOp::Count]
                                              [(int) VarType::Count];
 extern CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
-                                                [(int) VarType::Count][10];
+                                                [(int) VarType::Count];
 extern CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count];
 extern CUfunction *jitc_cuda_aggregate;
 
@@ -109,8 +109,7 @@ extern CUfunction jitc_cuda_block_reduce_function(int device, ReduceOp op,
 extern CUfunction jitc_cuda_block_reduce_vec_function(int device, ReduceOp op,
                                                       VarType vt);
 extern CUfunction jitc_cuda_block_prefix_reduce_function(int device, ReduceOp op,
-                                                         VarType vt,
-                                                         int kernel_id);
+                                                         VarType vt);
 extern CUfunction jitc_cuda_reduce_dot_function(int device, VarType vt);
 extern CUfunction jitc_cuda_gemm_function(int device, VarType vt, int tile,
                                           int transpose);

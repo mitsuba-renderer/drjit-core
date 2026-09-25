@@ -56,7 +56,7 @@ CUfunction *jitc_cuda_block_reduce[(int) ReduceOp::Count]
 CUfunction *jitc_cuda_block_reduce_vec[(int) ReduceOp::Count]
                                       [(int) VarType::Count] = { };
 CUfunction *jitc_cuda_block_prefix_reduce[(int) ReduceOp::Count]
-                                         [(int) VarType::Count][10] = { };
+                                         [(int) VarType::Count] = { };
 CUfunction *jitc_cuda_reduce_dot[(int) VarType::Count] = { };
 CUfunction *jitc_cuda_aggregate = nullptr;
 CUfunction *jitc_cuda_gemm[(int) VarType::Count][4][3] = { };
@@ -145,14 +145,13 @@ CUfunction jitc_cuda_block_reduce_vec_function(int device, ReduceOp op,
 }
 
 CUfunction jitc_cuda_block_prefix_reduce_function(int device, ReduceOp op,
-                                                  VarType vt, int kernel_id) {
-    CUfunction &slot = jitc_cuda_block_prefix_reduce[(int) op][(int) vt][kernel_id]
+                                                  VarType vt) {
+    CUfunction &slot = jitc_cuda_block_prefix_reduce[(int) op][(int) vt]
                                                     [state.devices[device].id];
     if (!slot) {
         char name[128];
-        snprintf(name, sizeof(name), "block_prefix_reduce_%s_%s_%u",
-                 red_name[(int) op], type_name_short[(int) vt],
-                 1u << (kernel_id + 1));
+        snprintf(name, sizeof(name), "block_prefix_reduce_%s_%s",
+                 red_name[(int) op], type_name_short[(int) vt]);
         slot = jitc_cuda_compile_kernel(device, name);
     }
     return slot;
@@ -532,10 +531,9 @@ bool jitc_cuda_init() {
     for (uint32_t k = 0; k < (uint32_t) VarType::Count; k++) {
         jitc_cuda_poke[k] = (CUfunction *) malloc_check_zero(asize);
         for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
-            for (int l = 0; l < 10; ++l) {
+            for (int l = 0; l < 10; ++l)
                 jitc_cuda_block_reduce[j][k][l] = (CUfunction *) malloc_check_zero(asize);
-                jitc_cuda_block_prefix_reduce[j][k][l] = (CUfunction *) malloc_check_zero(asize);
-            }
+            jitc_cuda_block_prefix_reduce[j][k] = (CUfunction *) malloc_check_zero(asize);
             jitc_cuda_block_reduce_vec[j][k] = (CUfunction *) malloc_check_zero(asize);
         }
         jitc_cuda_reduce_dot[k] = (CUfunction *) malloc_check_zero(asize);
@@ -779,10 +777,9 @@ void jitc_cuda_shutdown() {
         Z(jitc_cuda_poke[k]);
         for (uint32_t j = 0; j < (uint32_t) ReduceOp::Count; j++) {
             Z(jitc_cuda_block_reduce_vec[j][k]);
-            for (uint32_t l = 0; l < 10; ++l) {
+            for (uint32_t l = 0; l < 10; ++l)
                 Z(jitc_cuda_block_reduce[j][k][l]);
-                Z(jitc_cuda_block_prefix_reduce[j][k][l]);
-            }
+            Z(jitc_cuda_block_prefix_reduce[j][k]);
         }
         Z(jitc_cuda_reduce_dot[k]);
         for (int l = 0; l < 4; ++l)

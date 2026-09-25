@@ -2383,6 +2383,9 @@ extern JIT_EXPORT uint32_t jit_var_batched_gemm(uint32_t A, uint32_t B,
  * the reduction over the last block considers fewer elements.
  *
  * Both the input and output array are expected to have \c size elements.
+ *
+ * The result is deterministic: repeated calls produce bitwise identical
+ * output on all backends, including for floating point types.
  */
 extern JIT_EXPORT void jit_block_prefix_reduce(JIT_ENUM JitBackend backend,
                                                JIT_ENUM VarType type,

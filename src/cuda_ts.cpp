@@ -580,45 +580,26 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
     // Note: 'size' is not necessary divisible by 'block_size'.
     uint32_t block_count = ceil_div(size, block_size);
 
-    // We have precompiled kernels for reductions from 2..1024 values.
-    // Round up to the next power of two and select one of them.
-    uint32_t chunk_size = round_pow2(block_size);
+    // Each CUDA thread block scans a tile of 2048 consecutive elements with
+    // 256 threads (see 'block_prefix_reduce.cuh'). When 'block_size' is at
+    // most 2048, a tile holds as many whole blocks as fit. The kernel scans
+    // them in one pass: it flags the first element of each block, and the
+    // running value restarts at every flag. Larger blocks span multiple
+    // tiles, which pass prefix values through a scratch buffer.
+    const uint32_t tile_size = 2048, thread_count = 256;
 
-    // Launch configuration
-    uint32_t thread_count, grid_dim_x, grid_dim_y, chunk_count;
-    uint32_t chunks_per_block, chunks_per_thread_block;
+    uint32_t grid_dim_x, grid_dim_y, chunks_per_block;
     bool x_is_block_id = true;
 
-    if (chunk_size < 1024) {
-        // Small reduction with 1 chunk/output block and a 1D launch grid. A
-        // single thread block potentially processes multiple chunks. Be careful
-        // changing the numbers below, the kernel expects this configuration.
-
-        // Minimum number of threads needed to finish the work
-        uint32_t min_threads = align_up(block_count * chunk_size, 32);
-
-        // In general, schedule >= 4 warps/block to improve occupancy. It's
-        // okay to use fewer warps if the input data size is tiny.
-        thread_count = std::min(std::max(chunk_size, 128u), min_threads);
-
-        chunk_count = block_count;
+    if (block_size <= tile_size) {
+        uint32_t blocks_per_tile = tile_size / block_size;
         chunks_per_block = 1;
-        chunks_per_thread_block = thread_count / chunk_size;
-
-        grid_dim_x = ceil_div(block_count, chunks_per_thread_block);
+        grid_dim_x = ceil_div(block_count, blocks_per_tile);
         grid_dim_y = 1;
-    } else  {
-        // Big reduction with 1 chunk == 1 CUDA thread block == 1024 threads.
-        // There are potentially multiple chunks per output block.
-
-        chunk_size = thread_count = 1024;
-
-        chunks_per_block = ceil_div(block_size, chunk_size);
-        chunks_per_thread_block = 1;
-
+    } else {
+        chunks_per_block = ceil_div(block_size, tile_size);
         grid_dim_x = block_count;
         grid_dim_y = chunks_per_block;
-        chunk_count = block_count * chunks_per_block;
 
         // CUDA cannot launch grids with a Y block count > 65K..
         if (grid_dim_y > grid_dim_x) {
@@ -627,23 +608,24 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
         }
     }
 
-    // Shared memory requirement of this kernel
-    uint32_t smem_bytes = thread_count * type_size[(int) vts];
+    // Per-warp flags, padded tile, and per-warp values (see the kernel)
+    uint32_t warp_count = thread_count / 32,
+             smem_bytes = 2 * warp_count * 4 +
+                          (tile_size + tile_size / 32 + 2 * warp_count + 1) *
+                              type_size[(int) vts];
 
     jitc_log(Debug,
              "jit_block_prefix_reduce(" DRJIT_PTR " -> " DRJIT_PTR
              ", type=%s, op=%s, size=%u, block_size=%u, exclusive=%i, "
-             "reverse=%i, block_count=%u, chunk_size=%u, chunks_per_block=%u): "
+             "reverse=%i, block_count=%u, chunks_per_block=%u): "
              "launching a %u x %u grid with %u threads and %u bytes of shared "
              "memory per thread block.",
              (uintptr_t) in, (uintptr_t) out, type_name[(int) vt],
              red_name[(int) op], size, block_size, exclusive, reverse,
-             block_count, chunk_size, chunks_per_block, grid_dim_x, grid_dim_y,
+             block_count, chunks_per_block, grid_dim_x, grid_dim_y,
              thread_count, smem_bytes);
 
-    CUfunction func = nullptr;
-    int kernel_id = log2i_ceil(chunk_size) - 1;
-    func = jitc_cuda_block_prefix_reduce_function(device, op, vt, kernel_id);
+    CUfunction func = jitc_cuda_block_prefix_reduce_function(device, op, vt);
 
     if (!func)
         jitc_raise("jit_block_prefix_reduce(): no existing kernel for type=%s, op=%s!",
@@ -671,7 +653,17 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
     params.reverse = reverse;
 
     if (chunks_per_block > 1) {
-        uint32_t scratch_size = chunk_count * 2,
+        // Radix-32 tree of partial sums: one entry per chunk, then one per
+        // complete group of 32 entries at each level above. Each entry stores
+        // a value and a status flag (2 words).
+        uint32_t stride = 0;
+        for (uint32_t n = chunks_per_block;; n = ceil_div(n, 32u)) {
+            stride += n;
+            if (n <= 32)
+                break;
+        }
+
+        uint32_t scratch_size = block_count * stride * 2,
                  vsize = type_size[(int) vts];
         params.scratch = jitc_malloc(JitBackend::CUDA, scratch_size * vsize);
         uint64_t z = 0;
