@@ -253,6 +253,9 @@ const char *var_kind_name[(int) VarKind::Count] {
     // Scatter multiple contiguous values at once
     "packet_scatter",
 
+    // Reduce blocks of consecutive elements within SIMD groups
+    "simd_reduce",
+
     // Counter node to determine the current lane ID
     "counter",
 
@@ -372,6 +375,9 @@ JIT_NOINLINE void jitc_var_free(uint32_t index, Variable *v) noexcept {
     // Deallocate using a list to avoid overflowing the stack in long dependent calculations
     do {
         jitc_trace("jit_var_free(r%u)", index);
+
+        if (v->kind == (uint32_t) VarKind::ReorderThread)
+            state_.reorder_count--;
 
         if (v->is_evaluated()) {
             // Release memory referenced by this variable
@@ -2358,6 +2364,125 @@ uint32_t jitc_var_call_mask(JitBackend backend) {
         bool value = true;
         return jitc_var_literal(backend, VarType::Bool, &value, 1, 0);
     }
+}
+
+uint32_t jitc_simd_width(JitBackend backend) {
+    switch (backend) {
+        case JitBackend::CUDA: return 32;
+        case JitBackend::LLVM: return jitc_llvm_vector_width;
+#if defined(DRJIT_ENABLE_METAL)
+        case JitBackend::Metal: return thread_state(backend)->metal_simd_width;
+#endif
+        default: return 1;
+    }
+}
+
+static bool jitc_can_simd_reduce(JitBackend backend, VarType vt, ReduceOp op) {
+    bool is_float = jitc_is_float(vt),
+         is_bool = vt == VarType::Bool;
+    if (!(is_float || is_bool || jitc_is_int(vt)))
+        return false;
+
+    switch (op) {
+        case ReduceOp::Add:
+        case ReduceOp::Mul:
+            // The reduction kernels accumulate half precision inputs in single
+            // precision, which an in-register pre-reduction would forgo
+            if (vt == VarType::Float16 || is_bool)
+                return false;
+            break;
+
+        case ReduceOp::Min:
+        case ReduceOp::Max:
+            if (is_bool)
+                return false;
+            break;
+
+        case ReduceOp::And:
+        case ReduceOp::Or:
+            if (is_float)
+                return false;
+            break;
+
+        default:
+            return false;
+    }
+
+    uint32_t tsize = type_size[(int) vt];
+    if (jitc_is_cuda(backend)) {
+#if defined(DRJIT_ENABLE_CUDA)
+        const ThreadState *ts = thread_state(backend);
+        return (tsize >= 4 || is_bool) && ts->ptx_version >= 63 &&
+               ts->compute_capability >= 70;
+#else
+        return false;
+#endif
+    } else if (jitc_is_metal(backend)) {
+#if defined(DRJIT_ENABLE_METAL)
+        // SIMD-group operations appear to be buggy on older Metal drivers
+        return tsize <= 4 && state.metal_devices[thread_state(backend)->device].supports_metal4;
+#else
+        return false;
+#endif
+    } else {
+        return true;
+    }
+}
+
+uint32_t jitc_var_simd_reduce_block(ReduceOp op, uint32_t index, uint32_t block_size) {
+    if (block_size == 0)
+        jitc_raise("jit_var_simd_reduce(): 'block_size' must be positive!");
+    if (!index)
+        return 1;
+
+    const Variable *v = jitc_var(index);
+    JitBackend backend = (JitBackend) v->backend;
+
+    // Kernels are assembled in creation order, so a pending reordering would
+    // precede the reduction and leave the lanes with non-consecutive entries
+    if (v->size == 1 || v->symbolic || v->is_literal() || v->is_evaluated() ||
+        jit_flag(JitFlag::SymbolicScope) || state.reorder_count ||
+        !jitc_can_simd_reduce(backend, (VarType) v->type, op))
+        return 1;
+
+    // Largest power of two dividing the block size, capped at the SIMD width
+    return std::min(block_size & (0u - block_size), jitc_simd_width(backend));
+}
+
+uint32_t jitc_var_simd_reduce(ReduceOp op, uint32_t index, uint32_t *block_size) {
+    uint32_t eff = jitc_var_simd_reduce_block(op, index, *block_size);
+    *block_size = eff;
+
+    if (eff == 1) {
+        jitc_var_inc_ref(index);
+        return index;
+    }
+
+    const Variable *v = jitc_var(index);
+    JitBackend backend = (JitBackend) v->backend;
+    VarType vt = (VarType) v->type;
+
+    uint32_t size = v->size,
+             reduced = ceil_div(size, eff);
+
+    void *target_addr = jitc_malloc(backend, (size_t) reduced * type_size[(int) vt]);
+    thread_state(backend)->notify_simd_reduce_target(target_addr, eff);
+
+    Ref target = steal(jitc_var_mem_map(backend, vt, target_addr, reduced, 1)),
+        ptr    = steal(jitc_var_pointer(backend, target_addr, target, 1)),
+        mask   = steal(jitc_var_mask_default(backend, size));
+
+    uint64_t literal = (((uint64_t) eff) << 32) | (uint64_t) op;
+    uint32_t node = jitc_var_new_node_3(
+        backend, VarKind::SimdReduce, VarType::Void, size, false,
+        ptr, jitc_var(ptr), index, jitc_var(index), mask, jitc_var(mask), literal);
+
+    jitc_log(Debug, "jit_var_simd_reduce(r%u, op=%s, block_size=%u): r%u (se=r%u)",
+             index, red_name[(int) op], eff, (uint32_t) target, node);
+
+    jitc_var_mark_side_effect(node);
+
+    return target.release();
 }
 
 bool jitc_var_any(uint32_t index) {

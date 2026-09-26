@@ -108,6 +108,7 @@ void jitc_init(uint32_t backends) {
 #endif
 
     state.variable_counter = 0;
+    state.reorder_count = 0;
     state.kernel_hard_misses = state.kernel_soft_misses = 0;
     state.kernel_hits = state.kernel_launches = 0;
     jitc_nvtx_init();
@@ -837,6 +838,7 @@ void ThreadState::narrow_f32_to_f16(void *, const void *, uint32_t) {
 
 void ThreadState::notify_opaque_width(uint32_t, uint32_t) {}
 void ThreadState::notify_init_undefined(uint32_t) {}
+void ThreadState::notify_simd_reduce_target(const void *, uint32_t) {}
 void ThreadState::block_reduce_bool(uint8_t *values, uint32_t size,
                                     uint8_t *out, ReduceOp op) {
     /* When \c size is not a multiple of 4, the implementation will initialize

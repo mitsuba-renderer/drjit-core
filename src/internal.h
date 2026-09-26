@@ -109,6 +109,9 @@ enum class VarKind : uint32_t {
     // Scatter multiple contiguous values at once
     PacketScatter,
 
+    // Reduce blocks of consecutive elements within SIMD groups
+    SimdReduce,
+
     // Counter node to determine the current lane ID
     Counter,
 
@@ -1021,6 +1024,10 @@ struct ThreadState : public ThreadStateBase {
     /// frozen functions to handle undefined variables.
     virtual void notify_init_undefined(uint32_t index);
 
+    /// Notifies the thread state that \c ptr receives the output of \c
+    /// jitc_var_simd_reduce(), which frozen functions must size at replay time.
+    virtual void notify_simd_reduce_target(const void *ptr, uint32_t block_size);
+
     /// Notify the \c ThreadState that \c jitc_free has been called on a pointer.
     /// This is required for kernel freezing.
     virtual void notify_free(const void *ptr);
@@ -1115,6 +1122,9 @@ struct State {
     /// Counter to create variable scopes that enforce a variable ordering
     uint32_t scope_ctr = SCOPE_DYNAMIC;
     size_t variable_counter = 0;
+
+    /// Number of live thread reordering nodes (see jitc_var_simd_reduce())
+    uint32_t reorder_count = 0;
 
     /// Must be held to execute jitc_eval()
     Lock eval_lock;

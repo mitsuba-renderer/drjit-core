@@ -270,6 +270,15 @@ extern uint32_t jitc_var_batched_gemm(uint32_t index_A, uint32_t index_B,
 /// Reduce a variable over blocks
 extern uint32_t jitc_var_block_reduce(ReduceOp op, uint32_t index, uint32_t block_size, int symbolic);
 
+/// Reduce blocks of consecutive elements within SIMD groups
+extern uint32_t jitc_var_simd_reduce(ReduceOp op, uint32_t index, uint32_t *block_size);
+
+/// Return the block size that jitc_var_simd_reduce() would use
+extern uint32_t jitc_var_simd_reduce_block(ReduceOp op, uint32_t index, uint32_t block_size);
+
+/// Return the SIMD width of a backend
+extern uint32_t jitc_simd_width(JitBackend backend);
+
 /// Compute an inclusive or exclusive prefix sum of a given variable
 extern uint32_t jitc_var_block_prefix_reduce(ReduceOp op, uint32_t index,
                                              uint32_t block_size,

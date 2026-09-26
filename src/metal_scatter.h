@@ -34,4 +34,7 @@ extern void jitc_metal_render_scatter_exch(Variable *v);
 /// Emit MSL code for an atomic increment (ScatterInc).
 extern void jitc_metal_render_scatter_inc(Variable *v);
 
+/// Emit MSL code for a SIMD-group block reduction (SimdReduce).
+extern void jitc_metal_render_simd_reduce(Variable *v);
+
 #endif // defined(DRJIT_ENABLE_METAL)

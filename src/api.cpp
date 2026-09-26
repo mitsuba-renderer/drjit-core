@@ -2115,6 +2115,21 @@ int jit_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
     return jitc_can_scatter_reduce(backend, vt, op);
 }
 
+uint32_t jit_var_simd_reduce(ReduceOp op, uint32_t index, uint32_t *block_size) {
+    lock_guard guard(state.lock);
+    return jitc_var_simd_reduce(op, index, block_size);
+}
+
+uint32_t jit_var_simd_reduce_block(ReduceOp op, uint32_t index, uint32_t block_size) {
+    lock_guard guard(state.lock);
+    return jitc_var_simd_reduce_block(op, index, block_size);
+}
+
+uint32_t jit_simd_width(JitBackend backend) {
+    lock_guard guard(state.lock);
+    return jitc_simd_width(backend);
+}
+
 uint32_t jit_var_tile(uint32_t index, uint32_t count) {
     lock_guard guard(state.lock);
     return jitc_var_tile(index, count);

@@ -1269,6 +1269,10 @@ static void jitc_llvm_render(Variable *v) {
             jitc_llvm_render_scatter_packet(v, a0, a1, a2);
             break;
 
+        case VarKind::SimdReduce:
+            jitc_llvm_render_simd_reduce(v, a0, a1, a2);
+            break;
+
         case VarKind::BoundsCheck:
             fmt_intrinsic("declare i1 @llvm.vector.reduce.or.v$wi1(<$w x i1>)");
             fmt_intrinsic("declare void @llvm.masked.scatter.v$wi32(<$w x i32>, <$w x ptr>, i32, <$w x i1>)");

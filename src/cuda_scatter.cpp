@@ -118,69 +118,55 @@ const char *jitc_cuda_reduce_tp(VarType &vt, ReduceOp op) {
                                                        : type_name_ptx[(int) vt];
 }
 
-/// Emit a segmented butterfly warp-reduction that separately reduces ``n``
-/// variables of type ``vt`` within the warp, then atomically scatters the
-/// per-group result to memory. The packet base address is assumed to be in
-/// ``%rd3``.  Uses packet atomics if ``use_packet_atomics`` is set.
-void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values, VarType vt,
-                                  ReduceOp op, bool use_packet_atomics) {
-    // Emulated float min/max atomics have no vectorized counterpart
-    bool emulated = jitc_cuda_atomic_minmax_emulated(vt, op);
-    use_packet_atomics &= !emulated;
+/// In-register PTX operation used to combine two partial reductions
+static const char *jitc_cuda_reduce_op_ftz(VarType vt, ReduceOp op) {
+    bool ftz = vt == VarType::Float32 || vt == VarType::Float16;
+    switch (op) {
+        case ReduceOp::Add: return ftz ? "add.ftz" : "add";
+        case ReduceOp::Mul: return ftz ? "mul.ftz" : jitc_is_float(vt) ? "mul" : "mul.lo";
+        default: return cuda_reduce_op_name[(int) op];
+    }
+}
 
-    const char *tp      = jitc_cuda_reduce_tp(vt, op);
-    const char *op_name = cuda_reduce_op_name[(int) op];
-    const char *op_ftz  = op_name;
-    if (op == ReduceOp::Add && (vt == VarType::Float32 || vt == VarType::Float16))
-        op_ftz = "add.ftz";
-
-    uint32_t tsize    = type_size[(int) vt];
-    uint32_t shiftamt = log2i_ceil(tsize);
-    bool     is64     = tsize == 8;
-
-    put("    {\n"
-        "        .reg .b32 %active, %index, %mask_lt, %mask_gt, %peers,\n"
+/// Declare the registers shared by the warp reduction routines below
+static void jitc_cuda_declare_warp_regs(uint32_t n, const char *tp, bool is64) {
+    put("        .reg .b32 %active, %index, %mask_lt, %mask_gt, %peers,\n"
         "                  %peers_lt, %peers_rev, %rank, %rank_bit, %rank_ballot;\n");
     if (is64)
         put("        .reg .b32 %q0l, %q0h, %q1l, %q1h;\n");
     fmt("        .reg .$s %q0_<$u>, %q1;\n"
         "        .reg .pred %leader, %partial, %done, %valid, %rank_even, %unused;\n",
         tp, n);
-    if (emulated)
-        jitc_cuda_declare_atomic_minmax(vt);
-    put("\n");
+}
 
-    for (uint32_t i = 0; i < n; ++i)
-        fmt("        mov.$s %q0_$u, $v;\n", tp, i, jitc_var(values[i]));
-
-    jitc_cuda_emit_warp_match(shiftamt);
-
-    put("        setp.ne.s32 %partial, %peers, -1;\n"
-        "        @%partial bra reduce_partial;\n\n");
-
-    // If the warp is fully coherent, do a normal butterfly reduction and scatter
-    put("        mov.b32 %index, %laneid;\n"
-        "        setp.eq.u32 %leader, %index, 0;\n");
-    for (uint32_t delta : {1u, 2u, 4u, 8u, 16u}) {
+/// Emit a butterfly reduction of ``%q0_<n>`` across lanes at distance < ``width``.
+/// Lanes whose partner lies beyond the clamp value ``clamp`` keep their value.
+static void jitc_cuda_emit_butterfly(uint32_t n, const char *tp, const char *op,
+                                     bool is64, uint32_t width,
+                                     const char *clamp, const char *mask) {
+    for (uint32_t delta = 1; delta < width; delta *= 2) {
         for (uint32_t i = 0; i < n; ++i) {
             if (!is64)
-                fmt("        shfl.sync.bfly.b32 %q1|%unused, %q0_$u, $u, 31, %active;\n"
-                    "        $s.$s %q0_$u, %q0_$u, %q1;\n",
-                    i, delta, op_ftz, tp, i, i);
+                fmt("        shfl.sync.bfly.b32 %q1|%valid, %q0_$u, $u, $s, $s;\n"
+                    "        @%valid $s.$s %q0_$u, %q0_$u, %q1;\n",
+                    i, delta, clamp, mask, op, tp, i, i);
             else
                 fmt("        mov.b64 {%q0l, %q0h}, %q0_$u;\n"
-                    "        shfl.sync.bfly.b32 %q1l|%unused, %q0l, $u, 31, %active;\n"
-                    "        shfl.sync.bfly.b32 %q1h|%unused, %q0h, $u, 31, %active;\n"
+                    "        shfl.sync.bfly.b32 %q1l|%valid, %q0l, $u, $s, $s;\n"
+                    "        shfl.sync.bfly.b32 %q1h|%valid, %q0h, $u, $s, $s;\n"
                     "        mov.b64 %q1, {%q1l, %q1h};\n"
-                    "        $s.$s %q0_$u, %q0_$u, %q1;\n",
-                    i, delta, delta, op_ftz, tp, i, i);
+                    "        @%valid $s.$s %q0_$u, %q0_$u, %q1;\n",
+                    i, delta, clamp, mask, delta, clamp, mask, op, tp, i, i);
         }
     }
+}
 
-    // Otherwise, do a reduction within segments
-    put("        bra reduce_done;\n\n"
-        "    reduce_partial:\n"
-        "        mov.u32 %mask_lt, %lanemask_lt;\n"
+/// Emit a reduction of ``%q0_<n>`` among the lanes in ``%peers`` (a subset
+/// of ``%active``). The result ends up in the lowest peer, which is marked by
+/// the ``%leader`` predicate. Control flow continues at ``reduce_done``.
+static void jitc_cuda_emit_peer_reduce(uint32_t n, const char *tp,
+                                       const char *op, bool is64) {
+    put("        mov.u32 %mask_lt, %lanemask_lt;\n"
         "        mov.u32 %mask_gt, %lanemask_gt;\n"
         "        and.b32 %peers_lt, %peers, %mask_lt;\n"
         "        popc.b32 %rank, %peers_lt;\n"
@@ -198,14 +184,14 @@ void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values, VarType vt
         if (!is64)
             fmt("        shfl.sync.idx.b32 %q1|%unused, %q0_$u, %index, 31, %active;\n"
                 "        @%valid $s.$s %q0_$u, %q0_$u, %q1;\n",
-                i, op_ftz, tp, i, i);
+                i, op, tp, i, i);
         else
             fmt("        mov.b64 {%q0l, %q0h}, %q0_$u;\n"
                 "        shfl.sync.idx.b32 %q1l|%unused, %q0l, %index, 31, %active;\n"
                 "        shfl.sync.idx.b32 %q1h|%unused, %q0h, %index, 31, %active;\n"
                 "        mov.b64 %q1, {%q1l, %q1h};\n"
                 "        @%valid $s.$s %q0_$u, %q0_$u, %q1;\n",
-                i, op_ftz, tp, i, i);
+                i, op, tp, i, i);
     }
 
     put("        and.b32 %rank_bit, %rank, 1;\n"
@@ -213,12 +199,21 @@ void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values, VarType vt
         "        vote.sync.ballot.b32 %rank_ballot, %rank_even, %active;\n"
         "        and.b32 %peers, %peers, %rank_ballot;\n"
         "        shr.u32 %rank, %rank, 1;\n"
-        "        bra reduce_partial_loop;\n\n"
-        "    reduce_done:\n");
+        "        bra reduce_partial_loop;\n\n");
+}
+
+/// Let the leader lane atomically combine ``%q0_<n>`` into ``[%rd3]``.
+/// Uses packet atomics if ``use_packet_atomics`` is set.
+static void jitc_cuda_emit_leader_atomics(uint32_t n, VarType vt, const char *tp,
+                                          ReduceOp op, bool use_packet_atomics) {
+    // Emulated float min/max atomics have no vectorized counterpart
+    bool emulated = jitc_cuda_atomic_minmax_emulated(vt, op);
+    const char *op_name = cuda_reduce_op_name[(int) op];
+    uint32_t tsize = type_size[(int) vt];
 
     // Generate scalar atomics or packet atomics (cap to 128bit/thread)
     uint32_t per_atomic = 1;
-    if (use_packet_atomics) {
+    if (use_packet_atomics && !emulated) {
         uint32_t bytes_per_atomic = 16;
         while ((n * tsize) % bytes_per_atomic != 0)
             bytes_per_atomic /= 2;
@@ -227,7 +222,7 @@ void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values, VarType vt
 
     for (uint32_t base = 0; base < n; base += per_atomic) {
         if (emulated) {
-            fmt("        mov.$b %red_val, %q0_$u;\n", jitc_var(values[base]), base);
+            fmt("        mov.$s %red_val, %q0_$u;\n", type_name_ptx_bin[(int) vt], base);
             jitc_cuda_render_atomic_minmax(vt, op, base * tsize, true);
         } else if (per_atomic == 1) {
             fmt("        @%leader red.global.$s.$s [%rd3+$u], %q0_$u;\n",
@@ -240,7 +235,107 @@ void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values, VarType vt
             put("};\n");
         }
     }
+}
+
+/// Emit a segmented butterfly warp-reduction that separately reduces ``n``
+/// variables of type ``vt`` within the warp, then atomically scatters the
+/// per-group result to memory. The packet base address is assumed to be in
+/// ``%rd3``.  Uses packet atomics if ``use_packet_atomics`` is set.
+void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values, VarType vt,
+                                  ReduceOp op, bool use_packet_atomics) {
+    const char *tp     = jitc_cuda_reduce_tp(vt, op),
+               *op_ftz = jitc_cuda_reduce_op_ftz(vt, op);
+    uint32_t tsize = type_size[(int) vt];
+    bool is64 = tsize == 8;
+
+    put("    {\n");
+    jitc_cuda_declare_warp_regs(n, tp, is64);
+    if (jitc_cuda_atomic_minmax_emulated(vt, op))
+        jitc_cuda_declare_atomic_minmax(vt);
+    put("\n");
+
+    for (uint32_t i = 0; i < n; ++i)
+        fmt("        mov.$s %q0_$u, $v;\n", tp, i, jitc_var(values[i]));
+
+    jitc_cuda_emit_warp_match(log2i_ceil(tsize));
+
+    put("        setp.ne.s32 %partial, %peers, -1;\n"
+        "        @%partial bra reduce_partial;\n\n");
+
+    // If the warp is fully coherent, do a normal butterfly reduction and scatter
+    put("        mov.b32 %index, %laneid;\n"
+        "        setp.eq.u32 %leader, %index, 0;\n");
+    jitc_cuda_emit_butterfly(n, tp, op_ftz, is64, 32, "31", "%active");
+
+    // Otherwise, do a reduction within segments
+    put("        bra reduce_done;\n\n"
+        "    reduce_partial:\n");
+    jitc_cuda_emit_peer_reduce(n, tp, op_ftz, is64);
+    put("    reduce_done:\n");
+    jitc_cuda_emit_leader_atomics(n, vt, tp, op, use_packet_atomics);
     put("    }\n");
+}
+
+void jitc_cuda_render_simd_reduce(const Variable *v, const Variable *ptr,
+                                  const Variable *value) {
+    ReduceOp op  = (ReduceOp) (uint32_t) v->literal;
+    VarType vt   = (VarType) value->type;
+    uint32_t eff = (uint32_t) (v->literal >> 32),
+             tsize = type_size[(int) vt];
+    bool is_bool = vt == VarType::Bool,
+         is64    = tsize == 8;
+
+    // Masks are shuffled and combined as 32-bit values, but stored as bytes
+    const char *tp     = is_bool ? "b32" : jitc_cuda_reduce_tp(vt, op),
+               *st     = is_bool ? "u8" : tp,
+               *op_ftz = jitc_cuda_reduce_op_ftz(vt, op);
+
+    fmt("    {\n"
+        "        .reg .b32 %index, %active, %live, %lane;\n"
+        "        .reg .$s %q0_0, %q1;\n"
+        "        .reg .pred %leader, %valid, %fail;\n", tp);
+    if (is64)
+        put("        .reg .b32 %q0l, %q0h, %q1l, %q1h;\n");
+
+    // Load the value, compute the address of the block result, and mark the
+    // first lane of each block as its leader
+    if (is_bool)
+        fmt("        selp.b32 %q0_0, 1, 0, $v;\n", value);
+    else
+        fmt("        mov.$s %q0_0, $v;\n", tp, value);
+    fmt("        shr.u32 %index, %r0, $u;\n"
+        "        mad.wide.u32 %rd3, %index, $u, $v;\n"
+        "        and.b32 %index, %r0, $u;\n"
+        "        setp.eq.u32 %leader, %index, 0;\n",
+        log2i_ceil(eff), tsize, ptr, eff - 1);
+
+    // Lanes hold consecutive entries, and lanes past the end of the array have
+    // exited. Clamp the butterfly to the remaining lanes. On OptiX, the
+    // shuffle mask and lane count come from 'activemask'.
+    const char *mask;
+    if (!uses_optix) {
+        put("        and.b32 %live, %r0, 0xffffffe0;\n"
+            "        sub.u32 %live, %r2, %live;\n"
+            "        min.u32 %live, %live, 32;\n");
+        mask = "0xffffffff";
+    } else {
+        // OptiX guarantees neither that launch indices map to lanes in order
+        // nor that the warp is converged here. Trap if a lane is out of order
+        // or if lane 0 is missing, which happens in some group of a diverged warp.
+        put("        activemask.b32 %active;\n"
+            "        popc.b32 %live, %active;\n"
+            "        mov.u32 %lane, %laneid;\n"
+            "        and.b32 %index, %r0, 31;\n"
+            "        setp.ne.u32 %fail, %index, %lane;\n"
+            "        and.b32 %index, %active, 1;\n"
+            "        setp.eq.or.u32 %fail, %index, 0, %fail;\n"
+            "        @%fail trap;\n");
+        mask = "%active";
+    }
+    put("        sub.u32 %live, %live, 1;\n");
+    jitc_cuda_emit_butterfly(1, tp, op_ftz, is64, eff, "%live", mask);
+    fmt("        @%leader st.global.$s [%rd3], %q0_0;\n"
+        "    }\n", st);
 }
 
 void jitc_cuda_render_scatter_reduce(const Variable *v,

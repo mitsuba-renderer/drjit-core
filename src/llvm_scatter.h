@@ -41,3 +41,7 @@ extern void jitc_llvm_render_scatter_cas(Variable *v,
 
 extern const char *jitc_llvm_append_reduce_op_local(VarType vt, ReduceOp op,
                                                     const Variable *v);
+
+extern void jitc_llvm_render_simd_reduce(const Variable *v, const Variable *ptr,
+                                         const Variable *value,
+                                         const Variable *mask);

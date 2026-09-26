@@ -2159,6 +2159,45 @@ extern JIT_EXPORT uint32_t jit_var_reduce(JIT_ENUM JitBackend backend,
 extern JIT_EXPORT uint32_t jit_var_block_reduce(JIT_ENUM ReduceOp op, uint32_t index,
                                                 uint32_t block_size, int symbolic);
 
+/**
+ * \brief Reduce blocks of consecutive elements within SIMD groups
+ *
+ * This operation reduces aligned blocks of ``*block_size`` consecutive elements
+ * of an unevaluated array. It does so using SIMD operations and scatters the
+ * per-block results to a correspondingly smaller array. Applying \ref
+ * jit_var_reduce() or \ref jit_var_block_reduce() to the result avoids a
+ * round trip of the full input array through memory.
+ *
+ * On the CUDA backend, all threads of a warp must reach the operation
+ * together. This may not be the case in OptiX ray tracing kernels, in which
+ * case the kernel raises an error.
+ *
+ * The reduction is *best effort*. The hardware may be unable to perform a
+ * reduction of the requested size, in which case the operation performs a
+ * smaller one. The effective block size is the largest power of two that
+ * divides ``*block_size`` and does not exceed \ref jit_simd_width().
+ *
+ * The operation only applies to unevaluated inputs of size greater than 1. It
+ * returns the input unchanged when it is evaluated or a literal, when the
+ * backend does not support the operation, and within symbolic loops,
+ * conditionals, and calls or while unevaluated thread reorderings (\ref
+ * jit_reorder()) exist.
+ *
+ * On return, ``*block_size`` holds the actual size of the performed reduction.
+ * The output has ``ceil(size / *block_size)`` entries.
+ */
+extern JIT_EXPORT uint32_t jit_var_simd_reduce(JIT_ENUM ReduceOp op, uint32_t index,
+                                               uint32_t *block_size);
+
+/// Return the block size that \ref jit_var_simd_reduce() would use without
+/// performing the reduction
+extern JIT_EXPORT uint32_t jit_var_simd_reduce_block(JIT_ENUM ReduceOp op,
+                                                     uint32_t index,
+                                                     uint32_t block_size);
+
+/// Return the SIMD width of a backend (32 on CUDA, the vector width on LLVM, ...)
+extern JIT_EXPORT uint32_t jit_simd_width(JIT_ENUM JitBackend backend);
+
 /// Tile the array into larger blocks
 extern JIT_EXPORT uint32_t jit_var_tile(uint32_t index, uint32_t count);
 

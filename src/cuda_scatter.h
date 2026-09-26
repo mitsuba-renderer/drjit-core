@@ -41,6 +41,9 @@ extern void jitc_cuda_render_warp_reduce(uint32_t n, const uint32_t *values,
                                          VarType vt, ReduceOp op,
                                          bool use_packet_atomics);
 
+extern void jitc_cuda_render_simd_reduce(const Variable *v, const Variable *ptr,
+                                         const Variable *value);
+
 extern void jitc_cuda_render_scatter_exch(Variable *v,
                                           const Variable *ptr,
                                           const Variable *value,

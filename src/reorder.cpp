@@ -60,6 +60,7 @@ void jitc_reorder(uint32_t key, uint32_t num_bits, uint32_t n_values,
         key, v_key, num_bits);
     Variable *v_reorder = jitc_var(reorder);
     v_reorder->optix = 1;
+    state.reorder_count++;
 
     // Guarantee that the reordering is assembled before anything that follows
     jitc_new_scope(JitBackend::CUDA);

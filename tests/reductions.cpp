@@ -412,3 +412,46 @@ TEST_ALL(14_block_ops) {
     jit_log(Info, "block_sum:  %s\n", block_sum(a, 3).str());
 }
 #endif
+
+TEST_ALL_FLOAT_AGNOSTIC(15_simd_reduce) {
+    uint32_t width = jit_simd_width(Backend);
+    for (uint32_t size : red_sizes) {
+        for (uint32_t block_size = 1; block_size <= 2 * width; block_size *= 2) {
+            uint32_t eff = block_size;
+            UInt32 v0 = fmix32(arange<UInt32>(size)),
+                   v1 = simd_reduce(ReduceOp::Add, v0, eff),
+                   vr = block_sum_ref<UInt32>(size, eff);
+            jit_assert(v1 == vr);
+            if (Backend != JitBackend::Metal)
+                jit_assert(eff == (size == 1 ? 1 : std::min(block_size, width)));
+        }
+    }
+}
+
+TEST_ALL_FLOAT_AGNOSTIC(16_mask_reduce_unevaluated) {
+    using Bool = Array<bool>;
+    for (uint32_t size : red_sizes) {
+        for (uint32_t k : { 0u, 1u, size / 2, size - 1, size }) {
+            Bool m = arange<UInt32>(size) < UInt32(k);
+            jit_assert(all(m) == (k >= size));
+            jit_assert(any(m) == (k > 0));
+
+            // Block reductions of masks, including partial SIMD groups
+            for (uint32_t block_size : { 2u, 4u, 32u }) {
+                for (ReduceOp op : { ReduceOp::And, ReduceOp::Or }) {
+                    uint32_t eff = block_size;
+                    m = arange<UInt32>(size) < UInt32(k);
+                    Bool r = simd_reduce(op, m, eff);
+
+                    uint32_t n = (size + eff - 1) / eff;
+                    std::unique_ptr<bool[]> ref(new bool[n]);
+                    for (uint32_t i = 0; i < n; ++i)
+                        ref[i] = op == ReduceOp::And
+                                     ? std::min((i + 1) * eff, size) <= k
+                                     : i * eff < k;
+                    jit_assert(r == Bool::copy(ref.get(), n));
+                }
+            }
+        }
+    }
+}

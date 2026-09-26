@@ -405,6 +405,10 @@ template <JitBackend Backend_, typename Value_> struct JitArray {
         return steal(jit_var_block_reduce(ReduceOp::Add, v.m_index, block_size, false));
     }
 
+    friend JitArray simd_reduce(ReduceOp op, const JitArray &v, uint32_t &block_size) {
+        return steal(jit_var_simd_reduce(op, v.m_index, &block_size));
+    }
+
     friend JitArray block_prefix_sum(const JitArray &v, uint32_t block_size, bool exclusive = true, bool reverse = false) {
         return steal(jit_var_block_prefix_reduce(ReduceOp::Add, v.m_index, block_size, exclusive, reverse));
     }

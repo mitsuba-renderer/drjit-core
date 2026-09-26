@@ -1156,6 +1156,10 @@ static void jitc_cuda_render(Variable *v) {
             jitc_cuda_render_scatter_packet(v, a0, a1, a2);
             break;
 
+        case VarKind::SimdReduce:
+            jitc_cuda_render_simd_reduce(v, a0, a1);
+            break;
+
         case VarKind::ScatterInc:
             jitc_cuda_render_scatter_inc(v, a0, a1, a2);
             break;

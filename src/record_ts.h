@@ -187,6 +187,10 @@ struct RecordedVariable {
     /// Tracks the current type of the variable
     VarType type = VarType::Void;
 
+    /// Nonzero if this variable receives the output of a SIMD reduction. The
+    /// kernel that writes it allocates ``ceil(launch_size / simd_block)`` entries.
+    uint32_t simd_block = 0;
+
 #ifndef NDEBUG
     /// Tracks the pointer of the variable for debug purposes
     const void *ptr;
@@ -528,6 +532,9 @@ public:
     /// as part of the evaluation of an undefined variable. This is required for
     /// frozen functions to handle undefined variables.
     void notify_init_undefined(uint32_t index) override;
+
+    /// Registers the target of a SIMD reduction, which replays size at launch time
+    void notify_simd_reduce_target(const void *ptr, uint32_t block_size) override;
 
     /**
      * This function is called every time a pointer is freed using \ref

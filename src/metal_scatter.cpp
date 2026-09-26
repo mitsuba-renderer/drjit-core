@@ -20,6 +20,23 @@ static const char *metal_reduce_op_name[(int) ReduceOp::Count] = {
     "", "add", "mul", "min", "max", "and", "or"
 };
 
+static const char *metal_simd_reduce_fn[(int) ReduceOp::Count] = {
+    "", "simd_sum", "simd_product", "simd_min", "simd_max", "simd_and", "simd_or"
+};
+
+/// Butterfly combine ``wval_i <op>= shuf_i``
+static void jitc_metal_emit_combine(ReduceOp op, uint32_t i) {
+    switch (op) {
+        case ReduceOp::Add: fmt("wval$u = wval$u + shuf$u;\n", i, i, i); break;
+        case ReduceOp::Mul: fmt("wval$u = wval$u * shuf$u;\n", i, i, i); break;
+        case ReduceOp::Min: fmt("wval$u = min(wval$u, shuf$u);\n", i, i, i); break;
+        case ReduceOp::Max: fmt("wval$u = max(wval$u, shuf$u);\n", i, i, i); break;
+        case ReduceOp::And: fmt("wval$u = wval$u & shuf$u;\n", i, i, i); break;
+        case ReduceOp::Or:  fmt("wval$u = wval$u | shuf$u;\n", i, i, i); break;
+        default: jitc_fail("jitc_metal_emit_combine(): unsupported reduction.");
+    }
+}
+
 /// Local aggregation is only available for 32-bit types and some reduction operations
 static bool jitc_metal_can_reduce_local(VarType vt, ReduceOp op) {
     bool t32 = vt == VarType::UInt32 ||
@@ -103,18 +120,6 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
                          : vt == VarType::Int32   ? "atomic_int"
                                                   : "atomic_uint";
 
-    // Per-channel butterfly combine ``wval_i <op>= shuf_i``
-    auto emit_combine = [&](uint32_t i) {
-        switch (op) {
-            case ReduceOp::Add: fmt("wval$u = wval$u + shuf$u;\n", i, i, i); break;
-            case ReduceOp::Min: fmt("wval$u = min(wval$u, shuf$u);\n", i, i, i); break;
-            case ReduceOp::Max: fmt("wval$u = max(wval$u, shuf$u);\n", i, i, i); break;
-            case ReduceOp::And: fmt("wval$u = wval$u & shuf$u;\n", i, i, i); break;
-            case ReduceOp::Or:  fmt("wval$u = wval$u | shuf$u;\n", i, i, i); break;
-            default: jitc_fail("jitc_metal_emit_reduce_block(): unsupported reduction.");
-        }
-    };
-
     if (aggregate)
         jitc_metal_emit_warp_match(t, ptr, index, log2i_ceil(type_size[(int) vt]));
 
@@ -122,17 +127,11 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
         fmt("$s wval$u = $v;\n", t, i, jitc_var(values[i]));
 
     if (aggregate) {
-        const char *simd_fn = op == ReduceOp::Add ? "simd_sum"
-                            : op == ReduceOp::Min ? "simd_min"
-                            : op == ReduceOp::Max ? "simd_max"
-                            : op == ReduceOp::And ? "simd_and"
-                                                  : "simd_or";
-
         // Fully-coherent fast path: when every active lane shares the address,
         // a single hardware reduction replaces the peer-group butterfly.
         put("if (peers == active) {\n");
         for (uint32_t i = 0; i < n; ++i)
-            fmt("    wval$u = $s(wval$u);\n", i, simd_fn, i);
+            fmt("    wval$u = $s(wval$u);\n", i, metal_simd_reduce_fn[(int) op], i);
         put("} else {\n");
         // Precompute the peer group structure once and then reuse across the packet
         put("uint rank = popcount(peers & ((1u << lane) - 1u));\n"
@@ -146,7 +145,7 @@ void jitc_metal_emit_reduce_block(uint32_t n, const uint32_t *values,
             fmt("$s shuf$u = simd_shuffle(wval$u, (ushort) next_lane);\n", t, i, i);
         put("if (recv) {\n");
         for (uint32_t i = 0; i < n; ++i)
-            emit_combine(i);
+            jitc_metal_emit_combine(op, i);
         put("    }\n"
             "    uint drop = (uint) ((simd_vote::vote_t) simd_ballot(in_group && (rank & 1u) != 0u));\n"
             "    remaining &= ~drop;\n"
@@ -314,4 +313,37 @@ void jitc_metal_render_scatter_inc(Variable *v) {
         put("}\n");
 
     v->consumed = 1;
+}
+
+void jitc_metal_render_simd_reduce(Variable *v) {
+    const Variable *ptr   = jitc_var(v->dep[0]),
+                   *value = jitc_var(v->dep[1]);
+    ReduceOp op  = (ReduceOp) (uint32_t) v->literal;
+    uint32_t eff = (uint32_t) (v->literal >> 32),
+             simd_width = thread_state_metal->metal_simd_width;
+
+    // SIMD-group functions don't accept 'bool', reduce masks as integers
+    const char *t = (VarType) value->type == VarType::Bool
+                        ? "uint" : type_name_metal[value->type];
+
+    fmt("{\n"
+        "    $s wval0 = $v;\n", t, value);
+
+    if (eff == simd_width) {
+        fmt("    wval0 = $s(wval0);\n", metal_simd_reduce_fn[(int) op]);
+    } else {
+        // Butterfly within blocks of 'eff' lanes, ignoring inactive partners
+        fmt("    simd_vote::vote_t active = (simd_vote::vote_t) simd_active_threads_mask();\n"
+            "    uint lane = r0 & $uu;\n", simd_width - 1);
+        for (uint32_t delta = 1; delta < eff; delta *= 2) {
+            fmt("    { $s shuf0 = simd_shuffle_xor(wval0, (ushort) $u);\n"
+                "      if ((active >> (lane ^ $uu)) & 1) ", t, delta, delta);
+            jitc_metal_emit_combine(op, 0);
+            put("    }\n");
+        }
+    }
+
+    fmt("    if ((r0 & $uu) == 0u)\n"
+        "        ((device $t*) $v)[r0 >> $u] = ($t) wval0;\n"
+        "}\n", eff - 1, value, ptr, log2i_ceil(eff), value);
 }

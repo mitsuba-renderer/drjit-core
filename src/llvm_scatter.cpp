@@ -96,27 +96,30 @@ jitc_llvm_vector_reduce_config(VarType vt, ReduceOp op) {
 
         switch (op) {
             case ReduceOp::Add:
-                name = "fadd";
-                modifier = "reassoc ";
+            case ReduceOp::Mul: {
+                    bool add = op == ReduceOp::Add;
+                    name = add ? "fadd" : "fmul";
+                    modifier = "reassoc ";
 
-                switch (vt) {
-                    case VarType::Float16:
-                        identity = "half -0.0, ";
-                        identity_type = "half, ";
-                        break;
+                    switch (vt) {
+                        case VarType::Float16:
+                            identity = add ? "half -0.0, " : "half 1.0, ";
+                            identity_type = "half, ";
+                            break;
 
-                    case VarType::Float32:
-                        identity = "float -0.0, ";
-                        identity_type = "float, ";
-                        break;
+                        case VarType::Float32:
+                            identity = add ? "float -0.0, " : "float 1.0, ";
+                            identity_type = "float, ";
+                            break;
 
-                    case VarType::Float64:
-                        identity = "double -0.0, ";
-                        identity_type = "double, ";
-                        break;
+                        case VarType::Float64:
+                            identity = add ? "double -0.0, " : "double 1.0, ";
+                            identity_type = "double, ";
+                            break;
 
-                    default:
-                        break;
+                        default:
+                            break;
+                    }
                 }
                 break;
 
@@ -133,11 +136,15 @@ jitc_llvm_vector_reduce_config(VarType vt, ReduceOp op) {
             default:
                 break;
         }
-    } else if (jitc_is_int(vt)) {
+    } else if (jitc_is_int(vt) || vt == VarType::Bool) {
         bool is_signed = jitc_is_sint(vt);
         switch (op) {
             case ReduceOp::Add:
                 name = "add";
+                break;
+
+            case ReduceOp::Mul:
+                name = "mul";
                 break;
 
             case ReduceOp::Min:
@@ -742,4 +749,74 @@ void jitc_llvm_render_scatter_cas(Variable *v,
     );
 
     v->consumed = 1;
+}
+
+void jitc_llvm_render_simd_reduce(const Variable *v, const Variable *ptr,
+                                  const Variable *value, const Variable *mask) {
+    ReduceOp op    = (ReduceOp) (uint32_t) v->literal;
+    uint32_t eff   = (uint32_t) (v->literal >> 32),
+             n     = jitc_llvm_vector_width / eff,
+             tsize = type_size[value->type];
+    bool is_bool   = (VarType) value->type == VarType::Bool;
+
+    auto [name, modifier, identity, identity_type] =
+        jitc_llvm_vector_reduce_config((VarType) value->type, op);
+
+    Variable id_v{};
+    id_v.type = value->type;
+    id_v.literal = jitc_reduce_identity((VarType) value->type, op);
+
+    // Emit the constant vector <i32 start, i32 start+stride, ...> with 'count' entries
+    auto indices = [](uint32_t start, uint32_t stride, uint32_t count) {
+        put("<");
+        for (uint32_t i = 0; i < count; ++i)
+            fmt("$si32 $u", i ? ", " : "", start + i * stride);
+        put(">");
+    };
+
+    fmt_intrinsic("declare $t @llvm.vector.reduce.$s.v$u$h($s<$u x $t>)",
+                  value, name, eff, value, identity_type, eff, value);
+
+    // Lanes past the end of the array contribute the identity element
+    fmt("    $v_0 = insertelement $T undef, $t $l, i32 0\n"
+        "    $v_1 = shufflevector $T $v_0, $T undef, <$w x i32> $z\n"
+        "    $v_2 = select $V, $V, $T $v_1\n",
+        v, value, value, &id_v,
+        v, value, v, value,
+        v, mask, value, value, v);
+
+    // Reduce each block of 'eff' lanes. Masks are stored as bytes.
+    for (uint32_t j = 0; j < n; ++j) {
+        fmt("    $v_3_$u = shufflevector $T $v_2, $T undef, <$u x i32> ",
+            v, j, value, v, value, eff);
+        indices(j * eff, 1, eff);
+        fmt("\n    $v_$s_$u = call $s$t @llvm.vector.reduce.$s.v$u$h($s<$u x $t> $v_3_$u)\n",
+            v, is_bool ? "4b" : "4", j, modifier, value, name, eff, value, identity, eff, value, v, j);
+        if (is_bool)
+            fmt("    $v_4_$u = zext i1 $v_4b_$u to i8\n", v, j, v, j);
+    }
+
+    fmt("    $v_5 = lshr i64 %index, $u\n"
+        "    $v_6 = getelementptr inbounds $m, ptr $v, i64 $v_5\n",
+        v, log2i_ceil(eff), v, value, ptr, v);
+
+    if (n == 1) {
+        fmt("    store $m $v_4_0, ptr $v_6, align $u\n", value, v, v, tsize);
+        return;
+    }
+
+    // Store the block results contiguously, skipping blocks past the end of the array
+    fmt_intrinsic("declare void @llvm.masked.store.v$u$H(<$u x $m>, ptr, i32, <$u x i1>)",
+                  n, value, n, value, n);
+
+    fmt("    $v_7_0 = insertelement <$u x $m> undef, $m $v_4_0, i32 0\n",
+        v, n, value, value, v);
+    for (uint32_t j = 1; j < n; ++j)
+        fmt("    $v_7_$u = insertelement <$u x $m> $v_7_$u, $m $v_4_$u, i32 $u\n",
+            v, j, n, value, v, j - 1, value, v, j, j);
+
+    fmt("    $v_8 = shufflevector $V, <$w x i1> undef, <$u x i32> ", v, mask, n);
+    indices(0, eff, n);
+    fmt("\n    call void @llvm.masked.store.v$u$H(<$u x $m> $v_7_$u, ptr $v_6, i32 $u, <$u x i1> $v_8)\n",
+        n, value, n, value, v, n - 1, v, tsize, n, v);
 }

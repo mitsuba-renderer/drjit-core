@@ -541,6 +541,17 @@ void RecordThreadState::notify_init_undefined(uint32_t index) {
     }
 }
 
+void RecordThreadState::notify_simd_reduce_target(const void *ptr,
+                                                  uint32_t block_size) {
+    if (paused())
+        return;
+
+    // Replays allocate the target as part of the kernel launch that writes it
+    RecordedVariable &rv = m_recording.recorded_variables[add_variable(ptr)];
+    rv.state = RecordedVarState::OpOutput;
+    rv.simd_block = block_size;
+}
+
 int Recording::replay_init_undefined(Operation &op) {
     ProfilerPhase profiler(pr_init_undefined);
 
@@ -917,6 +928,10 @@ int Recording::replay_launch(Operation &op) {
         const AccessInfo &info = dependencies[j];
         ReplayVariable &rv     = replay_variables[info.slot];
 
+        // Targets of SIMD reductions are allocated below, once the launch size is known
+        if (recorded_variables[info.slot].simd_block && rv.data_size == 0)
+            continue;
+
         if (info.type == ParamType::Input) {
             uint32_t size = rv.size(info.vtype);
             if (log_debug)
@@ -976,6 +991,11 @@ int Recording::replay_launch(Operation &op) {
          ++j) {
         const AccessInfo &info = dependencies[j];
         ReplayVariable &rv     = replay_variables[info.slot];
+
+        // The kernel writing the target of a SIMD reduction allocates one entry per block
+        uint32_t simd_block = recorded_variables[info.slot].simd_block;
+        if (simd_block && rv.data_size == 0)
+            rv.alloc(backend, ceil_div(launch_size, simd_block), info.vtype);
 
         if (info.type == ParamType::Input) {
             if (log_debug)

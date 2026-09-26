@@ -583,6 +583,10 @@ static void jitc_metal_render(Variable *v) {
             jitc_metal_render_scatter(v);
             break;
 
+        case VarKind::SimdReduce:
+            jitc_metal_render_simd_reduce(v);
+            break;
+
         case VarKind::ScatterInc:
             jitc_metal_render_scatter_inc(v);
             break;
