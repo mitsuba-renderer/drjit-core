@@ -21,6 +21,12 @@ uint32_t jitc_var_loop_start(const char *name, bool symbolic, size_t n_indices, 
                        "uninitialized (i.e., it has size 0)", i);
 
         const Variable *v2 = jitc_var(index);
+        if (unlikely(!symbolic && v2->symbolic))
+            jitc_raise("jit_var_loop_start(): loop state variable %zu (r%u) is "
+                       "symbolic! This indicates that a variable (such as a "
+                       "dr.Local buffer) was modified inside a prior symbolic "
+                       "loop or conditional without being part of its state.",
+                       i, index);
         if (i == 0) {
             backend = (JitBackend) v2->backend;
             dirty = v2->is_dirty();

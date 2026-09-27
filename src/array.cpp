@@ -164,6 +164,11 @@ uint32_t jitc_array_read(uint32_t source, uint32_t offset, uint32_t mask_) {
     #undef fail_if
 
     if ((flags & (uint32_t) JitFlag::SymbolicScope) == 0) {
+        if (unlikely(vs->symbolic))
+            jitc_raise("jit_array_read(r%u): source array is symbolic! This "
+                       "indicates that a dr.Local buffer was modified inside a "
+                       "symbolic loop or conditional without being part of its state.",
+                       source);
         if (vs->kind == (uint32_t) VarKind::ArrayInit) {
             jitc_var_inc_ref(vs->dep[1]);
             return vs->dep[1];
@@ -306,6 +311,13 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
 
     #undef fail_if
 
+    uint32_t flags = jit_flags();
+    if (unlikely((flags & (uint32_t) JitFlag::SymbolicScope) == 0 && vt->symbolic))
+        jitc_raise("jit_array_write(r%u): target array is symbolic! This "
+                   "indicates that a dr.Local buffer was modified inside a "
+                   "symbolic loop or conditional without being part of its state.",
+                   target);
+
     if (vo->is_dirty() || vv->is_dirty() || vm->is_dirty()) {
         jitc_eval(thread_state(backend));
 
@@ -322,7 +334,7 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
             jitc_raise_dirty_error(mask);
     }
 
-    if (jit_flag(JitFlag::Debug)) {
+    if (flags & (uint32_t) JitFlag::Debug) {
         mask = steal(jitc_var_check_bounds(
             BoundsCheckType::ArrayWrite, offset, mask, array_length));
         vt = jitc_var(target);
@@ -340,7 +352,8 @@ uint32_t jitc_array_write(uint32_t target, uint32_t offset, uint32_t value,
     v.size = size;
     v.array_state = (uint32_t) ArrayState::Clean;
     v.array_length = array_length;
-    v.symbolic = vt->symbolic || vv->symbolic || vm->symbolic;
+    v.symbolic = vt->symbolic || vo->symbolic || vv->symbolic || vm->symbolic ||
+                 (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
     v.dep[0] = target;
     jitc_var_inc_ref(target, vt);
     v.dep[1] = value;
