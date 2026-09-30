@@ -3243,7 +3243,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     auto [target_info, target_v] =
         jitc_var_check("jit_var_scatter_packet", (uint32_t) target);
     auto [var_info, index_v, mask_v] =
-        jitc_var_check("jit_var_scatter", index_, mask);
+        jitc_var_check("jit_var_scatter_packet", index_, mask);
     const uint32_t target_size = target_v->size;
     const JitBackend backend = var_info.backend;
     VarType vt = (VarType) target_v->type;
@@ -3276,12 +3276,12 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     bool symbolic = flags & (uint32_t) JitFlag::SymbolicScope;
     if (var_info.symbolic && !symbolic)
         jitc_raise(
-            "jit_var_scatter(): input arrays are symbolic, but the operation "
-            "was issued outside of a symbolic recording session.");
+            "jit_var_scatter_packet(): input arrays are symbolic, but the "
+            "operation was issued outside of a symbolic recording session.");
 
     if (target_info.size % n != 0 && target_info.size != 1)
         jitc_raise("jitc_var_scatter_packet(): target r%u has size %u, which is not "
-                   "divisible by %zu!", index_, target_info.size, n);
+                   "divisible by %zu!", (uint32_t) target, target_info.size, n);
 
     drjit::unique_ptr<PacketScatterData> psd(new PacketScatterData());
 
@@ -3379,6 +3379,18 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
             target = steal(jitc_var_scatter(index_t, values[i], index3, mask, op, sub_mode));
         }
         return target.release();
+    }
+
+    bool dirty = false;
+    for (size_t i = 0; i < n; ++i)
+        dirty |= jitc_var(values[i])->is_dirty();
+
+    if (dirty) {
+        jitc_eval(thread_state(backend));
+        for (size_t i = 0; i < n; ++i) {
+            if (jitc_var(values[i])->is_dirty())
+                jitc_raise_dirty_error(values[i]);
+        }
     }
 
     // Must compute final index before potentially expanding below
