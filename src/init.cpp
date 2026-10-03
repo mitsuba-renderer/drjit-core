@@ -733,8 +733,12 @@ void *jitc_find_library(const char *fname, const char *glob_pat,
             }
 
             // Highest version number first, take the first one that loads
-            for (size_t i = g.gl_pathc; i > 0 && !handle; --i)
+            for (size_t i = g.gl_pathc; i > 0 && !handle; --i) {
                 handle = dlopen(g.gl_pathv[i - 1], RTLD_LAZY);
+                if (!handle)
+                    jitc_log(Debug, "jit_find_library(): Unable to load \"%s\": %s",
+                             g.gl_pathv[i - 1], dlerror());
+            }
             globfree(&g);
         }
     }

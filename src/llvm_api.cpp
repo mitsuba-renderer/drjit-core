@@ -67,10 +67,10 @@ bool jitc_llvm_api_init() {
                    *llvm_glob  = "/usr/lib/{x86_64-linux-gnu,aarch64-linux-gnu,wsl/lib}/libLLVM*.so.*";
 #elif defined(__APPLE__) && defined(__x86_64__)
         const char *llvm_fname = "libLLVM.dylib",
-                   *llvm_glob  = "/usr/local/Cellar/llvm/*/lib/libLLVM.dylib";
+                   *llvm_glob  = "/usr/local/opt/llvm{,@*}/lib/libLLVM.dylib";
 #elif defined(__APPLE__) && defined(__aarch64__)
         const char *llvm_fname = "libLLVM.dylib",
-                   *llvm_glob  = "/opt/homebrew/Cellar/llvm/*/lib/libLLVM.dylib";
+                   *llvm_glob  = "/opt/homebrew/opt/llvm{,@*}/lib/libLLVM.dylib";
 #endif
 
 #if !defined(_WIN32)
