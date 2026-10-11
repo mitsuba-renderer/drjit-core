@@ -334,9 +334,14 @@ void *jit_cuda_lookup(const char *name) {
     return jitc_cuda_lookup(name);
 }
 
-void jit_cuda_sync_stream(uintptr_t stream) {
+void jit_cuda_sync_to_stream(uintptr_t stream) {
     // Only using thread-local state so no shared JIT state synchronization needed
-    return jitc_cuda_sync_stream(stream);
+    return jitc_cuda_sync_to_stream(stream);
+}
+
+void jit_cuda_wait_for_stream(uintptr_t stream) {
+    // Only using thread-local state so no shared JIT state synchronization needed
+    return jitc_cuda_wait_for_stream(stream);
 }
 #else
 static void jit_cuda_unavailable() {
@@ -360,7 +365,8 @@ int jit_cuda_device_raw() { jit_cuda_unavailable(); return -1; }
 int jit_cuda_compute_capability() { jit_cuda_unavailable(); return 0; }
 void jit_cuda_set_target(uint32_t, uint32_t) { jit_cuda_unavailable(); }
 void *jit_cuda_lookup(const char *) { jit_cuda_unavailable(); return nullptr; }
-void jit_cuda_sync_stream(uintptr_t) { jit_cuda_unavailable(); }
+void jit_cuda_sync_to_stream(uintptr_t) { jit_cuda_unavailable(); }
+void jit_cuda_wait_for_stream(uintptr_t) { jit_cuda_unavailable(); }
 #endif
 
 void jit_llvm_set_thread_count(uint32_t size) {

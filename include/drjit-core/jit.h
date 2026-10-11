@@ -252,7 +252,18 @@ extern JIT_EXPORT void *jit_cuda_lookup(const char *name);
  *
  * \param stream The CUstream handle of the external stream
  */
-extern JIT_EXPORT void jit_cuda_sync_stream(uintptr_t stream);
+extern JIT_EXPORT void jit_cuda_sync_to_stream(uintptr_t stream);
+
+/**
+ * \brief Add CUDA event synchronization so that the thread state's CUDA stream
+ * waits on an external CUDA stream.
+ *
+ * An event will be recorded into the external stream and the thread's state
+ * stream will wait on the event before performing any subsequent work.
+ *
+ * \param stream The CUstream handle of the external stream
+ */
+extern JIT_EXPORT void jit_cuda_wait_for_stream(uintptr_t stream);
 
 /**
  * \brief Override the target CPU, features, and vector width of the LLVM backend
