@@ -2945,6 +2945,20 @@ bool jitc_can_scatter_reduce(JitBackend backend, VarType vt, ReduceOp op) {
 static const char *mode_name[] = { "auto",        "direct", "local",
                                    "no_conflict", "expand", "permute" };
 
+/// Turn conflict-free scatter-reductions into a fresh array into plain scatters
+static void jitc_var_scatter_simplify(const Variable *target_v, ReduceOp &op,
+                                      ReduceMode &mode) {
+    if (op == ReduceOp::Identity ||
+        (mode != ReduceMode::Permute && mode != ReduceMode::NoConflicts))
+        return;
+
+    if (target_v->is_literal() &&
+        target_v->literal == jitc_reduce_identity((VarType) target_v->type, op))
+        op = ReduceOp::Identity;
+    else if (mode == ReduceMode::Permute) // May conflict with pending writes
+        mode = ReduceMode::Auto;
+}
+
 /// Logic related to choosing the 'ReduceMode' of a scatter(-reduction)
 static std::pair<ReduceMode, bool>
 jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
@@ -2962,10 +2976,6 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             "array first before using a different kind of reduction.", name);
 
     if (op != ReduceOp::Identity) {
-        if (mode == ReduceMode::Permute)
-            jitc_raise("%s(): drjit.ReduceMode.Permute is not a "
-                       "valid mode for scatter-reductions.", name);
-
         if (jitc_is_llvm(backend)) {
             uint32_t tsize = jitc_var(target)->size;
             if (mode == ReduceMode::Auto && tsize <= llvm_expand_threshold)
@@ -3101,6 +3111,7 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         return target.release();
     }
 
+    jitc_var_scatter_simplify(jitc_var(target), op, mode);
     jitc_var_scatter_flush(target, op, mode);
 
     // Check if it is safe to directly write to ``target``. We borrowed
@@ -3251,6 +3262,7 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     unwrap(target, target_v);
     target_ = target;
 
+    jitc_var_scatter_simplify(target_v, op, mode);
     jitc_var_scatter_flush(target, op, mode);
     target_v = jitc_var(target);
 
