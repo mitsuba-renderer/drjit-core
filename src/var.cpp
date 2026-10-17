@@ -3084,7 +3084,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
         return { index, 1 };
     }
 
-    if (v->reduce_op() == op) {
+    if (v->expanded && v->reduce_op() == op) {
         jitc_var_inc_ref(index);
         return { index, index_scale };
     }
@@ -3106,13 +3106,14 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
     v = jitc_var(index);
     if (!v->is_literal() || v->literal != identity) {
         void *src_addr = nullptr;
-        src = steal(jitc_var_data(index, false, &src_addr));
+        src = steal(jitc_var_data(index, true, &src_addr));
         jitc_memcpy_async(backend, dst_addr, src_addr,
                           size * tsize);
     }
 
     Variable *v2 = jitc_var(dst);
     v2->set_reduce_op(op);
+    v2->expanded = 1;
     v2->size = size;
 
     jitc_log(Debug, "jit_var_expand(): %s r%u[%zu] = expand(r%u, factor=%zu)",
@@ -3128,7 +3129,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
 void jitc_var_reduce_expanded(uint32_t index) {
     Variable *v = jitc_var(index);
 
-    if (v->reduce_op() == ReduceOp::Identity)
+    if (!v->expanded)
         return;
 
     JitBackend backend = (JitBackend) v->backend;
@@ -3154,7 +3155,21 @@ void jitc_var_reduce_expanded(uint32_t index) {
         size
     );
 
-    jitc_var(index)->set_reduce_op(ReduceOp::Identity);
+    jitc_var(index)->expanded = 0;
+}
+
+void jitc_var_scatter_flush(uint32_t index, ReduceOp op, ReduceMode mode) {
+    const Variable *v = jitc_var(index);
+    if (!v->is_dirty())
+        return;
+
+    bool conflict_free =
+        mode == ReduceMode::Permute || mode == ReduceMode::NoConflicts;
+
+    if (v->reduce_op() == op && (op != ReduceOp::Identity || conflict_free))
+        return;
+
+    jitc_var_eval(index, !jit_flag(JitFlag::SymbolicScope));
 }
 
 #if defined(DRJIT_ENABLE_METAL)

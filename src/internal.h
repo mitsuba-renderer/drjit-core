@@ -341,13 +341,18 @@ struct alignas(64) Variable {
     uint32_t consumed : 1;
 
     /// This field is used in two roles depending on context
-    /// 1. Expanded evaluated arrays (ReduceOp.Expand for scatters on LLVM)
+    /// 1. Evaluated arrays: the operation performed by pending scatters into
+    ///    this array (only meaningful while \ref is_dirty() or \ref expanded)
     /// 2. Tagged pointer arrays (to indicate GPU resource types on Metal)
     /// Access via the \ref reduce_op() and \ref resource_kind() functions below
     uint32_t reduce_op_or_resource_kind : 3;
 
+    /// Is this array expanded for scatter-reductions via ReduceMode::Expand
+    /// on LLVM? The reduction is given by \ref reduce_op().
+    uint32_t expanded : 1;
+
     /// State of the variable array during compilation (see \ref ArrayState)
-    uint32_t array_state : 3;
+    uint32_t array_state : 2;
 
     /// Offset of the argument in the list of kernel parameters
     uint32_t param_offset;

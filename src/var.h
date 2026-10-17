@@ -332,6 +332,11 @@ extern std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op
 /// Undo the above
 extern void jitc_var_reduce_expanded(uint32_t index);
 
+/// Evaluate 'index' if its pending writes are incompatible with a new scatter.
+/// The caller must then record 'op' via set_reduce_op() after queuing it.
+extern void jitc_var_scatter_flush(uint32_t index, ReduceOp op,
+                                   ReduceMode mode = ReduceMode::Auto);
+
 #if defined(DRJIT_ENABLE_METAL)
 // FP16 accumulation-shadow machinery for Metal
 

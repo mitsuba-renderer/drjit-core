@@ -2542,12 +2542,16 @@ uint32_t jitc_var_scatter_inc(uint32_t *target_p, uint32_t index, uint32_t mask)
     uint32_t flags = jitc_flags();
     var_info.symbolic |= (flags & (uint32_t) JitFlag::SymbolicScope) != 0;
 
+    jitc_var_scatter_flush(target, ReduceOp::Add);
+    target_v = jitc_var(target);
+
     // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
     if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));
 
     void *target_addr = nullptr;
     target = steal(jitc_var_data(target, false, &target_addr));
+    jitc_var(target)->set_reduce_op(ReduceOp::Add);
 
     if (target != *target_p) {
         jitc_var_inc_ref(target);
@@ -2948,9 +2952,10 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
     bool reduce_expanded = false;
 
     // Raise an error if the target array is currently stored in an expanded
-    // form that isn't compatible with the operation to be performed.
-    ReduceOp op_cur = jitc_var(target)->reduce_op();
-    if (op_cur != ReduceOp::Identity && op_cur != op)
+    // form that isn't compatible with the operation to be performed (e.g.,
+    // within symbolic scopes, where jitc_var_scatter_flush() cannot evaluate).
+    const Variable *target_v = jitc_var(target);
+    if (target_v->expanded && target_v->reduce_op() != op)
         jitc_raise(
             "%s(): it is not legal to mix different types of "
             "scatter-reductions when using dr.ReduceMode.Expand. Evaluate the "
@@ -2982,8 +2987,7 @@ jitc_var_infer_reduce_mode(const char *name, JitBackend backend, Ref &target,
             uint32_t size = index_v2->size;
 
             // Track if this is the first time that 'jit_var_expand' is called
-            reduce_expanded =
-                jitc_var(target)->reduce_op() == ReduceOp::Identity;
+            reduce_expanded = !jitc_var(target)->expanded;
 
             // When capturing symbolic loops, side effects might be deleted
             // and re-recorded. So, even if `jit_var_expand` was already called
@@ -3097,6 +3101,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         return target.release();
     }
 
+    jitc_var_scatter_flush(target, op, mode);
+
     // Check if it is safe to directly write to ``target``. We borrowed
     // ``target`` above, and the caller also owns one reference. Therefore, the
     // target array can be directly modified when the reference count exactly
@@ -3104,15 +3110,6 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
     // stashed via \ref jitc_var_stash_ref() (e.g., prior to a control flow
     // operation like dr.if_stmt()), then use that instead.
     target_v = jitc_var(target);
-
-    // Flush any potential conflicting writes by evaluating the target before the scatter
-    if (target_v->is_dirty() && op == ReduceOp::Identity
-                             && mode != ReduceMode::Permute
-                             && mode != ReduceMode::NoConflicts) {
-        bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
-        jitc_var_eval(target, raise_dirty_error);
-        target_v = jitc_var(target);
-    }
 
     if (target_v->ref_count > 2 && target_v->ref_count_stashed != 1)
         target = steal(jitc_var_copy(target));
@@ -3167,6 +3164,8 @@ uint32_t jitc_var_scatter(uint32_t target_, uint32_t value, uint32_t index_,
         op_size, symbolic, ptr, jitc_var(ptr),
         value, jitc_var(value), index, jitc_var(index),
         mask_2, jitc_var(mask_2), literal);
+
+    jitc_var(target)->set_reduce_op(op);
 
     print_log(((uint32_t) target == target_) ? "direct" : "copied target",
               scatter_op);
@@ -3252,14 +3251,8 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
     unwrap(target, target_v);
     target_ = target;
 
-    // Flush any potential conflicting writes by evaluating the target before the scatter
-    if (target_v->is_dirty() && op == ReduceOp::Identity
-                             && mode != ReduceMode::Permute
-                             && mode != ReduceMode::NoConflicts) {
-        bool raise_dirty_error = !jit_flag(JitFlag::SymbolicScope);
-        jitc_var_eval(target, raise_dirty_error);
-        target_v = jitc_var(target);
-    }
+    jitc_var_scatter_flush(target, op, mode);
+    target_v = jitc_var(target);
 
     if (!jitc_can_scatter_reduce(backend, vt, op))
         jitc_raise(
@@ -3428,6 +3421,8 @@ uint32_t jitc_var_scatter_packet(size_t n, uint32_t target_,
         backend, VarKind::PacketScatter, VarType::Void,
         op_size, symbolic, ptr, jitc_var(ptr), index_2,
         jitc_var(index_2), mask_2, jitc_var(mask_2), (uint64_t) (uintptr_t) psd.get());
+
+    jitc_var(target)->set_reduce_op(op);
 
     psd->mode = mode;
     psd->op = op;

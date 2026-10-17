@@ -603,6 +603,7 @@ uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
         uint64_t z = 0;
         target = steal(jitc_var_literal(backend, vt, &z, target_size, true));
     } else {
+        jitc_var_scatter_flush(target, ReduceOp::Add);
         const Variable *target_v = jitc_var(target);
         // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
         if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1) {
@@ -618,6 +619,7 @@ uint32_t jitc_coop_vec_accum(uint32_t target_, uint32_t target_size,
 
     void *p = nullptr;
     target = steal(jitc_var_data(target, false, &p));
+    jitc_var(target)->set_reduce_op(ReduceOp::Add);
 
     Ref value = borrow(index);
     Ref target_ptr;
@@ -696,6 +698,7 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
         uint64_t z = 0;
         target = steal(jitc_var_literal(backend, vt, &z, target_size, true));
     } else {
+        jitc_var_scatter_flush(target, ReduceOp::Add);
         const Variable *target_v = jitc_var(target);
         // Copy-on-Write logic. See the same line in jitc_var_scatter() for details
         if (target_v->ref_count != 2 && target_v->ref_count_stashed != 1) {
@@ -711,6 +714,7 @@ uint32_t jitc_coop_vec_outer_product_accum(uint32_t target_,
 
     void *p = nullptr;
     target = steal(jitc_var_data(target, false, &p));
+    jitc_var(target)->set_reduce_op(ReduceOp::Add);
 
     Ref va = borrow(a), vb = borrow(b);
     Ref target_ptr;
