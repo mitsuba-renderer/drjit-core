@@ -455,8 +455,10 @@ bool jitc_cuda_kernel_compile(ThreadState *ts, Kernel &kernel) {
     return all_cached;
 }
 
-void jitc_cuda_sync_stream(uintptr_t stream) {
+void jitc_cuda_sync_to_stream(uintptr_t stream) {
     ThreadState* ts = thread_state(JitBackend::CUDA);
+    if ((CUstream) stream == ts->stream)
+        return;
     CUevent sync_event = ts->sync_stream_event;
     scoped_set_context guard(ts->context);
     cuda_check(cuEventRecord(sync_event, (CUstream) ts->stream));
@@ -464,6 +466,16 @@ void jitc_cuda_sync_stream(uintptr_t stream) {
         cuda_check(cuStreamWaitEvent((CUstream)stream, sync_event, CU_EVENT_DEFAULT));
     else
         cuda_check(cuStreamWaitEvent_ptsz(nullptr, sync_event, CU_EVENT_DEFAULT));
+}
+
+void jitc_cuda_wait_for_stream(uintptr_t stream) {
+    ThreadState* ts = thread_state(JitBackend::CUDA);
+    if ((CUstream) stream == ts->stream)
+        return;
+    CUevent sync_event = ts->sync_stream_event;
+    scoped_set_context guard(ts->context);
+    cuda_check(cuEventRecord(sync_event, (CUstream) stream));
+    cuda_check(cuStreamWaitEvent((CUstream) ts->stream, sync_event, CU_EVENT_DEFAULT));
 }
 
 void cuda_check_impl(CUresult errval, const char *file, const int line) {
