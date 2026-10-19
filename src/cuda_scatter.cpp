@@ -527,14 +527,17 @@ void jitc_cuda_render_scatter_cas(Variable *v,
         v,
         v);
 
-    put("    ");
-    if (!is_unmasked)
-        fmt("@$v ", mask);
-
-    fmt("atom.global.cas.$b $v_out_0, [%rd3], $v, $v;\n"
-        "    setp.eq.$b $v_out_1, $v_out_0, $v;\n",
-        value, v, compare, value,
-        value, v, v, compare);
+    if (is_unmasked) {
+        fmt("    atom.global.cas.$b $v_out_0, [%rd3], $v, $v;\n"
+            "    setp.eq.$b $v_out_1, $v_out_0, $v;\n",
+            value, v, compare, value, 
+            value, v, v, compare);      
+    } else {
+        fmt("    @$v atom.global.cas.$b $v_out_0, [%rd3], $v, $v;\n"
+            "    @$v setp.eq.$b $v_out_1, $v_out_0, $v;\n",
+            mask, value, v, compare, value, 
+            mask, value, v, v, compare);
+    }
 
     v->consumed = 1;
 }
