@@ -118,10 +118,21 @@ void* jitc_malloc(JitBackend backend, size_t size, bool shared) {
         size = (size + packet_size - 1) / packet_size * packet_size;
     }
 
-    /* Round 'size' to the next larger power of two. This is somewhat
-       wasteful, but reduces the number of different sizes that an allocation
-       can have to a manageable amount that facilitates re-use. */
-    size = round_pow2(size);
+    /* Round 'size' up to a size class. Few distinct sizes means freed
+       allocations can be reused often by later requests.
+
+       - Up to 16 MiB: next power of two. This may nearly double the size, but
+         the absolute waste is small.
+
+       - Above 16 MiB: 4 classes per power of two, which caps the waste at
+         25%. The classes are >= 4 MiB apart, so the alignment established
+         above is preserved. */
+    if (size <= ((size_t) 16 << 20)) {
+        size = round_pow2(size);
+    } else {
+        size_t step = round_pow2(size) >> 3;
+        size = (size + step - 1) / step * step;
+    }
 
     ThreadState *ts = nullptr;
     int device = 0;
