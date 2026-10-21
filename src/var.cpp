@@ -8,9 +8,9 @@
 */
 
 #include "var.h"
+#include "call.h"
 #include "internal.h"
 #include "log.h"
-#include "var.h"
 #include "eval.h"
 #include "util.h"
 #include "op.h"
@@ -1129,6 +1129,7 @@ uint32_t jitc_record_begin(JitBackend backend, const char *name) {
     if (name && std::count(stack.begin(), stack.end(), name) > 1)
         return uint32_t(-1);
     stack.push_back(name ? name : std::string());
+    jitc_call_trace_begin();
 
     if (name)
         jitc_log(Debug, "jit_record_begin(\"%s\")", name);
@@ -1153,6 +1154,7 @@ void jitc_record_end(JitBackend backend, uint32_t value, int cleanup) {
         jitc_fail("jit_record_end(): stack underflow!");
 
     stack.pop_back();
+    jitc_call_trace_end();
 
     // Set recording flag to previous value
     jitc_set_flag(JitFlag::SymbolicScope, (value & 0x80000000u) != 0);

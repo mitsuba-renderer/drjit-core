@@ -781,6 +781,9 @@ uint32_t jit_var_class(JitBackend backend, void *ptr) {
         return ts->call_self_index;
     }
 
+    if (value)
+        jitc_call_trace_class_literal();
+
     return jit_var_u32(backend, value);
 }
 
@@ -1378,6 +1381,20 @@ void jit_var_call(const char *name, int symbolic, uint32_t self, uint32_t mask,
     lock_guard guard(state.lock);
     jitc_var_call(name, (bool) symbolic, self, mask, n_inst, max_inst_id,
                   inst_id, n_in, in, n_out_nested, out_nested, se_offset, out);
+}
+
+int32_t jit_call_trace_check_instance(uint32_t inst_index,
+                                      uint32_t n_vars, const uint64_t *vars,
+                                      size_t state_size, const void *state_data) {
+    lock_guard guard(state.lock);
+    return jitc_call_trace_check_instance(inst_index, n_vars, vars,
+                                          state_size, state_data);
+}
+
+void jit_call_trace_record_rep(uint32_t inst_index, uint32_t n_out,
+                               const uint32_t *out) {
+    lock_guard guard(state.lock);
+    jitc_call_trace_record_rep(inst_index, n_out, out);
 }
 
 void jit_aggregate(JitBackend backend, void *dst, AggregationEntry *agg,

@@ -309,6 +309,200 @@ void jitc_call_layout_instance(CallData *call, uint32_t lo, uint32_t hi,
     data_size = next_offset;
 }
 
+namespace {
+struct SlotMapping {
+    uint32_t idx;
+    bool is_const = false;
+    bool is_pointer = false;
+    ResourceKind resource_kind = ResourceKind::Buffer;
+};
+
+struct RepEntry {
+    uint32_t rep_inst;
+    int32_t next = -1;
+    std::vector<uint64_t> sig;
+    std::vector<uint8_t> state;
+    bool slots_mapped = false;
+    std::vector<SlotMapping> slot_map;
+};
+
+struct InstanceTraceData {
+    int32_t rep_idx = -1;
+    std::vector<uint32_t> trav_vars;
+};
+
+struct CallTraceContext {
+    std::vector<RepEntry> reps;
+    tsl::robin_map<uint64_t, uint32_t, UInt64Hasher> rep_map;
+    std::vector<InstanceTraceData> instances;
+    std::vector<uint64_t> scratch_sig;
+    std::vector<uint8_t> pending_state;
+    uint64_t pending_hash = 0;
+    int32_t pending_inst = -1;
+};
+
+static thread_local std::vector<CallTraceContext> call_trace_stack;
+
+static void build_instance_signature(const uint64_t *vars, uint32_t n_vars,
+                                     size_t state_size,
+                                     std::vector<uint64_t> &sig,
+                                     std::vector<uint32_t> &trav_vars) {
+    sig.clear();
+    sig.reserve(2 * n_vars + 2);
+    sig.push_back(n_vars);
+    sig.push_back((uint64_t) state_size);
+    trav_vars.resize(n_vars);
+
+    for (uint32_t j = 0; j < n_vars; ++j) {
+        uint64_t combined = vars[j];
+        uint32_t idx = (uint32_t) combined;
+        uint32_t ad_idx = (uint32_t) (combined >> 32);
+        trav_vars[j] = idx;
+        uint64_t desc = 0;
+        if (ad_idx != 0) {
+            desc = 4ULL | ((uint64_t) idx << 32);
+            sig.push_back(ad_idx);
+        } else if (idx != 0) {
+            const Variable *v = jitc_var(idx);
+            if (v->is_evaluated() && !v->is_dirty()) {
+                // Besides the type, encode size-dependent properties that
+                // influence code generation: scalar vs. array access,
+                // alignment, and 64-bit gather indices (see
+                // jitc_scatter_gather_index()). The size itself is not
+                // encoded, objects that bake it into the generated code
+                // must report it as traversal state.
+                uint32_t alias_pos = (uint32_t) (std::find(
+                    trav_vars.begin(), trav_vars.begin() + j, idx) - trav_vars.begin());
+                desc = 1ULL | ((uint64_t) v->type << 8) |
+                       ((uint64_t) (v->size == 1 ? 1 : 2) << 16) |
+                       ((uint64_t) v->unaligned << 18) |
+                       ((uint64_t) (v->size > 0x7fffffff) << 19) |
+                       ((uint64_t) alias_pos << 32);
+            } else if (v->is_literal() && (VarType) v->type != VarType::Pointer) {
+                desc = 2ULL | ((uint64_t) v->type << 8) |
+                       ((uint64_t) v->size << 32);
+                sig.push_back(v->literal);
+            } else {
+                desc = 3ULL | ((uint64_t) idx << 32);
+            }
+        }
+        sig.push_back(desc);
+    }
+}
+
+static bool map_rep_slot(uint32_t slot_idx,
+                         const std::vector<uint32_t> &rep_vars,
+                         SlotMapping &out) {
+    const Variable *sv = jitc_var(slot_idx);
+    if (sv->size != 1)
+        return false;
+    uint32_t target_idx = slot_idx;
+    bool is_ptr = false;
+    ResourceKind rk = ResourceKind::Buffer;
+    if ((VarType) sv->type == VarType::Pointer) {
+        if (!sv->write_ptr && !sv->written && sv->dep[3] == 0 &&
+            sv->is_literal() && sv->literal == 0) {
+            out = { slot_idx, true, true, ResourceKind::Buffer };
+            return true;
+        }
+        if (sv->write_ptr || sv->written || sv->dep[3] == 0)
+            return false;
+        const Variable *vb = jitc_var(sv->dep[3]);
+        if (!vb->is_evaluated() ||
+            sv->literal != (uint64_t) (uintptr_t) vb->data)
+            return false;
+        target_idx = sv->dep[3];
+        is_ptr = true;
+        rk = sv->resource_kind();
+    }
+    auto it = std::find(rep_vars.begin(), rep_vars.end(), target_idx);
+    if (it == rep_vars.end())
+        return false;
+    out = { (uint32_t) (it - rep_vars.begin()), false, is_ptr, rk };
+    return true;
+}
+} // namespace
+
+void jitc_call_trace_begin() {
+    call_trace_stack.emplace_back();
+}
+
+void jitc_call_trace_end() {
+    call_trace_stack.pop_back();
+}
+
+void jitc_call_trace_class_literal() {
+    // The callable being traced bakes the registry ID of an object other than
+    // 'self' into the generated code. Its outputs thus cannot be reused for
+    // other instances, which would refer to different objects.
+    for (CallTraceContext &ctx : call_trace_stack)
+        ctx.pending_inst = -1;
+}
+
+int32_t jitc_call_trace_check_instance(uint32_t inst_index,
+                                       uint32_t n_vars, const uint64_t *vars,
+                                       size_t state_size, const void *state_data) {
+    CallTraceContext &ctx = call_trace_stack.back();
+    ctx.pending_inst = -1;
+    if (inst_index >= ctx.instances.size())
+        ctx.instances.resize(inst_index + 1);
+
+    InstanceTraceData &inst = ctx.instances[inst_index];
+    build_instance_signature(vars, n_vars, state_size, ctx.scratch_sig,
+                             inst.trav_vars);
+
+    const uint8_t *p = (const uint8_t *) state_data;
+    uint64_t h = XXH3_64bits(ctx.scratch_sig.data(),
+                             ctx.scratch_sig.size() * sizeof(uint64_t));
+    h = XXH3_64bits_withSeed(p, state_size, h);
+
+    auto it = ctx.rep_map.find(h);
+    if (it != ctx.rep_map.end()) {
+        for (int32_t r = (int32_t) it->second; r >= 0; r = ctx.reps[r].next) {
+            const RepEntry &rep = ctx.reps[r];
+            if (rep.sig == ctx.scratch_sig &&
+                std::equal(rep.state.begin(), rep.state.end(), p, p + state_size)) {
+                inst.rep_idx = r;
+                return (int32_t) rep.rep_inst;
+            }
+        }
+    }
+
+    ctx.pending_state.assign(p, p + state_size);
+    ctx.pending_hash = h;
+    ctx.pending_inst = (int32_t) inst_index;
+    return -1;
+}
+
+void jitc_call_trace_record_rep(uint32_t inst_index, uint32_t n_out,
+                                const uint32_t *out) {
+    CallTraceContext &ctx = call_trace_stack.back();
+    int32_t pending = ctx.pending_inst;
+    ctx.pending_inst = -1;
+
+    // Cleared by jitc_call_trace_class_literal() during the trace
+    if (pending != (int32_t) inst_index)
+        return;
+
+    jitc_visit_new_gen();
+    CallData dummy;
+    const std::vector<uint32_t> &trav_vars = ctx.instances[inst_index].trav_vars;
+    for (uint32_t j = 0; j < n_out; ++j) {
+        if (!jitc_var_call_analyze(&dummy, inst_index, out[j], &trav_vars))
+            return;
+    }
+
+    uint32_t r_idx = (uint32_t) ctx.reps.size();
+    auto [it, inserted] = ctx.rep_map.try_emplace(ctx.pending_hash, r_idx);
+    int32_t next = -1;
+    if (!inserted) {
+        next = (int32_t) it->second;
+        it.value() = r_idx;
+    }
+    ctx.reps.push_back({ inst_index, next, std::move(ctx.scratch_sig),
+                         std::move(ctx.pending_state), false, {} });
+}
+
 /// Weave a virtual function call into the computation graph
 void jitc_var_call(const char *name, bool symbolic, uint32_t self,
                    uint32_t mask_, uint32_t n_inst, uint32_t max_inst_id,
@@ -510,24 +704,59 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
     // elsewhere so that those backends pack blocks contiguously.
     uint32_t align, llvm_pkt_cap;
     jitc_call_layout_params(ts, align, llvm_pkt_cap);
+    call->inst_rep.resize(n_inst);
+    CallTraceContext *trace_ctx =
+        call_trace_stack.empty() ? nullptr : &call_trace_stack.back();
+
     for (uint32_t i = 0; i < n_inst; ++i) {
         if (unlikely(checkpoints[i] > checkpoints[i + 1]))
             jitc_raise("jitc_var_call(): values in 'checkpoints' are not "
                        "monotonically increasing!");
 
-        uint32_t id = inst_id[i];
+        uint32_t id = inst_id[i],
+                 slot_start = (uint32_t) call->slots.size();
+        call->inst_rep[i] = i;
 
-        // Advance the traversal generation counter
-        jitc_visit_new_gen();
+        if (trace_ctx && i < trace_ctx->instances.size() &&
+            trace_ctx->instances[i].rep_idx >= 0) {
+            RepEntry &rep = trace_ctx->reps[trace_ctx->instances[i].rep_idx];
+            uint32_t rep_i = rep.rep_inst;
 
-        uint32_t slot_start = (uint32_t) call->slots.size();
+            if (!rep.slots_mapped) {
+                rep.slots_mapped = true;
+                const auto &rep_layout = call->instance_layout[rep_i];
+                const auto &rep_vars = trace_ctx->instances[rep_i].trav_vars;
+                rep.slot_map.resize(rep_layout.slot_count);
+                for (uint32_t s = 0; s < rep_layout.slot_count; ++s) {
+                    if (!map_rep_slot(call->slots[rep_layout.slot_start + s].ref.index,
+                                      rep_vars, rep.slot_map[s]))
+                        jitc_fail("jit_var_call(): internal error during slot mapping "
+                                  "for deduplicated instance %u (representative %u)", i, rep_i);
+                }
+            }
 
-        for (uint32_t j = 0; j < n_out; ++j)
-            jitc_var_call_analyze(call.get(), i, inner_out[j + i * n_out]);
+            call->inst_rep[i] = rep_i;
+            const auto &inst_vars = trace_ctx->instances[i].trav_vars;
+            for (const SlotMapping &sm : rep.slot_map) {
+                Ref slot_ref = sm.is_const ? borrow(sm.idx)
+                    : !sm.is_pointer ? borrow(inst_vars[sm.idx])
+                    : steal(jitc_var_resource_pointer(inst_vars[sm.idx], sm.resource_kind, 0));
+                Variable *sv = jitc_var(slot_ref);
+                call->slots.push_back({ WeakRef(slot_ref, sv->counter), 0,
+                                        CallData::SizeBucket(sv) });
+                call->extra_refs.push_back(std::move(slot_ref));
+            }
+        } else {
+            // Advance the traversal generation counter
+            jitc_visit_new_gen();
 
-        for (uint32_t j = checkpoints[i]; j != checkpoints[i + 1]; ++j)
-            jitc_var_call_analyze(call.get(), i,
-                                  call->side_effects[j - checkpoints[0]]);
+            for (uint32_t j = 0; j < n_out; ++j)
+                jitc_var_call_analyze(call.get(), i, inner_out[j + i * n_out]);
+
+            for (uint32_t j = checkpoints[i]; j != checkpoints[i + 1]; ++j)
+                jitc_var_call_analyze(call.get(), i,
+                                      call->side_effects[j - checkpoints[0]]);
+        }
 
         jitc_call_layout_instance(call.get(), slot_start,
                                   (uint32_t) call->slots.size(), backend,
@@ -536,6 +765,9 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
 
         inst_id_max = std::max(id, inst_id_max);
     }
+
+    if (trace_ctx)
+        *trace_ctx = {};
 
     // Pad the data block so each call's slice stays aligned once concatenated.
     call->data_size = align_up(data_size, align);
@@ -575,7 +807,12 @@ void jitc_var_call(const char *name, bool symbolic, uint32_t self,
         bool uniform = true;
         for (uint32_t j = 0; j < n_inst; ++j) {
             uint32_t index2 = inner_out[j * n_out + i];
-            uniform &= index == index2;
+            if (index != index2) {
+                const Variable *v2 = jitc_var(index2);
+                uniform &= v->is_literal() && v2->is_literal() &&
+                           (VarType) v->type != VarType::Pointer &&
+                           v->literal == v2->literal;
+            }
             jitc_var_inc_ref(index2);
             call->inner_out[j * n_out + i] = index2;
         }
@@ -904,8 +1141,10 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
     {
         ScopedAllocaBackup alloca_backup;
         for (size_t i = 0; i < n_inst; ++i) {
-            XXH128_hash_t hash =
-                jitc_assemble_func(call, (uint32_t) i, in_size, in_align, out_size, out_align);
+            uint32_t rep = call->inst_rep[i];
+            XXH128_hash_t hash = (rep != i)
+                ? call->inst_hash[rep]
+                : jitc_assemble_func(call, (uint32_t) i, in_size, in_align, out_size, out_align);
             call->inst_hash[i] = hash;
             callables_set.insert(hash);
         }
@@ -956,20 +1195,29 @@ void jitc_var_call_assemble(CallData *call, uint32_t call_reg,
 }
 
 /// Collect scalar / pointer variables referenced by a computation
-void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
+bool jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index,
+                           const std::vector<uint32_t> *rep_vars) {
     Variable *v = jitc_var(index);
+    VarKind kind = (VarKind) v->kind;
+
+    if (kind == VarKind::CallInput ||
+        (v->is_literal() && (VarType) v->type != VarType::Pointer))
+        return true;
+
+    if (rep_vars && v->is_literal() && !v->dep[3]) {
+        SlotMapping unused;
+        return map_rep_slot(index, *rep_vars, unused);
+    }
 
     // Do not visit nodes multiple times. See eval.cpp for details on
     // the visit generation counting scheme.
     uint32_t stamp = visit_gen << 1;
     if (v->scratch == stamp)
-        return;
+        return true;
     v->scratch = stamp;
 
     if (v->optix)
         call->use_optix |= true;
-
-    VarKind kind = (VarKind) v->kind;
 
     if (kind == VarKind::CallSelf) {
         call->use_self = true;
@@ -977,9 +1225,13 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
         call->use_index = true;
     } else if (kind == VarKind::ThreadIndex) {
         call->use_thread_id = true;
-    } else if (kind == VarKind::CallInput) {
-        return;
     } else if (kind == VarKind::Call) {
+        // The nested call's callables may capture variables of the enclosing
+        // instance in their own data buffer, which cannot be remapped to
+        // other instances. Don't reuse callables containing nested calls.
+        if (rep_vars)
+            return false;
+
         CallData *call2 = (CallData *) v->data;
         call->use_self  |= call2->use_self;
         call->use_optix |= call2->use_optix;
@@ -1008,25 +1260,30 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
             if (loop->outer_in[i] == loop->inner_in[i])
                 continue;
 
-            jitc_var_call_analyze(call, inst_id, loop->inner_out[i]);
-            jitc_var_call_analyze(call, inst_id, loop->outer_in[i]);
+            if (!jitc_var_call_analyze(call, inst_id, loop->inner_out[i], rep_vars) ||
+                !jitc_var_call_analyze(call, inst_id, loop->outer_in[i], rep_vars))
+                return false;
         }
     } else if (kind == VarKind::PacketScatter) {
         PacketScatterData *psd = (PacketScatterData *) v->data;
         for (uint32_t i : psd->values)
-            jitc_var_call_analyze(call, inst_id, i);
+            if (!jitc_var_call_analyze(call, inst_id, i, rep_vars))
+                return false;
     } else if (kind == VarKind::ScatterCAS) {
         ScatterCASDData *cas_data = (ScatterCASDData *) v->data;
-        jitc_var_call_analyze(call, inst_id, cas_data->mask);
+        if (!jitc_var_call_analyze(call, inst_id, cas_data->mask, rep_vars))
+            return false;
     } else if (kind == VarKind::CoopVecPack) {
         CoopVecPackData *cvid = (CoopVecPackData *) v->data;
         for (uint32_t i : cvid->indices)
-            jitc_var_call_analyze(call, inst_id, i);
+            if (!jitc_var_call_analyze(call, inst_id, i, rep_vars))
+                return false;
     } else if (kind == VarKind::TraceRay) {
         call->use_trace = true;
         TraceData *td = (TraceData *) v->data;
         for (uint32_t index_2: td->indices)
-            jitc_var_call_analyze(call, inst_id, index_2);
+            if (!jitc_var_call_analyze(call, inst_id, index_2, rep_vars))
+                return false;
     } else if (kind == VarKind::TexLookup || kind == VarKind::TexFetchBilerp ||
                kind == VarKind::TexLookupLod || kind == VarKind::TexLookupGrad ||
                kind == VarKind::TexWrite) {
@@ -1040,11 +1297,18 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
         if (v->data && refs_coords) {
             TexData *td = (TexData *) v->data;
             for (uint32_t i = 0; i < td->ndim; ++i)
-                jitc_var_call_analyze(call, inst_id, td->indices[i]);
+                if (!jitc_var_call_analyze(call, inst_id, td->indices[i], rep_vars))
+                    return false;
             for (uint32_t i = 0; i < td->n_values; ++i)
-                jitc_var_call_analyze(call, inst_id, td->values[i]);
+                if (!jitc_var_call_analyze(call, inst_id, td->values[i], rep_vars))
+                    return false;
         }
     } else if (v->is_evaluated() || (VarType) v->type == VarType::Pointer) {
+        if (rep_vars) {
+            SlotMapping unused;
+            return map_rep_slot(index, *rep_vars, unused);
+        }
+
         // Real data slot. Append it to the current instance's run in ``slots``; the
         // byte offset is assigned later by the layout pass in jitc_var_call().
         call->slots.push_back({ WeakRef(index, v->counter), 0,
@@ -1059,13 +1323,19 @@ void jitc_var_call_analyze(CallData *call, uint32_t inst_id, uint32_t index) {
                 inst_id, index, type_name[v->type], v->size);
     }
 
+    if (rep_vars && call->use_optix)
+        return false;
+
     for (int i = 0; i < 4; ++i) {
         uint32_t index_2 = v->dep[i];
         if (!index_2)
             break;
 
-        jitc_var_call_analyze(call, inst_id, index_2);
+        if (!jitc_var_call_analyze(call, inst_id, index_2, rep_vars))
+            return false;
     }
+
+    return true;
 }
 
 /// Build the shared call-data buffer (offset tables + data blocks) for every
