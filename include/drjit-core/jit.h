@@ -1715,6 +1715,10 @@ enum class JitFlag : uint32_t {
     /// Propagate constants through function calls and remove
     OptimizeCalls = 1 << 9,
 
+    /// Trace symbolic calls only once per group of instances with identical
+    /// traversable state (see \ref jit_call_trace_check_instance())
+    CallDeduplication = 1 << 10,
+
     /// Capture conditionals symbolically instead of evaluating both branches
     /// and combining their results.
     SymbolicConditionals = 1 << 11,
@@ -1764,7 +1768,7 @@ enum class JitFlag : uint32_t {
               (uint32_t) FastMath | (uint32_t) SymbolicLoops |
               (uint32_t) OptimizeLoops | (uint32_t) SymbolicCalls |
               (uint32_t) OptimizeCalls | (uint32_t) SymbolicConditionals |
-              (uint32_t) ReuseIndices |
+              (uint32_t) CallDeduplication | (uint32_t) ReuseIndices |
               (uint32_t) ScatterReduceLocal | (uint32_t) PacketOps |
               (uint32_t) KernelFreezing | (uint32_t) ShaderExecutionReordering,
 
@@ -1787,6 +1791,7 @@ enum JitFlag {
     JitFlagCopmressLoops = 1 << 7,
     JitFlagSymbolicCalls = 1 << 8,
     JitFlagOptimizeCalls = 1 << 9,
+    JitFlagCallDeduplication = 1 << 10,
     JitFlagSymbolicConditionals = 1 << 11,
     JitFlagPacketOps = 1 << 12,
     JitFlagForceOptiX = 1 << 13,
@@ -2096,6 +2101,34 @@ extern JIT_EXPORT void jit_var_call(const char *name, int symbolic,
                                     const uint32_t *in, uint32_t n_out_nested,
                                     const uint32_t *out_nested,
                                     const uint32_t *se_offset, uint32_t *out);
+
+/**
+ * \brief Match a callable instance against validated representatives in the
+ * active recording scope
+ *
+ * \c vars packs <tt>(ad_index << 32) | jit_index</tt> for each traversed
+ * variable, and \c state_data holds the raw traversal state. Returns the
+ * index of a representative instance whose traced outputs can be reused, or
+ * -1 if the instance must be traced.
+ *
+ * Reuse assumes that the traced code is fully determined by the traversed
+ * variables and state. Objects must therefore report all scalars (including
+ * array sizes) that influence code generation as traversal state.
+ *
+ * Known limitation: an evaluated variable captured from outside the instance
+ * (e.g., via a closure) that is also a member of the representative is
+ * indistinguishable from that member and gets remapped to the corresponding
+ * member of other instances. Disable \ref JitFlag::CallDeduplication if this
+ * is an issue.
+ */
+extern JIT_EXPORT int32_t jit_call_trace_check_instance(
+    uint32_t inst_index, uint32_t n_vars,
+    const uint64_t *vars, size_t state_size, const void *state_data);
+
+/// Validate and register a traced candidate representative (when free of AD output
+/// gradients and side effects) so subsequent matching instances can reuse `out`.
+extern JIT_EXPORT void jit_call_trace_record_rep(
+    uint32_t inst_index, uint32_t n_out, const uint32_t *out);
 
 /**
  * \brief Pushes a new mask variable onto the mask stack

@@ -44,6 +44,12 @@ struct CallData {
     /// Compressed side effect index list
     std::vector<uint32_t> side_effects;
 
+    /// Representative instance index for each instance (inst_rep[i] == i for unique representatives)
+    std::vector<uint32_t> inst_rep;
+
+    /// Strong references keeping fast-path instance capture variables alive
+    std::vector<Ref> extra_refs;
+
     /// Array of size 'n_inst' storing hashes of compiled callables
     std::vector<XXH128_hash_t> inst_hash;
 
@@ -320,8 +326,9 @@ extern void jitc_var_call(const char *domain, bool symbolic, uint32_t self,
                           const uint32_t *inner_out,
                           const uint32_t *checkpoints, uint32_t *out);
 
-extern void jitc_var_call_analyze(CallData *call, uint32_t inst_id,
-                                  uint32_t index);
+extern bool jitc_var_call_analyze(CallData *call, uint32_t inst_id,
+                                  uint32_t index,
+                                  const std::vector<uint32_t> *rep_vars = nullptr);
 
 extern uint32_t jitc_var_call_getter(VarType type, uint32_t count,
                                      const uint32_t *values, uint32_t index,
@@ -336,3 +343,12 @@ extern void jitc_var_call_getter_assemble_llvm(Variable *v, const Variable *inde
                                                const Variable *mask);
 extern void jitc_var_call_getter_assemble_metal(Variable *v, const Variable *index,
                                                 const Variable *mask);
+
+extern void jitc_call_trace_begin();
+extern void jitc_call_trace_end();
+extern void jitc_call_trace_class_literal();
+extern int32_t jitc_call_trace_check_instance(uint32_t inst_index,
+                                              uint32_t n_vars, const uint64_t *vars,
+                                              size_t state_size, const void *state_data);
+extern void jitc_call_trace_record_rep(uint32_t inst_index, uint32_t n_out,
+                                       const uint32_t *out);
