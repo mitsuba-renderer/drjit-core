@@ -44,7 +44,7 @@ extern XXH128_hash_t kernel_hash;
 extern char kernel_name[52];
 
 /// Are we recording an OptiX kernel?
-extern bool uses_optix;
+extern thread_local bool uses_optix;
 
 /// Does this kernel use Metal 4 language features (e.g., matmul2d)?
 extern bool uses_metal4;

@@ -613,7 +613,7 @@ void jitc_optix_free(const Kernel &kernel) {
 void jitc_optix_launch(ThreadState *ts, const Kernel &kernel,
                        uint32_t launch_size, const void *args,
                        uint32_t n_args) {
-    OptixShaderBindingTable &sbt = *ts->optix_sbt;
+    OptixShaderBindingTable sbt = *ts->optix_sbt;
     sbt.raygenRecord = kernel.optix.sbt_record;
 
     if (kernel.optix.pg_count > 1) {

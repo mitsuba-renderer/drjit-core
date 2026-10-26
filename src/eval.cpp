@@ -120,7 +120,7 @@ char kernel_name[52 /* strlen("__direct_callable__") + 32 + 1 */] { };
 static uint32_t n_ops_total = 0;
 
 /// Are we recording an OptiX kernel?
-bool uses_optix = false;
+thread_local bool uses_optix = false;
 
 bool uses_metal4 = false;
 

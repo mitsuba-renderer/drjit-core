@@ -297,11 +297,6 @@ struct Recording {
     /// cleared, repeating the check can be skipped.
     uint32_t kernel_cache_generation = (uint32_t) -1;
 
-#ifndef NDEBUG
-    /// Counter, counting the number of kernels for debugging.
-    uint32_t n_kernels = 0;
-#endif
-
     // =============================================================
     //!                     Replay Functions
     // =============================================================
@@ -378,6 +373,11 @@ protected:
     /// Mapping from data pointer of a variable to a index into the slot of the
     /// recording.
     PtrToSlot ptr_to_slot;
+
+#ifndef NDEBUG
+    /// Counter, counting the number of kernels for debugging.
+    uint32_t n_kernels = 0;
+#endif
 
 public:
     /**
