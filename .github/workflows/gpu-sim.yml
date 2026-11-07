@@ -1,0 +1,81 @@
+name: GPU tests (simulated)
+
+# Optional, non-required check. The runners have no GPU, so this runs the CUDA
+# backend tests on a simulated NVIDIA H100 (https://github.com/pantheongpu/pantheonsim).
+# A simulator cannot reproduce hardware-specific behaviour or timing, so it
+# complements real-GPU testing and does not replace it.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src/**"
+      - "include/**"
+      - "resources/**"
+      - "tests/**"
+      - "cmake/**"
+      - "CMakeLists.txt"
+      - ".github/workflows/gpu-sim.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  gpu-tests:
+    name: CUDA backend tests on a simulated H100
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Set up the simulated GPU and CUDA toolkit
+        uses: pantheongpu/setup-pantheonsim@ca87fe3143b29166822b923d6050945c5179408c # v0.1.5
+        with:
+          gpu: nvidia/h100
+          cuda-toolkit: "13.0"
+
+      # The CUDA driver is loaded dynamically at run time and LLVM is not
+      # needed, since only the CUDA backend is exercised. OptiX is disabled.
+      - name: Configure
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release \
+            -DDRJIT_CORE_ENABLE_TESTS=ON \
+            -DDRJIT_ENABLE_OPTIX=OFF
+
+      - name: Build
+        run: cmake --build build -j3
+
+      # The test binaries are run with "-c" (CUDA tests only). Not run:
+      #  - test_graphviz: compares against a reference with a Windows font name
+      #    and fails on real hardware on Linux too.
+      #  - test_reductions: reads past its shared memory allocation in the
+      #    small block reductions (works on hardware, which pads the
+      #    allocation, but the simulator flags it).
+      #  - test_array: indexes local arrays with a register (arr[%r1]), which
+      #    the simulator does not parse yet.
+      # A binary that silently skips every test (e.g. because the CUDA backend
+      # failed to initialize) would still exit with 0, so check that tests
+      # really ran.
+      - name: Test
+        run: |
+          cd tests
+          status=0
+          for t in basics mem loop vcall record; do
+            echo "::group::test_$t"
+            vgpu run ../build/tests/test_$t -c 2>&1 | tee "$RUNNER_TEMP/$t.log"
+            rc=${PIPESTATUS[0]}
+            echo "::endgroup::"
+            if [ $rc -ne 0 ]; then echo "FAILED: test_$t (exit code $rc)"; status=1; fi
+            if grep -q 'disabling CUDA backend' "$RUNNER_TEMP/$t.log" ||
+               ! grep -q '_cuda.* passed' "$RUNNER_TEMP/$t.log"; then
+              echo "FAILED: test_$t did not run any CUDA tests"; status=1
+            fi
+          done
+          exit $status
