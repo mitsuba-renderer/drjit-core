@@ -147,11 +147,11 @@ const char *op_type_name[(int) OpType::Count]{
 /// Indicating, that we are replaying in dry-run mode. In this mode,
 /// replaying a recording will not execute kernels, and only calculate the
 /// output size. This variable will be set by ``jitc_freeze_dry_run()``
-static bool dry_run = false;
+static thread_local bool dry_run = false;
 
 /// Indicates, that replaying a frozen function will generate kernel history
 /// entries. This function will be set by ``jitc_freeze_replay()``.
-static bool record_kernel_history = false;
+static thread_local bool record_kernel_history = false;
 
 
 /**
@@ -261,13 +261,18 @@ struct ReplayVariable {
 };
 
 /// Kernel parameter buffer
-static std::vector<void *> kernel_params;
+static thread_local std::vector<void *> kernel_params;
 
 /// ThreadState used during replay
-static ThreadState *ts = nullptr;
+static thread_local ThreadState *ts = nullptr;
 
 /// Temporary variables used for replaying a recording.
-static std::vector<ReplayVariable> replay_variables;
+static thread_local std::vector<ReplayVariable> replay_variables;
+
+#ifndef NDEBUG
+/// Counter, counting the number of kernels for debugging.
+static thread_local uint32_t n_kernels = 0;
+#endif
 
 static ProfilerRegion pr_kernel_launch("KernelLaunch");
 static ProfilerRegion pr_barrier("Barrier");
@@ -702,7 +707,7 @@ void RecordThreadState::record_launch(
 
 #ifndef NDEBUG
     jitc_log(LogLevel::Debug, "record(): recording kernel %u %016llx",
-             m_recording.n_kernels++, (unsigned long long) hash.high64);
+             n_kernels++, (unsigned long long) hash.high64);
 #else
     jitc_log(LogLevel::Debug, "record(): recording kernel %016llx",
              (unsigned long long) hash.high64);
