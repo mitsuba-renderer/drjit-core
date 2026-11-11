@@ -932,13 +932,17 @@ uint32_t jit_var_opaque_width(uint32_t index) {
     // The variable has to be evaluated, to notify the ThreadState
     jitc_var_eval(index);
 
-    uint32_t width_index =
-        jitc_var_literal(backend, VarType::UInt32, &var_size, 1, true);
+    // Hold width_index in a Ref so its reference is released if
+    // notify_opaque_width throws; release() transfers ownership to the caller.
+    Ref width_index = steal(
+        jitc_var_literal(backend, VarType::UInt32, &var_size, 1, true));
 
-    ThreadState *ts = thread_state(backend);
-    ts->notify_opaque_width(index, width_index);
+    if (jitc_var(index)->is_evaluated()) {
+        ThreadState *ts = thread_state(backend);
+        ts->notify_opaque_width(index, width_index);
+    }
 
-    return width_index;
+    return width_index.release();
 }
 
 VarState jit_var_state(uint32_t index) {

@@ -1106,6 +1106,8 @@ void RecordThreadState::record_expand(uint32_t index) {
                  dst_slot, src_info.slot);
 
         op.size = memcpy.size / type_size[v->type];
+        if (m_recording.recorded_variables[src_info.slot].last_memset == 0)
+            m_recording.requires_dry_run = true;
     } else {
         // Case where in jitc_var_expand, v->is_literal && v->literal ==
         // identity
@@ -1124,8 +1126,6 @@ void RecordThreadState::record_expand(uint32_t index) {
     op.dependency_range = std::pair(start, end);
     op.data             = memset.data;
     m_recording.operations.push_back(op);
-
-    m_recording.requires_dry_run = true;
 }
 
 int Recording::replay_expand(Operation &op) {
@@ -1565,7 +1565,7 @@ void RecordThreadState::record_compress(const uint8_t *in, uint32_t size,
              size, out);
 
     uint32_t start = (uint32_t) m_recording.dependencies.size();
-    add_in_param(in);
+    add_in_param(in, VarType::Bool);
     add_out_param(out, VarType::UInt32);
     uint32_t end = (uint32_t) m_recording.dependencies.size();
 
@@ -1649,7 +1649,7 @@ void RecordThreadState::record_block_mkperm(const uint32_t *values,
                  values, size, block_size, bucket_count, perm, offsets);
 
         uint32_t start = (uint32_t) m_recording.dependencies.size();
-        add_in_param(values);
+        add_in_param(values, VarType::UInt32);
         add_out_param(perm, VarType::UInt32);
         add_out_param(offsets, VarType::UInt32);
         uint32_t end = (uint32_t) m_recording.dependencies.size();
@@ -1734,7 +1734,8 @@ void RecordThreadState::record_block_reduce(VarType vt, ReduceOp rop,
     op.rtype            = rop;
     m_recording.operations.push_back(op);
 
-    m_recording.requires_dry_run = true;
+    if (block_size != size)
+        m_recording.requires_dry_run = true;
 }
 
 int Recording::replay_block_reduce(Operation &op) {
@@ -1822,7 +1823,8 @@ void RecordThreadState::record_block_prefix_reduce(VarType vt, ReduceOp rop,
                          /*reverse=*/reverse };
     m_recording.operations.push_back(op);
 
-    m_recording.requires_dry_run = true;
+    if (block_size != size)
+        m_recording.requires_dry_run = true;
 }
 
 int Recording::replay_block_prefix_reduce(Operation &op) {
@@ -2120,11 +2122,13 @@ void RecordThreadState::record_aggregate(void *dst, AggregationEntry *agg,
             uint32_t slot = add_variable(p.src);
 
             AccessInfo info;
-            info.slot           = slot;
-            info.type           = ParamType::Input;
-            info.pointer_access = p.size == 8;
-            info.extra.offset   = p.offset;
-            info.test_uninit    = false;
+            info.slot                = slot;
+            info.type                = ParamType::Input;
+            info.pointer_access      = p.size == 8;
+            info.extra.offset        = p.offset;
+            info.extra.type_size     = p.size;
+            info.extra.resource_kind = p.resource_kind;
+            info.test_uninit         = false;
             add_param(info);
 
             jitc_log(LogLevel::Debug,
@@ -2192,12 +2196,10 @@ int Recording::replay_aggregate(Operation &op) {
                 jitc_log(LogLevel::Debug, " -> s%u is_pointer=%u offset=%u",
                          param.slot, param.pointer_access, param.extra.offset);
 
-            p->size   = (int16_t) (param.pointer_access
-                            ? 8
-                            : -(int) type_size[(uint32_t) param.vtype]);
-            p->resource_kind = 0;
-            p->offset = param.extra.offset;
-            p->src    = rv.data;
+            p->size          = param.extra.type_size;
+            p->resource_kind = param.extra.resource_kind;
+            p->offset        = param.extra.offset;
+            p->src           = rv.data;
         } else {
             if (log_debug)
                 jitc_log(LogLevel::Debug, " -> literal: offset=%u, size=%u",
