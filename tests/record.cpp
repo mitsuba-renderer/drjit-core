@@ -270,3 +270,57 @@ TEST_ALL(11_opaque_width) {
         jit_assert(all(eq(res, ref)));
     }
 }
+
+/**
+ * Tests recording and replaying jit_block_mkperm() with null offsets,
+ * including single-block (full-array) replays across varying sizes and
+ * multi-block replays.
+ */
+TEST_ALL(12_block_mkperm) {
+    const uint32_t n_buckets = 8;
+
+    auto mkperm = [](UInt32 keys, uint32_t block_size, uint32_t buckets) {
+        keys.eval();
+        uint32_t size = (uint32_t) keys.size();
+        void *data = nullptr;
+        uint32_t data_idx = jit_var_data(keys.index(), &data);
+        uint32_t *perm = (uint32_t *) jit_malloc(
+            Backend, (size_t) size * sizeof(uint32_t));
+        jit_block_mkperm(Backend, (const uint32_t *) data, size, block_size,
+                         buckets, perm, nullptr);
+        jit_var_dec_ref(data_idx);
+        return UInt32::steal(
+            jit_var_mem_map(Backend, VarType::UInt32, perm, size, 1));
+    };
+
+    // Single-block (block_size == size) across varying widths
+    auto full_sort = [mkperm](UInt32 x) {
+        UInt32 keys = (x * 5 + 3) % n_buckets;
+        UInt32 perm = mkperm(keys, (uint32_t) x.size(), n_buckets);
+        return gather<UInt32>(keys, perm);
+    };
+
+    FrozenFunction frozen_full(Backend, full_sort);
+    for (uint32_t n : { 10u, 15u, 23u, 7u }) {
+        auto x = arange<UInt32>(n);
+        auto res = frozen_full(x);
+        auto ref = full_sort(x);
+        jit_assert(all(eq(res, ref)));
+    }
+
+    // Multi-block (block_size < size) across varying widths (including partial blocks)
+    const uint32_t block_size = 4;
+    auto block_sort = [mkperm](UInt32 x) {
+        UInt32 keys = (x * 5 + 3) % n_buckets;
+        UInt32 perm = mkperm(keys, block_size, n_buckets);
+        return gather<UInt32>(keys, perm);
+    };
+
+    FrozenFunction frozen_blocks(Backend, block_sort);
+    for (uint32_t n : { 8u, 10u, 12u, 16u }) {
+        auto x = arange<UInt32>(n);
+        auto res = frozen_blocks(x);
+        auto ref = block_sort(x);
+        jit_assert(all(eq(res, ref)));
+    }
+}
