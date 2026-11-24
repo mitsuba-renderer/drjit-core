@@ -212,12 +212,14 @@ struct ReplayVariable {
         return (uint32_t) size;
     }
 
-    void alloc(JitBackend backend, uint32_t size, VarType type) {
-        alloc(backend, size, type_size[(uint32_t) type]);
+    void alloc(JitBackend backend, uint32_t size, VarType type,
+               bool shared = false) {
+        alloc(backend, size, type_size[(uint32_t) type], shared);
     }
-    void alloc(JitBackend backend, uint32_t size, uint32_t isize) {
+    void alloc(JitBackend backend, uint32_t size, uint32_t isize,
+               bool shared = false) {
         size_t dsize = ((size_t) size) * ((size_t) isize);
-        return alloc(backend, dsize);
+        return alloc(backend, dsize, shared);
     }
     /**
      * Allocates the data for this replay variable. If this is attempted twice,
@@ -228,14 +230,14 @@ struct ReplayVariable {
      * \c data_size of the \c ReplayVariable, so that subsequent operations can
      * infer the size of this variable.
      */
-    void alloc(JitBackend backend, size_t dsize) {
+    void alloc(JitBackend backend, size_t dsize, bool shared = false) {
         if (!data) {
             alloc_size = dsize;
             if (unlikely(jitc_log_active(LogLevel::Debug)))
                 jitc_log(LogLevel::Debug,
                          "    allocating output of size %zu.", dsize);
             if (!dry_run)
-                data = jitc_malloc(backend, dsize);
+                data = jitc_malloc(backend, dsize, shared);
         } else if (alloc_size < dsize) {
             alloc_size = dsize;
             if (unlikely(jitc_log_active(LogLevel::Debug)))
@@ -243,7 +245,7 @@ struct ReplayVariable {
                          "    re-allocating output of size %zu.", dsize);
             if (!dry_run) {
                 jitc_free(data);
-                data = jitc_malloc(backend, dsize);
+                data = jitc_malloc(backend, dsize, shared);
             }
         } else {
             // Do not reallocate if the size is enough
@@ -1651,14 +1653,15 @@ void RecordThreadState::record_block_mkperm(const uint32_t *values,
         uint32_t start = (uint32_t) m_recording.dependencies.size();
         add_in_param(values);
         add_out_param(perm, VarType::UInt32);
-        add_out_param(offsets, VarType::UInt32);
+        if (offsets)
+            add_out_param(offsets, VarType::UInt32);
         uint32_t end = (uint32_t) m_recording.dependencies.size();
 
         Operation op;
         op.type             = OpType::BlockMkperm;
         op.dependency_range = std::pair(start, end);
         op.size             = size;
-        op.block_mkperm   = { bucket_count, block_size };
+        op.block_mkperm     = { bucket_count, block_size };
         m_recording.operations.push_back(op);
     }
 }
@@ -1667,33 +1670,41 @@ int Recording::replay_block_mkperm(Operation &op) {
     ProfilerPhase profiler(pr_block_mkperm);
 
     uint32_t dependency_index = op.dependency_range.first;
-    const AccessInfo &values_info  = dependencies[dependency_index];
-    const AccessInfo &perm_info    = dependencies[dependency_index + 1];
-    const AccessInfo &offsets_info = dependencies[dependency_index + 2];
+    const AccessInfo &values_info = dependencies[dependency_index];
+    const AccessInfo &perm_info   = dependencies[dependency_index + 1];
+    bool has_offsets =
+        (op.dependency_range.second - op.dependency_range.first) == 3;
 
-    ReplayVariable &values_var  = replay_variables[values_info.slot];
-    ReplayVariable &perm_var    = replay_variables[perm_info.slot];
-    ReplayVariable &offsets_var = replay_variables[offsets_info.slot];
+    ReplayVariable &values_var = replay_variables[values_info.slot];
+    ReplayVariable &perm_var   = replay_variables[perm_info.slot];
 
     uint32_t size         = values_var.size(values_info.vtype);
     uint32_t bucket_count = op.block_mkperm.bucket_count;
     uint32_t block_size   = op.block_mkperm.block_size;
+    if (block_size == op.size)
+        block_size = size;
 
     perm_var.alloc(backend, size, perm_info.vtype);
 
-    offsets_var.alloc(backend, bucket_count * 4 + 1, offsets_info.vtype);
+    uint32_t *offsets_ptr = nullptr;
+    if (has_offsets) {
+        const AccessInfo &offsets_info = dependencies[dependency_index + 2];
+        ReplayVariable &offsets_var    = replay_variables[offsets_info.slot];
+        offsets_var.alloc(backend, bucket_count * 4 + 1, offsets_info.vtype,
+                          /* shared = */ true);
+        offsets_ptr = (uint32_t *) offsets_var.data;
+    }
 
     if (unlikely(jitc_log_active(LogLevel::Debug)))
         jitc_log(LogLevel::Debug,
                  "replay(): block_mkperm(values=%p, size=%u, "
                  "block_size=%u, bucket_count=%u, perm=%p, offsets=%p)",
                  values_var.data, size, block_size, bucket_count, perm_var.data,
-                 offsets_var.data);
+                 offsets_ptr);
 
     if (!dry_run)
         ts->block_mkperm((uint32_t *) values_var.data, size, block_size,
-                           bucket_count, (uint32_t *) perm_var.data,
-                           (uint32_t *) offsets_var.data);
+                         bucket_count, (uint32_t *) perm_var.data, offsets_ptr);
 
     return true;
 }
