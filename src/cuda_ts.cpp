@@ -220,7 +220,7 @@ void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
 
     uint32_t tsize = type_size[(int) vt];
     if (block_size == 1) {
-        memcpy_async(out, in, size * tsize);
+        memcpy_async(out, in, (size_t) size * tsize);
         return;
     }
 
@@ -346,7 +346,7 @@ void CUDAThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
     if (chunks_per_block == 1)
         params.out = out;
     else
-        params.out = jitc_malloc(JitBackend::CUDA, chunk_count * tsize);
+        params.out = jitc_malloc(JitBackend::CUDA, (size_t) chunk_count * tsize);
 
     {
         scoped_set_context guard(context);
@@ -559,7 +559,7 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
             uint64_t ident = jitc_reduce_identity(vt, op);
             memset_async(out, size, tsize, &ident);
         } else if (in != out) {
-            memcpy_async(out, in, size * tsize);
+            memcpy_async(out, in, (size_t) size * tsize);
         }
         return;
     }
@@ -665,7 +665,7 @@ void CUDAThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
 
         uint32_t scratch_size = block_count * stride * 2,
                  vsize = type_size[(int) vts];
-        params.scratch = jitc_malloc(JitBackend::CUDA, scratch_size * vsize);
+        params.scratch = jitc_malloc(JitBackend::CUDA, (size_t) scratch_size * vsize);
         uint64_t z = 0;
         memset_async(params.scratch, scratch_size, vsize, &z);
     } else {

@@ -2213,7 +2213,7 @@ uint32_t jitc_var_migrate(uint32_t src_index, JitBackend dst_backend) {
             src_backend = JitBackend::None;
         }
 
-        size_t size = type_size[v->type] * v->size;
+        size_t size = (size_t) type_size[v->type] * v->size;
         dst_ptr = jitc_malloc(dst_backend, size);
         jitc_memcpy_async(backend, dst_ptr, src_ptr, size);
     } else {
@@ -3108,7 +3108,7 @@ std::pair<uint32_t, uint32_t> jitc_var_expand(uint32_t index, ReduceOp op) {
         void *src_addr = nullptr;
         src = steal(jitc_var_data(index, true, &src_addr));
         jitc_memcpy_async(backend, dst_addr, src_addr,
-                          size * tsize);
+                          (size_t) size * tsize);
     }
 
     Variable *v2 = jitc_var(dst);
