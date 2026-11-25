@@ -172,7 +172,7 @@ struct ReplayVariable {
     /// Initializes the \ref ReplayVariable from a function input.
     void init_from_input(Variable *input_variable) {
         data       = input_variable->data;
-        alloc_size = type_size[input_variable->type] * input_variable->size;
+        alloc_size = (size_t) type_size[input_variable->type] * input_variable->size;
         data_size = alloc_size;
     }
 
@@ -1613,7 +1613,7 @@ int Recording::replay_compress(Operation &op) {
     uint32_t out_size =
         ts->compress((uint8_t *) in_rv.data, size, (uint32_t *) out_rv.data);
 
-    out_rv.data_size = out_size * type_size[(uint32_t) out_info.vtype];
+    out_rv.data_size = (size_t) out_size * type_size[(uint32_t) out_info.vtype];
 
     return true;
 }

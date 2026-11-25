@@ -319,7 +319,7 @@ void LLVMThreadState::block_reduce(VarType vt, ReduceOp op, uint32_t size,
 
     void *buf = out;
     if (chunks_per_block > 1) {
-        buf = jitc_malloc(JitBackend::LLVM, tsize * chunk_count);
+        buf = jitc_malloc(JitBackend::LLVM, (size_t) tsize * chunk_count);
 
         jitc_log(Debug,
                  "jit_block_reduce(" DRJIT_PTR " -> " DRJIT_PTR
@@ -373,7 +373,7 @@ void LLVMThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
             uint64_t ident = jitc_reduce_identity(vt, op);
             memset_async(out, size, tsize, &ident);
         } else if (in != out) {
-            memcpy_async(out, in, size * tsize);
+            memcpy_async(out, in, (size_t) size * tsize);
         }
         return;
     }
@@ -413,7 +413,7 @@ void LLVMThreadState::block_prefix_reduce(VarType vt, ReduceOp op,
 
     void *scratch = nullptr;
     if (chunks_per_block > 1) {
-        scratch = jitc_malloc(JitBackend::LLVM, tsize * chunk_count);
+        scratch = jitc_malloc(JitBackend::LLVM, (size_t) tsize * chunk_count);
 
         // Launch a block_reduce within block_prefix_reduce. We need to access to its
         // intermediate state, which is why the kernel is called directly here
@@ -502,7 +502,7 @@ void LLVMThreadState::reduce_dot(VarType type, const void *ptr_1,
 
     void *target = out;
     if (blocks > 1)
-        target = jitc_malloc(JitBackend::LLVM, blocks * tsize);
+        target = jitc_malloc(JitBackend::LLVM, (size_t) blocks * tsize);
 
     Reduction2 reduction = jitc_reduce_dot_create(type);
     submit_cpu(
